@@ -87,26 +87,22 @@ export default function Counter() {
         </div>
       </div>
 
-      <div className="counter-body">
+      <div className="counter-numpad">
         <NumPad onPress={handleNumpad} compact />
-
-        <div className="counter-suggestions">
-          {billAmount > 0 ? (
-            <RoundTypeChips
-              label="Round off"
-              options={billRoundOptions}
-              onSelect={(amt) => {
-                setBillStr(String(amt))
-                setActiveField('bill')
-              }}
-              activeAmount={billAmount}
-              compact
-            />
-          ) : (
-            <p className="counter-suggestions-empty">Enter bill amount to see round off</p>
-          )}
-        </div>
       </div>
+
+      {billAmount > 0 && (
+        <RoundTypeChips
+          label="Round off"
+          options={billRoundOptions}
+          onSelect={(amt) => {
+            setBillStr(String(amt))
+            setActiveField('bill')
+          }}
+          activeAmount={billAmount}
+          compact
+        />
+      )}
 
       <div className="counter-actions">
         <button type="button" className="btn btn-secondary btn-compact" onClick={handleClear}>

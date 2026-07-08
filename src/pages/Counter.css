@@ -2,8 +2,8 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 6px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 4px;
   overflow: hidden;
 }
 
@@ -56,35 +56,11 @@
   font-size: clamp(0.9rem, 3vw, 1.2rem);
 }
 
-.counter-body {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-  gap: 6px;
+.counter-numpad {
   min-height: 0;
   overflow: hidden;
-}
-
-.counter-suggestions {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-height: 0;
-  overflow: hidden;
-  padding: 6px;
-  background: var(--surface);
-  border: 2px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
-.counter-suggestions-empty {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  padding: 8px;
 }
 
 .counter-actions {
@@ -98,22 +74,7 @@
   font-size: 0.95rem;
 }
 
-@media (max-width: 520px) {
-  .counter-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr);
-  }
-}
-
 @media (orientation: landscape) and (max-height: 520px) {
-  .counter-top {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
-
-  .counter-body {
-    grid-template-columns: 1.2fr 0.8fr;
-  }
-
   .btn-compact {
     min-height: 40px;
   }
