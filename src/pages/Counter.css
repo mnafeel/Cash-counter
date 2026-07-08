@@ -1,0 +1,120 @@
+.counter-page {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.counter-top {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.counter-change {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 4px;
+  background: var(--brown-dark);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.counter-change--ready {
+  border-color: var(--cream);
+  background: var(--surface-2);
+}
+
+.counter-change--warn {
+  border-color: var(--danger);
+  background: rgba(139, 58, 58, 0.25);
+}
+
+.counter-change-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.counter-change-value {
+  font-size: clamp(1.1rem, 3.5vw, 1.6rem);
+  font-weight: 800;
+  color: var(--cream);
+  line-height: 1.1;
+}
+
+.counter-change--warn .counter-change-value {
+  color: var(--danger-text);
+  font-size: clamp(0.9rem, 3vw, 1.2rem);
+}
+
+.counter-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 6px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.counter-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 6px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.counter-suggestions-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 8px;
+}
+
+.counter-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-compact {
+  min-height: 44px;
+  padding: 10px 16px;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 520px) {
+  .counter-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .counter-top {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+
+  .counter-body {
+    grid-template-columns: 1.2fr 0.8fr;
+  }
+
+  .btn-compact {
+    min-height: 40px;
+  }
+}

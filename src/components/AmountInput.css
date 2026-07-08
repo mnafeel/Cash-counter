@@ -1,0 +1,44 @@
+.amount-input {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.amount-input-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.amount-input-field {
+  width: 100%;
+  padding: 18px 20px;
+  font-size: 2rem;
+  font-weight: 700;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+  min-height: 72px;
+}
+
+.amount-input-field:focus {
+  border-color: var(--primary);
+}
+
+.amount-input-field::placeholder {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 1.25rem;
+}
+
+@media (min-width: 768px) {
+  .amount-input-field {
+    font-size: 2.5rem;
+    min-height: 80px;
+  }
+}

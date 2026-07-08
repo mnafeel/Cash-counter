@@ -1,0 +1,79 @@
+.big-amount {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.big-amount-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.big-amount-label:empty {
+  display: none;
+}
+
+.big-amount-value {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  word-break: break-all;
+  color: var(--cream);
+}
+
+.big-amount--md .big-amount-value {
+  font-size: 2rem;
+}
+
+.big-amount--lg .big-amount-value {
+  font-size: 2.75rem;
+}
+
+.big-amount--xl .big-amount-value {
+  font-size: 3.5rem;
+}
+
+.big-amount--primary .big-amount-value,
+.big-amount--highlight .big-amount-value,
+.big-amount--success .big-amount-value {
+  color: var(--cream);
+}
+
+.big-amount--highlight .big-amount-value {
+  text-shadow: 0 2px 16px rgba(206, 189, 156, 0.3);
+}
+
+.big-amount--warning .big-amount-value {
+  color: var(--cream-dim);
+}
+
+.big-amount--danger .big-amount-value {
+  color: var(--danger-text);
+}
+
+@media (min-width: 768px) {
+  .big-amount--xl .big-amount-value {
+    font-size: 4.5rem;
+  }
+
+  .big-amount--lg .big-amount-value {
+    font-size: 3.25rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .big-amount--xl .big-amount-value {
+    font-size: 5.5rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .big-amount--xl .big-amount-value {
+    font-size: 2.75rem;
+  }
+}

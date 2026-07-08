@@ -1,0 +1,91 @@
+.suggestion-chips {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.suggestion-chips-label {
+  font-size: 0.85rem;
+  color: var(--cream-dim);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.suggestion-chips-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.chip {
+  padding: 12px 18px;
+  background: var(--brown-dark);
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--cream);
+  transition: background 0.15s, border-color 0.15s, transform 0.1s, color 0.15s;
+  min-height: 48px;
+}
+
+.chip:active {
+  transform: scale(0.96);
+}
+
+.chip--active,
+.chip:hover {
+  background: var(--cream);
+  border-color: var(--cream);
+  color: var(--text-on-cream);
+}
+
+.suggestion-chips--compact {
+  gap: 4px;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.suggestion-chips--compact .suggestion-chips-label {
+  font-size: 0.65rem;
+  flex-shrink: 0;
+}
+
+.suggestion-chips--compact .suggestion-chips-row {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 6px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  align-items: center;
+  flex: 1;
+  min-height: 0;
+}
+
+.suggestion-chips--compact .suggestion-chips-row::-webkit-scrollbar {
+  display: none;
+}
+
+.suggestion-chips--compact .chip {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  min-height: 36px;
+  font-size: 0.85rem;
+}
+
+@media (min-width: 768px) {
+  .suggestion-chips:not(.suggestion-chips--compact) .chip {
+    font-size: 1.1rem;
+    padding: 14px 22px;
+    min-height: 52px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .suggestion-chips:not(.suggestion-chips--compact) .chip {
+    font-size: 1.15rem;
+    min-height: 56px;
+  }
+}

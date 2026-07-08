@@ -1,0 +1,92 @@
+.numpad {
+  width: 100%;
+}
+
+.numpad-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.numpad-key {
+  min-height: 64px;
+  border-radius: var(--radius-sm);
+  background: var(--brown);
+  border: 2px solid var(--border);
+  color: var(--cream);
+  font-size: 1.75rem;
+  font-weight: 700;
+  transition: transform 0.1s, background 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.numpad-key:active {
+  transform: scale(0.96);
+  background: var(--surface-2);
+  border-color: var(--cream);
+}
+
+.numpad-key--action {
+  font-size: 1.25rem;
+  color: var(--cream-dim);
+}
+
+.numpad-key--backspace {
+  font-size: 1.5rem;
+}
+
+.numpad-key--wide {
+  grid-column: span 3;
+  min-height: 56px;
+  font-size: 1.35rem;
+}
+
+.numpad--compact {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.numpad--compact .numpad-grid {
+  flex: 1;
+  min-height: 0;
+  gap: 4px;
+  grid-template-rows: repeat(5, minmax(0, 1fr));
+}
+
+.numpad--compact .numpad-key {
+  min-height: 0;
+  height: 100%;
+  font-size: clamp(1rem, 2.8vw, 1.35rem);
+  border-radius: 8px;
+  padding: 0;
+}
+
+.numpad--compact .numpad-key--wide {
+  min-height: 0;
+  font-size: clamp(0.9rem, 2.5vw, 1.1rem);
+}
+
+.numpad--compact .numpad-key--action {
+  font-size: clamp(0.85rem, 2.2vw, 1.1rem);
+}
+
+@media (min-width: 768px) {
+  .numpad:not(.numpad--compact) .numpad-key {
+    min-height: 72px;
+    font-size: 2rem;
+  }
+
+  .numpad:not(.numpad--compact) .numpad-grid {
+    gap: 12px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .numpad:not(.numpad--compact) .numpad-key {
+    min-height: 80px;
+    font-size: 2.25rem;
+  }
+}

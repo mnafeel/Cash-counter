@@ -1,0 +1,128 @@
+.history-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.history-header h2 {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+  color: var(--cream);
+}
+
+.history-header p {
+  color: var(--text-muted);
+}
+
+.history-empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-muted);
+}
+
+.history-empty span {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.history-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-item {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.history-item--sale,
+.history-item--expense {
+  border-left: 4px solid var(--cream);
+}
+
+.history-item-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 12px 14px 14px;
+  min-width: 0;
+}
+
+.history-item-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.history-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.history-item-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.history-item-type {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--cream);
+}
+
+.history-item-name {
+  font-size: 0.8rem;
+  background: var(--brown-dark);
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--cream-dim);
+}
+
+.history-item-sub {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item-date {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.history-item-amount {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--cream);
+  flex-shrink: 0;
+}
+
+.history-item-amount.negative {
+  color: var(--cream-dim);
+}
+
+.history-delete {
+  padding: 0 16px;
+  color: var(--cream-dim);
+  font-size: 1rem;
+  border-left: 2px solid var(--border);
+  transition: color 0.15s, background 0.15s;
+}
+
+.history-delete:hover {
+  color: var(--danger-text);
+  background: rgba(139, 58, 58, 0.25);
+}

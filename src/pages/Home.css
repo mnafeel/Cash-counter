@@ -1,0 +1,119 @@
+.home-hero {
+  background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 20px;
+  text-align: center;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow);
+}
+
+.home-hero-label {
+  font-size: 0.9rem;
+  color: var(--cream-dim);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.home-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--cream-dim);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.stat-value--green,
+.stat-value--orange {
+  color: var(--cream);
+}
+
+.stat-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.home-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.home-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.home-card:active {
+  transform: scale(0.98);
+}
+
+.home-card--green,
+.home-card--orange,
+.home-card--blue,
+.home-card--gray {
+  border-left: 4px solid var(--cream);
+}
+
+.home-card-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+}
+
+.home-card-text h2 {
+  font-size: 1.1rem;
+  margin-bottom: 2px;
+  color: var(--cream);
+}
+
+.home-card-text p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.home-card-arrow {
+  margin-left: auto;
+  font-size: 1.25rem;
+  color: var(--cream-dim);
+}
+
+@media (min-width: 768px) {
+  .home-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+  }
+}

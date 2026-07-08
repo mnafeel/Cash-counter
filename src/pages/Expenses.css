@@ -1,0 +1,72 @@
+.expenses-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.expenses-header h2 {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+  color: var(--cream);
+}
+
+.expenses-header p {
+  color: var(--text-muted);
+}
+
+.expenses-balance {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+
+.expenses-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.expense-note {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.expense-note-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+}
+
+.expense-note input {
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  color: var(--cream);
+  outline: none;
+}
+
+.expense-note input::placeholder {
+  color: var(--text-muted);
+}
+
+.expense-note input:focus {
+  border-color: var(--cream);
+}
+
+.expenses-error {
+  background: rgba(139, 58, 58, 0.35);
+  border: 2px solid var(--danger);
+  color: var(--danger-text);
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+}
+
+.expenses-actions {
+  display: flex;
+  gap: 12px;
+}

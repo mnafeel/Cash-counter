@@ -1,0 +1,59 @@
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.settings-header h2 {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+  color: var(--cream);
+}
+
+.settings-header p {
+  color: var(--text-muted);
+}
+
+.settings-card {
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--brown-dark);
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border);
+}
+
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.settings-row span:last-child {
+  font-weight: 700;
+  color: var(--cream);
+}
+
+.settings-highlight {
+  color: var(--cream) !important;
+  font-size: 1.1rem !important;
+}
+
+.settings-note {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.6;
+}
