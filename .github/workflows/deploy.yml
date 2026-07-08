@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages
@@ -38,3 +40,39 @@ jobs:
           publish_dir: ./dist
           publish_branch: gh-pages
           force_orphan: true
+
+      - name: Deploy built app to docs folder on main
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: main
+          destination_dir: docs
+          keep_files: true
+          commit_message: 'deploy: update docs site [skip ci]'
+
+      - name: Configure GitHub Pages source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Use gh-pages branch (built app). Falls back to main/docs if needed.
+          STATUS=$(curl -s -o /tmp/pages.out -w "%{http_code}" \
+            -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/pages" \
+            -d '{"source":{"branch":"gh-pages","path":"/"},"build_type":"legacy"}')
+          echo "Pages config status: ${STATUS}"
+          cat /tmp/pages.out || true
+          if [ "${STATUS}" != "200" ] && [ "${STATUS}" != "201" ]; then
+            echo "Trying main/docs source..."
+            curl -s -o /tmp/pages2.out -w "%{http_code}" \
+              -X PUT \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${{ github.repository }}/pages" \
+              -d '{"source":{"branch":"main","path":"/docs"},"build_type":"legacy"}'
+            cat /tmp/pages2.out || true
+          fi
