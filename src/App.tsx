@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { HashRouter, Route, Routes } from 'react-router-dom'
 import { CashProvider } from './context/CashContext'
 import Layout from './components/Layout'
 import Home from './pages/Home'
@@ -10,7 +10,7 @@ import Settings from './pages/Settings'
 export default function App() {
   return (
     <CashProvider>
-      <BrowserRouter>
+      <HashRouter>
         <Routes>
           <Route element={<Layout />}>
             <Route index element={<Home />} />
@@ -20,7 +20,7 @@ export default function App() {
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </CashProvider>
   )
 }

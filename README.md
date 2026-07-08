@@ -10,6 +10,14 @@ A responsive cash counter app for phone, tablet, and desktop. Track bills, custo
 - **History** — All saved bills and expenses
 - **Settings** — Set opening cash balance
 
+## Live app (GitHub Pages)
+
+After deployment, open:
+
+**https://mnafeel.github.io/Cash-counter/**
+
+In your GitHub repo go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**.
+
 ## Run locally
 
 ```bash
