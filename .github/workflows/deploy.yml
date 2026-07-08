@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,6 +33,23 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 1
+
+  deploy-gh-pages:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
       - name: Deploy to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -41,7 +58,22 @@ jobs:
           publish_branch: gh-pages
           force_orphan: true
 
-      - name: Deploy built app to docs folder on main
+  deploy-docs:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Download build
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Deploy to docs folder on main
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -51,11 +83,14 @@ jobs:
           keep_files: true
           commit_message: 'deploy: update docs site [skip ci]'
 
-      - name: Configure GitHub Pages source
+  configure-pages:
+    needs: [deploy-gh-pages, deploy-docs]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set GitHub Pages source to gh-pages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Use gh-pages branch (built app). Falls back to main/docs if needed.
           STATUS=$(curl -s -o /tmp/pages.out -w "%{http_code}" \
             -X PUT \
             -H "Accept: application/vnd.github+json" \
@@ -63,11 +98,12 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${{ github.repository }}/pages" \
             -d '{"source":{"branch":"gh-pages","path":"/"},"build_type":"legacy"}')
-          echo "Pages config status: ${STATUS}"
+          echo "gh-pages config status: ${STATUS}"
           cat /tmp/pages.out || true
+
           if [ "${STATUS}" != "200" ] && [ "${STATUS}" != "201" ]; then
             echo "Trying main/docs source..."
-            curl -s -o /tmp/pages2.out -w "%{http_code}" \
+            curl -s -o /tmp/pages2.out -w "%{http_code}\n" \
               -X PUT \
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${GH_TOKEN}" \
