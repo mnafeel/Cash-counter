@@ -14,26 +14,11 @@ A responsive cash counter app for phone, tablet, and desktop. Track bills, custo
 
 **https://mnafeel.github.io/Cash-counter/**
 
-Every push to `main` automatically:
-1. Builds the app
-2. Deploys to the `gh-pages` branch
-3. Updates the `docs/` folder on `main`
-4. Tries to set GitHub Pages to use the built app
+Every push to `main` builds the app and publishes the built files to the repo root (works with GitHub Pages on `main` branch).
 
-### If you still see a blank page
+### Run locally
 
-Open **https://github.com/mnafeel/Cash-counter/settings/pages** and set:
-
-- **Source:** Deploy from a branch
-- **Branch:** `gh-pages` → **`/ (root)`**
-
-**Or use:**
-
-- **Branch:** `main` → **`/docs`**
-
-Do **not** use `main` → **`/ (root)`** — that serves dev source code and shows a blank page.
-
-## Run locally
+Use the dev entry file — do not edit root `index.html` (it is the live build):
 
 ```bash
 npm install

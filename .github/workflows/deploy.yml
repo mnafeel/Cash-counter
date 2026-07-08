@@ -58,7 +58,7 @@ jobs:
           publish_branch: gh-pages
           force_orphan: true
 
-  deploy-docs:
+  deploy-root:
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -73,8 +73,39 @@ jobs:
           name: dist
           path: dist
 
+      - name: Publish built app to repo root for GitHub Pages
+        run: |
+          cp dist/index.html index.html
+          rm -rf assets
+          cp -r dist/assets assets
+          cp dist/favicon.svg favicon.svg
+          cp dist/.nojekyll .nojekyll
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html assets favicon.svg .nojekyll
+          git diff --staged --quiet && echo "No root changes" && exit 0
+          git commit -m "deploy: publish built app to root [skip ci]"
+          git push
+
+  deploy-docs:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Download build
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
       - name: Publish docs folder
         run: |
+          git pull origin main
           rm -rf docs
           cp -r dist docs
           git config user.name "github-actions[bot]"
@@ -83,33 +114,3 @@ jobs:
           git diff --staged --quiet && echo "No docs changes" && exit 0
           git commit -m "deploy: update docs site [skip ci]"
           git push
-
-  configure-pages:
-    needs: deploy-gh-pages
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set GitHub Pages source to gh-pages
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          STATUS=$(curl -s -o /tmp/pages.out -w "%{http_code}" \
-            -X PUT \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${{ github.repository }}/pages" \
-            -d '{"source":{"branch":"gh-pages","path":"/"},"build_type":"legacy"}')
-          echo "gh-pages config status: ${STATUS}"
-          cat /tmp/pages.out || true
-
-          if [ "${STATUS}" != "200" ] && [ "${STATUS}" != "201" ]; then
-            echo "Trying main/docs source..."
-            curl -s -o /tmp/pages2.out -w "main/docs status: %{http_code}\n" \
-              -X PUT \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${{ github.repository }}/pages" \
-              -d '{"source":{"branch":"main","path":"/docs"},"build_type":"legacy"}'
-            cat /tmp/pages2.out || true
-          fi
