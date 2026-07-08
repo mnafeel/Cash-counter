@@ -58,36 +58,7 @@ jobs:
           publish_branch: gh-pages
           force_orphan: true
 
-  deploy-root:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout main
-        uses: actions/checkout@v4
-        with:
-          ref: main
-
-      - name: Download build
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-
-      - name: Publish built app to repo root for GitHub Pages
-        run: |
-          cp dist/index.html index.html
-          rm -rf assets
-          cp -r dist/assets assets
-          cp dist/favicon.svg favicon.svg
-          cp dist/.nojekyll .nojekyll
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add index.html assets favicon.svg .nojekyll
-          git diff --staged --quiet && echo "No root changes" && exit 0
-          git commit -m "deploy: publish built app to root [skip ci]"
-          git push
-
-  deploy-docs:
+  deploy-main:
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -103,14 +74,18 @@ jobs:
           name: dist
           path: dist
 
-      - name: Publish docs folder
+      - name: Publish built app to main branch
         run: |
           git pull origin main
-          rm -rf docs
+          cp dist/index.html index.html
+          rm -rf assets docs
+          cp -r dist/assets assets
           cp -r dist docs
+          cp dist/favicon.svg favicon.svg
+          cp dist/.nojekyll .nojekyll
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs
-          git diff --staged --quiet && echo "No docs changes" && exit 0
-          git commit -m "deploy: update docs site [skip ci]"
+          git add index.html assets docs favicon.svg .nojekyll
+          git diff --staged --quiet && echo "No changes" && exit 0
+          git commit -m "deploy: publish built app [skip ci]"
           git push
