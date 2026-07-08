@@ -65,12 +65,12 @@
 
 .counter-round {
   width: 100%;
-  min-height: 44px;
+  min-height: 32px;
   display: flex;
   align-items: center;
-  padding: 6px 8px;
+  padding: 4px 6px;
   background: var(--surface);
-  border: 2px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-sizing: border-box;
 }
@@ -79,7 +79,7 @@
   width: 100%;
   margin: 0;
   text-align: center;
-  font-size: 0.65rem;
+  font-size: 0.55rem;
   color: var(--text-muted);
   font-weight: 600;
 }
