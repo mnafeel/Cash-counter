@@ -95,7 +95,7 @@ export default function Counter() {
           {billAmount > 0 ? (
             <>
               <SuggestionChips
-                label="Round bill"
+                label="Round off bill"
                 amounts={billRoundSuggestions}
                 onSelect={(amt) => {
                   setBillStr(String(amt))
@@ -105,7 +105,7 @@ export default function Counter() {
                 compact
               />
               <SuggestionChips
-                label="Quick pay"
+                label="Customer pay (round)"
                 amounts={paymentSuggestions}
                 onSelect={(amt) => {
                   setPaidStr(String(amt))
