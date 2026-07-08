@@ -31,7 +31,6 @@ export default function RoundTypeChips({
             onClick={() => onSelect(option.amount)}
           >
             <span className="round-chip-amount">{formatMoney(option.amount)}</span>
-            <span className="round-chip-type">{option.typeLabel}</span>
           </button>
         ))}
       </div>
