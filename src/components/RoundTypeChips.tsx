@@ -32,7 +32,6 @@ export default function RoundTypeChips({
           >
             <span className="round-chip-amount">{formatMoney(option.amount)}</span>
             <span className="round-chip-type">{option.typeLabel}</span>
-            <span className="round-chip-saved">save {formatMoney(option.saved)}</span>
           </button>
         ))}
       </div>

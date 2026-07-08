@@ -1,11 +1,11 @@
 .round-type-chips {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .round-type-chips-label {
-  font-size: 0.85rem;
+  font-size: 0.65rem;
   color: var(--cream-dim);
   font-weight: 700;
   text-transform: uppercase;
@@ -15,20 +15,19 @@
 .round-type-chips-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 }
 
 .round-chip {
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
+  flex-direction: row;
   align-items: center;
-  gap: 1px;
-  padding: 8px 12px;
-  min-width: 72px;
-  min-height: 58px;
+  gap: 4px;
+  padding: 5px 10px;
+  min-height: 32px;
   background: var(--brown-dark);
-  border: 2px solid var(--border);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  border-radius: 999px;
   color: var(--cream);
   transition: background 0.15s, border-color 0.15s, transform 0.1s, color 0.15s;
 }
@@ -45,21 +44,15 @@
 }
 
 .round-chip-amount {
-  font-size: 1rem;
+  font-size: 0.8rem;
   font-weight: 800;
-  line-height: 1.1;
+  line-height: 1;
 }
 
 .round-chip-type {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   font-weight: 700;
-  opacity: 0.85;
-}
-
-.round-chip-saved {
-  font-size: 0.6rem;
-  font-weight: 600;
-  opacity: 0.75;
+  opacity: 0.8;
 }
 
 .round-type-chips--compact {
@@ -70,19 +63,17 @@
 }
 
 .round-type-chips--compact .round-type-chips-label {
-  font-size: 0.65rem;
+  font-size: 0.6rem;
   flex-shrink: 0;
 }
 
 .round-type-chips--compact .round-type-chips-row {
   flex-wrap: nowrap;
   overflow-x: auto;
-  gap: 6px;
+  gap: 5px;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  align-items: stretch;
-  flex: 1;
-  min-height: 0;
+  align-items: center;
 }
 
 .round-type-chips--compact .round-type-chips-row::-webkit-scrollbar {
@@ -91,19 +82,14 @@
 
 .round-type-chips--compact .round-chip {
   flex-shrink: 0;
-  min-width: 64px;
-  min-height: 52px;
-  padding: 6px 10px;
+  padding: 4px 8px;
+  min-height: 28px;
 }
 
 .round-type-chips--compact .round-chip-amount {
-  font-size: 0.9rem;
+  font-size: 0.75rem;
 }
 
 .round-type-chips--compact .round-chip-type {
-  font-size: 0.65rem;
-}
-
-.round-type-chips--compact .round-chip-saved {
-  font-size: 0.55rem;
+  font-size: 0.6rem;
 }

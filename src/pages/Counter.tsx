@@ -3,10 +3,9 @@ import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import NumPad from '../components/NumPad'
 import RoundTypeChips from '../components/RoundTypeChips'
-import SuggestionChips from '../components/SuggestionChips'
 import { formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
-import { getBillRoundOptions, getCustomerPayOptions } from '../utils/roundSuggestions'
+import { getBillRoundOptions } from '../utils/roundSuggestions'
 import './Counter.css'
 
 type ActiveField = 'bill' | 'paid'
@@ -24,7 +23,6 @@ export default function Counter() {
   const isValid = billAmount > 0 && paidAmount >= billAmount
   const needMore = billAmount > 0 && paidAmount > 0 && paidAmount < billAmount
 
-  const customerPayOptions = useMemo(() => getCustomerPayOptions(billAmount), [billAmount])
   const billRoundOptions = useMemo(() => getBillRoundOptions(billAmount), [billAmount])
 
   function handleNumpad(action: NumpadAction) {
@@ -94,30 +92,18 @@ export default function Counter() {
 
         <div className="counter-suggestions">
           {billAmount > 0 ? (
-            <>
-              <RoundTypeChips
-                label="Round off (minus)"
-                options={billRoundOptions}
-                onSelect={(amt) => {
-                  setBillStr(String(amt))
-                  setActiveField('bill')
-                }}
-                activeAmount={billAmount}
-                compact
-              />
-              <SuggestionChips
-                label="Customer pay amount"
-                amounts={customerPayOptions}
-                onSelect={(amt) => {
-                  setPaidStr(String(amt))
-                  setActiveField('paid')
-                }}
-                activeAmount={paidAmount}
-                compact
-              />
-            </>
+            <RoundTypeChips
+              label="Round off"
+              options={billRoundOptions}
+              onSelect={(amt) => {
+                setBillStr(String(amt))
+                setActiveField('bill')
+              }}
+              activeAmount={billAmount}
+              compact
+            />
           ) : (
-            <p className="counter-suggestions-empty">Enter bill amount to see suggestions</p>
+            <p className="counter-suggestions-empty">Enter bill amount to see round off</p>
           )}
         </div>
       </div>
