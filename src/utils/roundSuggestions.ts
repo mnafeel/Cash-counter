@@ -1,7 +1,3 @@
-function uniqueSorted(values: number[]): number[] {
-  return [...new Set(values)].sort((a, b) => a - b)
-}
-
 function roundDownTo(value: number, step: number): number {
   return Math.floor(value / step) * step
 }
@@ -10,32 +6,56 @@ function roundUpTo(value: number, step: number): number {
   return Math.ceil(value / step) * step
 }
 
-/** Round-off bill amounts — lower clean amounts (e.g. 169 → 165, 160, 150). */
-export function getBillRoundSuggestions(billAmount: number): number[] {
-  if (billAmount <= 0) return []
-
-  const suggestions: number[] = []
-
-  for (const step of [5, 10, 20, 50, 100, 200, 500, 1000]) {
-    const rounded = roundDownTo(billAmount, step)
-    if (rounded > 0 && rounded < billAmount) suggestions.push(rounded)
-  }
-
-  return uniqueSorted(suggestions)
-    .reverse()
-    .slice(0, 6)
+export interface RoundOption {
+  amount: number
+  typeLabel: string
+  saved: number
 }
 
-/** Round customer pay amounts — clean notes >= bill (e.g. bill 165 → 170, 200, 500). */
-export function getPaymentSuggestions(billAmount: number): number[] {
+const BILL_ROUND_STEPS = [5, 10, 20, 50, 100, 200, 500] as const
+
+/** Round-off bill down only (169 → 165, 160, 150…) with rounding type. */
+export function getBillRoundOptions(billAmount: number): RoundOption[] {
   if (billAmount <= 0) return []
 
-  const suggestions: number[] = []
+  const options: RoundOption[] = []
+  const seen = new Set<number>()
+
+  for (const step of BILL_ROUND_STEPS) {
+    const amount = roundDownTo(billAmount, step)
+    if (amount > 0 && amount < billAmount && !seen.has(amount)) {
+      seen.add(amount)
+      options.push({
+        amount,
+        typeLabel: `−${step}`,
+        saved: billAmount - amount,
+      })
+    }
+  }
+
+  return options.sort((a, b) => b.amount - a.amount).slice(0, 6)
+}
+
+/** Customer pay — round note amounts (>= current bill). */
+export function getCustomerPayOptions(billAmount: number): number[] {
+  if (billAmount <= 0) return []
+
+  const suggestions: number[] = [billAmount]
 
   for (const step of [5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000]) {
     const rounded = roundUpTo(billAmount, step)
     if (rounded >= billAmount) suggestions.push(rounded)
   }
 
-  return uniqueSorted(suggestions).slice(0, 8)
+  return [...new Set(suggestions)].sort((a, b) => a - b).slice(0, 8)
+}
+
+/** @deprecated use getBillRoundOptions */
+export function getBillRoundSuggestions(billAmount: number): number[] {
+  return getBillRoundOptions(billAmount).map((o) => o.amount)
+}
+
+/** @deprecated use getCustomerPayOptions */
+export function getPaymentSuggestions(billAmount: number): number[] {
+  return getCustomerPayOptions(billAmount)
 }

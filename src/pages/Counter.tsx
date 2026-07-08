@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import NumPad from '../components/NumPad'
+import RoundTypeChips from '../components/RoundTypeChips'
 import SuggestionChips from '../components/SuggestionChips'
 import { formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
-import { getBillRoundSuggestions, getPaymentSuggestions } from '../utils/roundSuggestions'
+import { getBillRoundOptions, getCustomerPayOptions } from '../utils/roundSuggestions'
 import './Counter.css'
 
 type ActiveField = 'bill' | 'paid'
@@ -23,8 +24,8 @@ export default function Counter() {
   const isValid = billAmount > 0 && paidAmount >= billAmount
   const needMore = billAmount > 0 && paidAmount > 0 && paidAmount < billAmount
 
-  const paymentSuggestions = useMemo(() => getPaymentSuggestions(billAmount), [billAmount])
-  const billRoundSuggestions = useMemo(() => getBillRoundSuggestions(billAmount), [billAmount])
+  const customerPayOptions = useMemo(() => getCustomerPayOptions(billAmount), [billAmount])
+  const billRoundOptions = useMemo(() => getBillRoundOptions(billAmount), [billAmount])
 
   function handleNumpad(action: NumpadAction) {
     if (activeField === 'bill') {
@@ -94,9 +95,9 @@ export default function Counter() {
         <div className="counter-suggestions">
           {billAmount > 0 ? (
             <>
-              <SuggestionChips
-                label="Round off bill"
-                amounts={billRoundSuggestions}
+              <RoundTypeChips
+                label="Round off (minus)"
+                options={billRoundOptions}
                 onSelect={(amt) => {
                   setBillStr(String(amt))
                   setActiveField('bill')
@@ -105,8 +106,8 @@ export default function Counter() {
                 compact
               />
               <SuggestionChips
-                label="Customer pay (round)"
-                amounts={paymentSuggestions}
+                label="Customer pay amount"
+                amounts={customerPayOptions}
                 onSelect={(amt) => {
                   setPaidStr(String(amt))
                   setActiveField('paid')
