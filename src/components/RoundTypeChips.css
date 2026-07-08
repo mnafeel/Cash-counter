@@ -1,50 +1,40 @@
 .round-type-chips {
+  width: 100%;
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-  min-height: 0;
-  padding: 0 2px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
 }
 
 .round-type-chips-label {
-  font-size: 0.55rem;
+  font-size: 0.6rem;
   color: var(--cream-dim);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
-  flex-shrink: 0;
-  white-space: nowrap;
+  letter-spacing: 0.04em;
+  text-align: center;
 }
 
 .round-type-chips-row {
   display: flex;
-  flex-wrap: nowrap;
-  gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-  align-items: center;
-  min-width: 0;
-  flex: 1;
-}
-
-.round-type-chips-row::-webkit-scrollbar {
-  display: none;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
 }
 
 .round-chip {
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  gap: 3px;
-  padding: 3px 7px;
-  min-height: 22px;
+  justify-content: center;
+  gap: 4px;
+  padding: 5px 10px;
+  min-height: 28px;
   background: var(--brown-dark);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   color: var(--cream);
-  flex-shrink: 0;
   transition: background 0.15s, border-color 0.15s, transform 0.1s, color 0.15s;
 }
 
@@ -60,34 +50,39 @@
 }
 
 .round-chip-amount {
-  font-size: 0.7rem;
+  font-size: 0.75rem;
   font-weight: 800;
   line-height: 1;
 }
 
 .round-chip-type {
-  font-size: 0.55rem;
+  font-size: 0.6rem;
   font-weight: 700;
-  opacity: 0.75;
+  opacity: 0.8;
 }
 
 .round-type-chips--compact {
-  gap: 5px;
+  gap: 3px;
 }
 
 .round-type-chips--compact .round-type-chips-label {
-  font-size: 0.5rem;
+  font-size: 0.55rem;
+}
+
+.round-type-chips--compact .round-type-chips-row {
+  gap: 5px;
 }
 
 .round-type-chips--compact .round-chip {
-  padding: 2px 6px;
-  min-height: 20px;
+  padding: 4px 8px;
+  min-height: 26px;
+  border-radius: 6px;
 }
 
 .round-type-chips--compact .round-chip-amount {
-  font-size: 0.65rem;
+  font-size: 0.7rem;
 }
 
 .round-type-chips--compact .round-chip-type {
-  font-size: 0.5rem;
+  font-size: 0.55rem;
 }

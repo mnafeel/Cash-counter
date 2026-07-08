@@ -63,6 +63,27 @@
   flex-direction: column;
 }
 
+.counter-round {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+}
+
+.counter-round-empty {
+  width: 100%;
+  margin: 0;
+  text-align: center;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 .counter-actions {
   display: flex;
   gap: 8px;
