@@ -16,6 +16,11 @@ export default function Layout() {
     <div className="layout layout--fit">
       <header className="header header--compact">
         <div className="header-top">
+          <img
+            className="app-logo"
+            src={`${import.meta.env.BASE_URL}icon.png`}
+            alt="Shalimar Fashions"
+          />
           <h1 className="app-title">Cash Counter</h1>
         </div>
         <nav className="nav">

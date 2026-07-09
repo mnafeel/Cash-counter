@@ -82,11 +82,12 @@ jobs:
           rm -rf assets docs
           cp -r dist/assets assets
           cp -r dist docs
-          cp dist/favicon.svg favicon.svg
+          cp dist/icon.png icon.png
+          cp dist/apple-touch-icon.png apple-touch-icon.png
           touch .nojekyll
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f index.html assets docs favicon.svg .nojekyll
+          git add -f index.html assets docs icon.png apple-touch-icon.png .nojekyll
           if git diff --staged --quiet; then
             echo "No changes to publish"
             exit 0
