@@ -81,6 +81,17 @@
   font-size: 0.95rem;
 }
 
+html[data-screen='tablet'] .expenses-top .amount-display--compact .amount-display-value,
+html[data-screen='tablet'] .expenses-top .big-amount--md .big-amount-value {
+  font-size: clamp(0.85rem, 2.8vmin, 1.15rem);
+}
+
+html[data-screen='tablet'] .expenses-actions .btn {
+  min-height: 34px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+
 @media (orientation: landscape) and (max-height: 520px) {
   .expenses-form {
     gap: 4px;

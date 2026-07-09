@@ -64,6 +64,25 @@
   flex-shrink: 0;
 }
 
+html[data-screen='tablet'] .settings-header h2 {
+  font-size: 1rem;
+}
+
+html[data-screen='tablet'] .settings-header p {
+  font-size: 0.72rem;
+}
+
+html[data-screen='tablet'] .settings-info {
+  padding: 8px 10px;
+  gap: 6px;
+}
+
+html[data-screen='tablet'] .settings-page > .btn {
+  min-height: 34px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+
 @media (max-height: 700px) {
   .settings-note {
     display: none;

@@ -4,8 +4,10 @@
 
 .numpad-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  width: 100%;
+  min-width: 0;
 }
 
 .numpad-key {
@@ -85,7 +87,11 @@
 }
 
 html[data-screen='tablet'] .numpad--compact .numpad-key {
-  font-size: clamp(1.1rem, 3.5vmin, 1.5rem);
+  font-size: clamp(0.85rem, 2.8vmin, 1.2rem);
+}
+
+html[data-screen='tablet'][data-landscape='true'] .numpad--compact .numpad-key {
+  font-size: clamp(0.8rem, 2.4vmin, 1.05rem);
 }
 
 html[data-screen='desktop'] .numpad--compact .numpad-key {
@@ -109,6 +115,10 @@ html[data-screen='desktop'] .numpad--compact .numpad-key {
 .numpad--compact .numpad-key--enter {
   min-height: 0;
   font-size: clamp(0.65rem, 2vw, 0.85rem);
+}
+
+html[data-screen='tablet'] .numpad--compact .numpad-key--enter {
+  font-size: clamp(0.6rem, 1.8vw, 0.75rem);
 }
 
 @media (min-width: 768px) {

@@ -138,23 +138,40 @@ html[data-screen='phone'] {
 
 /* Tablet / iPad — 768px to 1023px */
 html[data-screen='tablet'] {
-  --page-gap: 6px;
-  --key-gap: 5px;
-  --ui-pad: 10px;
+  --page-gap: 5px;
+  --key-gap: 4px;
+  --ui-pad: 8px;
 }
 
-/* Desktop — 1024px and up */
+html[data-screen='tablet'][data-short='true'],
+html[data-screen='tablet'][data-landscape='true'] {
+  --page-gap: 3px;
+  --key-gap: 2px;
+  --ui-pad: 5px;
+}
+
+/* Desktop — 1280px and up */
 html[data-screen='desktop'] {
   --page-gap: 8px;
   --key-gap: 6px;
   --ui-pad: 14px;
 }
 
-/* Short screen — height under 700px */
+/* Short screen — limited height */
 html[data-short='true'] {
   --page-gap: 3px;
   --key-gap: 2px;
   --ui-pad: 4px;
+}
+
+/* Tight fit — iPad and short screens */
+html[data-tight='true'] .number-keyboard-label {
+  display: none;
+}
+
+html[data-tight='true'] .number-keyboard {
+  padding: 4px;
+  gap: 2px;
 }
 
 /* Landscape mode */

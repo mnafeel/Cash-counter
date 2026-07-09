@@ -141,6 +141,9 @@
 .main--fit {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   padding: var(--ui-pad) var(--ui-pad) max(var(--ui-pad), env(safe-area-inset-bottom));
   overflow: hidden;
   display: flex;
@@ -163,6 +166,41 @@
     font-size: 0.75rem;
     padding: 6px 12px 8px;
   }
+}
+
+html[data-screen='tablet'] .layout--fit .header--compact {
+  padding: 4px 12px 0;
+  padding-top: max(4px, env(safe-area-inset-top));
+}
+
+html[data-screen='tablet'] .layout--fit .header--compact .header-top {
+  margin-bottom: 2px;
+}
+
+html[data-screen='tablet'] .layout--fit .header--compact .app-title {
+  font-size: 0.9rem;
+}
+
+html[data-screen='tablet'] .layout--fit .header--compact .header-balance-value {
+  font-size: 1rem;
+}
+
+html[data-screen='tablet'] .layout--fit .header--compact .header-balance-label {
+  font-size: 0.55rem;
+}
+
+html[data-screen='tablet'] .layout--fit .header--compact .nav-link {
+  padding: 4px 10px 6px;
+  font-size: 0.62rem;
+  min-width: 48px;
+}
+
+html[data-screen='tablet'] .layout--fit .header--compact .nav-icon {
+  font-size: 0.9rem;
+}
+
+html[data-screen='tablet'] .main--fit {
+  padding: var(--ui-pad) var(--ui-pad) max(var(--ui-pad), env(safe-area-inset-bottom));
 }
 
 @media (min-width: 1024px) {

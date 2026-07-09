@@ -1,6 +1,9 @@
 .counter-page {
   flex: 1;
   min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--page-gap);
@@ -9,9 +12,11 @@
 
 .counter-amounts {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--page-gap);
   flex-shrink: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .counter-middle {
@@ -36,6 +41,8 @@
   justify-content: center;
   gap: 2px;
   padding: 6px 4px;
+  min-width: 0;
+  width: 100%;
   background: var(--brown-dark);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -63,6 +70,10 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .counter-readonly-value {
@@ -91,12 +102,17 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .counter-split {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--page-gap);
+  min-width: 0;
+  width: 100%;
 }
 
 .counter-split .amount-display {
@@ -185,6 +201,50 @@
 
 .counter-actions .btn:disabled {
   opacity: 0.35;
+}
+
+html[data-screen='tablet'] .counter-amounts {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+html[data-screen='tablet'] .counter-readonly,
+html[data-screen='tablet'] .amount-display--compact {
+  padding: 4px 2px;
+}
+
+html[data-screen='tablet'] .counter-readonly-label,
+html[data-screen='tablet'] .amount-display--compact .amount-display-label {
+  font-size: 0.48rem;
+}
+
+html[data-screen='tablet'] .counter-readonly-value,
+html[data-screen='tablet'] .amount-display--compact .amount-display-value {
+  font-size: clamp(0.8rem, 2.8vmin, 1.2rem);
+}
+
+html[data-screen='tablet'] .counter-pay,
+html[data-screen='tablet'] .counter-box {
+  padding: 2px 4px;
+}
+
+html[data-screen='tablet'] .counter-round {
+  min-height: 22px;
+  padding: 2px 4px;
+}
+
+html[data-screen='tablet'] .counter-actions .btn {
+  min-height: 28px;
+  max-height: 28px;
+  font-size: 0.72rem;
+}
+
+html[data-screen='tablet'][data-landscape='true'] .counter-split {
+  gap: 2px;
+}
+
+html[data-screen='tablet'][data-short='true'] .counter-amounts,
+html[data-screen='tablet'][data-landscape='true'] .counter-amounts {
+  gap: 2px;
 }
 
 @media (max-width: 520px) {

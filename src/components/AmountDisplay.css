@@ -1,5 +1,6 @@
 .amount-display {
   width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -49,6 +50,10 @@
 .amount-display--compact .amount-display-label {
   font-size: 0.6rem;
   letter-spacing: 0.04em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .amount-display--compact .amount-display-value {
@@ -56,24 +61,18 @@
 }
 
 html[data-screen='tablet'] .amount-display--compact .amount-display-value {
-  font-size: clamp(1.1rem, 3.5vmin, 1.6rem);
+  font-size: clamp(0.8rem, 2.8vmin, 1.2rem);
 }
 
 html[data-screen='desktop'] .amount-display--compact .amount-display-value {
   font-size: clamp(1.2rem, 2.5vmin, 1.75rem);
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .amount-display:not(.amount-display--compact) {
     padding: 22px 20px;
   }
 
-  .amount-display:not(.amount-display--compact) .amount-display-value {
-    font-size: 3.5rem;
-  }
-}
-
-@media (min-width: 1024px) {
   .amount-display:not(.amount-display--compact) .amount-display-value {
     font-size: 4rem;
   }
