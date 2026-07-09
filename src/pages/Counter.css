@@ -81,6 +81,15 @@
   border-width: 2px;
 }
 
+.counter-readonly--live {
+  border-color: var(--cream);
+  background: var(--surface-2);
+}
+
+.counter-readonly--live .counter-readonly-value {
+  font-size: clamp(0.85rem, calc(var(--counter-height, 560px) * 0.028), 1.2rem);
+}
+
 .counter-readonly--ready {
   border-color: var(--cream);
   background: var(--surface-2);

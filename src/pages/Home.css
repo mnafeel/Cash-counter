@@ -88,9 +88,54 @@
 }
 
 .home-balances {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.home-balance-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
+}
+
+.home-transfers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.home-transfer-btn {
+  min-height: 34px;
+  padding: 6px 8px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--cream);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.home-transfer-btn:active {
+  transform: scale(0.98);
+  border-color: var(--cream);
+}
+
+.home-panel-available {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+}
+
+.home-panel-error {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--danger-text);
 }
 
 .home-balance-card {
@@ -100,6 +145,142 @@
   padding: 10px 12px;
   text-align: center;
   box-shadow: var(--shadow);
+}
+
+.home-balance-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.home-balance-head .home-hero-label {
+  margin-bottom: 0;
+  text-align: left;
+}
+
+.home-add-btn {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cream);
+  background: #2d6a4f;
+  border: 1px solid #40916c;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.home-add-btn:active {
+  transform: scale(0.97);
+}
+
+.home-add-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 8px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  background: rgba(20, 10, 6, 0.72);
+}
+
+.home-add-panel {
+  width: 100%;
+  max-width: 480px;
+  max-height: min(92vh, 640px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--brown);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.home-add-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-add-panel-head h3 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--cream);
+}
+
+.home-add-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: var(--cream-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.home-add-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.home-add-note-label {
+  font-size: 0.48rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.home-add-note-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--cream);
+  outline: none;
+}
+
+.home-add-note-input--active,
+.home-add-note-input:focus {
+  border-color: var(--cream);
+}
+
+.home-add-keyboard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-add-keyboard .number-keyboard {
+  flex: 1;
+  min-height: 0;
+}
+
+.home-add-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.home-add-actions .btn {
+  flex: 1;
+  min-height: 42px;
+  font-size: 0.82rem;
+  font-weight: 700;
 }
 
 .home-balance-card--bank {

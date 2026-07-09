@@ -6,10 +6,11 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { AppData, ExpenseKind, ExpensePayType, PayType, Sale, SaleStatus } from '../types'
+import type { AppData, ExpenseKind, ExpensePayType, PayType, Sale, SaleStatus, TransferDirection } from '../types'
 import {
   addExpense,
   addSale,
+  addTransfer,
   deleteExpense,
   deleteSale,
   getBankBalance,
@@ -43,6 +44,11 @@ interface CashContextValue {
     name: string
     payType: ExpensePayType
     kind?: ExpenseKind
+  }) => void
+  recordTransfer: (transfer: {
+    amount: number
+    name: string
+    direction: TransferDirection
   }) => void
   updateOpeningBalance: (amount: number) => void
   updateOpeningBankBalance: (amount: number) => void
@@ -100,6 +106,19 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const recordTransfer = useCallback(
+    (transfer: { amount: number; name: string; direction: TransferDirection }) => {
+      setData((prev) =>
+        addTransfer(prev, {
+          amount: transfer.amount,
+          name: transfer.name.trim(),
+          direction: transfer.direction,
+        }),
+      )
+    },
+    [],
+  )
+
   const updateOpeningBankBalance = useCallback((amount: number) => {
     setData((prev) => setOpeningBankBalance(prev, amount))
   }, [])
@@ -128,6 +147,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       pendingBills,
       recordSale,
       recordExpense,
+      recordTransfer,
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
@@ -142,6 +162,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       pendingBills,
       recordSale,
       recordExpense,
+      recordTransfer,
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,

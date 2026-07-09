@@ -17,7 +17,8 @@ export interface Sale {
 }
 
 export type ExpensePayType = Extract<PayType, 'cash' | 'bank'>
-export type ExpenseKind = 'expense' | 'add'
+export type ExpenseKind = 'expense' | 'add' | 'transfer'
+export type TransferDirection = 'cash-to-bank' | 'bank-to-cash'
 
 export interface Expense {
   id: string
@@ -25,6 +26,7 @@ export interface Expense {
   name: string
   payType: ExpensePayType
   kind?: ExpenseKind
+  transferDirection?: TransferDirection
   /** @deprecated legacy field — migrated to name */
   note?: string
   createdAt: string

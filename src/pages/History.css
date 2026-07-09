@@ -18,6 +18,63 @@
   font-size: 0.8rem;
 }
 
+.history-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-search {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--cream);
+  outline: none;
+}
+
+.history-search::placeholder {
+  color: var(--text-muted);
+}
+
+.history-search:focus {
+  border-color: var(--cream);
+}
+
+.history-filters,
+.history-sorts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.history-chip {
+  padding: 5px 10px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--cream-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.history-chip--sort {
+  font-size: 0.62rem;
+}
+
+.history-chip--active {
+  color: var(--cream);
+  border-color: var(--cream);
+  background: var(--brown-dark);
+}
+
 .history-empty {
   flex: 1;
   display: flex;
@@ -63,12 +120,17 @@
 
 .history-item--sale,
 .history-item--expense,
-.history-item--deposit {
+.history-item--deposit,
+.history-item--transfer {
   border-left: 3px solid var(--cream);
 }
 
 .history-item--deposit {
   border-left-color: #40916c;
+}
+
+.history-item--transfer {
+  border-left-color: #74c0fc;
 }
 
 .history-item-main {
@@ -140,6 +202,10 @@
 
 .history-item-amount.positive {
   color: #95d5b2;
+}
+
+.history-item-amount.neutral {
+  color: #74c0fc;
 }
 
 .history-delete {

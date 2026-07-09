@@ -7,40 +7,6 @@
   overflow: hidden;
 }
 
-.expenses-kind {
-  flex-shrink: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
-
-.expenses-kind-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: clamp(38px, calc(var(--counter-height, 560px) * 0.075), 48px);
-  padding: 6px 10px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: clamp(0.72rem, calc(var(--counter-height, 560px) * 0.016), 0.88rem);
-  font-weight: 700;
-  color: var(--cream-dim);
-  cursor: pointer;
-}
-
-.expenses-kind-btn--active {
-  border-color: var(--cream);
-  color: var(--cream);
-  background: var(--brown-dark);
-  box-shadow: 0 0 0 1px var(--cream);
-}
-
-.expenses-kind-icon {
-  font-size: 1rem;
-}
-
 .expenses-top {
   flex-shrink: 0;
   display: grid;

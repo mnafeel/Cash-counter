@@ -3,7 +3,7 @@ import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
-import type { ExpenseKind, ExpensePayType } from '../types'
+import type { ExpensePayType } from '../types'
 import { parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import './Expenses.css'
@@ -21,7 +21,6 @@ export default function Expenses() {
   const { recordExpense } = useCash()
   const [amountStr, setAmountStr] = useState('')
   const [name, setName] = useState('')
-  const [kind, setKind] = useState<ExpenseKind>('expense')
   const [payType, setPayType] = useState<ExpensePayType>('cash')
   const [activeField, setActiveField] = useState<ExpenseField>('name')
   const [saved, setSaved] = useState(false)
@@ -30,11 +29,10 @@ export default function Expenses() {
 
   const amount = parseAmount(amountStr)
   const isValid = amount > 0 && name.trim().length > 0
-  const isAdd = kind === 'add'
 
   function handleSave() {
     if (!isValid || saved) return
-    recordExpense({ amount, name: name.trim(), payType, kind })
+    recordExpense({ amount, name: name.trim(), payType, kind: 'expense' })
     setSaved(true)
     setTimeout(() => {
       setAmountStr('')
@@ -80,28 +78,9 @@ export default function Expenses() {
 
   return (
     <div className="expenses-page">
-      <div className="expenses-kind">
-        <button
-          type="button"
-          className={`expenses-kind-btn ${kind === 'expense' ? 'expenses-kind-btn--active' : ''}`}
-          onClick={() => setKind('expense')}
-        >
-          <span className="expenses-kind-icon">📤</span>
-          <span>Expense</span>
-        </button>
-        <button
-          type="button"
-          className={`expenses-kind-btn ${kind === 'add' ? 'expenses-kind-btn--active' : ''}`}
-          onClick={() => setKind('add')}
-        >
-          <span className="expenses-kind-icon">📥</span>
-          <span>Add Money</span>
-        </button>
-      </div>
-
       <div className="expenses-top">
         <label className="expense-name">
-          <span className="expense-name-label">{isAdd ? 'Description' : 'Expense Name'}</span>
+          <span className="expense-name-label">Expense Name</span>
           <input
             ref={nameInputRef}
             type="text"
@@ -115,15 +94,13 @@ export default function Expenses() {
                 handleEnter()
               }
             }}
-            placeholder={
-              isAdd ? 'Required — e.g. Opening cash, Bank deposit' : 'Required — e.g. Supplies, Rent'
-            }
+            placeholder="Required — e.g. Supplies, Rent"
             autoComplete="off"
           />
         </label>
 
         <AmountDisplay
-          label={isAdd ? 'Amount to Add' : 'Expense Amount'}
+          label="Expense Amount"
           value={amountStr}
           active={activeField === 'amount'}
           onSelect={() => focusField('amount')}
@@ -151,7 +128,7 @@ export default function Expenses() {
             focusField('pay')
           }}
           options={['cash', 'bank']}
-          label={isAdd ? 'Add To' : 'Paid From'}
+          label="Paid From"
         />
       </div>
 
@@ -165,17 +142,11 @@ export default function Expenses() {
         </button>
         <button
           type="button"
-          className={`btn ${isAdd ? 'btn-success' : 'btn-danger'} ${saved ? 'btn-saved' : ''}`}
+          className={`btn btn-danger ${saved ? 'btn-saved' : ''}`}
           onClick={handleSave}
           disabled={!isValid || saved}
         >
-          {saved
-            ? '✓ Saved'
-            : isAdd
-              ? payType === 'bank'
-                ? 'Add to Bank'
-                : 'Add to Counter'
-              : 'Record Expense'}
+          {saved ? '✓ Saved' : 'Record Expense'}
         </button>
       </div>
     </div>

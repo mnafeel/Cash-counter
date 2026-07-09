@@ -60,21 +60,25 @@ export default function Counter() {
   const splitPaidTotal = cashSplitAmount + bankSplitAmount
   const customerPaidAmount = payType === 'split' ? splitPaidTotal : paidAmount
 
+  const paidForReturn =
+    payType === 'split'
+      ? cashSplitAmount
+      : paymentStep
+        ? paidAmount
+        : dueAmount
+
   const changeAmount =
     payType === 'bank' || payType === 'credit'
       ? 0
-      : payType === 'split'
-        ? Math.max(0, giveAmount - cashSplitAmount)
-        : Math.max(0, giveAmount - paidAmount)
+      : Math.max(0, giveAmount - paidForReturn)
 
   const needMore =
-    paymentStep &&
     needsGive(payType) &&
-    (payType === 'cash'
-      ? paidAmount > 0 && giveAmount > 0 && giveAmount < paidAmount
-      : payType === 'split'
-        ? cashSplitAmount > 0 && giveAmount > 0 && giveAmount < cashSplitAmount
-        : false)
+    giveAmount > 0 &&
+    paidForReturn > 0 &&
+    giveAmount < paidForReturn
+
+  const shortfallAmount = needMore ? paidForReturn - giveAmount : 0
 
   const splitMismatch =
     paymentStep &&
@@ -82,6 +86,17 @@ export default function Counter() {
     splitPaidTotal > 0 &&
     paidAmount > 0 &&
     splitPaidTotal !== paidAmount
+
+  const showReturnLive =
+    needsGive(payType) && giveAmount > 0 && paidForReturn > 0 && !splitMismatch
+
+  const returnDisplay = (() => {
+    if (payType === 'bank' || payType === 'credit') return '—'
+    if (splitMismatch) return '≠'
+    if (needMore) return `+${formatMoney(shortfallAmount)}`
+    if (showReturnLive) return formatMoney(changeAmount)
+    return '—'
+  })()
 
   const isValid =
     paymentStep &&
@@ -306,18 +321,10 @@ export default function Counter() {
               </div>
             )}
             <div
-              className={`counter-readonly counter-readonly--return ${isValid ? 'counter-readonly--ready' : ''} ${needMore || splitMismatch ? 'counter-readonly--warn' : ''}`}
+              className={`counter-readonly counter-readonly--return ${showReturnLive && changeAmount > 0 && !needMore ? 'counter-readonly--ready' : ''} ${needMore || splitMismatch ? 'counter-readonly--warn' : ''} ${(activeField === 'give' || activeField === 'paid' || activeField === 'cashSplit') && showReturnLive ? 'counter-readonly--live' : ''}`}
             >
               <span className="counter-readonly-label">Return</span>
-              <span className="counter-readonly-value">
-                {splitMismatch
-                  ? '≠'
-                  : needMore
-                    ? `+${formatMoney((payType === 'split' ? cashSplitAmount : paidAmount) - giveAmount)}`
-                    : paymentStep && needsGive(payType) && (isValid || changeAmount > 0)
-                      ? formatMoney(changeAmount)
-                      : '—'}
-              </span>
+              <span className="counter-readonly-value">{returnDisplay}</span>
             </div>
           </div>
 

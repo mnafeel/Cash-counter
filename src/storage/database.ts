@@ -1,4 +1,4 @@
-import type { AppData, Expense, Sale } from '../types'
+import type { AppData, Expense, Sale, TransferDirection } from '../types'
 import { STORAGE_KEY } from '../types'
 import { normalizePin } from '../utils/numpad'
 
@@ -24,7 +24,14 @@ export function loadData(): AppData {
         ...e,
         name: e.name ?? e.note ?? 'Expense',
         payType: e.payType === 'bank' ? 'bank' : 'cash',
-        kind: e.kind === 'add' ? 'add' : 'expense',
+        kind:
+          e.kind === 'add' ? 'add' : e.kind === 'transfer' ? 'transfer' : 'expense',
+        transferDirection:
+          e.kind === 'transfer'
+            ? e.transferDirection === 'bank-to-cash'
+              ? 'bank-to-cash'
+              : 'cash-to-bank'
+            : undefined,
       })),
     }
   } catch {
@@ -48,6 +55,11 @@ export function getPendingBills(data: AppData): Sale[] {
 }
 
 function expenseCashToDrawer(expense: Expense): number {
+  if (expense.kind === 'transfer') {
+    if (expense.transferDirection === 'cash-to-bank') return expense.amount
+    if (expense.transferDirection === 'bank-to-cash') return -expense.amount
+    return 0
+  }
   if (expense.payType === 'bank') return 0
   return expense.kind === 'add' ? -expense.amount : expense.amount
 }
@@ -60,6 +72,11 @@ function saleBankToBalance(sale: Sale): number {
 }
 
 function expenseBankToBalance(expense: Expense): number {
+  if (expense.kind === 'transfer') {
+    if (expense.transferDirection === 'cash-to-bank') return -expense.amount
+    if (expense.transferDirection === 'bank-to-cash') return expense.amount
+    return 0
+  }
   if (expense.payType !== 'bank') return 0
   return expense.kind === 'add' ? -expense.amount : expense.amount
 }
@@ -84,6 +101,24 @@ export function addSale(data: AppData, sale: Omit<Sale, 'id' | 'createdAt'>): Ap
     createdAt: new Date().toISOString(),
   }
   const next = { ...data, sales: [newSale, ...data.sales] }
+  saveData(next)
+  return next
+}
+
+export function addTransfer(
+  data: AppData,
+  transfer: { amount: number; name: string; direction: TransferDirection },
+): AppData {
+  const newTransfer: Expense = {
+    id: crypto.randomUUID(),
+    amount: transfer.amount,
+    name: transfer.name.trim(),
+    payType: transfer.direction === 'cash-to-bank' ? 'cash' : 'bank',
+    kind: 'transfer',
+    transferDirection: transfer.direction,
+    createdAt: new Date().toISOString(),
+  }
+  const next = { ...data, expenses: [newTransfer, ...data.expenses] }
   saveData(next)
   return next
 }
