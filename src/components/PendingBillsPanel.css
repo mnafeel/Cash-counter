@@ -1,11 +1,11 @@
 .pending-bills {
   flex-shrink: 0;
-  width: clamp(88px, 20vw, 140px);
+  width: clamp(120px, 30vw, 220px);
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
+  gap: 6px;
+  padding: 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -16,14 +16,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding-bottom: 4px;
+  gap: 4px;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 
 .pending-bills-title {
-  font-size: 0.5rem;
+  font-size: 0.62rem;
   font-weight: 800;
   color: var(--cream-dim);
   text-transform: uppercase;
@@ -31,7 +31,7 @@
 }
 
 .pending-bills-total {
-  font-size: clamp(0.65rem, calc(var(--app-height, 800px) * 0.022), 0.85rem);
+  font-size: clamp(0.85rem, calc(var(--app-height, 800px) * 0.028), 1.1rem);
   font-weight: 800;
   color: var(--cream);
   line-height: 1.1;
@@ -44,11 +44,11 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  font-size: 0.45rem;
+  font-size: 0.55rem;
   color: var(--text-muted);
   font-weight: 600;
   line-height: 1.3;
-  padding: 8px 4px;
+  padding: 12px 6px;
 }
 
 .pending-bills-list {
@@ -58,14 +58,14 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   -webkit-overflow-scrolling: touch;
 }
 
 .pending-bills-item {
   display: flex;
   align-items: stretch;
-  gap: 2px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -76,11 +76,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  padding: 4px 2px;
+  gap: 2px;
+  padding: 8px 4px;
   background: var(--brown-dark);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--cream);
   transition: background 0.15s, border-color 0.15s;
 }
@@ -91,13 +91,13 @@
 }
 
 .pending-bills-amount {
-  font-size: clamp(0.6rem, calc(var(--app-height, 800px) * 0.02), 0.75rem);
+  font-size: clamp(0.75rem, calc(var(--app-height, 800px) * 0.026), 0.95rem);
   font-weight: 800;
   line-height: 1.1;
 }
 
 .pending-bills-name {
-  font-size: 0.42rem;
+  font-size: 0.52rem;
   color: var(--cream);
   font-weight: 600;
   line-height: 1.1;
@@ -108,7 +108,7 @@
 }
 
 .pending-bills-time {
-  font-size: 0.42rem;
+  font-size: 0.48rem;
   color: var(--cream-dim);
   font-weight: 600;
   line-height: 1;
@@ -116,15 +116,15 @@
 
 .pending-bills-delete {
   flex-shrink: 0;
-  width: 22px;
+  width: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: rgba(139, 58, 58, 0.25);
   border: 1px solid var(--danger);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--danger-text);
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   font-weight: 700;
 }
 
@@ -133,14 +133,15 @@
 }
 
 html[data-screen='desktop'] .pending-bills {
-  width: clamp(120px, 16vw, 160px);
+  width: clamp(180px, 24vw, 280px);
+  padding: 10px;
 }
 
 html[data-screen='phone'] .pending-bills {
-  width: clamp(72px, 22vw, 96px);
-  padding: 4px;
+  width: clamp(100px, 32vw, 130px);
+  padding: 6px;
 }
 
 html[data-screen='phone'] .pending-bills-title {
-  font-size: 0.42rem;
+  font-size: 0.52rem;
 }

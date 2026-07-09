@@ -247,7 +247,13 @@ export default function Counter() {
   }
 
   const saveLabel =
-    payType === 'credit' ? (saved ? '✓ Saved' : 'Save Credit') : saved ? '✓ Saved' : 'Save & Collect'
+    payType === 'credit'
+      ? saved
+        ? '✓ Saved'
+        : 'Save\nCredit'
+      : saved
+        ? '✓ Saved'
+        : 'Save &\nCollect'
 
   return (
     <div className="counter-page">
@@ -385,7 +391,7 @@ export default function Counter() {
               onClick={handleSavePending}
               disabled={!canSavePending}
             >
-              {saved ? '✓ Saved' : 'Bill Pending'}
+              {saved ? '✓ Saved' : 'Bill\nPending'}
             </button>
             <button
               type="button"

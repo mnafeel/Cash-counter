@@ -29,6 +29,10 @@
   overflow: hidden;
 }
 
+.counter-main > * {
+  flex-shrink: 0;
+}
+
 .counter-amounts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -46,8 +50,9 @@
 }
 
 .counter-keyboard-wrap {
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 0;
+  min-height: 72px;
+  max-height: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -242,16 +247,28 @@
   gap: 6px;
   flex-shrink: 0;
   padding-top: 2px;
+  padding-bottom: max(2px, env(safe-area-inset-bottom));
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .counter-actions .btn {
-  min-height: 32px;
-  max-height: 32px;
-  padding: 0 10px;
-  font-size: 0.8rem;
+  min-height: 44px;
+  height: auto;
+  max-height: 52px;
+  padding: 4px 4px;
+  font-size: clamp(0.62rem, 2.4vw, 0.85rem);
   font-weight: 700;
   border-radius: 6px;
   flex: 1;
+  min-width: 0;
+  line-height: 1.1;
+  white-space: pre-line;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   transition: opacity 0.15s, background 0.15s;
@@ -284,13 +301,15 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
+  width: 100%;
 }
 
 .counter-actions--3 .btn {
-  min-height: 32px;
-  max-height: 32px;
-  padding: 0 4px;
-  font-size: clamp(0.6rem, 2.5vw, 0.75rem);
+  min-height: 44px;
+  height: auto;
+  max-height: 52px;
+  padding: 4px 2px;
+  font-size: clamp(0.58rem, 2.2vw, 0.82rem);
 }
 
 .counter-actions .btn-pending:not(:disabled) {
@@ -334,9 +353,13 @@ html[data-screen='tablet'] .counter-round {
 }
 
 html[data-screen='tablet'] .counter-actions .btn {
-  min-height: 28px;
-  max-height: 28px;
-  font-size: 0.72rem;
+  min-height: 40px;
+  max-height: 48px;
+  font-size: clamp(0.55rem, 2vw, 0.75rem);
+}
+
+html[data-screen='tablet'] .counter-keyboard-wrap {
+  min-height: 64px;
 }
 
 html[data-screen='tablet'][data-landscape='true'] .counter-split {
@@ -359,9 +382,13 @@ html[data-screen='desktop'] .amount-display--compact .amount-display-value {
 }
 
 html[data-screen='desktop'] .counter-actions .btn {
-  min-height: 36px;
-  max-height: 36px;
-  font-size: 0.85rem;
+  min-height: 48px;
+  max-height: 56px;
+  font-size: clamp(0.72rem, 1.4vw, 0.92rem);
+}
+
+html[data-screen='desktop'] .counter-keyboard-wrap {
+  min-height: 80px;
 }
 
 html[data-screen='desktop'] .counter-round {
@@ -369,9 +396,19 @@ html[data-screen='desktop'] .counter-round {
   padding: 6px 8px;
 }
 
-html[data-screen='desktop'] .counter-keyboard-wrap {
+.counter-keyboard-wrap .number-keyboard {
   flex: 1;
   min-height: 0;
+  max-height: 100%;
+  padding: 3px;
+}
+
+.counter-keyboard-wrap .numpad--compact .numpad-key {
+  font-size: clamp(0.7rem, calc(var(--app-height, 800px) * 0.028), 1.1rem);
+}
+
+.counter-keyboard-wrap .numpad--compact .numpad-key--enter {
+  font-size: clamp(0.55rem, 1.6vw, 0.7rem);
 }
 
 @media (max-width: 520px) {
@@ -390,8 +427,12 @@ html[data-screen='desktop'] .counter-keyboard-wrap {
   }
 
   .counter-actions .btn {
-    min-height: 28px;
-    max-height: 28px;
-    font-size: 0.75rem;
+    min-height: 38px;
+    max-height: 46px;
+    font-size: clamp(0.52rem, 2.5vw, 0.72rem);
+  }
+
+  .counter-keyboard-wrap {
+    min-height: 56px;
   }
 }
