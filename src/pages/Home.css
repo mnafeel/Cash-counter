@@ -156,43 +156,49 @@ html[data-screen='tablet'] .home-card-text p {
   font-size: 0.6rem;
 }
 
-@media (min-width: 1024px) {
-  .home {
-    gap: 8px;
-  }
+html[data-screen='tablet'] .home-grid,
+html[data-screen='desktop'] .home-grid {
+  align-content: stretch;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+}
 
-  .home-hero {
-    padding: 16px 18px;
-  }
+html[data-screen='tablet'] .home-card,
+html[data-screen='desktop'] .home-card {
+  min-height: 0;
+}
 
-  .home-hero .big-amount--xl .big-amount-value {
-    font-size: clamp(2.25rem, 6vw, 3.5rem);
-  }
+html[data-screen='desktop'] .home-hero {
+  padding: 12px 14px;
+}
 
-  .stat-card {
-    padding: 12px 14px;
-  }
+html[data-screen='desktop'] .home-hero .big-amount--xl .big-amount-value {
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+}
 
-  .stat-value {
-    font-size: 1.5rem;
-  }
+html[data-screen='desktop'] .stat-card {
+  padding: 10px 12px;
+}
 
-  .home-card {
-    padding: 14px;
-    gap: 12px;
-  }
+html[data-screen='desktop'] .stat-value {
+  font-size: clamp(1rem, 2.5vw, 1.35rem);
+}
 
-  .home-card-icon {
-    font-size: 1.75rem;
-  }
+html[data-screen='desktop'] .home-card {
+  padding: 10px;
+  gap: 8px;
+}
 
-  .home-card-text h2 {
-    font-size: 0.95rem;
-  }
+html[data-screen='desktop'] .home-card-icon {
+  font-size: 1.35rem;
+}
 
-  .home-card-text p {
-    font-size: 0.75rem;
-  }
+html[data-screen='desktop'] .home-card-text h2 {
+  font-size: 0.85rem;
+}
+
+html[data-screen='desktop'] .home-card-text p {
+  font-size: 0.68rem;
 }
 
 @media (orientation: landscape) and (max-height: 520px) {

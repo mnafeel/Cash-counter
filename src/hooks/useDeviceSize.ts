@@ -31,7 +31,9 @@ function applyDeviceAttrs(width: number, height: number) {
   root.dataset.screen = screen
   root.dataset.short = short ? 'true' : 'false'
   root.dataset.landscape = landscape ? 'true' : 'false'
-  root.dataset.tight = screen === 'tablet' || short ? 'true' : 'false'
+  root.dataset.tight = 'true'
+  root.style.setProperty('--app-height', `${Math.round(height)}px`)
+  root.style.setProperty('--app-width', `${Math.round(width)}px`)
 }
 
 export function useDeviceSize() {

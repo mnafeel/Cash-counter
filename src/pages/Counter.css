@@ -204,7 +204,7 @@
 }
 
 html[data-screen='tablet'] .counter-amounts {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 html[data-screen='tablet'] .counter-readonly,
@@ -245,6 +245,31 @@ html[data-screen='tablet'][data-landscape='true'] .counter-split {
 html[data-screen='tablet'][data-short='true'] .counter-amounts,
 html[data-screen='tablet'][data-landscape='true'] .counter-amounts {
   gap: 2px;
+}
+
+html[data-screen='desktop'] .counter-readonly,
+html[data-screen='desktop'] .amount-display--compact {
+  padding: 6px 4px;
+}
+
+html[data-screen='desktop'] .counter-readonly-value,
+html[data-screen='desktop'] .amount-display--compact .amount-display-value {
+  font-size: clamp(1rem, 2.5vmin, 1.5rem);
+}
+
+html[data-screen='desktop'] .counter-actions .btn {
+  min-height: 36px;
+  max-height: 36px;
+  font-size: 0.85rem;
+}
+
+html[data-screen='desktop'] .counter-round {
+  min-height: 26px;
+}
+
+html[data-screen='desktop'] .counter-keyboard-wrap {
+  flex: 1;
+  min-height: 0;
 }
 
 @media (max-width: 520px) {

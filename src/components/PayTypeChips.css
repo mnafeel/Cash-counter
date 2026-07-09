@@ -73,6 +73,14 @@ html[data-screen='tablet'] .pay-type-chip-label {
   font-size: 0.5rem;
 }
 
+html[data-screen='desktop'] .pay-type-chip {
+  min-height: 32px;
+}
+
+html[data-screen='desktop'] .numpad--compact .numpad-key {
+  font-size: clamp(1rem, 2.5vmin, 1.45rem);
+}
+
 @media (orientation: landscape) and (max-height: 520px) {
   .pay-type-chip {
     min-height: 26px;
