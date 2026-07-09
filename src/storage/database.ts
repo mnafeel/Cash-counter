@@ -26,8 +26,14 @@ export function saveData(data: AppData): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
 }
 
+function saleCashToDrawer(sale: Sale): number {
+  if (sale.payType === 'bank') return 0
+  if (sale.payType === 'split') return sale.cashAmount ?? 0
+  return sale.billAmount
+}
+
 export function getCurrentBalance(data: AppData): number {
-  const salesTotal = data.sales.reduce((sum, s) => sum + s.billAmount, 0)
+  const salesTotal = data.sales.reduce((sum, s) => sum + saleCashToDrawer(s), 0)
   const expensesTotal = data.expenses.reduce((sum, e) => sum + e.amount, 0)
   return data.openingBalance + salesTotal - expensesTotal
 }

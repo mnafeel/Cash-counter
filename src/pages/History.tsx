@@ -6,14 +6,26 @@ export default function History() {
   const { data, removeSale, removeExpense } = useCash()
 
   const items = [
-    ...data.sales.map((s) => ({
-      type: 'sale' as const,
-      id: s.id,
-      amount: s.billAmount,
-      sub: `Paid ${formatMoney(s.paidAmount)} · Change ${formatMoney(s.changeAmount)}`,
-      name: s.customerName,
-      date: s.createdAt,
-    })),
+    ...data.sales.map((s) => {
+      const payLabel =
+        s.payType === 'bank'
+          ? '🏦 Bank'
+          : s.payType === 'split'
+            ? `💵 ${formatMoney(s.cashAmount ?? 0)} · 🏦 ${formatMoney(s.bankAmount ?? 0)}`
+            : '💵 Cash'
+      const orig =
+        s.originalBillAmount && s.originalBillAmount !== s.billAmount
+          ? `Bill ${formatMoney(s.originalBillAmount)} → `
+          : ''
+      return {
+        type: 'sale' as const,
+        id: s.id,
+        amount: s.billAmount,
+        sub: `${orig}Give ${formatMoney(s.paidAmount)} · ${payLabel} · Change ${formatMoney(s.changeAmount)}`,
+        name: s.customerName,
+        date: s.createdAt,
+      }
+    }),
     ...data.expenses.map((e) => ({
       type: 'expense' as const,
       id: e.id,

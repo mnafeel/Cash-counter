@@ -1,0 +1,74 @@
+.pay-type-chips {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pay-type-chips-label {
+  font-size: 0.5rem;
+  color: var(--cream-dim);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  text-align: center;
+}
+
+.pay-type-chips-row {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+}
+
+.pay-type-chip {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 4px 6px;
+  min-height: 32px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--cream);
+  transition: background 0.15s, border-color 0.15s, transform 0.1s, color 0.15s;
+}
+
+.pay-type-chip:active {
+  transform: scale(0.96);
+}
+
+.pay-type-chip--active {
+  background: var(--cream);
+  border-color: var(--cream);
+  color: var(--text-on-cream);
+}
+
+.pay-type-chip-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.pay-type-chip-label {
+  font-size: 0.55rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .pay-type-chip {
+    min-height: 26px;
+    padding: 2px 4px;
+  }
+
+  .pay-type-chip-icon {
+    font-size: 0.75rem;
+  }
+
+  .pay-type-chip-label {
+    font-size: 0.5rem;
+  }
+}

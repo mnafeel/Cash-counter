@@ -1,20 +1,35 @@
 .counter-page {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: var(--page-gap);
   overflow: hidden;
 }
 
-.counter-top {
+.counter-amounts {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--page-gap);
   flex-shrink: 0;
 }
 
-.counter-change {
+.counter-middle {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--page-gap);
+}
+
+.counter-keyboard-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.counter-readonly {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -22,91 +37,174 @@
   gap: 2px;
   padding: 6px 4px;
   background: var(--brown-dark);
-  border: 2px solid var(--border);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   text-align: center;
 }
 
-.counter-change--ready {
+.counter-readonly--return {
+  border-width: 2px;
+}
+
+.counter-readonly--ready {
   border-color: var(--cream);
   background: var(--surface-2);
 }
 
-.counter-change--warn {
+.counter-readonly--warn {
   border-color: var(--danger);
   background: rgba(139, 58, 58, 0.25);
 }
 
-.counter-change-label {
-  font-size: 0.65rem;
+.counter-readonly-label {
+  font-size: 0.55rem;
   font-weight: 700;
   color: var(--cream-dim);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
 }
 
-.counter-change-value {
-  font-size: clamp(0.9rem, 4.5vmin, 1.6rem);
+.counter-readonly-value {
+  font-size: clamp(0.75rem, 3.5vmin, 1.1rem);
   font-weight: 800;
   color: var(--cream);
   line-height: 1.1;
 }
 
-.counter-change--warn .counter-change-value {
-  color: var(--danger-text);
-  font-size: clamp(0.9rem, 3vw, 1.2rem);
+.counter-readonly--mirror {
+  border-color: var(--cream-dim);
+  background: var(--surface-2);
+}
+
+.counter-box {
+  flex-shrink: 0;
+  padding: 4px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.counter-pay {
+  flex-shrink: 0;
+  padding: 4px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.counter-split {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--page-gap);
+}
+
+.counter-split .amount-display {
+  border: none;
+  background: transparent;
+  padding: 4px 2px;
+}
+
+.counter-split .amount-display--active {
+  box-shadow: none;
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+}
+
+@media (max-width: 520px) {
+  .counter-split {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .counter-split .amount-display:last-child {
+    grid-column: span 2;
+  }
+}
+
+.counter-round {
+  width: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .counter-round-empty {
   width: 100%;
   margin: 0;
-  padding-top: 2px;
+  text-align: center;
+  font-size: 0.5rem;
+  color: var(--cream-dim);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.counter-hint {
+  margin: 0;
   text-align: center;
   font-size: 0.5rem;
   color: var(--text-muted);
   font-weight: 600;
-  flex-shrink: 0;
 }
 
 .counter-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
+  padding-top: 2px;
 }
 
-.btn-compact {
-  min-height: 40px;
-  padding: 8px 14px;
-  font-size: 0.9rem;
+.counter-actions .btn {
+  min-height: 32px;
+  max-height: 32px;
+  padding: 0 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 6px;
+  flex: 1;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.counter-actions .btn:active:not(:disabled) {
+  transform: none;
+  opacity: 0.85;
+}
+
+.counter-actions .btn-secondary {
+  border-width: 1px;
+}
+
+.counter-actions .btn:disabled {
+  opacity: 0.35;
+}
+
+@media (max-width: 520px) {
+  .counter-amounts {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .counter-readonly-label {
+    font-size: 0.5rem;
+  }
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .counter-top {
-    gap: 3px;
+  .counter-amounts {
+    grid-template-columns: repeat(4, 1fr);
   }
 
-  .counter-change {
-    padding: 4px 2px;
-  }
-
-  .counter-change-label {
-    font-size: 0.55rem;
-  }
-
-  .counter-change-value {
-    font-size: clamp(0.85rem, 2.5vw, 1.1rem);
-  }
-
-  .btn-compact {
-    min-height: 36px;
-    padding: 6px 12px;
-    font-size: 0.85rem;
-  }
-}
-
-@media (max-height: 680px) {
-  .btn-compact {
-    min-height: 38px;
-    padding: 8px 12px;
-    font-size: 0.85rem;
+  .counter-actions .btn {
+    min-height: 28px;
+    max-height: 28px;
+    font-size: 0.75rem;
   }
 }

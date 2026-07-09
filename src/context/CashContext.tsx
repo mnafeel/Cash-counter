@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react'
 import type { AppData } from '../types'
+import type { PayType } from '../types'
 import {
   addExpense,
   addSale,
@@ -22,8 +23,12 @@ interface CashContextValue {
   balance: number
   recordSale: (sale: {
     billAmount: number
+    originalBillAmount?: number
     paidAmount: number
     changeAmount: number
+    payType?: PayType
+    cashAmount?: number
+    bankAmount?: number
     customerName?: string
   }) => void
   recordExpense: (amount: number, note: string) => void
@@ -45,8 +50,12 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const recordSale = useCallback(
     (sale: {
       billAmount: number
+      originalBillAmount?: number
       paidAmount: number
       changeAmount: number
+      payType?: PayType
+      cashAmount?: number
+      bankAmount?: number
       customerName?: string
     }) => {
       setData((prev) => addSale(prev, sale))

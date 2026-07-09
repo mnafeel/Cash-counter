@@ -22,7 +22,8 @@ export function getBillRoundOptions(billAmount: number): RoundOption[] {
   const seen = new Set<number>()
 
   for (const step of BILL_ROUND_STEPS) {
-    const amount = roundDownTo(billAmount, step)
+    let amount = roundDownTo(billAmount, step)
+    if (amount >= billAmount) amount -= step
     if (amount > 0 && amount < billAmount && !seen.has(amount)) {
       seen.add(amount)
       options.push({
@@ -33,7 +34,10 @@ export function getBillRoundOptions(billAmount: number): RoundOption[] {
     }
   }
 
-  return options.sort((a, b) => b.amount - a.amount).slice(0, 6)
+  return options
+    .filter((o) => o.amount < billAmount)
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 6)
 }
 
 /** Customer pay — round note amounts (>= current bill). */
