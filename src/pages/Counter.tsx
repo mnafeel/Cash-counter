@@ -26,6 +26,11 @@ export default function Counter() {
   const billRoundOptions = useMemo(() => getBillRoundOptions(billAmount), [billAmount])
 
   function handleNumpad(action: NumpadAction) {
+    if (action === 'enter') {
+      setActiveField((prev) => (prev === 'bill' ? 'paid' : 'bill'))
+      return
+    }
+
     if (activeField === 'bill') {
       setBillStr((prev) => applyNumpadAction(prev, action))
     } else {

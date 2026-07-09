@@ -1,4 +1,18 @@
-export type NumpadAction = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | '.' | 'backspace' | 'clear'
+export type NumpadAction =
+  | '0'
+  | '1'
+  | '2'
+  | '3'
+  | '4'
+  | '5'
+  | '6'
+  | '7'
+  | '8'
+  | '9'
+  | '.'
+  | 'backspace'
+  | 'clear'
+  | 'enter'
 
 export function applyNumpadAction(current: string, action: NumpadAction): string {
   if (action === 'backspace') return current.slice(0, -1)

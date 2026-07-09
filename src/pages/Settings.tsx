@@ -14,6 +14,7 @@ export default function Settings() {
   const opening = parseAmount(openingStr)
 
   function handleNumpad(action: NumpadAction) {
+    if (action === 'enter') return
     setOpeningStr((prev) => applyNumpadAction(prev, action))
   }
 
@@ -32,7 +33,7 @@ export default function Settings() {
 
       <AmountDisplay label="Opening Cash Amount" value={openingStr} active compact />
 
-      <NumberKeyboard onPress={handleNumpad} />
+      <NumberKeyboard onPress={handleNumpad} showEnter={false} />
 
       <div className="settings-info">
         <div className="settings-row">

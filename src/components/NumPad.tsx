@@ -19,9 +19,10 @@ const KEYS: { action: NumpadAction; label: string }[] = [
 interface NumPadProps {
   onPress: (action: NumpadAction) => void
   compact?: boolean
+  showEnter?: boolean
 }
 
-export default function NumPad({ onPress, compact }: NumPadProps) {
+export default function NumPad({ onPress, compact, showEnter = true }: NumPadProps) {
   return (
     <div className={`numpad ${compact ? 'numpad--compact' : ''}`}>
       <div className="numpad-grid">
@@ -37,11 +38,20 @@ export default function NumPad({ onPress, compact }: NumPadProps) {
         ))}
         <button
           type="button"
-          className="numpad-key numpad-key--backspace numpad-key--wide"
+          className={`numpad-key numpad-key--backspace ${showEnter ? 'numpad-key--half-wide' : 'numpad-key--wide'}`}
           onClick={() => onPress('backspace')}
         >
           ⌫
         </button>
+        {showEnter ? (
+          <button
+            type="button"
+            className="numpad-key numpad-key--enter"
+            onClick={() => onPress('enter')}
+          >
+            Enter
+          </button>
+        ) : null}
       </div>
     </div>
   )

@@ -17,6 +17,7 @@ export default function Expenses() {
   const isValid = amount > 0 && amount <= balance
 
   function handleNumpad(action: NumpadAction) {
+    if (action === 'enter') return
     setAmountStr((prev) => applyNumpadAction(prev, action))
   }
 
@@ -44,7 +45,7 @@ export default function Expenses() {
         <AmountDisplay label="Expense Amount" value={amountStr} active compact />
       </div>
 
-      <NumberKeyboard onPress={handleNumpad} />
+      <NumberKeyboard onPress={handleNumpad} showEnter={false} />
 
       <div className="expenses-form">
         <label className="expense-note">
