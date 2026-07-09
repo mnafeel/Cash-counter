@@ -290,11 +290,31 @@
   color: var(--danger-text);
 }
 
-.settings-page > .btn {
-  min-height: 40px;
-  padding: 10px 16px;
-  font-size: 0.95rem;
-  flex-shrink: 0;
+.settings-save-btn {
+  flex: 0 0 auto;
+  align-self: center;
+  width: auto;
+  min-width: 108px;
+  min-height: 32px;
+  max-height: 36px;
+  padding: 5px 12px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+html[data-screen='tablet'] .settings-save-btn {
+  min-height: 30px;
+  max-height: 34px;
+  padding: 4px 10px;
+  font-size: 0.64rem;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .settings-save-btn {
+    min-height: 28px;
+    max-height: 32px;
+    font-size: 0.62rem;
+  }
 }
 
 html[data-screen='tablet'] .settings-header h2 {
@@ -308,12 +328,6 @@ html[data-screen='tablet'] .settings-header p {
 html[data-screen='tablet'] .settings-info {
   padding: 8px 10px;
   gap: 6px;
-}
-
-html[data-screen='tablet'] .settings-page > .btn {
-  min-height: 34px;
-  padding: 8px 12px;
-  font-size: 0.85rem;
 }
 
 @media (max-height: 700px) {
@@ -337,10 +351,5 @@ html[data-screen='tablet'] .settings-page > .btn {
 
   .settings-info {
     padding: 8px 10px;
-  }
-
-  .settings-page > .btn {
-    min-height: 36px;
-    font-size: 0.85rem;
   }
 }

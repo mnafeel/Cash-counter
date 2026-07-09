@@ -22,8 +22,8 @@ const FILTER_OPTIONS: { id: HistoryFilter; label: string }[] = [
 ]
 
 const SORT_OPTIONS: { id: HistorySort; label: string }[] = [
-  { id: 'date-desc', label: 'Date ↓' },
-  { id: 'date-asc', label: 'Date ↑' },
+  { id: 'date-desc', label: 'By Date ↓' },
+  { id: 'date-asc', label: 'By Date ↑' },
   { id: 'amount-desc', label: 'Amount ↓' },
   { id: 'amount-asc', label: 'Amount ↑' },
 ]
@@ -63,10 +63,12 @@ export default function History() {
     next = next.filter((item) => matchesHistorySearch(item, search))
 
     next.sort((a, b) => {
-      if (sort === 'date-desc') return new Date(b.date).getTime() - new Date(a.date).getTime()
-      if (sort === 'date-asc') return new Date(a.date).getTime() - new Date(b.date).getTime()
-      if (sort === 'amount-desc') return b.amount - a.amount
-      return a.amount - b.amount
+      const aTime = new Date(a.date).getTime()
+      const bTime = new Date(b.date).getTime()
+      if (sort === 'date-desc') return bTime - aTime
+      if (sort === 'date-asc') return aTime - bTime
+      if (sort === 'amount-desc') return b.amount - a.amount || bTime - aTime
+      return a.amount - b.amount || aTime - bTime
     })
 
     return next

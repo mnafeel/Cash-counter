@@ -414,7 +414,7 @@ export default function Settings() {
 
       <button
         type="button"
-        className={`btn btn-primary ${saved ? 'btn-saved' : ''}`}
+        className={`btn btn-primary settings-save-btn ${saved ? 'btn-saved' : ''}`}
         onClick={handleSave}
       >
         {saved ? '✓ Saved!' : 'Save Settings'}

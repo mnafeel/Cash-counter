@@ -458,6 +458,18 @@
   gap: 2px;
 }
 
+.stat-card--action {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.stat-card--action:active {
+  background: var(--surface-2);
+  border-color: var(--cream-dim);
+}
+
 .stat-label {
   font-size: 0.65rem;
   color: var(--cream-dim);
@@ -479,6 +491,132 @@
 .stat-meta {
   font-size: 0.7rem;
   color: var(--text-muted);
+}
+
+.stat-meta--breakdown {
+  font-weight: 700;
+  color: var(--cream-dim);
+}
+
+.home-report-panel {
+  max-height: min(88vh, 680px);
+}
+
+.home-report-dates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.home-report-date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.home-report-date-field span {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+}
+
+.home-report-date-field input {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--cream);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.home-delete-chip:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.home-report-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.home-report-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.home-report-summary-item span {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+}
+
+.home-report-summary-item strong {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.home-report-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.home-report-item {
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.home-report-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.home-report-period {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.home-report-total {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.home-report-item-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--cream-dim);
 }
 
 .home-grid {
