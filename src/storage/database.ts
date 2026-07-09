@@ -1,8 +1,11 @@
 import type { AppData, Expense, Sale } from '../types'
 import { STORAGE_KEY } from '../types'
+import { normalizePin } from '../utils/numpad'
 
 const defaultData: AppData = {
   openingBalance: 0,
+  openingBankBalance: 0,
+  homePin: '0000',
   sales: [],
   expenses: [],
 }
@@ -14,8 +17,15 @@ export function loadData(): AppData {
     const parsed = JSON.parse(raw) as AppData
     return {
       openingBalance: parsed.openingBalance ?? 0,
+      openingBankBalance: parsed.openingBankBalance ?? 0,
+      homePin: normalizePin(parsed.homePin, '0000'),
       sales: parsed.sales ?? [],
-      expenses: parsed.expenses ?? [],
+      expenses: (parsed.expenses ?? []).map((e) => ({
+        ...e,
+        name: e.name ?? e.note ?? 'Expense',
+        payType: e.payType === 'bank' ? 'bank' : 'cash',
+        kind: e.kind === 'add' ? 'add' : 'expense',
+      })),
     }
   } catch {
     return { ...defaultData }
@@ -37,9 +47,32 @@ export function getPendingBills(data: AppData): Sale[] {
   return data.sales.filter((s) => s.status === 'pending')
 }
 
+function expenseCashToDrawer(expense: Expense): number {
+  if (expense.payType === 'bank') return 0
+  return expense.kind === 'add' ? -expense.amount : expense.amount
+}
+
+function saleBankToBalance(sale: Sale): number {
+  if (sale.status === 'pending') return 0
+  if (sale.payType === 'bank') return sale.billAmount
+  if (sale.payType === 'split') return sale.bankAmount ?? 0
+  return 0
+}
+
+function expenseBankToBalance(expense: Expense): number {
+  if (expense.payType !== 'bank') return 0
+  return expense.kind === 'add' ? -expense.amount : expense.amount
+}
+
+export function getBankBalance(data: AppData): number {
+  const salesTotal = data.sales.reduce((sum, s) => sum + saleBankToBalance(s), 0)
+  const expensesTotal = data.expenses.reduce((sum, e) => sum + expenseBankToBalance(e), 0)
+  return (data.openingBankBalance ?? 0) + salesTotal - expensesTotal
+}
+
 export function getCurrentBalance(data: AppData): number {
   const salesTotal = data.sales.reduce((sum, s) => sum + saleCashToDrawer(s), 0)
-  const expensesTotal = data.expenses.reduce((sum, e) => sum + e.amount, 0)
+  const expensesTotal = data.expenses.reduce((sum, e) => sum + expenseCashToDrawer(e), 0)
   return data.openingBalance + salesTotal - expensesTotal
 }
 
@@ -62,6 +95,18 @@ export function addExpense(data: AppData, expense: Omit<Expense, 'id' | 'created
     createdAt: new Date().toISOString(),
   }
   const next = { ...data, expenses: [newExpense, ...data.expenses] }
+  saveData(next)
+  return next
+}
+
+export function setOpeningBankBalance(data: AppData, amount: number): AppData {
+  const next = { ...data, openingBankBalance: amount }
+  saveData(next)
+  return next
+}
+
+export function setHomePin(data: AppData, pin: string): AppData {
+  const next = { ...data, homePin: pin }
   saveData(next)
   return next
 }

@@ -33,6 +33,22 @@ function getAppDimensions() {
   }
 }
 
+function getCounterChrome(screen: ScreenSize, uiPad: number, short: boolean): number {
+  const header =
+    screen === 'phone'
+      ? short
+        ? 72
+        : 82
+      : screen === 'tablet'
+        ? short
+          ? 62
+          : 70
+        : short
+          ? 72
+          : 80
+  return header + uiPad * 2
+}
+
 interface LayoutVars {
   pageGap: number
   keyGap: number
@@ -94,6 +110,10 @@ export function applyDeviceSize() {
   root.style.setProperty('--page-gap', `${vars.pageGap}px`)
   root.style.setProperty('--key-gap', `${vars.keyGap}px`)
   root.style.setProperty('--ui-pad', `${vars.uiPad}px`)
+  root.style.setProperty(
+    '--counter-height',
+    `${Math.max(320, height - getCounterChrome(screen, vars.uiPad, short))}px`,
+  )
   root.style.fontSize = `${vars.fontBase}px`
 }
 

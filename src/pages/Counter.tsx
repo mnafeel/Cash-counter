@@ -13,10 +13,27 @@ import './Counter.css'
 
 type ActiveField = 'bill' | 'give' | 'paid' | 'cashSplit' | 'bankSplit'
 
-const FIELD_ORDER: ActiveField[] = ['bill', 'give', 'paid', 'cashSplit', 'bankSplit']
-
 function needsGive(payType: PayType): boolean {
   return payType === 'cash' || payType === 'split'
+}
+
+function paymentFields(payType: PayType, paymentStep: boolean): ActiveField[] {
+  if (!paymentStep) {
+    return needsGive(payType) ? ['bill', 'give'] : ['bill']
+  }
+  if (payType === 'split') return ['cashSplit', 'bankSplit', 'paid']
+  return ['paid']
+}
+
+function nextField(
+  current: ActiveField,
+  payType: PayType,
+  paymentStep: boolean,
+): ActiveField {
+  const allowed: ActiveField[] = ['bill', 'give', ...paymentFields(payType, paymentStep)]
+  const idx = allowed.indexOf(current)
+  if (idx === -1 || idx === allowed.length - 1) return allowed[0]
+  return allowed[idx + 1]
 }
 
 export default function Counter() {
@@ -95,23 +112,10 @@ export default function Counter() {
           ? formatMoney(dueAmount)
           : '—'
 
-  function nextField(current: ActiveField): ActiveField {
-    const allowed = FIELD_ORDER.filter((field) => {
-      if (field === 'give') return needsGive(payType)
-      if (field === 'paid') return paymentStep
-      if (field === 'cashSplit' || field === 'bankSplit')
-        return paymentStep && payType === 'split'
-      return true
-    })
-    const idx = allowed.indexOf(current)
-    if (idx === -1 || idx === allowed.length - 1) return allowed[0]
-    return allowed[idx + 1]
-  }
-
   function openPaymentStep() {
     setPaymentStep(true)
-    setActiveField('paid')
     if (!paidStr && dueAmount > 0) setPaidStr(String(dueAmount))
+    setActiveField(payType === 'split' ? 'cashSplit' : 'paid')
   }
 
   function handleEnter() {
@@ -125,7 +129,7 @@ export default function Counter() {
       return
     }
 
-    const next = nextField(activeField)
+    const next = nextField(activeField, payType, paymentStep)
     setActiveField(next)
     if (next === 'paid' && !paidStr && dueAmount > 0) {
       setPaidStr(String(dueAmount))
@@ -138,9 +142,12 @@ export default function Counter() {
     setBankSplitStr('')
     if (!needsGive(type)) setGiveStr('')
     if (!paidStr && dueAmount > 0) setPaidStr(String(dueAmount))
-    if (paymentStep) {
-      if (type === 'split') setActiveField('cashSplit')
-      else setActiveField('paid')
+
+    if (type === 'split' && billAmount > 0 && giveAmount > 0) {
+      setPaymentStep(true)
+      setActiveField('cashSplit')
+    } else if (paymentStep) {
+      setActiveField(type === 'split' ? 'cashSplit' : 'paid')
     } else if (!needsGive(type) && billAmount > 0) {
       setActiveField('bill')
     }
@@ -259,7 +266,8 @@ export default function Counter() {
     <div className="counter-page">
       <div className="counter-body">
         <div className="counter-main">
-          <div className="counter-amounts">
+          <div className="counter-top">
+            <div className="counter-amounts">
             <AmountDisplay
               label="Bill"
               value={billStr}
@@ -332,6 +340,8 @@ export default function Counter() {
             <PayTypeChips value={payType} onChange={handlePayTypeChange} />
           </div>
 
+          </div>
+
           {paymentStep && payType === 'split' && (
             <div className="counter-split counter-box">
               <AmountDisplay
@@ -362,7 +372,8 @@ export default function Counter() {
             <NumberKeyboard onPress={handleNumpad} />
           </div>
 
-          <div className="counter-round">
+          <div className="counter-footer">
+            <div className="counter-round">
             {showRoundChips ? (
               <RoundTypeChips
                 label="Round down"
@@ -379,7 +390,7 @@ export default function Counter() {
             ) : (
               <p className="counter-round-empty">Round down</p>
             )}
-          </div>
+            </div>
 
           <div className="counter-actions counter-actions--3">
             <button type="button" className="btn btn-secondary" onClick={resetForm}>
@@ -401,6 +412,7 @@ export default function Counter() {
             >
               {saveLabel}
             </button>
+          </div>
           </div>
         </div>
 

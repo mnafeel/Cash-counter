@@ -16,15 +16,24 @@ export interface Sale {
   createdAt: string
 }
 
+export type ExpensePayType = Extract<PayType, 'cash' | 'bank'>
+export type ExpenseKind = 'expense' | 'add'
+
 export interface Expense {
   id: string
   amount: number
-  note: string
+  name: string
+  payType: ExpensePayType
+  kind?: ExpenseKind
+  /** @deprecated legacy field — migrated to name */
+  note?: string
   createdAt: string
 }
 
 export interface AppData {
   openingBalance: number
+  openingBankBalance?: number
+  homePin?: string
   sales: Sale[]
   expenses: Expense[]
 }

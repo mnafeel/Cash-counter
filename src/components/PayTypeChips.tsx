@@ -11,14 +11,20 @@ const PAY_OPTIONS: { id: PayType; label: string; icon: string }[] = [
 interface PayTypeChipsProps {
   value: PayType
   onChange: (type: PayType) => void
+  options?: PayType[]
+  label?: string
 }
 
-export default function PayTypeChips({ value, onChange }: PayTypeChipsProps) {
+export default function PayTypeChips({ value, onChange, options, label = 'Payment' }: PayTypeChipsProps) {
+  const visible = options
+    ? PAY_OPTIONS.filter((opt) => options.includes(opt.id))
+    : PAY_OPTIONS
+
   return (
     <div className="pay-type-chips">
-      <span className="pay-type-chips-label">Payment</span>
+      <span className="pay-type-chips-label">{label}</span>
       <div className="pay-type-chips-row">
-        {PAY_OPTIONS.map((opt) => (
+        {visible.map((opt) => (
           <button
             key={opt.id}
             type="button"

@@ -22,6 +22,21 @@
   font-size: 0.8rem;
 }
 
+.settings-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.settings-pin-error {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--danger-text);
+  text-align: center;
+}
+
 .settings-info {
   display: flex;
   flex-direction: column;

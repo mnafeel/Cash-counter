@@ -1,109 +1,159 @@
 .expenses-page {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   overflow: hidden;
 }
 
-.expenses-top {
+.expenses-kind {
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
-  align-items: stretch;
-  flex-shrink: 0;
 }
 
-.expenses-top .big-amount--md .big-amount-value {
-  font-size: clamp(1rem, 4vw, 1.5rem);
-}
-
-.expenses-top .amount-display--compact .amount-display-value {
-  font-size: clamp(0.95rem, 4vw, 1.35rem);
-}
-
-.expenses-form {
+.expenses-kind-btn {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.expense-note {
-  display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
-}
-
-.expense-note-label {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--cream-dim);
-}
-
-.expense-note input {
-  padding: 10px 12px;
+  min-height: clamp(38px, calc(var(--counter-height, 560px) * 0.075), 48px);
+  padding: 6px 10px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 0.95rem;
+  font-size: clamp(0.72rem, calc(var(--counter-height, 560px) * 0.016), 0.88rem);
+  font-weight: 700;
+  color: var(--cream-dim);
+  cursor: pointer;
+}
+
+.expenses-kind-btn--active {
+  border-color: var(--cream);
+  color: var(--cream);
+  background: var(--brown-dark);
+  box-shadow: 0 0 0 1px var(--cream);
+}
+
+.expenses-kind-icon {
+  font-size: 1rem;
+}
+
+.expenses-top {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.expense-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.expense-name-label {
+  font-size: 0.48rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.expense-name-input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
   color: var(--cream);
   outline: none;
 }
 
-.expense-note input::placeholder {
+.expense-name-input::placeholder {
   color: var(--text-muted);
 }
 
-.expense-note input:focus {
+.expense-name-input:focus,
+.expense-name-input--active {
   border-color: var(--cream);
 }
 
-.expenses-error {
-  background: rgba(139, 58, 58, 0.35);
-  border: 1px solid var(--danger);
-  color: var(--danger-text);
-  padding: 10px 12px;
+.expenses-pay {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-weight: 700;
-  font-size: 0.85rem;
+  outline: none;
+}
+
+.expenses-pay--active {
+  border-color: var(--cream);
+  box-shadow: 0 0 0 1px var(--cream);
+}
+
+.expenses-pay .pay-type-chip {
+  min-height: clamp(38px, calc(var(--counter-height, 560px) * 0.08), 48px);
+}
+
+.expenses-keyboard {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.expenses-keyboard .number-keyboard {
+  flex: 1;
+  min-height: 0;
 }
 
 .expenses-actions {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
+  padding-bottom: max(2px, env(safe-area-inset-bottom));
 }
 
 .expenses-actions .btn {
-  min-height: 40px;
-  padding: 10px 16px;
-  font-size: 0.95rem;
+  flex: 1;
+  min-height: clamp(40px, calc(var(--counter-height, 560px) * 0.085), 56px);
+  padding: 6px 12px;
+  font-size: clamp(0.72rem, calc(var(--counter-height, 560px) * 0.017), 0.92rem);
+  font-weight: 700;
 }
 
-html[data-screen='tablet'] .expenses-top .amount-display--compact .amount-display-value,
-html[data-screen='tablet'] .expenses-top .big-amount--md .big-amount-value {
-  font-size: clamp(0.85rem, 2.8vmin, 1.15rem);
+html[data-screen='tablet'] .expenses-top {
+  gap: 4px;
 }
 
 html[data-screen='tablet'] .expenses-actions .btn {
-  min-height: 34px;
-  padding: 8px 12px;
-  font-size: 0.85rem;
+  min-height: 40px;
+  font-size: 0.82rem;
+}
+
+@media (max-width: 520px) {
+  .expenses-top {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .expenses-form {
-    gap: 4px;
-  }
-
-  .expense-note input {
-    padding: 8px 10px;
-    font-size: 0.85rem;
-  }
-
   .expenses-actions .btn {
     min-height: 36px;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
   }
 }

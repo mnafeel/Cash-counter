@@ -23,6 +23,23 @@ export function applyNumpadAction(current: string, action: NumpadAction): string
     return current === '' ? '0.' : `${current}.`
   }
 
+  if (action === 'enter') return current
+
   if (current === '0') return action
   return current + action
+}
+
+/** PIN entry — allows leading zeros (e.g. 0000). Max 4 digits. */
+export function applyPinAction(current: string, action: NumpadAction): string {
+  if (action === 'backspace') return current.slice(0, -1)
+  if (action === 'clear') return ''
+  if (action === 'enter' || action === '.') return current
+  if (!/^\d$/.test(action)) return current
+  if (current.length >= 4) return current
+  return current + action
+}
+
+export function normalizePin(pin: string | undefined, fallback = '0000'): string {
+  const digits = (pin ?? fallback).replace(/\D/g, '')
+  return digits.length > 0 ? digits.slice(0, 4) : fallback
 }

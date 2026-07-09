@@ -2,11 +2,11 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .pay-type-chips-label {
-  font-size: 0.5rem;
+  font-size: 0.55rem;
   color: var(--cream-dim);
   font-weight: 700;
   text-transform: uppercase;
@@ -16,7 +16,7 @@
 
 .pay-type-chips-row {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   width: 100%;
   min-width: 0;
 }
@@ -28,12 +28,12 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0;
-  padding: 3px 2px;
-  min-height: 30px;
+  gap: 2px;
+  padding: clamp(4px, calc(var(--app-height, 800px) * 0.006), 6px) 4px;
+  min-height: clamp(36px, calc(var(--app-height, 800px) * 0.052), 48px);
   background: var(--brown-dark);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--cream);
   transition: background 0.15s, border-color 0.15s, transform 0.1s, color 0.15s;
 }
@@ -49,45 +49,68 @@
 }
 
 .pay-type-chip-icon {
-  font-size: 0.85rem;
+  font-size: clamp(0.85rem, calc(var(--app-height, 800px) * 0.022), 1.1rem);
   line-height: 1;
 }
 
 .pay-type-chip-label {
-  font-size: 0.48rem;
+  font-size: clamp(0.48rem, calc(var(--app-height, 800px) * 0.012), 0.58rem);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.01em;
 }
 
 html[data-screen='tablet'] .pay-type-chip {
-  min-height: 26px;
-  padding: 2px 4px;
+  min-height: clamp(34px, calc(var(--app-height, 900px) * 0.046), 44px);
+  padding: clamp(3px, calc(var(--app-height, 900px) * 0.005), 5px) 4px;
 }
 
 html[data-screen='tablet'] .pay-type-chip-icon {
-  font-size: 0.75rem;
+  font-size: clamp(0.8rem, calc(var(--app-height, 900px) * 0.02), 0.95rem);
 }
 
 html[data-screen='tablet'] .pay-type-chip-label {
-  font-size: 0.5rem;
+  font-size: clamp(0.46rem, calc(var(--app-height, 900px) * 0.011), 0.54rem);
 }
 
 html[data-screen='desktop'] .pay-type-chip {
-  min-height: 32px;
+  min-height: clamp(40px, calc(var(--app-height, 900px) * 0.052), 52px);
+  padding: clamp(4px, calc(var(--app-height, 900px) * 0.006), 6px) 6px;
+}
+
+html[data-screen='desktop'] .pay-type-chip-icon {
+  font-size: clamp(0.95rem, calc(var(--app-height, 900px) * 0.024), 1.15rem);
+}
+
+html[data-screen='desktop'] .pay-type-chip-label {
+  font-size: clamp(0.5rem, calc(var(--app-height, 900px) * 0.012), 0.6rem);
+}
+
+html[data-short='true'] .pay-type-chips {
+  gap: 2px;
+}
+
+html[data-short='true'] .pay-type-chips-row {
+  gap: 4px;
+}
+
+html[data-short='true'] .pay-type-chip {
+  min-height: clamp(32px, calc(var(--app-height, 700px) * 0.044), 40px);
+  padding: 3px 3px;
+  gap: 1px;
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
   .pay-type-chip {
-    min-height: 26px;
-    padding: 2px 4px;
+    min-height: clamp(30px, calc(var(--app-height, 600px) * 0.048), 38px);
+    padding: 3px 3px;
   }
 
   .pay-type-chip-icon {
-    font-size: 0.75rem;
+    font-size: clamp(0.75rem, calc(var(--app-height, 600px) * 0.02), 0.88rem);
   }
 
   .pay-type-chip-label {
-    font-size: 0.5rem;
+    font-size: clamp(0.44rem, calc(var(--app-height, 600px) * 0.011), 0.5rem);
   }
 }

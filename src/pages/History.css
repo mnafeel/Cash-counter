@@ -62,8 +62,13 @@
 }
 
 .history-item--sale,
-.history-item--expense {
+.history-item--expense,
+.history-item--deposit {
   border-left: 3px solid var(--cream);
+}
+
+.history-item--deposit {
+  border-left-color: #40916c;
 }
 
 .history-item-main {
@@ -131,6 +136,10 @@
 
 .history-item-amount.negative {
   color: var(--cream-dim);
+}
+
+.history-item-amount.positive {
+  color: #95d5b2;
 }
 
 .history-delete {

@@ -6,21 +6,25 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { AppData, PayType, Sale, SaleStatus } from '../types'
+import type { AppData, ExpenseKind, ExpensePayType, PayType, Sale, SaleStatus } from '../types'
 import {
   addExpense,
   addSale,
   deleteExpense,
   deleteSale,
+  getBankBalance,
   getCurrentBalance,
   getPendingBills,
   loadData,
+  setHomePin,
   setOpeningBalance,
+  setOpeningBankBalance,
 } from '../storage/database'
 
 interface CashContextValue {
   data: AppData
   balance: number
+  bankBalance: number
   pendingBills: Sale[]
   recordSale: (sale: {
     billAmount: number
@@ -34,8 +38,15 @@ interface CashContextValue {
     customerName?: string
     status?: SaleStatus
   }) => void
-  recordExpense: (amount: number, note: string) => void
+  recordExpense: (expense: {
+    amount: number
+    name: string
+    payType: ExpensePayType
+    kind?: ExpenseKind
+  }) => void
   updateOpeningBalance: (amount: number) => void
+  updateOpeningBankBalance: (amount: number) => void
+  updateHomePin: (pin: string) => void
   removeSale: (id: string) => void
   removeExpense: (id: string) => void
   refresh: () => void
@@ -49,6 +60,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(() => setData(loadData()), [])
 
   const balance = useMemo(() => getCurrentBalance(data), [data])
+  const bankBalance = useMemo(() => getBankBalance(data), [data])
   const pendingBills = useMemo(() => getPendingBills(data), [data])
 
   const recordSale = useCallback(
@@ -69,8 +81,31 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const recordExpense = useCallback((amount: number, note: string) => {
-    setData((prev) => addExpense(prev, { amount, note }))
+  const recordExpense = useCallback(
+    (expense: {
+      amount: number
+      name: string
+      payType: ExpensePayType
+      kind?: ExpenseKind
+    }) => {
+      setData((prev) =>
+        addExpense(prev, {
+          amount: expense.amount,
+          name: expense.name.trim(),
+          payType: expense.payType,
+          kind: expense.kind ?? 'expense',
+        }),
+      )
+    },
+    [],
+  )
+
+  const updateOpeningBankBalance = useCallback((amount: number) => {
+    setData((prev) => setOpeningBankBalance(prev, amount))
+  }, [])
+
+  const updateHomePin = useCallback((pin: string) => {
+    setData((prev) => setHomePin(prev, pin))
   }, [])
 
   const updateOpeningBalance = useCallback((amount: number) => {
@@ -89,10 +124,13 @@ export function CashProvider({ children }: { children: ReactNode }) {
     () => ({
       data,
       balance,
+      bankBalance,
       pendingBills,
       recordSale,
       recordExpense,
       updateOpeningBalance,
+      updateOpeningBankBalance,
+      updateHomePin,
       removeSale,
       removeExpense,
       refresh,
@@ -100,10 +138,13 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [
       data,
       balance,
+      bankBalance,
       pendingBills,
       recordSale,
       recordExpense,
       updateOpeningBalance,
+      updateOpeningBankBalance,
+      updateHomePin,
       removeSale,
       removeExpense,
       refresh,

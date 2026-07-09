@@ -25,12 +25,17 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--page-gap);
+  gap: 3px;
   overflow: hidden;
 }
 
-.counter-main > * {
+.counter-top,
+.counter-footer {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
 }
 
 .counter-amounts {
@@ -51,8 +56,7 @@
 
 .counter-keyboard-wrap {
   flex: 1 1 0;
-  min-height: 72px;
-  max-height: none;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -101,10 +105,14 @@
 }
 
 .counter-readonly-value {
-  font-size: clamp(0.75rem, calc(var(--app-height, 800px) * 0.026), 1.1rem);
+  font-size: clamp(0.72rem, calc(var(--counter-height, 560px) * 0.024), 1.05rem);
   font-weight: 800;
   color: var(--cream);
   line-height: 1.1;
+}
+
+.counter-page .amount-display--compact .amount-display-value {
+  font-size: clamp(0.72rem, calc(var(--counter-height, 560px) * 0.024), 1.05rem);
 }
 
 .counter-readonly--mirror {
@@ -126,7 +134,7 @@
 
 .counter-pay {
   flex-shrink: 0;
-  padding: 4px 6px;
+  padding: 6px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -135,12 +143,39 @@
   box-sizing: border-box;
 }
 
+.counter-pay .pay-type-chips {
+  gap: 2px;
+}
+
+.counter-pay .pay-type-chips-label {
+  display: none;
+}
+
+.counter-pay .pay-type-chips-row {
+  gap: 6px;
+}
+
+.counter-pay .pay-type-chip {
+  min-height: clamp(40px, calc(var(--counter-height, 560px) * 0.085), 52px);
+  padding: clamp(5px, calc(var(--counter-height, 560px) * 0.008), 8px) 4px;
+  gap: 3px;
+  border-radius: 6px;
+}
+
+.counter-pay .pay-type-chip-icon {
+  font-size: clamp(0.95rem, calc(var(--counter-height, 560px) * 0.024), 1.15rem);
+}
+
+.counter-pay .pay-type-chip-label {
+  font-size: clamp(0.52rem, calc(var(--counter-height, 560px) * 0.013), 0.62rem);
+}
+
 .counter-customer {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 3px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -179,6 +214,7 @@
 }
 
 .counter-split {
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--page-gap);
@@ -210,11 +246,11 @@
 
 .counter-round {
   width: 100%;
-  min-height: 36px;
+  min-height: clamp(26px, calc(var(--counter-height, 560px) * 0.042), 34px);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 6px 8px;
+  padding: 4px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -254,11 +290,11 @@
 }
 
 .counter-actions .btn {
-  min-height: 56px;
+  min-height: clamp(40px, calc(var(--counter-height, 560px) * 0.085), 56px);
   height: auto;
-  max-height: 64px;
-  padding: 6px 4px;
-  font-size: clamp(0.68rem, 2.6vw, 0.92rem);
+  max-height: clamp(44px, calc(var(--counter-height, 560px) * 0.095), 58px);
+  padding: 4px 3px;
+  font-size: clamp(0.58rem, calc(var(--counter-height, 560px) * 0.017), 0.88rem);
   font-weight: 700;
   border-radius: 6px;
   flex: 1;
@@ -305,11 +341,11 @@
 }
 
 .counter-actions--3 .btn {
-  min-height: 56px;
+  min-height: clamp(40px, calc(var(--counter-height, 560px) * 0.085), 56px);
   height: auto;
-  max-height: 64px;
-  padding: 6px 2px;
-  font-size: clamp(0.64rem, 2.4vw, 0.88rem);
+  max-height: clamp(44px, calc(var(--counter-height, 560px) * 0.095), 58px);
+  padding: 4px 2px;
+  font-size: clamp(0.55rem, calc(var(--counter-height, 560px) * 0.016), 0.84rem);
 }
 
 .counter-actions .btn-pending:not(:disabled) {
@@ -323,77 +359,81 @@
   color: var(--brown) !important;
 }
 
+html[data-screen='tablet'] .counter-main,
+html[data-screen='tablet'] .counter-top,
+html[data-screen='tablet'] .counter-footer {
+  gap: 2px;
+}
+
 html[data-screen='tablet'] .counter-amounts {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
 }
 
 html[data-screen='tablet'] .counter-readonly,
 html[data-screen='tablet'] .amount-display--compact {
-  padding: 4px 2px;
+  padding: 3px 2px;
 }
 
 html[data-screen='tablet'] .counter-readonly-label,
 html[data-screen='tablet'] .amount-display--compact .amount-display-label {
-  font-size: 0.48rem;
+  font-size: 0.46rem;
 }
 
 html[data-screen='tablet'] .counter-readonly-value,
-html[data-screen='tablet'] .amount-display--compact .amount-display-value {
-  font-size: clamp(0.8rem, calc(var(--app-height, 900px) * 0.026), 1.2rem);
+html[data-screen='tablet'] .amount-display--compact .amount-display-value,
+html[data-screen='tablet'] .counter-page .amount-display--compact .amount-display-value {
+  font-size: clamp(0.72rem, calc(var(--counter-height, 560px) * 0.023), 1rem);
+}
+
+html[data-screen='tablet'] .counter-customer {
+  padding: 3px 6px;
 }
 
 html[data-screen='tablet'] .counter-pay,
 html[data-screen='tablet'] .counter-box {
-  padding: 2px 4px;
-}
-
-html[data-screen='tablet'] .counter-round {
-  min-height: 32px;
   padding: 5px 6px;
 }
 
-html[data-screen='tablet'] .counter-actions .btn {
-  min-height: 52px;
-  max-height: 60px;
-  font-size: clamp(0.62rem, 2.2vw, 0.82rem);
+html[data-screen='tablet'] .counter-pay .pay-type-chip {
+  min-height: clamp(38px, calc(var(--counter-height, 560px) * 0.08), 48px);
 }
 
-html[data-screen='tablet'] .counter-keyboard-wrap {
-  min-height: 64px;
+html[data-screen='tablet'] .counter-pay .pay-type-chip-icon {
+  font-size: clamp(0.9rem, calc(var(--counter-height, 560px) * 0.022), 1.05rem);
 }
 
 html[data-screen='tablet'][data-landscape='true'] .counter-split {
   gap: 2px;
 }
 
-html[data-screen='tablet'][data-short='true'] .counter-amounts,
-html[data-screen='tablet'][data-landscape='true'] .counter-amounts {
-  gap: 2px;
-}
-
 html[data-screen='desktop'] .counter-readonly,
 html[data-screen='desktop'] .amount-display--compact {
-  padding: 6px 4px;
+  padding: 5px 4px;
 }
 
 html[data-screen='desktop'] .counter-readonly-value,
-html[data-screen='desktop'] .amount-display--compact .amount-display-value {
-  font-size: clamp(1rem, calc(var(--app-height, 900px) * 0.032), 1.5rem);
+html[data-screen='desktop'] .amount-display--compact .amount-display-value,
+html[data-screen='desktop'] .counter-page .amount-display--compact .amount-display-value {
+  font-size: clamp(0.85rem, calc(var(--counter-height, 560px) * 0.026), 1.25rem);
+}
+
+html[data-screen='desktop'] .counter-pay .pay-type-chip {
+  min-height: clamp(44px, calc(var(--counter-height, 560px) * 0.092), 56px);
+  padding: clamp(6px, calc(var(--counter-height, 560px) * 0.009), 9px) 5px;
+}
+
+html[data-screen='desktop'] .counter-pay .pay-type-chip-icon {
+  font-size: clamp(1rem, calc(var(--counter-height, 560px) * 0.026), 1.2rem);
+}
+
+html[data-screen='desktop'] .counter-pay .pay-type-chip-label {
+  font-size: clamp(0.55rem, calc(var(--counter-height, 560px) * 0.014), 0.65rem);
 }
 
 html[data-screen='desktop'] .counter-actions .btn {
-  min-height: 60px;
-  max-height: 68px;
-  font-size: clamp(0.78rem, 1.5vw, 1rem);
-}
-
-html[data-screen='desktop'] .counter-keyboard-wrap {
-  min-height: 80px;
-}
-
-html[data-screen='desktop'] .counter-round {
-  min-height: 38px;
-  padding: 6px 8px;
+  min-height: clamp(44px, calc(var(--counter-height, 560px) * 0.088), 58px);
+  max-height: clamp(48px, calc(var(--counter-height, 560px) * 0.098), 62px);
 }
 
 .counter-keyboard-wrap .number-keyboard {
@@ -404,11 +444,11 @@ html[data-screen='desktop'] .counter-round {
 }
 
 .counter-keyboard-wrap .numpad--compact .numpad-key {
-  font-size: clamp(0.7rem, calc(var(--app-height, 800px) * 0.028), 1.1rem);
+  font-size: clamp(0.65rem, calc(var(--counter-height, 560px) * 0.026), 1rem);
 }
 
 .counter-keyboard-wrap .numpad--compact .numpad-key--enter {
-  font-size: clamp(0.55rem, 1.6vw, 0.7rem);
+  font-size: clamp(0.5rem, calc(var(--counter-height, 560px) * 0.014), 0.68rem);
 }
 
 @media (max-width: 520px) {
@@ -424,15 +464,5 @@ html[data-screen='desktop'] .counter-round {
 @media (orientation: landscape) and (max-height: 520px) {
   .counter-amounts {
     grid-template-columns: repeat(4, 1fr);
-  }
-
-  .counter-actions .btn {
-    min-height: 48px;
-    max-height: 56px;
-    font-size: clamp(0.58rem, 2.5vw, 0.78rem);
-  }
-
-  .counter-keyboard-wrap {
-    min-height: 56px;
   }
 }

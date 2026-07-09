@@ -24,6 +24,7 @@
   --ui-pad: 6px;
   --app-width: 100vw;
   --app-height: 100dvh;
+  --counter-height: 560px;
 }
 
 *,
@@ -120,6 +121,12 @@ a {
   background: var(--danger);
   color: var(--danger-text);
   border: 2px solid #a04545;
+}
+
+.btn-success {
+  background: #2d6a4f;
+  color: var(--cream);
+  border: 2px solid #40916c;
 }
 
 .btn-saved {

@@ -30,17 +30,26 @@ export default function History() {
         date: s.createdAt,
       }
     }),
-    ...data.expenses.map((e) => ({
-      type: 'expense' as const,
-      id: e.id,
-      amount: e.amount,
-      sub: e.note,
-      name: undefined as string | undefined,
-      date: e.createdAt,
-    })),
+    ...data.expenses.map((e) => {
+      const isAdd = e.kind === 'add'
+      return {
+        type: isAdd ? ('deposit' as const) : ('expense' as const),
+        id: e.id,
+        amount: e.amount,
+        sub: isAdd
+          ? e.payType === 'bank'
+            ? '🏦 Added to bank'
+            : '💵 Added to counter'
+          : e.payType === 'bank'
+            ? '🏦 Bank expense'
+            : '💵 Cash expense',
+        name: e.name,
+        date: e.createdAt,
+      }
+    }),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
-  function handleDelete(type: 'sale' | 'expense', id: string) {
+  function handleDelete(type: 'sale' | 'expense' | 'deposit', id: string) {
     if (!confirm('Delete this record?')) return
     if (type === 'sale') removeSale(id)
     else removeExpense(id)
@@ -63,11 +72,17 @@ export default function History() {
           {items.map((item) => (
             <li key={item.id} className={`history-item history-item--${item.type}`}>
               <div className="history-item-main">
-                <span className="history-item-icon">{item.type === 'sale' ? '💵' : '📤'}</span>
+                <span className="history-item-icon">
+                  {item.type === 'sale' ? '💵' : item.type === 'deposit' ? '📥' : '📤'}
+                </span>
                 <div className="history-item-info">
                   <div className="history-item-top">
                     <span className="history-item-type">
-                      {item.type === 'sale' ? 'Bill Collected' : 'Expense'}
+                      {item.type === 'sale'
+                        ? 'Bill Collected'
+                        : item.type === 'deposit'
+                          ? 'Money Added'
+                          : 'Expense'}
                     </span>
                     {item.name && <span className="history-item-name">{item.name}</span>}
                   </div>
@@ -75,7 +90,7 @@ export default function History() {
                   <span className="history-item-date">{formatDate(item.date)}</span>
                 </div>
                 <span
-                  className={`history-item-amount ${item.type === 'expense' ? 'negative' : ''}`}
+                  className={`history-item-amount ${item.type === 'expense' ? 'negative' : 'positive'}`}
                 >
                   {item.type === 'expense' ? '-' : '+'}
                   {formatMoney(item.amount)}

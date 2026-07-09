@@ -17,8 +17,12 @@
         var s = w < 768 ? 'phone' : w < 1280 || (t && w < 1400) ? 'tablet' : 'desktop'
         var d = document.documentElement
         d.dataset.screen = s
+        var short = (s === 'phone' && h < 700) || (s === 'tablet' && h < 850) || (s === 'desktop' && h < 750)
+        var uiPad = s === 'phone' ? (short ? 4 : 6) : s === 'tablet' ? (short || w > h ? 5 : 8) : 10
+        var hdr = s === 'phone' ? (short ? 72 : 82) : s === 'tablet' ? (short ? 62 : 70) : (short ? 72 : 80)
         d.style.setProperty('--app-width', w + 'px')
         d.style.setProperty('--app-height', h + 'px')
+        d.style.setProperty('--counter-height', Math.max(320, h - hdr - uiPad * 2) + 'px')
       })()
     </script>
   </head>

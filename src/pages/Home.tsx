@@ -1,22 +1,67 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import BigAmount from '../components/BigAmount'
+import NumberKeyboard from '../components/NumberKeyboard'
 import { formatMoney } from '../utils/format'
+import { applyPinAction, normalizePin, type NumpadAction } from '../utils/numpad'
 import './Home.css'
 
+const DEFAULT_PIN = '0000'
+
 export default function Home() {
-  const { balance, data } = useCash()
+  const { balance, bankBalance, data } = useCash()
+  const [unlocked, setUnlocked] = useState(false)
+  const [pinStr, setPinStr] = useState('')
+  const [pinError, setPinError] = useState(false)
+
+  const homePin = normalizePin(data.homePin, DEFAULT_PIN)
+
+  useEffect(() => {
+    return () => {
+      setUnlocked(false)
+      setPinStr('')
+    }
+  }, [])
 
   const today = new Date().toDateString()
   const todaySales = data.sales.filter(
     (s) => new Date(s.createdAt).toDateString() === today,
   )
   const todayExpenses = data.expenses.filter(
-    (e) => new Date(e.createdAt).toDateString() === today,
+    (e) => new Date(e.createdAt).toDateString() === today && e.kind !== 'add',
   )
 
   const todaySalesTotal = todaySales.reduce((sum, s) => sum + s.billAmount, 0)
   const todayExpensesTotal = todayExpenses.reduce((sum, e) => sum + e.amount, 0)
+
+  function tryUnlock(nextPin: string) {
+    if (nextPin === homePin) {
+      setUnlocked(true)
+      setPinStr('')
+      setPinError(false)
+      return
+    }
+    setPinError(true)
+    setPinStr('')
+  }
+
+  function handlePinNumpad(action: NumpadAction) {
+    if (action === 'enter') {
+      if (pinStr.length === 4) tryUnlock(pinStr)
+      return
+    }
+    if (action === 'clear') {
+      setPinStr('')
+      setPinError(false)
+      return
+    }
+
+    const next = applyPinAction(pinStr, action)
+    setPinStr(next)
+    setPinError(false)
+    if (next.length === 4) tryUnlock(next)
+  }
 
   const cards = [
     {
@@ -28,8 +73,8 @@ export default function Home() {
     },
     {
       to: '/expenses',
-      title: 'Cash Expenses',
-      desc: 'Record money going out of drawer',
+      title: 'Expenses',
+      desc: 'Expenses or add to counter/bank',
       icon: '📤',
       color: 'orange',
     },
@@ -43,17 +88,46 @@ export default function Home() {
     {
       to: '/settings',
       title: 'Settings',
-      desc: 'Set opening cash in drawer',
+      desc: 'Opening balances & home PIN',
       icon: '⚙️',
       color: 'gray',
     },
   ]
 
+  if (!unlocked) {
+    return (
+      <div className="home home--locked">
+        <section className="home-pin">
+          <p className="home-pin-label">Enter 4-digit PIN</p>
+          <div className={`home-pin-dots ${pinError ? 'home-pin-dots--error' : ''}`}>
+            {[0, 1, 2, 3].map((i) => (
+              <span
+                key={i}
+                className={`home-pin-dot ${pinStr.length > i ? 'home-pin-dot--filled' : ''}`}
+              />
+            ))}
+          </div>
+          {pinError && <p className="home-pin-error">Wrong PIN. Try again.</p>}
+          <div className="home-pin-keyboard">
+            <NumberKeyboard onPress={handlePinNumpad} showEnter={false} />
+          </div>
+          <p className="home-pin-hint">Default PIN: 0000 — change in Settings</p>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="home">
-      <section className="home-hero">
-        <p className="home-hero-label">Current Cash in Drawer</p>
-        <BigAmount label="" value={balance} variant="primary" size="xl" />
+      <section className="home-balances">
+        <div className="home-balance-card">
+          <p className="home-hero-label">💵 Cash in Drawer</p>
+          <BigAmount label="" value={balance} variant="primary" size="lg" />
+        </div>
+        <div className="home-balance-card home-balance-card--bank">
+          <p className="home-hero-label">🏦 Bank Balance</p>
+          <BigAmount label="" value={bankBalance} variant="primary" size="lg" />
+        </div>
       </section>
 
       <section className="home-stats">
