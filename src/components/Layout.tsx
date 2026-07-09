@@ -17,11 +17,10 @@ export default function Layout() {
       <header className="header header--compact">
         <div className="header-top">
           <img
-            className="app-logo"
-            src={`${import.meta.env.BASE_URL}icon.png`}
+            src={`${import.meta.env.BASE_URL}logo.png`}
             alt="Shalimar Fashions"
+            className="app-logo"
           />
-          <h1 className="app-title">Cash Counter</h1>
         </div>
         <nav className="nav">
           {navItems.map((item) => (

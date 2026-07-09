@@ -21,23 +21,23 @@
 .header-top {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
-}
-
-.app-logo {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
-  object-fit: cover;
 }
 
 .app-title {
   font-size: 1.25rem;
   font-weight: 800;
   color: var(--cream);
+}
+
+.app-logo {
+  height: 36px;
+  width: auto;
+  max-width: min(220px, 70vw);
+  object-fit: contain;
+  display: block;
 }
 
 .header-balance {
@@ -129,6 +129,10 @@
   font-size: 1rem;
 }
 
+.layout--fit .header--compact .app-logo {
+  height: 28px;
+}
+
 .layout--fit .header--compact .header-balance-value {
   font-size: 1.1rem;
 }
@@ -186,6 +190,10 @@ html[data-screen='tablet'] .layout--fit .header--compact .app-title {
   font-size: 0.9rem;
 }
 
+html[data-screen='tablet'] .layout--fit .header--compact .app-logo {
+  height: 24px;
+}
+
 html[data-screen='tablet'] .layout--fit .header--compact .header-balance-value {
   font-size: 1rem;
 }
@@ -219,6 +227,10 @@ html[data-screen='desktop'] .layout--fit .header--compact .header-top {
 
 html[data-screen='desktop'] .layout--fit .header--compact .app-title {
   font-size: 1.05rem;
+}
+
+html[data-screen='desktop'] .layout--fit .header--compact .app-logo {
+  height: 32px;
 }
 
 html[data-screen='desktop'] .layout--fit .header--compact .header-balance-value {
