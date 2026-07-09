@@ -114,6 +114,7 @@
 
 .layout--fit .header--compact .header-top {
   margin-bottom: 4px;
+  justify-content: center;
 }
 
 .layout--fit .header--compact .app-title {

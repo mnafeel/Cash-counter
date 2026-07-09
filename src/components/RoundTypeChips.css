@@ -63,28 +63,28 @@
 }
 
 .round-type-chips--compact {
-  gap: 1px;
+  gap: 3px;
 }
 
 .round-type-chips--compact .round-type-chips-label {
-  font-size: 0.42rem;
-  line-height: 1;
+  font-size: 0.55rem;
+  line-height: 1.1;
 }
 
 .round-type-chips--compact .round-type-chips-row {
-  gap: 2px;
+  gap: 4px;
 }
 
 .round-type-chips--compact .round-chip {
-  padding: 1px 4px;
-  min-height: 14px;
-  border-radius: 3px;
+  padding: 4px 8px;
+  min-height: 24px;
+  border-radius: 5px;
 }
 
 .round-type-chips--compact .round-chip-amount {
-  font-size: 0.52rem;
+  font-size: 0.68rem;
 }
 
 .round-type-chips--compact .round-chip-type {
-  font-size: 0.42rem;
+  font-size: 0.5rem;
 }

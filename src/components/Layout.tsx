@@ -1,7 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { useCash } from '../context/CashContext'
 import { useDeviceSize } from '../hooks/useDeviceSize'
-import { formatMoney } from '../utils/format'
 import './Layout.css'
 
 const navItems = [
@@ -12,7 +10,6 @@ const navItems = [
 ]
 
 export default function Layout() {
-  const { balance } = useCash()
   useDeviceSize()
 
   return (
@@ -20,10 +17,6 @@ export default function Layout() {
       <header className="header header--compact">
         <div className="header-top">
           <h1 className="app-title">Cash Counter</h1>
-          <div className="header-balance">
-            <span className="header-balance-label">In Drawer</span>
-            <span className="header-balance-value">{formatMoney(balance)}</span>
-          </div>
         </div>
         <nav className="nav">
           {navItems.map((item) => (

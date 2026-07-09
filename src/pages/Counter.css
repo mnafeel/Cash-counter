@@ -139,11 +139,11 @@
 
 .counter-round {
   width: 100%;
-  min-height: 20px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2px 4px;
+  padding: 6px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -151,20 +151,16 @@
   flex-shrink: 0;
 }
 
-.counter-round .round-type-chips-label {
-  display: none;
-}
-
 .counter-round-empty {
   width: 100%;
   margin: 0;
   text-align: center;
-  font-size: 0.42rem;
+  font-size: 0.55rem;
   color: var(--cream-dim);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  line-height: 1;
+  line-height: 1.1;
 }
 
 .counter-hint {
@@ -233,8 +229,8 @@ html[data-screen='tablet'] .counter-box {
 }
 
 html[data-screen='tablet'] .counter-round {
-  min-height: 18px;
-  padding: 1px 3px;
+  min-height: 32px;
+  padding: 5px 6px;
 }
 
 html[data-screen='tablet'] .counter-actions .btn {
@@ -269,8 +265,8 @@ html[data-screen='desktop'] .counter-actions .btn {
 }
 
 html[data-screen='desktop'] .counter-round {
-  min-height: 20px;
-  padding: 2px 4px;
+  min-height: 38px;
+  padding: 6px 8px;
 }
 
 html[data-screen='desktop'] .counter-keyboard-wrap {
