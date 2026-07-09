@@ -1,102 +1,17 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useCash } from '../context/CashContext'
-import type { AppData } from '../types'
 import { formatDate, formatMoney } from '../utils/format'
+import {
+  buildHistoryItems,
+  getHistoryTypeLabel,
+  matchesHistorySearch,
+  type HistoryFilter,
+  type HistoryItem,
+  type HistoryItemType,
+} from '../utils/historyItems'
 import './History.css'
 
-type HistoryItemType = 'sale' | 'expense' | 'deposit' | 'transfer'
-
-type HistoryFilter = 'all' | 'sale' | 'expense' | 'deposit' | 'transfer'
-
 type HistorySort = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
-
-interface HistoryItem {
-  type: HistoryItemType
-  id: string
-  amount: number
-  sub: string
-  name?: string
-  date: string
-}
-
-function buildHistoryItems(data: AppData): HistoryItem[] {
-  return [
-    ...data.sales.map((s) => {
-      const payLabel =
-        s.status === 'pending'
-          ? '💳 Credit · Pending'
-          : s.payType === 'bank'
-            ? '🏦 Bank'
-            : s.payType === 'credit'
-              ? '💳 Credit'
-              : s.payType === 'split'
-                ? `💵 ${formatMoney(s.cashAmount ?? 0)} · 🏦 ${formatMoney(s.bankAmount ?? 0)}`
-                : '💵 Cash'
-      const orig =
-        s.originalBillAmount && s.originalBillAmount !== s.billAmount
-          ? `Bill ${formatMoney(s.originalBillAmount)} → `
-          : ''
-      return {
-        type: 'sale' as const,
-        id: s.id,
-        amount: s.billAmount,
-        sub: `${orig}${s.status === 'pending' ? 'Pending · ' : s.payType === 'bank' || s.payType === 'credit' ? 'Paid ' : `Give ${formatMoney(s.paidAmount)} · `}${payLabel}${s.changeAmount > 0 ? ` · Change ${formatMoney(s.changeAmount)}` : ''}`,
-        name: s.customerName,
-        date: s.createdAt,
-      }
-    }),
-    ...data.expenses.map((e) => {
-      if (e.kind === 'transfer') {
-        const toBank = e.transferDirection === 'cash-to-bank'
-        return {
-          type: 'transfer' as const,
-          id: e.id,
-          amount: e.amount,
-          sub: toBank ? '💵 → 🏦 Cash to bank' : '🏦 → 💵 Bank to cash',
-          name: e.name,
-          date: e.createdAt,
-        }
-      }
-      const isAdd = e.kind === 'add'
-      return {
-        type: isAdd ? ('deposit' as const) : ('expense' as const),
-        id: e.id,
-        amount: e.amount,
-        sub: isAdd
-          ? e.payType === 'bank'
-            ? '🏦 Added to bank'
-            : '💵 Added to counter'
-          : e.payType === 'bank'
-            ? '🏦 Bank expense'
-            : '💵 Cash expense',
-        name: e.name,
-        date: e.createdAt,
-      }
-    }),
-  ]
-}
-
-function matchesSearch(item: HistoryItem, query: string): boolean {
-  if (!query) return true
-  const q = query.toLowerCase().trim()
-  const haystack = [
-    item.name,
-    item.sub,
-    formatMoney(item.amount),
-    formatDate(item.date),
-    item.type === 'sale'
-      ? 'bill collected customer'
-      : item.type === 'deposit'
-        ? 'money added'
-        : item.type === 'transfer'
-          ? 'transfer cash bank'
-          : 'expense',
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase()
-  return haystack.includes(q)
-}
 
 const FILTER_OPTIONS: { id: HistoryFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -113,17 +28,39 @@ const SORT_OPTIONS: { id: HistorySort; label: string }[] = [
   { id: 'amount-asc', label: 'Amount ↑' },
 ]
 
+function historyIcon(type: HistoryItemType): string {
+  if (type === 'sale') return '💵'
+  if (type === 'deposit') return '📥'
+  if (type === 'transfer') return '🔄'
+  return '📤'
+}
+
+function nameLabel(type: HistoryItemType): string {
+  return type === 'sale' ? 'Customer name' : 'Note / name'
+}
+
+function namePlaceholder(type: HistoryItemType): string {
+  return type === 'sale' ? 'Customer name' : 'Note or name'
+}
+
+function editKey(item: HistoryItem): string {
+  return `${item.type}:${item.id}`
+}
+
 export default function History() {
-  const { data, removeSale, removeExpense } = useCash()
+  const { data, updateHistoryName } = useCash()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [sort, setSort] = useState<HistorySort>('date-desc')
   const [search, setSearch] = useState('')
+  const [editingKey, setEditingKey] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const editInputRef = useRef<HTMLInputElement>(null)
 
   const allItems = useMemo(() => buildHistoryItems(data), [data])
 
   const items = useMemo(() => {
     let next = allItems.filter((item) => filter === 'all' || item.type === filter)
-    next = next.filter((item) => matchesSearch(item, search))
+    next = next.filter((item) => matchesHistorySearch(item, search))
 
     next.sort((a, b) => {
       if (sort === 'date-desc') return new Date(b.date).getTime() - new Date(a.date).getTime()
@@ -135,12 +72,6 @@ export default function History() {
     return next
   }, [allItems, filter, sort, search])
 
-  function handleDelete(type: HistoryItemType, id: string) {
-    if (!confirm('Delete this record?')) return
-    if (type === 'sale') removeSale(id)
-    else removeExpense(id)
-  }
-
   const searchHint =
     filter === 'sale'
       ? 'Search customer name, amount, date…'
@@ -148,12 +79,28 @@ export default function History() {
         ? 'Search note, amount, date…'
         : 'Search customer, expense note, amount…'
 
+  function startEdit(item: HistoryItem) {
+    setEditingKey(editKey(item))
+    setEditValue(item.name ?? '')
+    requestAnimationFrame(() => editInputRef.current?.focus())
+  }
+
+  function cancelEdit() {
+    setEditingKey(null)
+    setEditValue('')
+  }
+
+  function saveEdit(item: HistoryItem) {
+    updateHistoryName(item.type, item.id, editValue)
+    cancelEdit()
+  }
+
   return (
     <div className="history-page">
       <div className="history-header">
         <h2>History</h2>
         <p>
-          {items.length} of {allItems.length} records
+          {items.length} of {allItems.length} records · tap ✎ to edit name · delete from Home
         </p>
       </div>
 
@@ -205,30 +152,67 @@ export default function History() {
         </div>
       ) : (
         <ul className="history-list">
-          {items.map((item) => (
+          {items.map((item) => {
+            const key = editKey(item)
+            const isEditing = editingKey === key
+
+            return (
             <li key={item.id} className={`history-item history-item--${item.type}`}>
               <div className="history-item-main">
-                <span className="history-item-icon">
-                  {item.type === 'sale'
-                    ? '💵'
-                    : item.type === 'deposit'
-                      ? '📥'
-                      : item.type === 'transfer'
-                        ? '🔄'
-                        : '📤'}
-                </span>
+                <span className="history-item-icon">{historyIcon(item.type)}</span>
                 <div className="history-item-info">
                   <div className="history-item-top">
-                    <span className="history-item-type">
-                      {item.type === 'sale'
-                        ? 'Bill Collected'
-                        : item.type === 'deposit'
-                          ? 'Money Added'
-                          : item.type === 'transfer'
-                            ? 'Transfer'
-                            : 'Expense'}
-                    </span>
-                    {item.name && <span className="history-item-name">{item.name}</span>}
+                    <span className="history-item-type">{getHistoryTypeLabel(item.type)}</span>
+                    {isEditing ? (
+                      <form
+                        className="history-name-edit"
+                        onSubmit={(e) => {
+                          e.preventDefault()
+                          saveEdit(item)
+                        }}
+                      >
+                        <input
+                          ref={editInputRef}
+                          type="text"
+                          className="history-name-input"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          placeholder={namePlaceholder(item.type)}
+                          aria-label={nameLabel(item.type)}
+                          autoComplete="off"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') cancelEdit()
+                          }}
+                        />
+                        <button type="submit" className="history-name-save" aria-label="Save name">
+                          ✓
+                        </button>
+                        <button
+                          type="button"
+                          className="history-name-cancel"
+                          onClick={cancelEdit}
+                          aria-label="Cancel edit"
+                        >
+                          ✕
+                        </button>
+                      </form>
+                    ) : (
+                      <div className="history-name-row">
+                        {item.name ? (
+                          <span className="history-item-name">{item.name}</span>
+                        ) : (
+                          <span className="history-item-name history-item-name--empty">No name</span>
+                        )}
+                        <button
+                          type="button"
+                          className="history-name-edit-btn"
+                          onClick={() => startEdit(item)}
+                          aria-label={item.name ? `Edit ${nameLabel(item.type)}` : `Add ${nameLabel(item.type)}`}
+                        >
+                          ✎
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <span className="history-item-sub">{item.sub}</span>
                   <span className="history-item-date">{formatDate(item.date)}</span>
@@ -246,16 +230,9 @@ export default function History() {
                   {formatMoney(item.amount)}
                 </span>
               </div>
-              <button
-                type="button"
-                className="history-delete"
-                onClick={() => handleDelete(item.type, item.id)}
-                aria-label="Delete"
-              >
-                ✕
-              </button>
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
     </div>

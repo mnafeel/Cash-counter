@@ -1,11 +1,13 @@
-import type { AppData, Expense, Sale, TransferDirection } from '../types'
+import type { AppData, AppTheme, Expense, Sale, TransferDirection } from '../types'
 import { STORAGE_KEY } from '../types'
 import { normalizePin } from '../utils/numpad'
+import { normalizeTheme } from '../utils/theme'
 
 const defaultData: AppData = {
   openingBalance: 0,
   openingBankBalance: 0,
   homePin: '0000',
+  theme: 'premium',
   sales: [],
   expenses: [],
 }
@@ -19,6 +21,7 @@ export function loadData(): AppData {
       openingBalance: parsed.openingBalance ?? 0,
       openingBankBalance: parsed.openingBankBalance ?? 0,
       homePin: normalizePin(parsed.homePin, '0000'),
+      theme: normalizeTheme(parsed.theme),
       sales: parsed.sales ?? [],
       expenses: (parsed.expenses ?? []).map((e) => ({
         ...e,
@@ -134,6 +137,12 @@ export function addExpense(data: AppData, expense: Omit<Expense, 'id' | 'created
   return next
 }
 
+export function setTheme(data: AppData, theme: AppTheme): AppData {
+  const next = { ...data, theme }
+  saveData(next)
+  return next
+}
+
 export function setOpeningBankBalance(data: AppData, amount: number): AppData {
   const next = { ...data, openingBankBalance: amount }
   saveData(next)
@@ -160,6 +169,40 @@ export function deleteSale(data: AppData, id: string): AppData {
 
 export function deleteExpense(data: AppData, id: string): AppData {
   const next = { ...data, expenses: data.expenses.filter((e) => e.id !== id) }
+  saveData(next)
+  return next
+}
+
+export function updateSaleCustomerName(
+  data: AppData,
+  id: string,
+  customerName: string,
+): AppData {
+  const trimmed = customerName.trim()
+  const next = {
+    ...data,
+    sales: data.sales.map((s) =>
+      s.id === id ? { ...s, customerName: trimmed || undefined } : s,
+    ),
+  }
+  saveData(next)
+  return next
+}
+
+function defaultExpenseName(expense: Expense): string {
+  if (expense.kind === 'add') return 'Added'
+  if (expense.kind === 'transfer') return 'Transfer'
+  return 'Expense'
+}
+
+export function updateExpenseName(data: AppData, id: string, name: string): AppData {
+  const trimmed = name.trim()
+  const next = {
+    ...data,
+    expenses: data.expenses.map((e) =>
+      e.id === id ? { ...e, name: trimmed || defaultExpenseName(e) } : e,
+    ),
+  }
   saveData(next)
   return next
 }

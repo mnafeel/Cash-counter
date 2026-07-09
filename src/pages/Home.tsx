@@ -1,12 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import BigAmount from '../components/BigAmount'
 import NumberKeyboard from '../components/NumberKeyboard'
-import { formatMoney, parseAmount } from '../utils/format'
+import { formatMoney, parseAmount, formatDate } from '../utils/format'
 import { applyNumpadAction, applyPinAction, normalizePin, type NumpadAction } from '../utils/numpad'
 import type { ExpensePayType, TransferDirection } from '../types'
+import {
+  buildHistoryItems,
+  getHistoryTypeLabel,
+  matchesHistorySearch,
+  type HistoryFilter,
+  type HistoryItemType,
+} from '../utils/historyItems'
 import './Home.css'
 
 const DEFAULT_PIN = '0000'
@@ -14,7 +21,8 @@ const DEFAULT_PIN = '0000'
 type PanelField = 'note' | 'amount'
 
 export default function Home() {
-  const { balance, bankBalance, data, recordExpense, recordTransfer } = useCash()
+  const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense } =
+    useCash()
   const [unlocked, setUnlocked] = useState(false)
   const [pinStr, setPinStr] = useState('')
   const [pinError, setPinError] = useState(false)
@@ -25,6 +33,9 @@ export default function Home() {
   const [panelField, setPanelField] = useState<PanelField>('note')
   const [panelSaved, setPanelSaved] = useState(false)
   const [panelError, setPanelError] = useState('')
+  const [showDeleteRecords, setShowDeleteRecords] = useState(false)
+  const [deleteRecordSearch, setDeleteRecordSearch] = useState('')
+  const [deleteRecordFilter, setDeleteRecordFilter] = useState<HistoryFilter>('all')
   const noteInputRef = useRef<HTMLInputElement>(null)
 
   const homePin = normalizePin(data.homePin, DEFAULT_PIN)
@@ -68,6 +79,19 @@ export default function Home() {
 
   const todaySalesTotal = todaySales.reduce((sum, s) => sum + s.billAmount, 0)
   const todayExpensesTotal = todayExpenses.reduce((sum, e) => sum + e.amount, 0)
+
+  const recordsForDelete = useMemo(() => {
+    return buildHistoryItems(data)
+      .filter((item) => deleteRecordFilter === 'all' || item.type === deleteRecordFilter)
+      .filter((item) => matchesHistorySearch(item, deleteRecordSearch))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  }, [data, deleteRecordFilter, deleteRecordSearch])
+
+  function handleDeleteRecord(type: HistoryItemType, id: string) {
+    if (!confirm('Delete this record? Balances will be updated.')) return
+    if (type === 'sale') removeSale(id)
+    else removeExpense(id)
+  }
 
   function tryUnlock(nextPin: string) {
     if (nextPin === homePin) {
@@ -278,6 +302,18 @@ export default function Home() {
           >
             🏦 → 💵 Bank to Cash
           </button>
+          <button
+            type="button"
+            className="home-transfer-btn home-transfer-btn--delete"
+            onClick={() => {
+              closePanel()
+              setDeleteRecordSearch('')
+              setDeleteRecordFilter('all')
+              setShowDeleteRecords(true)
+            }}
+          >
+            🗑 Delete
+          </button>
         </div>
       </section>
 
@@ -306,6 +342,83 @@ export default function Home() {
           </Link>
         ))}
       </section>
+
+      {showDeleteRecords && (
+        <div className="home-add-overlay" role="dialog" aria-modal="true">
+          <div className="home-add-panel home-delete-panel">
+            <div className="home-add-panel-head">
+              <h3>Delete History</h3>
+              <button
+                type="button"
+                className="home-add-close"
+                onClick={() => setShowDeleteRecords(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <input
+              type="search"
+              className="home-delete-search"
+              value={deleteRecordSearch}
+              onChange={(e) => setDeleteRecordSearch(e.target.value)}
+              placeholder="Search bills, expenses, notes, amount…"
+              autoComplete="off"
+            />
+
+            <div className="home-delete-filters">
+              {(
+                [
+                  ['all', 'All'],
+                  ['sale', 'Bills'],
+                  ['expense', 'Expenses'],
+                  ['deposit', 'Added'],
+                  ['transfer', 'Transfer'],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={`home-delete-chip ${deleteRecordFilter === id ? 'home-delete-chip--active' : ''}`}
+                  onClick={() => setDeleteRecordFilter(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {recordsForDelete.length === 0 ? (
+              <p className="home-delete-empty">No records found.</p>
+            ) : (
+              <ul className="home-delete-list">
+                {recordsForDelete.map((item) => (
+                  <li key={item.id} className="home-delete-item">
+                    <div className="home-delete-info">
+                      <div className="home-delete-top">
+                        <span className="home-delete-type">{getHistoryTypeLabel(item.type)}</span>
+                        <span className="home-delete-amount">{formatMoney(item.amount)}</span>
+                      </div>
+                      <span className="home-delete-meta">
+                        {item.name ? `${item.name} · ` : ''}
+                        {item.sub} · {formatDate(item.date)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="home-delete-btn"
+                      onClick={() => handleDeleteRecord(item.type, item.id)}
+                      aria-label="Delete record"
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
 
       {panelOpen && (
         <div className="home-add-overlay" role="dialog" aria-modal="true">

@@ -5,10 +5,9 @@ import './PendingBillsPanel.css'
 interface PendingBillsPanelProps {
   bills: Sale[]
   onSelect: (bill: Sale) => void
-  onDelete: (id: string) => void
 }
 
-export default function PendingBillsPanel({ bills, onSelect, onDelete }: PendingBillsPanelProps) {
+export default function PendingBillsPanel({ bills, onSelect }: PendingBillsPanelProps) {
   const total = bills.reduce((sum, b) => sum + b.billAmount, 0)
 
   return (
@@ -26,7 +25,7 @@ export default function PendingBillsPanel({ bills, onSelect, onDelete }: Pending
             <li key={bill.id} className="pending-bills-item">
               <button
                 type="button"
-                className="pending-bills-load"
+                className="pending-bills-load pending-bills-load--full"
                 onClick={() => onSelect(bill)}
               >
                 <span className="pending-bills-amount">{formatMoney(bill.billAmount)}</span>
@@ -34,14 +33,6 @@ export default function PendingBillsPanel({ bills, onSelect, onDelete }: Pending
                   <span className="pending-bills-name">{bill.customerName}</span>
                 ) : null}
                 <span className="pending-bills-time">{formatTime(bill.createdAt)}</span>
-              </button>
-              <button
-                type="button"
-                className="pending-bills-delete"
-                onClick={() => onDelete(bill.id)}
-                aria-label="Delete pending bill"
-              >
-                ✕
               </button>
             </li>
           ))}

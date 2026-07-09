@@ -19,6 +19,7 @@ export interface Sale {
 export type ExpensePayType = Extract<PayType, 'cash' | 'bank'>
 export type ExpenseKind = 'expense' | 'add' | 'transfer'
 export type TransferDirection = 'cash-to-bank' | 'bank-to-cash'
+export type AppTheme = 'brown' | 'navy' | 'light' | 'premium'
 
 export interface Expense {
   id: string
@@ -36,6 +37,7 @@ export interface AppData {
   openingBalance: number
   openingBankBalance?: number
   homePin?: string
+  theme?: AppTheme
   sales: Sale[]
   expenses: Expense[]
 }

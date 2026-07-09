@@ -90,6 +90,10 @@
   border-color: var(--cream-dim);
 }
 
+.pending-bills-load--full {
+  width: 100%;
+}
+
 .pending-bills-amount {
   font-size: clamp(0.75rem, calc(var(--app-height, 800px) * 0.026), 0.95rem);
   font-weight: 800;

@@ -43,9 +43,10 @@
 }
 
 .pay-type-chip--active {
-  background: var(--cream);
+  background: var(--btn-primary-bg, var(--cream));
   border-color: var(--cream);
   color: var(--text-on-cream);
+  box-shadow: 0 2px 10px var(--accent-glow);
 }
 
 .pay-type-chip-icon {

@@ -13,6 +13,20 @@
   overflow: hidden;
 }
 
+.number-keyboard-hint {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  text-align: center;
+  font-size: clamp(0.62rem, calc(var(--counter-height, 560px) * 0.015), 0.78rem);
+  font-weight: 800;
+  color: var(--cream);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
 .number-keyboard-label {
   font-size: 0.5rem;
   font-weight: 700;

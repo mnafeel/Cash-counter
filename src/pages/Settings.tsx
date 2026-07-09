@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useCash } from '../context/CashContext'
+import type { AppTheme } from '../types'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import { formatMoney, parseAmount } from '../utils/format'
@@ -16,7 +17,9 @@ export default function Settings() {
     updateOpeningBalance,
     updateOpeningBankBalance,
     updateHomePin,
+    updateTheme,
   } = useCash()
+  const [theme, setTheme] = useState<AppTheme>(data.theme ?? 'premium')
   const [openingStr, setOpeningStr] = useState(String(data.openingBalance))
   const [openingBankStr, setOpeningBankStr] = useState(String(data.openingBankBalance ?? 0))
   const [pinStr, setPinStr] = useState('')
@@ -71,6 +74,7 @@ export default function Settings() {
 
     updateOpeningBalance(opening)
     updateOpeningBankBalance(openingBank)
+    updateTheme(theme)
     setSaved(true)
     setPinStr('')
     setPinConfirmStr('')
@@ -82,6 +86,40 @@ export default function Settings() {
       <div className="settings-header">
         <h2>Settings</h2>
         <p>Opening balances & home PIN</p>
+      </div>
+
+      <div className="settings-theme">
+        <span className="settings-theme-label">Color Theme</span>
+        <div className="settings-theme-row">
+          <button
+            type="button"
+            className={`settings-theme-btn settings-theme-btn--premium ${theme === 'premium' ? 'settings-theme-btn--active' : ''}`}
+            onClick={() => setTheme('premium')}
+          >
+            Premium Luxe
+          </button>
+          <button
+            type="button"
+            className={`settings-theme-btn settings-theme-btn--navy ${theme === 'navy' ? 'settings-theme-btn--active' : ''}`}
+            onClick={() => setTheme('navy')}
+          >
+            Royal Gold
+          </button>
+          <button
+            type="button"
+            className={`settings-theme-btn settings-theme-btn--light ${theme === 'light' ? 'settings-theme-btn--active' : ''}`}
+            onClick={() => setTheme('light')}
+          >
+            Soft Light
+          </button>
+          <button
+            type="button"
+            className={`settings-theme-btn settings-theme-btn--brown ${theme === 'brown' ? 'settings-theme-btn--active' : ''}`}
+            onClick={() => setTheme('brown')}
+          >
+            Brown & Copper
+          </button>
+        </div>
       </div>
 
       <div className="settings-fields">

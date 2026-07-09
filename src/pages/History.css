@@ -126,11 +126,11 @@
 }
 
 .history-item--deposit {
-  border-left-color: #40916c;
+  border-left-color: var(--deposit-border);
 }
 
 .history-item--transfer {
-  border-left-color: #74c0fc;
+  border-left-color: var(--transfer-border);
 }
 
 .history-item-main {
@@ -176,6 +176,87 @@
   color: var(--cream-dim);
 }
 
+.history-item-name--empty {
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.history-name-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.history-name-edit-btn {
+  padding: 0 4px;
+  font-size: 0.72rem;
+  line-height: 1;
+  color: var(--cream-dim);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.history-name-edit-btn:hover {
+  color: var(--cream);
+  background: var(--brown-dark);
+}
+
+.history-name-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.history-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--cream);
+  background: var(--brown-dark);
+  border: 1px solid var(--cream-dim);
+  border-radius: 6px;
+  outline: none;
+}
+
+.history-name-input:focus {
+  border-color: var(--cream);
+}
+
+.history-name-save,
+.history-name-cancel {
+  padding: 3px 6px;
+  font-size: 0.72rem;
+  line-height: 1;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.history-name-save {
+  color: var(--success-text);
+  background: var(--brown-dark);
+  border: 1px solid var(--success-text);
+}
+
+.history-name-cancel {
+  color: var(--cream-dim);
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+}
+
+.history-name-save:hover {
+  color: var(--cream);
+}
+
+.history-name-cancel:hover {
+  color: var(--danger-text);
+  border-color: var(--danger-text);
+}
+
 .history-item-sub {
   font-size: 0.75rem;
   color: var(--text-muted);
@@ -201,11 +282,11 @@
 }
 
 .history-item-amount.positive {
-  color: #95d5b2;
+  color: var(--success-text);
 }
 
 .history-item-amount.neutral {
-  color: #74c0fc;
+  color: var(--transfer-text);
 }
 
 .history-delete {

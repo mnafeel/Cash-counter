@@ -2,7 +2,7 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto;
   gap: 6px;
   overflow: hidden;
 }
@@ -27,6 +27,65 @@
   grid-template-columns: 1fr 1fr;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.settings-theme {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.settings-theme-label {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-theme-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.settings-theme-btn {
+  min-height: 38px;
+  padding: 8px 6px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border);
+  font-size: 0.62rem;
+  font-weight: 800;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.settings-theme-btn--premium {
+  background: linear-gradient(135deg, #2a2235 0%, #09090b 100%);
+  color: #e8c9a0;
+  border-color: #c9a56a;
+}
+
+.settings-theme-btn--brown {
+  background: linear-gradient(135deg, #6b4428 0%, #2a1810 100%);
+  color: #f2dcc0;
+}
+
+.settings-theme-btn--navy {
+  background: linear-gradient(135deg, #243b6b 0%, #0a1020 100%);
+  color: #ffc857;
+}
+
+.settings-theme-btn--light {
+  background: linear-gradient(135deg, #ffffff 0%, #e2e8f0 100%);
+  color: #0f766e;
+  border-color: #94a3b8;
+}
+
+.settings-theme-btn--active {
+  border-color: var(--cream);
+  box-shadow: 0 0 0 1px var(--cream);
 }
 
 .settings-pin-error {

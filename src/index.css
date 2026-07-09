@@ -1,23 +1,139 @@
+:root,
+[data-theme='brown'] {
+  --brown: #6b4428;
+  --cream: #f2dcc0;
+  --cream-dim: #c9a882;
+  --brown-dark: #2a1810;
+  --brown-light: #8b5a3c;
+  --bg: #2a1810;
+  --bg-gradient: linear-gradient(165deg, #1f120a 0%, #3d2518 45%, #2a1810 100%);
+  --surface: #4a3020;
+  --surface-2: #5c3d28;
+  --border: #9a7055;
+  --text: #f5e6d3;
+  --text-muted: #c4a88a;
+  --text-on-cream: #2a1810;
+  --accent: #f2dcc0;
+  --accent-dark: #ddb892;
+  --accent-glow: rgba(242, 220, 192, 0.35);
+  --header-bg: linear-gradient(180deg, #5c3d28 0%, #4a3020 100%);
+  --btn-primary-bg: linear-gradient(180deg, #f2dcc0 0%, #ddb892 100%);
+  --danger: #a83232;
+  --danger-text: #ffe4e4;
+  --danger-border: #c94444;
+  --success: #2f7a55;
+  --success-border: #45a06e;
+  --success-text: #b8f0d0;
+  --deposit-border: #45a06e;
+  --transfer-border: #6eb5ff;
+  --transfer-text: #9fd0ff;
+  --pending-bg: #9a7055;
+  --pending-bg-active: #7d5a42;
+  --shadow: 0 8px 32px rgba(20, 10, 5, 0.5);
+}
+
+[data-theme='navy'] {
+  --brown: #243b6b;
+  --cream: #ffc857;
+  --cream-dim: #8fa3c4;
+  --brown-dark: #0a1020;
+  --brown-light: #334d80;
+  --bg: #0a1020;
+  --bg-gradient: linear-gradient(165deg, #060a14 0%, #121c36 42%, #0a1020 100%);
+  --surface: #182440;
+  --surface-2: #223058;
+  --border: #3d5280;
+  --text: #f0f4ff;
+  --text-muted: #94a8cc;
+  --text-on-cream: #0a1020;
+  --accent: #ffc857;
+  --accent-dark: #e6a832;
+  --accent-glow: rgba(255, 200, 87, 0.4);
+  --header-bg: linear-gradient(180deg, #1a2d52 0%, #121f3d 100%);
+  --btn-primary-bg: linear-gradient(180deg, #ffd978 0%, #ffc857 55%, #e6a832 100%);
+  --danger: #c62828;
+  --danger-text: #ffe0e0;
+  --danger-border: #ef5350;
+  --success: #1b7a4a;
+  --success-border: #34d399;
+  --success-text: #a7f3d0;
+  --deposit-border: #34d399;
+  --transfer-border: #60a5fa;
+  --transfer-text: #93c5fd;
+  --pending-bg: #3d5280;
+  --pending-bg-active: #5269a0;
+  --shadow: 0 8px 32px rgba(4, 8, 20, 0.55);
+}
+
+[data-theme='light'] {
+  --brown: #0f766e;
+  --cream: #0d9488;
+  --cream-dim: #64748b;
+  --brown-dark: #e2e8f0;
+  --brown-light: #14b8a6;
+  --bg: #eef2f7;
+  --bg-gradient: linear-gradient(165deg, #e2e8f0 0%, #f8fafc 45%, #eef2f7 100%);
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --border: #cbd5e1;
+  --text: #1e293b;
+  --text-muted: #64748b;
+  --text-on-cream: #ffffff;
+  --accent: #0d9488;
+  --accent-dark: #0f766e;
+  --accent-glow: rgba(13, 148, 136, 0.28);
+  --header-bg: linear-gradient(180deg, #0f766e 0%, #115e59 100%);
+  --btn-primary-bg: linear-gradient(180deg, #2dd4bf 0%, #0d9488 55%, #0f766e 100%);
+  --danger: #dc2626;
+  --danger-text: #ffffff;
+  --danger-border: #ef4444;
+  --success: #059669;
+  --success-border: #10b981;
+  --success-text: #047857;
+  --deposit-border: #10b981;
+  --transfer-border: #0284c7;
+  --transfer-text: #0369a1;
+  --pending-bg: #94a3b8;
+  --pending-bg-active: #64748b;
+  --shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+[data-theme='premium'] {
+  --brown: #2a2235;
+  --cream: #e8c9a0;
+  --cream-dim: #a89bb8;
+  --brown-dark: #09090b;
+  --brown-light: #3d3654;
+  --bg: #09090b;
+  --bg-gradient: linear-gradient(165deg, #050506 0%, #12101a 38%, #1a1420 100%);
+  --surface: #18181f;
+  --surface-2: #242030;
+  --border: #4a4060;
+  --text: #faf8f5;
+  --text-muted: #a89bb8;
+  --text-on-cream: #1a1018;
+  --accent: #e8c9a0;
+  --accent-dark: #c9a56a;
+  --accent-glow: rgba(232, 201, 160, 0.42);
+  --header-bg: linear-gradient(180deg, #2a2235 0%, #12101a 100%);
+  --btn-primary-bg: linear-gradient(180deg, #f5dfc0 0%, #e8c9a0 48%, #c9a56a 100%);
+  --danger: #8b2942;
+  --danger-text: #ffe4ec;
+  --danger-border: #b83a5a;
+  --success: #1f6b4a;
+  --success-border: #3d9970;
+  --success-text: #b8e8d0;
+  --deposit-border: #3d9970;
+  --transfer-border: #7eb8e8;
+  --transfer-text: #a8d4f8;
+  --pending-bg: #4a4060;
+  --pending-bg-active: #5c5080;
+  --shadow: 0 10px 40px rgba(0, 0, 0, 0.65);
+}
+
 :root {
-  --brown: #5c382a;
-  --cream: #cebd9c;
-  --cream-dim: #b8a688;
-  --brown-dark: #3d251c;
-  --brown-light: #735040;
-  --bg: #3d251c;
-  --surface: #5c382a;
-  --surface-2: #6d4535;
-  --border: #8a6350;
-  --text: #cebd9c;
-  --text-muted: #a89580;
-  --text-on-cream: #5c382a;
-  --accent: #cebd9c;
-  --accent-dark: #b8a688;
-  --danger: #8b3a3a;
-  --danger-text: #f0d4d4;
   --radius: 16px;
   --radius-sm: 10px;
-  --shadow: 0 4px 24px rgba(45, 30, 20, 0.45);
   --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
   --page-gap: 4px;
   --key-gap: 3px;
@@ -45,6 +161,7 @@ html {
 body {
   font-family: var(--font);
   background: var(--bg);
+  background: var(--bg-gradient);
   color: var(--text);
   height: var(--app-height, 100dvh);
   max-height: var(--app-height, 100dvh);
@@ -88,7 +205,7 @@ a {
   border-radius: var(--radius-sm);
   font-size: 1.1rem;
   font-weight: 700;
-  transition: transform 0.15s, opacity 0.15s, background 0.15s;
+  transition: transform 0.15s, opacity 0.15s, background 0.15s, box-shadow 0.15s;
   min-height: 56px;
   flex: 1;
 }
@@ -103,12 +220,13 @@ a {
 }
 
 .btn-primary {
-  background: var(--cream);
+  background: var(--btn-primary-bg, var(--cream));
   color: var(--text-on-cream);
+  box-shadow: 0 2px 12px var(--accent-glow);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-dark);
+  filter: brightness(1.05);
 }
 
 .btn-secondary {
@@ -120,13 +238,14 @@ a {
 .btn-danger {
   background: var(--danger);
   color: var(--danger-text);
-  border: 2px solid #a04545;
+  border: 2px solid var(--danger-border);
 }
 
 .btn-success {
-  background: #2d6a4f;
-  color: var(--cream);
-  border: 2px solid #40916c;
+  background: var(--success);
+  color: var(--text-on-cream);
+  border: 2px solid var(--success-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
 }
 
 .btn-saved {
@@ -134,7 +253,6 @@ a {
   color: var(--brown) !important;
 }
 
-/* Hide keyboard label — saves vertical space on all devices */
 .number-keyboard-label {
   display: none;
 }
@@ -148,7 +266,6 @@ html[data-screen='desktop'] .number-keyboard {
   padding: 6px;
 }
 
-/* Landscape — hide nav text labels on short screens */
 html[data-landscape='true'][data-short='true'] .nav-label {
   display: none;
 }

@@ -2,11 +2,21 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react'
-import type { AppData, ExpenseKind, ExpensePayType, PayType, Sale, SaleStatus, TransferDirection } from '../types'
+import type {
+  AppData,
+  AppTheme,
+  ExpenseKind,
+  ExpensePayType,
+  PayType,
+  Sale,
+  SaleStatus,
+  TransferDirection,
+} from '../types'
 import {
   addExpense,
   addSale,
@@ -20,7 +30,11 @@ import {
   setHomePin,
   setOpeningBalance,
   setOpeningBankBalance,
+  setTheme,
+  updateExpenseName,
+  updateSaleCustomerName,
 } from '../storage/database'
+import { applyTheme, normalizeTheme } from '../utils/theme'
 
 interface CashContextValue {
   data: AppData
@@ -53,8 +67,10 @@ interface CashContextValue {
   updateOpeningBalance: (amount: number) => void
   updateOpeningBankBalance: (amount: number) => void
   updateHomePin: (pin: string) => void
+  updateTheme: (theme: AppTheme) => void
   removeSale: (id: string) => void
   removeExpense: (id: string) => void
+  updateHistoryName: (type: 'sale' | 'expense' | 'deposit' | 'transfer', id: string, name: string) => void
   refresh: () => void
 }
 
@@ -62,6 +78,10 @@ const CashContext = createContext<CashContextValue | null>(null)
 
 export function CashProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => loadData())
+
+  useEffect(() => {
+    applyTheme(normalizeTheme(data.theme))
+  }, [data.theme])
 
   const refresh = useCallback(() => setData(loadData()), [])
 
@@ -127,6 +147,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => setHomePin(prev, pin))
   }, [])
 
+  const updateTheme = useCallback((theme: AppTheme) => {
+    setData((prev) => setTheme(prev, theme))
+  }, [])
+
   const updateOpeningBalance = useCallback((amount: number) => {
     setData((prev) => setOpeningBalance(prev, amount))
   }, [])
@@ -138,6 +162,15 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const removeExpense = useCallback((id: string) => {
     setData((prev) => deleteExpense(prev, id))
   }, [])
+
+  const updateHistoryName = useCallback(
+    (type: 'sale' | 'expense' | 'deposit' | 'transfer', id: string, name: string) => {
+      setData((prev) =>
+        type === 'sale' ? updateSaleCustomerName(prev, id, name) : updateExpenseName(prev, id, name),
+      )
+    },
+    [],
+  )
 
   const value = useMemo(
     () => ({
@@ -151,8 +184,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
+      updateTheme,
       removeSale,
       removeExpense,
+      updateHistoryName,
       refresh,
     }),
     [
@@ -166,8 +201,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
+      updateTheme,
       removeSale,
       removeExpense,
+      updateHistoryName,
       refresh,
     ],
   )
