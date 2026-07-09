@@ -19,9 +19,11 @@
   --radius-sm: 10px;
   --shadow: 0 4px 24px rgba(45, 30, 20, 0.45);
   --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --page-gap: clamp(4px, 1vh, 8px);
-  --key-gap: clamp(3px, 0.6vw, 6px);
-  --ui-pad: clamp(6px, 1.5vw, 14px);
+  --page-gap: 4px;
+  --key-gap: 3px;
+  --ui-pad: 6px;
+  --app-width: 100vw;
+  --app-height: 100dvh;
 }
 
 *,
@@ -125,69 +127,33 @@ a {
   color: var(--brown) !important;
 }
 
-/* Phone — width under 768px */
-html[data-screen='phone'] {
-  --page-gap: 4px;
-  --key-gap: 3px;
-  --ui-pad: 6px;
-}
-
-/* Tablet / iPad — 768px to 1023px */
-html[data-screen='tablet'] {
-  --page-gap: 5px;
-  --key-gap: 4px;
-  --ui-pad: 8px;
-}
-
-html[data-screen='tablet'][data-short='true'],
-html[data-screen='tablet'][data-landscape='true'] {
-  --page-gap: 3px;
-  --key-gap: 2px;
-  --ui-pad: 5px;
-}
-
-/* Desktop — 1280px and up */
-html[data-screen='desktop'] {
-  --page-gap: 8px;
-  --key-gap: 6px;
-  --ui-pad: 14px;
-}
-
-/* Short screen — limited height */
-html[data-short='true'] {
-  --page-gap: 3px;
-  --key-gap: 2px;
-  --ui-pad: 4px;
-}
-
-/* Tight fit — full-screen layout on all devices */
-html[data-tight='true'] .number-keyboard-label {
+/* Hide keyboard label — saves vertical space on all devices */
+.number-keyboard-label {
   display: none;
 }
 
-html[data-tight='true'] .number-keyboard {
+.number-keyboard {
   padding: 4px;
-  gap: 2px;
-}
-
-html[data-screen='desktop'][data-tight='true'] .number-keyboard {
-  padding: 6px;
   gap: var(--page-gap);
 }
 
-/* Landscape mode */
+html[data-screen='desktop'] .number-keyboard {
+  padding: 6px;
+}
+
+/* Landscape — hide nav text labels on short screens */
 html[data-landscape='true'][data-short='true'] .nav-label {
   display: none;
 }
 
-@media (min-width: 768px) {
-  html {
-    font-size: 16px;
-  }
+html[data-screen='phone'] {
+  font-size: 15px;
 }
 
-@media (min-width: 1024px) {
-  html {
-    font-size: 17px;
-  }
+html[data-screen='tablet'] {
+  font-size: 16px;
+}
+
+html[data-screen='desktop'] {
+  font-size: 16px;
 }

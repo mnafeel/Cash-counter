@@ -77,7 +77,7 @@
 }
 
 .counter-readonly-value {
-  font-size: clamp(0.75rem, 3.5vmin, 1.1rem);
+  font-size: clamp(0.75rem, calc(var(--app-height, 800px) * 0.026), 1.1rem);
   font-weight: 800;
   color: var(--cream);
   line-height: 1.1;
@@ -139,11 +139,11 @@
 
 .counter-round {
   width: 100%;
-  min-height: 28px;
+  min-height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 6px;
+  padding: 2px 4px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -151,15 +151,20 @@
   flex-shrink: 0;
 }
 
+.counter-round .round-type-chips-label {
+  display: none;
+}
+
 .counter-round-empty {
   width: 100%;
   margin: 0;
   text-align: center;
-  font-size: 0.5rem;
+  font-size: 0.42rem;
   color: var(--cream-dim);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  line-height: 1;
 }
 
 .counter-hint {
@@ -219,7 +224,7 @@ html[data-screen='tablet'] .amount-display--compact .amount-display-label {
 
 html[data-screen='tablet'] .counter-readonly-value,
 html[data-screen='tablet'] .amount-display--compact .amount-display-value {
-  font-size: clamp(0.8rem, 2.8vmin, 1.2rem);
+  font-size: clamp(0.8rem, calc(var(--app-height, 900px) * 0.026), 1.2rem);
 }
 
 html[data-screen='tablet'] .counter-pay,
@@ -228,8 +233,8 @@ html[data-screen='tablet'] .counter-box {
 }
 
 html[data-screen='tablet'] .counter-round {
-  min-height: 22px;
-  padding: 2px 4px;
+  min-height: 18px;
+  padding: 1px 3px;
 }
 
 html[data-screen='tablet'] .counter-actions .btn {
@@ -254,7 +259,7 @@ html[data-screen='desktop'] .amount-display--compact {
 
 html[data-screen='desktop'] .counter-readonly-value,
 html[data-screen='desktop'] .amount-display--compact .amount-display-value {
-  font-size: clamp(1rem, 2.5vmin, 1.5rem);
+  font-size: clamp(1rem, calc(var(--app-height, 900px) * 0.032), 1.5rem);
 }
 
 html[data-screen='desktop'] .counter-actions .btn {
@@ -264,7 +269,8 @@ html[data-screen='desktop'] .counter-actions .btn {
 }
 
 html[data-screen='desktop'] .counter-round {
-  min-height: 26px;
+  min-height: 20px;
+  padding: 2px 4px;
 }
 
 html[data-screen='desktop'] .counter-keyboard-wrap {

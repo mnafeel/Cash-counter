@@ -81,21 +81,21 @@
 .numpad--compact .numpad-key {
   min-height: 0;
   height: 100%;
-  font-size: clamp(0.9rem, 4vmin, 1.35rem);
+  font-size: clamp(0.85rem, calc(var(--app-height, 800px) * 0.038), 1.5rem);
   border-radius: 8px;
   padding: 0;
 }
 
-html[data-screen='tablet'] .numpad--compact .numpad-key {
-  font-size: clamp(0.85rem, 2.8vmin, 1.2rem);
+html[data-screen='phone'] .numpad--compact .numpad-key {
+  font-size: clamp(0.8rem, calc(var(--app-height, 700px) * 0.042), 1.2rem);
 }
 
-html[data-screen='tablet'][data-landscape='true'] .numpad--compact .numpad-key {
-  font-size: clamp(0.8rem, 2.4vmin, 1.05rem);
+html[data-screen='tablet'] .numpad--compact .numpad-key {
+  font-size: clamp(0.85rem, calc(var(--app-height, 900px) * 0.035), 1.25rem);
 }
 
 html[data-screen='desktop'] .numpad--compact .numpad-key {
-  font-size: clamp(1.2rem, 2.8vmin, 1.65rem);
+  font-size: clamp(1rem, calc(var(--app-height, 900px) * 0.038), 1.65rem);
 }
 
 .numpad--compact .numpad-key--wide {

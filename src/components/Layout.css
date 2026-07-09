@@ -151,16 +151,12 @@
 }
 
 @media (min-width: 768px) {
-  .layout {
-    max-width: 100%;
-  }
-
-  .layout--fit .header--compact {
+  html[data-screen='desktop'] .layout--fit .header--compact {
     padding: 8px 16px 0;
     padding-top: max(8px, env(safe-area-inset-top));
   }
 
-  .layout--fit .header--compact .nav-link {
+  html[data-screen='desktop'] .layout--fit .header--compact .nav-link {
     flex-direction: row;
     gap: 6px;
     font-size: 0.75rem;

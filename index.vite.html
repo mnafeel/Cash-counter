@@ -8,6 +8,18 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Cash Counter</title>
+    <script>
+      (function () {
+        var w = innerWidth
+        var h = innerHeight
+        var t = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1
+        var s = w < 768 ? 'phone' : w < 1280 || (t && w < 1400) ? 'tablet' : 'desktop'
+        var d = document.documentElement
+        d.dataset.screen = s
+        d.style.setProperty('--app-width', w + 'px')
+        d.style.setProperty('--app-height', h + 'px')
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

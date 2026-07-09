@@ -57,15 +57,15 @@
 }
 
 .amount-display--compact .amount-display-value {
-  font-size: clamp(0.9rem, 4.5vmin, 1.45rem);
+  font-size: clamp(0.85rem, calc(var(--app-height, 800px) * 0.028), 1.45rem);
 }
 
 html[data-screen='tablet'] .amount-display--compact .amount-display-value {
-  font-size: clamp(0.8rem, 2.8vmin, 1.2rem);
+  font-size: clamp(0.8rem, calc(var(--app-height, 900px) * 0.026), 1.2rem);
 }
 
 html[data-screen='desktop'] .amount-display--compact .amount-display-value {
-  font-size: clamp(1.2rem, 2.5vmin, 1.75rem);
+  font-size: clamp(1rem, calc(var(--app-height, 900px) * 0.032), 1.75rem);
 }
 
 @media (min-width: 1024px) {
