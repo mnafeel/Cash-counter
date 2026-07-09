@@ -26,7 +26,7 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
     ...data.sales.map((s) => {
       const payLabel =
         s.status === 'pending'
-          ? '💳 Credit · Pending'
+          ? '📋 Pending'
           : s.payType === 'bank'
             ? '🏦 Bank'
             : s.payType === 'credit'
@@ -42,7 +42,7 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
         type: 'sale' as const,
         id: s.id,
         amount: s.billAmount,
-        sub: `${orig}${s.status === 'pending' ? 'Pending · ' : s.payType === 'bank' || s.payType === 'credit' ? 'Paid ' : `Give ${formatMoney(s.paidAmount)} · `}${payLabel}${s.changeAmount > 0 ? ` · Change ${formatMoney(s.changeAmount)}` : ''}`,
+        sub: `${orig}${s.status === 'pending' ? 'Pending · ' : s.payType === 'bank' || s.payType === 'credit' ? 'Paid ' : `Give ${formatMoney(s.paidAmount)} · `}${payLabel}${s.changeAmount > 0 ? ` · Change ${formatMoney(s.changeAmount)}` : ''}${s.updatedAt && s.status !== 'pending' ? ` · Collected ${formatDate(s.updatedAt)}` : ''}`,
         name: s.customerName,
         date: s.createdAt,
       }

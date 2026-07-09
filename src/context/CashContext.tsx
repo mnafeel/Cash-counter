@@ -20,6 +20,7 @@ import {
   addExpense,
   addSale,
   addTransfer,
+  collectPendingBill,
   deleteExpense,
   deleteSale,
   getBankBalance,
@@ -32,6 +33,7 @@ import {
   setOpeningBalance,
   setOpeningBankBalance,
   updateExpenseName,
+  updatePendingBill,
   updateSaleCustomerName,
 } from '../storage/database'
 import { isFirebaseConfigured } from '../firebase/config'
@@ -55,6 +57,27 @@ interface CashContextValue {
     customerName?: string
     status?: SaleStatus
   }) => void
+  updatePendingSale: (
+    id: string,
+    sale: {
+      billAmount: number
+      originalBillAmount?: number
+      customerName?: string
+    },
+  ) => void
+  collectPendingSale: (
+    id: string,
+    sale: {
+      billAmount: number
+      originalBillAmount?: number
+      paidAmount: number
+      changeAmount: number
+      payType: PayType
+      cashAmount?: number
+      bankAmount?: number
+      customerName?: string
+    },
+  ) => void
   recordExpense: (expense: {
     amount: number
     name: string
@@ -119,6 +142,39 @@ export function CashProvider({ children }: { children: ReactNode }) {
       status?: SaleStatus
     }) => {
       setData((prev) => addSale(prev, sale))
+    },
+    [],
+  )
+
+  const updatePendingSale = useCallback(
+    (
+      id: string,
+      sale: {
+        billAmount: number
+        originalBillAmount?: number
+        customerName?: string
+      },
+    ) => {
+      setData((prev) => updatePendingBill(prev, id, sale))
+    },
+    [],
+  )
+
+  const collectPendingSale = useCallback(
+    (
+      id: string,
+      sale: {
+        billAmount: number
+        originalBillAmount?: number
+        paidAmount: number
+        changeAmount: number
+        payType: PayType
+        cashAmount?: number
+        bankAmount?: number
+        customerName?: string
+      },
+    ) => {
+      setData((prev) => collectPendingBill(prev, id, sale))
     },
     [],
   )
@@ -199,6 +255,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       bankBalance,
       pendingBills,
       recordSale,
+      updatePendingSale,
+      collectPendingSale,
       recordExpense,
       recordTransfer,
       updateOpeningBalance,
@@ -217,6 +275,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       bankBalance,
       pendingBills,
       recordSale,
+      updatePendingSale,
+      collectPendingSale,
       recordExpense,
       recordTransfer,
       updateOpeningBalance,

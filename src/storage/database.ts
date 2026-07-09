@@ -1,4 +1,4 @@
-import type { AppData, AppTheme, Expense, Sale, TransferDirection } from '../types'
+import type { AppData, AppTheme, Expense, PayType, Sale, TransferDirection } from '../types'
 import { STORAGE_KEY } from '../types'
 import { notifyDataChanged } from '../firebase/sync'
 import { normalizePin } from '../utils/numpad'
@@ -72,7 +72,13 @@ function saleCashToDrawer(sale: Sale): number {
 }
 
 export function getPendingBills(data: AppData): Sale[] {
-  return data.sales.filter((s) => s.status === 'pending')
+  return data.sales
+    .filter((s) => s.status === 'pending')
+    .sort(
+      (a, b) =>
+        new Date(b.updatedAt ?? b.createdAt).getTime() -
+        new Date(a.updatedAt ?? a.createdAt).getTime(),
+    )
 }
 
 function expenseCashToDrawer(expense: Expense): number {
@@ -117,7 +123,7 @@ export function getCurrentBalance(data: AppData): number {
 export function addSale(data: AppData, sale: Omit<Sale, 'id' | 'createdAt'>): AppData {
   const newSale: Sale = {
     ...sale,
-    status: sale.status ?? (sale.payType === 'credit' ? 'pending' : 'paid'),
+    status: sale.status ?? 'paid',
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
   }
@@ -197,10 +203,77 @@ export function updateSaleCustomerName(
   customerName: string,
 ): AppData {
   const trimmed = customerName.trim()
+  const now = new Date().toISOString()
   const next = {
     ...data,
     sales: data.sales.map((s) =>
-      s.id === id ? { ...s, customerName: trimmed || undefined } : s,
+      s.id === id
+        ? {
+            ...s,
+            customerName: trimmed || undefined,
+            ...(s.status === 'pending' ? { updatedAt: now } : {}),
+          }
+        : s,
+    ),
+  }
+  saveData(next)
+  return next
+}
+
+export function updatePendingBill(
+  data: AppData,
+  id: string,
+  updates: {
+    billAmount: number
+    originalBillAmount?: number
+    customerName?: string
+  },
+): AppData {
+  const next = {
+    ...data,
+    sales: data.sales.map((s) =>
+      s.id === id && s.status === 'pending'
+        ? {
+            ...s,
+            billAmount: updates.billAmount,
+            originalBillAmount: updates.originalBillAmount,
+            customerName: updates.customerName,
+            updatedAt: new Date().toISOString(),
+          }
+        : s,
+    ),
+  }
+  saveData(next)
+  return next
+}
+
+export function collectPendingBill(
+  data: AppData,
+  id: string,
+  sale: {
+    billAmount: number
+    originalBillAmount?: number
+    paidAmount: number
+    changeAmount: number
+    payType: PayType
+    cashAmount?: number
+    bankAmount?: number
+    customerName?: string
+  },
+): AppData {
+  const now = new Date().toISOString()
+  const next = {
+    ...data,
+    sales: data.sales.map((s) =>
+      s.id === id && s.status === 'pending'
+        ? {
+            ...s,
+            ...sale,
+            status: 'paid' as const,
+            creditAmount: undefined,
+            updatedAt: now,
+          }
+        : s,
     ),
   }
   saveData(next)

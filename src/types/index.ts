@@ -14,6 +14,7 @@ export interface Sale {
   status?: SaleStatus
   customerName?: string
   createdAt: string
+  updatedAt?: string
 }
 
 export type ExpensePayType = Extract<PayType, 'cash' | 'bank'>

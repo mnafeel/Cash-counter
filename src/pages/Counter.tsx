@@ -54,7 +54,7 @@ function formatSplitPart(amount: number): string {
 }
 
 export default function Counter() {
-  const { recordSale, pendingBills } = useCash()
+  const { recordSale, updatePendingSale, collectPendingSale, pendingBills } = useCash()
   const [billStr, setBillStr] = useState('')
   const [giveStr, setGiveStr] = useState('')
   const [paidStr, setPaidStr] = useState('')
@@ -66,6 +66,7 @@ export default function Counter() {
   const [customerName, setCustomerName] = useState('')
   const [activeField, setActiveField] = useState<ActiveField>('bill')
   const [saved, setSaved] = useState(false)
+  const [loadedPendingId, setLoadedPendingId] = useState<string | null>(null)
 
   const billAmount = parseAmount(billStr)
   const giveAmount = parseAmount(giveStr)
@@ -86,7 +87,7 @@ export default function Counter() {
         : dueAmount
 
   const changeAmount =
-    payType === 'bank' || payType === 'credit'
+    payType === 'bank'
       ? 0
       : Math.max(0, giveAmount - paidForReturn)
 
@@ -108,7 +109,7 @@ export default function Counter() {
     needsGive(payType) && giveAmount > 0 && paidForReturn > 0 && !splitMismatch
 
   const returnDisplay = (() => {
-    if (payType === 'bank' || payType === 'credit') return '—'
+    if (payType === 'bank') return '—'
     if (splitMismatch) return '≠'
     if (needMore) return `+${formatMoney(shortfallAmount)}`
     if (showReturnLive) return formatMoney(changeAmount)
@@ -117,7 +118,7 @@ export default function Counter() {
 
   const isValid =
     billAmount > 0 &&
-    (payType === 'bank' || payType === 'credit'
+    (payType === 'bank'
       ? paymentStep && paidAmount > 0
       : payType === 'cash'
         ? paymentStep && paidAmount > 0 && giveAmount >= paidAmount
@@ -282,9 +283,11 @@ export default function Counter() {
     setCustomerName('')
     setActiveField('bill')
     setSaved(false)
+    setLoadedPendingId(null)
   }
 
   function loadPendingBill(bill: Sale) {
+    setLoadedPendingId(bill.id)
     setBillStr(String(bill.originalBillAmount ?? bill.billAmount))
     setGiveStr('')
     setPaidStr(String(bill.billAmount))
@@ -292,7 +295,7 @@ export default function Counter() {
     setCashSplitStr('')
     setBankSplitStr('')
     setCustomerName(bill.customerName ?? '')
-    setPayType('credit')
+    setPayType('cash')
     setPaymentStep(true)
     setActiveField('paid')
     setSaved(false)
@@ -301,16 +304,23 @@ export default function Counter() {
   function handleSavePending() {
     if (!canSavePending) return
 
-    recordSale({
+    const name = customerName.trim() || undefined
+    const pendingPayload = {
       billAmount: dueAmount,
       originalBillAmount: billAmount,
-      paidAmount: 0,
-      changeAmount: 0,
-      payType: 'credit',
-      creditAmount: dueAmount,
-      status: 'pending',
-      customerName: customerName.trim() || undefined,
-    })
+      customerName: name,
+    }
+
+    if (loadedPendingId) {
+      updatePendingSale(loadedPendingId, pendingPayload)
+    } else {
+      recordSale({
+        ...pendingPayload,
+        paidAmount: 0,
+        changeAmount: 0,
+        status: 'pending',
+      })
+    }
     setSaved(true)
     setTimeout(resetForm, 900)
   }
@@ -322,33 +332,29 @@ export default function Counter() {
       payType === 'cash' ? paidAmount : payType === 'split' ? cashSplitAmount : 0
     const bankAmount =
       payType === 'bank' ? paidAmount : payType === 'split' ? bankSplitAmount : 0
-    const creditAmount = payType === 'credit' ? paidAmount : 0
     const name = customerName.trim() || undefined
 
-    recordSale({
+    const salePayload = {
       billAmount: payType === 'split' ? splitTotal : paidAmount,
       originalBillAmount: billAmount,
-      paidAmount: payType === 'bank' || payType === 'credit' ? paidAmount : giveAmount,
+      paidAmount: payType === 'bank' ? paidAmount : giveAmount,
       changeAmount,
       payType,
       cashAmount,
       bankAmount,
-      creditAmount,
       customerName: name,
-      status: payType === 'credit' ? 'pending' : 'paid',
-    })
+    }
+
+    if (loadedPendingId) {
+      collectPendingSale(loadedPendingId, salePayload)
+    } else {
+      recordSale(salePayload)
+    }
     setSaved(true)
     setTimeout(resetForm, 900)
   }
 
-  const saveLabel =
-    payType === 'credit'
-      ? saved
-        ? '✓ Saved'
-        : 'Save\nCredit'
-      : saved
-        ? '✓ Saved'
-        : 'Save &\nCollect'
+  const saveLabel = saved ? '✓ Saved' : 'Save &\nCollect'
 
   return (
     <div className="counter-page">
@@ -441,7 +447,11 @@ export default function Counter() {
           </div>
 
           <div className="counter-pay">
-            <PayTypeChips value={payType} onChange={handlePayTypeChange} />
+            <PayTypeChips
+              value={payType}
+              onChange={handlePayTypeChange}
+              options={['cash', 'bank', 'split']}
+            />
           </div>
 
           </div>
@@ -492,7 +502,7 @@ export default function Counter() {
             </button>
             <button
               type="button"
-              className={`btn btn-primary ${saved ? 'btn-saved' : ''} ${payType === 'credit' ? 'btn-credit' : ''}`}
+              className={`btn btn-primary ${saved ? 'btn-saved' : ''}`}
               onClick={handleSave}
               disabled={!isValid || saved}
             >

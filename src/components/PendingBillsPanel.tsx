@@ -1,5 +1,5 @@
 import type { Sale } from '../types'
-import { formatMoney, formatTime } from '../utils/format'
+import { formatDate, formatMoney } from '../utils/format'
 import './PendingBillsPanel.css'
 
 interface PendingBillsPanelProps {
@@ -32,7 +32,12 @@ export default function PendingBillsPanel({ bills, onSelect }: PendingBillsPanel
                 {bill.customerName ? (
                   <span className="pending-bills-name">{bill.customerName}</span>
                 ) : null}
-                <span className="pending-bills-time">{formatTime(bill.createdAt)}</span>
+                <span className="pending-bills-time">Created {formatDate(bill.createdAt)}</span>
+                {bill.updatedAt ? (
+                  <span className="pending-bills-time pending-bills-time--updated">
+                    Updated {formatDate(bill.updatedAt)}
+                  </span>
+                ) : null}
               </button>
             </li>
           ))}
