@@ -1,5 +1,6 @@
 import type { AppData, AppTheme, Expense, Sale, TransferDirection } from '../types'
 import { STORAGE_KEY } from '../types'
+import { notifyDataChanged } from '../firebase/sync'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
 
@@ -12,31 +13,34 @@ const defaultData: AppData = {
   expenses: [],
 }
 
+export function normalizeData(parsed: Partial<AppData>): AppData {
+  return {
+    openingBalance: parsed.openingBalance ?? 0,
+    openingBankBalance: parsed.openingBankBalance ?? 0,
+    homePin: normalizePin(parsed.homePin, '0000'),
+    theme: normalizeTheme(parsed.theme),
+    sales: parsed.sales ?? [],
+    expenses: (parsed.expenses ?? []).map((e) => ({
+      ...e,
+      name: e.name ?? e.note ?? 'Expense',
+      payType: e.payType === 'bank' ? 'bank' : 'cash',
+      kind:
+        e.kind === 'add' ? 'add' : e.kind === 'transfer' ? 'transfer' : 'expense',
+      transferDirection:
+        e.kind === 'transfer'
+          ? e.transferDirection === 'bank-to-cash'
+            ? 'bank-to-cash'
+            : 'cash-to-bank'
+          : undefined,
+    })),
+  }
+}
+
 export function loadData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...defaultData }
-    const parsed = JSON.parse(raw) as AppData
-    return {
-      openingBalance: parsed.openingBalance ?? 0,
-      openingBankBalance: parsed.openingBankBalance ?? 0,
-      homePin: normalizePin(parsed.homePin, '0000'),
-      theme: normalizeTheme(parsed.theme),
-      sales: parsed.sales ?? [],
-      expenses: (parsed.expenses ?? []).map((e) => ({
-        ...e,
-        name: e.name ?? e.note ?? 'Expense',
-        payType: e.payType === 'bank' ? 'bank' : 'cash',
-        kind:
-          e.kind === 'add' ? 'add' : e.kind === 'transfer' ? 'transfer' : 'expense',
-        transferDirection:
-          e.kind === 'transfer'
-            ? e.transferDirection === 'bank-to-cash'
-              ? 'bank-to-cash'
-              : 'cash-to-bank'
-            : undefined,
-      })),
-    }
+    return normalizeData(JSON.parse(raw) as AppData)
   } catch {
     return { ...defaultData }
   }
@@ -44,6 +48,20 @@ export function loadData(): AppData {
 
 export function saveData(data: AppData): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+  notifyDataChanged(data)
+}
+
+export function replaceData(data: AppData): AppData {
+  const next = normalizeData(data)
+  saveData(next)
+  return next
+}
+
+/** Wipe local counter data — used on cloud logout. Does not trigger cloud backup. */
+export function clearAllLocalData(): AppData {
+  const next = { ...defaultData }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  return next
 }
 
 function saleCashToDrawer(sale: Sale): number {

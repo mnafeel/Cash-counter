@@ -1,10 +1,21 @@
 .settings-page {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto auto;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
   overflow: hidden;
+}
+
+.settings-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 4px;
 }
 
 .settings-header {
@@ -129,6 +140,154 @@
   text-align: center;
   line-height: 1.4;
   flex-shrink: 0;
+}
+
+.settings-backup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.settings-backup-head h3 {
+  font-size: 0.9rem;
+  color: var(--cream);
+  margin-bottom: 2px;
+}
+
+.settings-backup-head p,
+.settings-backup-note,
+.settings-backup-meta,
+.settings-backup-signed-in {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.settings-backup-note code {
+  font-size: 0.68rem;
+  color: var(--cream-dim);
+}
+
+.settings-backup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-backup-field span {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-backup-field input {
+  padding: 8px 10px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--cream);
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.settings-backup-field input:focus {
+  border-color: var(--cream-dim);
+}
+
+.settings-backup-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--cream);
+}
+
+.settings-backup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-backup-actions .btn {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  flex: 1;
+  min-width: 90px;
+}
+
+.settings-backup-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-backup-open {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-backup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-backup-form-label {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-backup-actions--create .btn-primary {
+  flex: 1.2;
+}
+
+.settings-backup-connect {
+  width: 100%;
+}
+
+.settings-backup-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  padding: 8px 10px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  color: var(--cream-dim);
+}
+
+.settings-backup-summary span {
+  font-weight: 700;
+  color: var(--cream);
+}
+
+.settings-backup-status {
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--success-text);
+}
+
+.settings-backup-status--error {
+  color: var(--danger-text);
 }
 
 .settings-page > .btn {

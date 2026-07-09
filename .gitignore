@@ -13,6 +13,11 @@ dist-ssr
 index.html
 assets
 *.local
+.env
+.env.*
+!.env.example
+serviceAccountKey.json
+*-firebase-adminsdk-*.json
 
 # Editor directories and files
 .vscode/*

@@ -9,7 +9,6 @@ import {
 } from 'react'
 import type {
   AppData,
-  AppTheme,
   ExpenseKind,
   ExpensePayType,
   PayType,
@@ -27,14 +26,17 @@ import {
   getCurrentBalance,
   getPendingBills,
   loadData,
+  replaceData,
+  clearAllLocalData,
   setHomePin,
   setOpeningBalance,
   setOpeningBankBalance,
-  setTheme,
   updateExpenseName,
   updateSaleCustomerName,
 } from '../storage/database'
-import { applyTheme, normalizeTheme } from '../utils/theme'
+import { isFirebaseConfigured } from '../firebase/config'
+import { restoreCloudDataForUser, subscribeToAuth } from '../firebase/backup'
+import { applyTheme } from '../utils/theme'
 
 interface CashContextValue {
   data: AppData
@@ -67,10 +69,11 @@ interface CashContextValue {
   updateOpeningBalance: (amount: number) => void
   updateOpeningBankBalance: (amount: number) => void
   updateHomePin: (pin: string) => void
-  updateTheme: (theme: AppTheme) => void
   removeSale: (id: string) => void
   removeExpense: (id: string) => void
   updateHistoryName: (type: 'sale' | 'expense' | 'deposit' | 'transfer', id: string, name: string) => void
+  replaceAllData: (data: AppData) => void
+  resetAllData: () => void
   refresh: () => void
 }
 
@@ -80,8 +83,21 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => loadData())
 
   useEffect(() => {
-    applyTheme(normalizeTheme(data.theme))
-  }, [data.theme])
+    applyTheme()
+  }, [])
+
+  useEffect(() => {
+    if (!isFirebaseConfigured()) return
+    return subscribeToAuth(async (user) => {
+      if (!user) return
+      try {
+        const restored = await restoreCloudDataForUser()
+        if (restored) setData(replaceData(restored))
+      } catch {
+        /* cloud restore optional on session resume */
+      }
+    })
+  }, [])
 
   const refresh = useCallback(() => setData(loadData()), [])
 
@@ -147,10 +163,6 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => setHomePin(prev, pin))
   }, [])
 
-  const updateTheme = useCallback((theme: AppTheme) => {
-    setData((prev) => setTheme(prev, theme))
-  }, [])
-
   const updateOpeningBalance = useCallback((amount: number) => {
     setData((prev) => setOpeningBalance(prev, amount))
   }, [])
@@ -172,6 +184,14 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const replaceAllData = useCallback((next: AppData) => {
+    setData(replaceData(next))
+  }, [])
+
+  const resetAllData = useCallback(() => {
+    setData(clearAllLocalData())
+  }, [])
+
   const value = useMemo(
     () => ({
       data,
@@ -184,10 +204,11 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
-      updateTheme,
       removeSale,
       removeExpense,
       updateHistoryName,
+      replaceAllData,
+      resetAllData,
       refresh,
     }),
     [
@@ -201,10 +222,11 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
-      updateTheme,
       removeSale,
       removeExpense,
       updateHistoryName,
+      replaceAllData,
+      resetAllData,
       refresh,
     ],
   )
