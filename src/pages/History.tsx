@@ -8,11 +8,15 @@ export default function History() {
   const items = [
     ...data.sales.map((s) => {
       const payLabel =
-        s.payType === 'bank'
-          ? '🏦 Bank'
-          : s.payType === 'split'
-            ? `💵 ${formatMoney(s.cashAmount ?? 0)} · 🏦 ${formatMoney(s.bankAmount ?? 0)}`
-            : '💵 Cash'
+        s.status === 'pending'
+          ? '💳 Credit · Pending'
+          : s.payType === 'bank'
+            ? '🏦 Bank'
+            : s.payType === 'credit'
+              ? '💳 Credit'
+              : s.payType === 'split'
+                ? `💵 ${formatMoney(s.cashAmount ?? 0)} · 🏦 ${formatMoney(s.bankAmount ?? 0)}`
+                : '💵 Cash'
       const orig =
         s.originalBillAmount && s.originalBillAmount !== s.billAmount
           ? `Bill ${formatMoney(s.originalBillAmount)} → `
@@ -21,7 +25,7 @@ export default function History() {
         type: 'sale' as const,
         id: s.id,
         amount: s.billAmount,
-        sub: `${orig}Give ${formatMoney(s.paidAmount)} · ${payLabel} · Change ${formatMoney(s.changeAmount)}`,
+        sub: `${orig}${s.status === 'pending' ? 'Pending · ' : s.payType === 'bank' || s.payType === 'credit' ? 'Paid ' : `Give ${formatMoney(s.paidAmount)} · `}${payLabel}${s.changeAmount > 0 ? ` · Change ${formatMoney(s.changeAmount)}` : ''}`,
         name: s.customerName,
         date: s.createdAt,
       }

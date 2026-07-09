@@ -1,10 +1,10 @@
+import type { PayType } from '../types'
 import './PayTypeChips.css'
-
-export type PayType = 'cash' | 'bank' | 'split'
 
 const PAY_OPTIONS: { id: PayType; label: string; icon: string }[] = [
   { id: 'cash', label: 'Cash', icon: '💵' },
   { id: 'bank', label: 'Bank', icon: '🏦' },
+  { id: 'credit', label: 'Credit', icon: '💳' },
   { id: 'split', label: 'Split', icon: '➗' },
 ]
 
@@ -33,3 +33,5 @@ export default function PayTypeChips({ value, onChange }: PayTypeChipsProps) {
     </div>
   )
 }
+
+export type { PayType }

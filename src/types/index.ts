@@ -1,4 +1,5 @@
-export type PayType = 'cash' | 'bank' | 'split'
+export type PayType = 'cash' | 'bank' | 'credit' | 'split'
+export type SaleStatus = 'pending' | 'paid'
 
 export interface Sale {
   id: string
@@ -9,6 +10,8 @@ export interface Sale {
   payType?: PayType
   cashAmount?: number
   bankAmount?: number
+  creditAmount?: number
+  status?: SaleStatus
   customerName?: string
   createdAt: string
 }

@@ -6,6 +6,25 @@
   max-width: 100%;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.counter-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: row;
+  gap: var(--page-gap);
+  overflow: hidden;
+}
+
+.counter-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   gap: var(--page-gap);
   overflow: hidden;
 }
@@ -88,6 +107,10 @@
   background: var(--surface-2);
 }
 
+.counter-readonly--na {
+  opacity: 0.55;
+}
+
 .counter-box {
   flex-shrink: 0;
   padding: 4px 6px;
@@ -105,6 +128,49 @@
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
+}
+
+.counter-customer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.counter-customer-label {
+  flex-shrink: 0;
+  font-size: 0.48rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.counter-customer-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--cream);
+  font-size: 0.75rem;
+  font-weight: 600;
+  outline: none;
+}
+
+.counter-customer-input::placeholder {
+  color: var(--text-muted);
+}
+
+.counter-customer-input:focus {
+  border-color: var(--cream-dim);
 }
 
 .counter-split {
@@ -202,6 +268,40 @@
 
 .counter-actions .btn:disabled {
   opacity: 0.35;
+}
+
+.counter-actions .btn-credit:not(:disabled) {
+  background: #8a7355;
+  color: var(--cream);
+}
+
+.counter-actions .btn-credit.btn-saved {
+  background: var(--cream) !important;
+  color: var(--brown) !important;
+}
+
+.counter-actions--3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.counter-actions--3 .btn {
+  min-height: 32px;
+  max-height: 32px;
+  padding: 0 4px;
+  font-size: clamp(0.6rem, 2.5vw, 0.75rem);
+}
+
+.counter-actions .btn-pending:not(:disabled) {
+  background: #6d5a45;
+  color: var(--cream);
+  border: 1px solid var(--border);
+}
+
+.counter-actions .btn-pending.btn-saved {
+  background: var(--cream) !important;
+  color: var(--brown) !important;
 }
 
 html[data-screen='tablet'] .counter-amounts {

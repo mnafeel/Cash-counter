@@ -6,14 +6,14 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { AppData } from '../types'
-import type { PayType } from '../types'
+import type { AppData, PayType, Sale, SaleStatus } from '../types'
 import {
   addExpense,
   addSale,
   deleteExpense,
   deleteSale,
   getCurrentBalance,
+  getPendingBills,
   loadData,
   setOpeningBalance,
 } from '../storage/database'
@@ -21,6 +21,7 @@ import {
 interface CashContextValue {
   data: AppData
   balance: number
+  pendingBills: Sale[]
   recordSale: (sale: {
     billAmount: number
     originalBillAmount?: number
@@ -29,7 +30,9 @@ interface CashContextValue {
     payType?: PayType
     cashAmount?: number
     bankAmount?: number
+    creditAmount?: number
     customerName?: string
+    status?: SaleStatus
   }) => void
   recordExpense: (amount: number, note: string) => void
   updateOpeningBalance: (amount: number) => void
@@ -46,6 +49,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(() => setData(loadData()), [])
 
   const balance = useMemo(() => getCurrentBalance(data), [data])
+  const pendingBills = useMemo(() => getPendingBills(data), [data])
 
   const recordSale = useCallback(
     (sale: {
@@ -56,7 +60,9 @@ export function CashProvider({ children }: { children: ReactNode }) {
       payType?: PayType
       cashAmount?: number
       bankAmount?: number
+      creditAmount?: number
       customerName?: string
+      status?: SaleStatus
     }) => {
       setData((prev) => addSale(prev, sale))
     },
@@ -83,6 +89,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
     () => ({
       data,
       balance,
+      pendingBills,
       recordSale,
       recordExpense,
       updateOpeningBalance,
@@ -93,6 +100,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [
       data,
       balance,
+      pendingBills,
       recordSale,
       recordExpense,
       updateOpeningBalance,

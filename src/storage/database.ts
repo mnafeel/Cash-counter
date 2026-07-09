@@ -27,9 +27,14 @@ export function saveData(data: AppData): void {
 }
 
 function saleCashToDrawer(sale: Sale): number {
-  if (sale.payType === 'bank') return 0
+  if (sale.status === 'pending') return 0
+  if (sale.payType === 'bank' || sale.payType === 'credit') return 0
   if (sale.payType === 'split') return sale.cashAmount ?? 0
   return sale.billAmount
+}
+
+export function getPendingBills(data: AppData): Sale[] {
+  return data.sales.filter((s) => s.status === 'pending')
 }
 
 export function getCurrentBalance(data: AppData): number {
@@ -41,6 +46,7 @@ export function getCurrentBalance(data: AppData): number {
 export function addSale(data: AppData, sale: Omit<Sale, 'id' | 'createdAt'>): AppData {
   const newSale: Sale = {
     ...sale,
+    status: sale.status ?? (sale.payType === 'credit' ? 'pending' : 'paid'),
     id: crypto.randomUUID(),
     createdAt: new Date().toISOString(),
   }
