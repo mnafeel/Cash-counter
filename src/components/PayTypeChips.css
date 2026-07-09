@@ -5,6 +5,13 @@
   gap: 4px;
 }
 
+.pay-type-chips-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .pay-type-chips-label {
   font-size: 0.55rem;
   color: var(--cream-dim);
@@ -12,6 +19,14 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
   text-align: center;
+}
+
+.pay-type-chips-shortcut {
+  font-size: clamp(0.5rem, calc(var(--app-height, 800px) * 0.014), 0.72rem);
+  color: var(--cream-dim);
+  font-weight: 700;
+  opacity: 0.75;
+  letter-spacing: 0.03em;
 }
 
 .pay-type-chips-row {

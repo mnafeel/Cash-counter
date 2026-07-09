@@ -6,6 +6,7 @@ import BigAmount from '../components/BigAmount'
 import NumberKeyboard from '../components/NumberKeyboard'
 import { formatMoney, parseAmount, formatDate } from '../utils/format'
 import { applyNumpadAction, applyPinAction, normalizePin, type NumpadAction } from '../utils/numpad'
+import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import type { ExpensePayType, TransferDirection } from '../types'
 import {
   buildHistoryItems,
@@ -190,7 +191,20 @@ export default function Home() {
     }
   }
 
+  const pinHandlerRef = useRef(handlePinNumpad)
+  pinHandlerRef.current = handlePinNumpad
+  const panelHandlerRef = useRef(handlePanelNumpad)
+  panelHandlerRef.current = handlePanelNumpad
   const panelOpen = addTarget !== null || transferDirection !== null
+
+  useNumpadKeyboard(
+    (action) => {
+      if (!unlocked) pinHandlerRef.current(action)
+      else if (panelOpen && !panelSaved) panelHandlerRef.current(action)
+    },
+    !unlocked || (panelOpen && !panelSaved),
+  )
+
   const panelTitle = transferDirection
     ? transferDirection === 'cash-to-bank'
       ? 'Cash → Bank Transfer'

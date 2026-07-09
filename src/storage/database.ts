@@ -227,6 +227,9 @@ export function updatePendingBill(
     billAmount: number
     originalBillAmount?: number
     customerName?: string
+    payType?: PayType
+    cashAmount?: number
+    bankAmount?: number
   },
 ): AppData {
   const next = {
@@ -238,6 +241,9 @@ export function updatePendingBill(
             billAmount: updates.billAmount,
             originalBillAmount: updates.originalBillAmount,
             customerName: updates.customerName,
+            payType: updates.payType,
+            cashAmount: updates.payType === 'split' ? updates.cashAmount : undefined,
+            bankAmount: updates.payType === 'split' ? updates.bankAmount : undefined,
             updatedAt: new Date().toISOString(),
           }
         : s,

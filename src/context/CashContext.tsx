@@ -63,6 +63,9 @@ interface CashContextValue {
       billAmount: number
       originalBillAmount?: number
       customerName?: string
+      payType?: PayType
+      cashAmount?: number
+      bankAmount?: number
     },
   ) => void
   collectPendingSale: (
@@ -153,6 +156,9 @@ export function CashProvider({ children }: { children: ReactNode }) {
         billAmount: number
         originalBillAmount?: number
         customerName?: string
+        payType?: PayType
+        cashAmount?: number
+        bankAmount?: number
       },
     ) => {
       setData((prev) => updatePendingBill(prev, id, sale))

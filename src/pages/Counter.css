@@ -133,6 +133,12 @@
   opacity: 0.55;
 }
 
+.counter-readonly--disabled {
+  opacity: 0.85;
+  cursor: default;
+  pointer-events: none;
+}
+
 .counter-box {
   flex-shrink: 0;
   padding: 4px 6px;
@@ -378,11 +384,16 @@
 }
 
 .counter-actions--3 .btn {
-  min-height: clamp(40px, calc(var(--counter-height, 560px) * 0.085), 56px);
+  min-height: clamp(42px, calc(var(--counter-height, 560px) * 0.088), 58px);
   height: auto;
-  max-height: clamp(44px, calc(var(--counter-height, 560px) * 0.095), 58px);
+  max-height: clamp(48px, calc(var(--counter-height, 560px) * 0.1), 62px);
   padding: 4px 2px;
   font-size: clamp(0.55rem, calc(var(--counter-height, 560px) * 0.016), 0.84rem);
+}
+
+.counter-actions--3 .btn-with-shortcut {
+  min-height: clamp(44px, calc(var(--counter-height, 560px) * 0.092), 60px);
+  max-height: clamp(50px, calc(var(--counter-height, 560px) * 0.105), 64px);
 }
 
 .counter-actions .btn-pending:not(:disabled) {
@@ -394,6 +405,24 @@
 .counter-actions .btn-pending.btn-saved {
   background: var(--cream) !important;
   color: var(--brown) !important;
+}
+
+.counter-actions .btn-with-shortcut {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.counter-actions .btn-text {
+  white-space: pre-line;
+  line-height: 1.1;
+}
+
+.counter-actions .btn-shortcut {
+  font-size: clamp(0.5rem, calc(var(--counter-height, 560px) * 0.014), 0.72rem);
+  font-weight: 700;
+  opacity: 0.75;
+  line-height: 1;
+  letter-spacing: 0.03em;
 }
 
 html[data-screen='tablet'] .counter-main,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
@@ -21,6 +21,7 @@ import { backupNow, setBackupStatusListener } from '../firebase/sync'
 import type { AppData } from '../types'
 import { formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
+import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import './Settings.css'
 
 type SettingsField = 'openingCash' | 'openingBank' | 'pin' | 'pinConfirm'
@@ -108,6 +109,10 @@ export default function Settings() {
     setActiveValue(next)
     setPinError('')
   }
+
+  const numpadHandlerRef = useRef(handleNumpad)
+  numpadHandlerRef.current = handleNumpad
+  useNumpadKeyboard((action) => numpadHandlerRef.current(action))
 
   function handleSave() {
     setPinError('')

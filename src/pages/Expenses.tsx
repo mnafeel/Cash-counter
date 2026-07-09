@@ -6,6 +6,7 @@ import PayTypeChips from '../components/PayTypeChips'
 import type { ExpensePayType } from '../types'
 import { parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
+import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import './Expenses.css'
 
 type ExpenseField = 'name' | 'amount' | 'pay'
@@ -67,6 +68,10 @@ export default function Expenses() {
       setAmountStr((prev) => applyNumpadAction(prev, action))
     }
   }
+
+  const numpadHandlerRef = useRef(handleNumpad)
+  numpadHandlerRef.current = handleNumpad
+  useNumpadKeyboard((action) => numpadHandlerRef.current(action), !saved)
 
   function handleClear() {
     setAmountStr('')

@@ -13,16 +13,28 @@ interface PayTypeChipsProps {
   onChange: (type: PayType) => void
   options?: PayType[]
   label?: string
+  shortcutHint?: string
 }
 
-export default function PayTypeChips({ value, onChange, options, label = 'Payment' }: PayTypeChipsProps) {
+export default function PayTypeChips({
+  value,
+  onChange,
+  options,
+  label = 'Payment',
+  shortcutHint,
+}: PayTypeChipsProps) {
   const visible = options
     ? PAY_OPTIONS.filter((opt) => options.includes(opt.id))
     : PAY_OPTIONS
 
   return (
     <div className="pay-type-chips">
-      <span className="pay-type-chips-label">{label}</span>
+      <div className="pay-type-chips-head">
+        <span className="pay-type-chips-label">{label}</span>
+        {shortcutHint ? (
+          <span className="pay-type-chips-shortcut">{shortcutHint}</span>
+        ) : null}
+      </div>
       <div className="pay-type-chips-row">
         {visible.map((opt) => (
           <button
