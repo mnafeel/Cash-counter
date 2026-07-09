@@ -254,11 +254,11 @@
 }
 
 .counter-actions .btn {
-  min-height: 44px;
+  min-height: 56px;
   height: auto;
-  max-height: 52px;
-  padding: 4px 4px;
-  font-size: clamp(0.62rem, 2.4vw, 0.85rem);
+  max-height: 64px;
+  padding: 6px 4px;
+  font-size: clamp(0.68rem, 2.6vw, 0.92rem);
   font-weight: 700;
   border-radius: 6px;
   flex: 1;
@@ -305,11 +305,11 @@
 }
 
 .counter-actions--3 .btn {
-  min-height: 44px;
+  min-height: 56px;
   height: auto;
-  max-height: 52px;
-  padding: 4px 2px;
-  font-size: clamp(0.58rem, 2.2vw, 0.82rem);
+  max-height: 64px;
+  padding: 6px 2px;
+  font-size: clamp(0.64rem, 2.4vw, 0.88rem);
 }
 
 .counter-actions .btn-pending:not(:disabled) {
@@ -353,9 +353,9 @@ html[data-screen='tablet'] .counter-round {
 }
 
 html[data-screen='tablet'] .counter-actions .btn {
-  min-height: 40px;
-  max-height: 48px;
-  font-size: clamp(0.55rem, 2vw, 0.75rem);
+  min-height: 52px;
+  max-height: 60px;
+  font-size: clamp(0.62rem, 2.2vw, 0.82rem);
 }
 
 html[data-screen='tablet'] .counter-keyboard-wrap {
@@ -382,9 +382,9 @@ html[data-screen='desktop'] .amount-display--compact .amount-display-value {
 }
 
 html[data-screen='desktop'] .counter-actions .btn {
-  min-height: 48px;
-  max-height: 56px;
-  font-size: clamp(0.72rem, 1.4vw, 0.92rem);
+  min-height: 60px;
+  max-height: 68px;
+  font-size: clamp(0.78rem, 1.5vw, 1rem);
 }
 
 html[data-screen='desktop'] .counter-keyboard-wrap {
@@ -427,9 +427,9 @@ html[data-screen='desktop'] .counter-round {
   }
 
   .counter-actions .btn {
-    min-height: 38px;
-    max-height: 46px;
-    font-size: clamp(0.52rem, 2.5vw, 0.72rem);
+    min-height: 48px;
+    max-height: 56px;
+    font-size: clamp(0.58rem, 2.5vw, 0.78rem);
   }
 
   .counter-keyboard-wrap {
