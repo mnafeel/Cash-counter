@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import BigAmount from '../components/BigAmount'
-import NumPad from '../components/NumPad'
+import NumberKeyboard from '../components/NumberKeyboard'
 import { parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import './Expenses.css'
@@ -39,18 +39,12 @@ export default function Expenses() {
 
   return (
     <div className="expenses-page">
-      <div className="expenses-header">
-        <h2>Cash Expenses</h2>
-        <p>Record money taken out of the drawer</p>
+      <div className="expenses-top">
+        <BigAmount label="Available Cash" value={balance} variant="primary" size="md" />
+        <AmountDisplay label="Expense Amount" value={amountStr} active compact />
       </div>
 
-      <div className="expenses-balance">
-        <BigAmount label="Available Cash" value={balance} variant="primary" size="lg" />
-      </div>
-
-      <AmountDisplay label="Expense Amount" value={amountStr} active />
-
-      <NumPad onPress={handleNumpad} />
+      <NumberKeyboard onPress={handleNumpad} />
 
       <div className="expenses-form">
         <label className="expense-note">

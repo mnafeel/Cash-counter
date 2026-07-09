@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
-import NumPad from '../components/NumPad'
+import NumberKeyboard from '../components/NumberKeyboard'
 import { formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import './Settings.css'
@@ -30,30 +30,28 @@ export default function Settings() {
         <p>Set your starting cash in the drawer</p>
       </div>
 
-      <div className="settings-card">
-        <AmountDisplay label="Opening Cash Amount" value={openingStr} active />
+      <AmountDisplay label="Opening Cash Amount" value={openingStr} active compact />
 
-        <NumPad onPress={handleNumpad} />
+      <NumberKeyboard onPress={handleNumpad} />
 
-        <div className="settings-info">
-          <div className="settings-row">
-            <span>Opening balance</span>
-            <span>{formatMoney(data.openingBalance)}</span>
-          </div>
-          <div className="settings-row">
-            <span>Current balance</span>
-            <span className="settings-highlight">{formatMoney(balance)}</span>
-          </div>
+      <div className="settings-info">
+        <div className="settings-row">
+          <span>Opening balance</span>
+          <span>{formatMoney(data.openingBalance)}</span>
         </div>
-
-        <button
-          type="button"
-          className={`btn btn-primary ${saved ? 'btn-saved' : ''}`}
-          onClick={handleSave}
-        >
-          {saved ? '✓ Saved!' : 'Save Opening Balance'}
-        </button>
+        <div className="settings-row">
+          <span>Current balance</span>
+          <span className="settings-highlight">{formatMoney(balance)}</span>
+        </div>
       </div>
+
+      <button
+        type="button"
+        className={`btn btn-primary ${saved ? 'btn-saved' : ''}`}
+        onClick={handleSave}
+      >
+        {saved ? '✓ Saved!' : 'Save Opening Balance'}
+      </button>
 
       <p className="settings-note">
         Data is saved on your device. Bills and expenses are stored locally in your browser.

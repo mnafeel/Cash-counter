@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
-import NumPad from '../components/NumPad'
+import NumberKeyboard from '../components/NumberKeyboard'
 import RoundTypeChips from '../components/RoundTypeChips'
 import { formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
@@ -56,6 +56,22 @@ export default function Counter() {
     setSaved(false)
   }
 
+  const roundOffFooter =
+    billAmount > 0 ? (
+      <RoundTypeChips
+        label="Round off"
+        options={billRoundOptions}
+        onSelect={(amt) => {
+          setBillStr(String(amt))
+          setActiveField('bill')
+        }}
+        activeAmount={billAmount}
+        compact
+      />
+    ) : (
+      <p className="counter-round-empty">Round off appears after bill amount</p>
+    )
+
   return (
     <div className="counter-page">
       <div className="counter-top">
@@ -87,26 +103,7 @@ export default function Counter() {
         </div>
       </div>
 
-      <div className="counter-numpad">
-        <NumPad onPress={handleNumpad} compact />
-      </div>
-
-      <div className="counter-round">
-        {billAmount > 0 ? (
-          <RoundTypeChips
-            label="Round off"
-            options={billRoundOptions}
-            onSelect={(amt) => {
-              setBillStr(String(amt))
-              setActiveField('bill')
-            }}
-            activeAmount={billAmount}
-            compact
-          />
-        ) : (
-          <p className="counter-round-empty">Round off appears after bill amount</p>
-        )}
-      </div>
+      <NumberKeyboard onPress={handleNumpad} footer={roundOffFooter} />
 
       <div className="counter-actions">
         <button type="button" className="btn btn-secondary btn-compact" onClick={handleClear}>
