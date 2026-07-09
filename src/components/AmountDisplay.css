@@ -52,7 +52,15 @@
 }
 
 .amount-display--compact .amount-display-value {
-  font-size: clamp(1rem, 3.8vw, 1.45rem);
+  font-size: clamp(0.9rem, 4.5vmin, 1.45rem);
+}
+
+html[data-screen='tablet'] .amount-display--compact .amount-display-value {
+  font-size: clamp(1.1rem, 3.5vmin, 1.6rem);
+}
+
+html[data-screen='desktop'] .amount-display--compact .amount-display-value {
+  font-size: clamp(1.2rem, 2.5vmin, 1.75rem);
 }
 
 @media (min-width: 768px) {

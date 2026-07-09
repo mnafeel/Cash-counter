@@ -3,19 +3,23 @@
   min-height: 0;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
-  gap: 8px;
+  gap: 6px;
   overflow: hidden;
 }
 
+.settings-header {
+  flex-shrink: 0;
+}
+
 .settings-header h2 {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   margin-bottom: 2px;
   color: var(--cream);
 }
 
 .settings-header p {
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
 }
 
 .settings-info {
@@ -46,8 +50,45 @@
 }
 
 .settings-note {
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
   text-align: center;
-  line-height: 1.5;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.settings-page > .btn {
+  min-height: 40px;
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+@media (max-height: 700px) {
+  .settings-note {
+    display: none;
+  }
+
+  .settings-page {
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .settings-header h2 {
+    font-size: 1rem;
+  }
+
+  .settings-header p {
+    display: none;
+  }
+
+  .settings-info {
+    padding: 8px 10px;
+  }
+
+  .settings-page > .btn {
+    min-height: 36px;
+    font-size: 0.85rem;
+  }
 }

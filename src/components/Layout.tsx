@@ -1,5 +1,6 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Outlet } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
+import { useDeviceSize } from '../hooks/useDeviceSize'
 import { formatMoney } from '../utils/format'
 import './Layout.css'
 
@@ -12,12 +13,11 @@ const navItems = [
 
 export default function Layout() {
   const { balance } = useCash()
-  const { pathname } = useLocation()
-  const isCounter = pathname === '/counter'
+  useDeviceSize()
 
   return (
-    <div className={`layout ${isCounter ? 'layout--counter' : ''}`}>
-      <header className={`header ${isCounter ? 'header--compact' : ''}`}>
+    <div className="layout layout--fit">
+      <header className="header header--compact">
         <div className="header-top">
           <h1 className="app-title">Cash Counter</h1>
           <div className="header-balance">
@@ -39,7 +39,7 @@ export default function Layout() {
           ))}
         </nav>
       </header>
-      <main className={`main ${isCounter ? 'main--counter' : ''}`}>
+      <main className="main main--fit">
         <Outlet />
       </main>
     </div>

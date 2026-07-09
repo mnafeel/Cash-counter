@@ -3,15 +3,24 @@
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 8px;
+  gap: 6px;
   overflow: hidden;
 }
 
 .expenses-top {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: 6px;
   align-items: stretch;
+  flex-shrink: 0;
+}
+
+.expenses-top .big-amount--md .big-amount-value {
+  font-size: clamp(1rem, 4vw, 1.5rem);
+}
+
+.expenses-top .amount-display--compact .amount-display-value {
+  font-size: clamp(0.95rem, 4vw, 1.35rem);
 }
 
 .expenses-form {
@@ -63,10 +72,27 @@
 .expenses-actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
 }
 
-@media (max-width: 520px) {
-  .expenses-top {
-    grid-template-columns: 1fr;
+.expenses-actions .btn {
+  min-height: 40px;
+  padding: 10px 16px;
+  font-size: 0.95rem;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .expenses-form {
+    gap: 4px;
+  }
+
+  .expense-note input {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+
+  .expenses-actions .btn {
+    min-height: 36px;
+    font-size: 0.85rem;
   }
 }

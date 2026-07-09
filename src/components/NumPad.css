@@ -72,16 +72,24 @@
 .numpad--compact .numpad-grid {
   flex: 1;
   min-height: 0;
-  gap: 4px;
+  gap: var(--key-gap);
   grid-template-rows: repeat(5, minmax(0, 1fr));
 }
 
 .numpad--compact .numpad-key {
   min-height: 0;
   height: 100%;
-  font-size: clamp(1rem, 2.8vw, 1.35rem);
+  font-size: clamp(0.9rem, 4vmin, 1.35rem);
   border-radius: 8px;
   padding: 0;
+}
+
+html[data-screen='tablet'] .numpad--compact .numpad-key {
+  font-size: clamp(1.1rem, 3.5vmin, 1.5rem);
+}
+
+html[data-screen='desktop'] .numpad--compact .numpad-key {
+  font-size: clamp(1.2rem, 2.8vmin, 1.65rem);
 }
 
 .numpad--compact .numpad-key--wide {

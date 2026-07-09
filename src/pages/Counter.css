@@ -3,14 +3,15 @@
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: 4px;
+  gap: var(--page-gap);
   overflow: hidden;
 }
 
 .counter-top {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 6px;
+  gap: var(--page-gap);
+  flex-shrink: 0;
 }
 
 .counter-change {
@@ -45,7 +46,7 @@
 }
 
 .counter-change-value {
-  font-size: clamp(1.1rem, 3.5vw, 1.6rem);
+  font-size: clamp(0.9rem, 4.5vmin, 1.6rem);
   font-weight: 800;
   color: var(--cream);
   line-height: 1.1;
@@ -73,13 +74,39 @@
 }
 
 .btn-compact {
-  min-height: 44px;
-  padding: 10px 16px;
-  font-size: 0.95rem;
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 0.9rem;
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
+  .counter-top {
+    gap: 3px;
+  }
+
+  .counter-change {
+    padding: 4px 2px;
+  }
+
+  .counter-change-label {
+    font-size: 0.55rem;
+  }
+
+  .counter-change-value {
+    font-size: clamp(0.85rem, 2.5vw, 1.1rem);
+  }
+
   .btn-compact {
-    min-height: 40px;
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-height: 680px) {
+  .btn-compact {
+    min-height: 38px;
+    padding: 8px 12px;
+    font-size: 0.85rem;
   }
 }
