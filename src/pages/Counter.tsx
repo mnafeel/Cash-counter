@@ -56,6 +56,7 @@ export default function Counter() {
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
   const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
   const [chequeListOpen, setChequeListOpen] = useState(false)
+  const [highlightedChequeIndex, setHighlightedChequeIndex] = useState(-1)
   const [pendingSectionFocus, setPendingSectionFocus] = useState(false)
   const [highlightedPendingIndex, setHighlightedPendingIndex] = useState<number | null>(null)
   const customerNameInputRef = useRef<HTMLInputElement>(null)
@@ -325,6 +326,12 @@ export default function Counter() {
     const idx = COUNTER_PAY_TYPES.indexOf(payType)
     const next = COUNTER_PAY_TYPES[(idx + 1) % COUNTER_PAY_TYPES.length]
     handlePayTypeChange(next)
+  }
+
+  function openChequeTab() {
+    handlePayTypeChange('cheque')
+    setChequeListOpen(true)
+    setHighlightedChequeIndex(chequePendingBills.length > 0 ? 0 : -1)
   }
 
   function handleNumpad(action: NumpadAction) {
@@ -611,12 +618,20 @@ export default function Counter() {
   const saveHandlerRef = useRef(handleSave)
   const savePendingHandlerRef = useRef(handleSavePending)
   const cyclePayTypeRef = useRef(cyclePayType)
+  const openChequeRef = useRef(openChequeTab)
+  const chequePendingBillsRef = useRef(chequePendingBills)
+  const highlightedChequeIndexRef = useRef(highlightedChequeIndex)
+  const activeChequeItemRef = useRef<HTMLButtonElement>(null)
+  const chequeListRef = useRef<HTMLUListElement>(null)
   const pendingBillsRef = useRef(billPendingBills)
   const highlightedPendingIndexRef = useRef(highlightedPendingIndex)
   const selectPendingBillRef = useRef(selectPendingBill)
   saveHandlerRef.current = handleSave
   savePendingHandlerRef.current = handleSavePending
   cyclePayTypeRef.current = cyclePayType
+  openChequeRef.current = openChequeTab
+  chequePendingBillsRef.current = chequePendingBills
+  highlightedChequeIndexRef.current = highlightedChequeIndex
   pendingBillsRef.current = billPendingBills
   highlightedPendingIndexRef.current = highlightedPendingIndex
   selectPendingBillRef.current = selectPendingBill
@@ -672,6 +687,66 @@ export default function Counter() {
   }, [pendingSectionFocus, highlightedPendingIndex, pendingBills])
 
   useEffect(() => {
+    if (!chequeListOpen) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return
+
+      const target = e.target
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+          return
+        }
+      }
+
+      const bills = chequePendingBillsRef.current
+      if (bills.length === 0) return
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightedChequeIndex((current) => (current + 1) % bills.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightedChequeIndex((current) =>
+          current <= 0 ? bills.length - 1 : current - 1,
+        )
+        return
+      }
+      if (e.key === 'Enter') {
+        const idx = highlightedChequeIndexRef.current
+        if (idx < 0 || idx >= bills.length) return
+        e.preventDefault()
+        selectPendingBillRef.current(bills[idx])
+        setChequeListOpen(false)
+        return
+      }
+      if (e.key === 'Escape') {
+        setChequeListOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [chequeListOpen])
+
+  useEffect(() => {
+    if (!chequeListOpen || highlightedChequeIndex < 0) return
+    const item = activeChequeItemRef.current
+    const list = chequeListRef.current
+    if (!item || !list) return
+    const itemTop = item.offsetTop
+    const itemBottom = itemTop + item.offsetHeight
+    if (itemTop < list.scrollTop) {
+      list.scrollTop = itemTop
+    } else if (itemBottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = itemBottom - list.clientHeight
+    }
+  }, [chequeListOpen, highlightedChequeIndex])
+
+  useEffect(() => {
     if (isSaving) return
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -694,6 +769,12 @@ export default function Counter() {
       if (e.code === 'KeyA') {
         e.preventDefault()
         cyclePayTypeRef.current()
+        return
+      }
+
+      if (e.code === 'KeyC') {
+        e.preventDefault()
+        openChequeRef.current()
         return
       }
 
@@ -940,12 +1021,14 @@ export default function Counter() {
                 <span className="counter-cheque-open-caret">{chequeListOpen ? '▲' : '▼'}</span>
               </button>
               {chequeListOpen && chequePendingBills.length > 0 && (
-                <ul className="counter-cheque-list" role="listbox">
-                  {chequePendingBills.map((bill) => (
+                <ul ref={chequeListRef} className="counter-cheque-list" role="listbox">
+                  {chequePendingBills.map((bill, index) => (
                     <li key={bill.id}>
                       <button
                         type="button"
-                        className={`counter-cheque-item ${loadedPendingId === bill.id ? 'counter-cheque-item--active' : ''}`}
+                        ref={index === highlightedChequeIndex ? activeChequeItemRef : null}
+                        className={`counter-cheque-item ${index === highlightedChequeIndex || loadedPendingId === bill.id ? 'counter-cheque-item--active' : ''}`}
+                        onMouseEnter={() => setHighlightedChequeIndex(index)}
                         onClick={() => {
                           selectPendingBill(bill)
                           setChequeListOpen(false)
