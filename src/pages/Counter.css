@@ -234,7 +234,8 @@
 }
 
 .counter-customer-suggestion:hover,
-.counter-customer-suggestion:focus {
+.counter-customer-suggestion:focus,
+.counter-customer-suggestion--active {
   background: var(--surface);
   color: var(--cream);
 }

@@ -26,6 +26,7 @@ export default function Expenses() {
   const [activeField, setActiveField] = useState<ExpenseField>('name')
   const [saved, setSaved] = useState(false)
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
+  const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const paySectionRef = useRef<HTMLDivElement>(null)
 
@@ -144,16 +145,40 @@ export default function Expenses() {
             onChange={(e) => {
               setName(e.target.value)
               setNameDropdownOpen(true)
+              setHighlightedNameIndex(-1)
             }}
             onFocus={() => {
               setActiveField('name')
               setNameDropdownOpen(true)
+              setHighlightedNameIndex(-1)
             }}
             onBlur={() => setNameDropdownOpen(false)}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 setNameDropdownOpen(false)
+                setHighlightedNameIndex(-1)
                 return
+              }
+              if (nameDropdownOpen && filteredNameSuggestions.length > 0) {
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  setHighlightedNameIndex((prev) => (prev + 1) % filteredNameSuggestions.length)
+                  return
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setHighlightedNameIndex((prev) =>
+                    prev <= 0 ? filteredNameSuggestions.length - 1 : prev - 1,
+                  )
+                  return
+                }
+                if (e.key === 'Enter' && highlightedNameIndex >= 0) {
+                  e.preventDefault()
+                  setName(filteredNameSuggestions[highlightedNameIndex])
+                  setNameDropdownOpen(false)
+                  setHighlightedNameIndex(-1)
+                  return
+                }
               }
               if (e.key === 'Enter' || e.key === 'Tab') {
                 e.preventDefault()
@@ -166,15 +191,17 @@ export default function Expenses() {
           />
           {nameDropdownOpen && filteredNameSuggestions.length > 0 && (
             <ul className="expense-name-suggestions" role="listbox">
-              {filteredNameSuggestions.map((item) => (
+              {filteredNameSuggestions.map((item, index) => (
                 <li key={item}>
                   <button
                     type="button"
-                    className="expense-name-suggestion"
+                    className={`expense-name-suggestion ${index === highlightedNameIndex ? 'expense-name-suggestion--active' : ''}`}
+                    onMouseEnter={() => setHighlightedNameIndex(index)}
                     onMouseDown={(e) => {
                       e.preventDefault()
                       setName(item)
                       setNameDropdownOpen(false)
+                      setHighlightedNameIndex(-1)
                     }}
                   >
                     {item}

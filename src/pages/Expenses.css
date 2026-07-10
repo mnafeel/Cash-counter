@@ -93,7 +93,8 @@
 }
 
 .expense-name-suggestion:hover,
-.expense-name-suggestion:focus {
+.expense-name-suggestion:focus,
+.expense-name-suggestion--active {
   background: var(--surface);
   color: var(--cream);
 }

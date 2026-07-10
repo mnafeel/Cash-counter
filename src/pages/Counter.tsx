@@ -52,6 +52,7 @@ export default function Counter() {
   const [loadedPendingId, setLoadedPendingId] = useState<string | null>(null)
   const [nameSectionFocus, setNameSectionFocus] = useState(false)
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
+  const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
   const [pendingSectionFocus, setPendingSectionFocus] = useState(false)
   const [highlightedPendingIndex, setHighlightedPendingIndex] = useState<number | null>(null)
   const customerNameInputRef = useRef<HTMLInputElement>(null)
@@ -749,10 +750,12 @@ export default function Counter() {
               onChange={(e) => {
                 setCustomerName(e.target.value)
                 setNameDropdownOpen(true)
+                setHighlightedNameIndex(-1)
               }}
               onFocus={() => {
                 setNameSectionFocus(true)
                 setNameDropdownOpen(true)
+                setHighlightedNameIndex(-1)
                 clearPendingSection()
               }}
               onBlur={() => {
@@ -760,22 +763,43 @@ export default function Counter() {
                 setNameDropdownOpen(false)
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Escape') setNameDropdownOpen(false)
+                if (e.key === 'Escape') {
+                  setNameDropdownOpen(false)
+                  setHighlightedNameIndex(-1)
+                  return
+                }
+                if (!nameDropdownOpen || filteredNameSuggestions.length === 0) return
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  setHighlightedNameIndex((prev) => (prev + 1) % filteredNameSuggestions.length)
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setHighlightedNameIndex((prev) =>
+                    prev <= 0 ? filteredNameSuggestions.length - 1 : prev - 1,
+                  )
+                } else if (e.key === 'Enter' && highlightedNameIndex >= 0) {
+                  e.preventDefault()
+                  setCustomerName(filteredNameSuggestions[highlightedNameIndex])
+                  setNameDropdownOpen(false)
+                  setHighlightedNameIndex(-1)
+                }
               }}
               placeholder="Optional"
               autoComplete="off"
             />
             {nameDropdownOpen && filteredNameSuggestions.length > 0 && (
               <ul className="counter-customer-suggestions" role="listbox">
-                {filteredNameSuggestions.map((name) => (
+                {filteredNameSuggestions.map((name, index) => (
                   <li key={name}>
                     <button
                       type="button"
-                      className="counter-customer-suggestion"
+                      className={`counter-customer-suggestion ${index === highlightedNameIndex ? 'counter-customer-suggestion--active' : ''}`}
+                      onMouseEnter={() => setHighlightedNameIndex(index)}
                       onMouseDown={(e) => {
                         e.preventDefault()
                         setCustomerName(name)
                         setNameDropdownOpen(false)
+                        setHighlightedNameIndex(-1)
                       }}
                     >
                       {name}
