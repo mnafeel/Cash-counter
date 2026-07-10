@@ -50,6 +50,11 @@ export default function Counter() {
   const [activeField, setActiveField] = useState<ActiveField>('bill')
   const [savedAction, setSavedAction] = useState<SavedAction>(null)
   const [loadedPendingId, setLoadedPendingId] = useState<string | null>(null)
+  const [nameSectionFocus, setNameSectionFocus] = useState(false)
+  const [pendingSectionFocus, setPendingSectionFocus] = useState(false)
+  const [highlightedPendingIndex, setHighlightedPendingIndex] = useState<number | null>(null)
+  const customerNameInputRef = useRef<HTMLInputElement>(null)
+  const pendingPanelRef = useRef<HTMLElement>(null)
 
   const billAmount = parseAmount(billStr)
   const giveAmount = parseAmount(giveStr)
@@ -290,7 +295,10 @@ export default function Counter() {
 
   const numpadHandlerRef = useRef(handleNumpad)
   numpadHandlerRef.current = handleNumpad
-  useNumpadKeyboard((action) => numpadHandlerRef.current(action), !isSaving)
+  useNumpadKeyboard(
+    (action) => numpadHandlerRef.current(action),
+    !isSaving && !pendingSectionFocus,
+  )
 
   function resetForm() {
     setBillStr('')
@@ -361,6 +369,17 @@ export default function Counter() {
     setActiveField('give')
   }
 
+  function selectPendingBill(bill: Sale) {
+    loadPendingBill(bill)
+    setPendingSectionFocus(false)
+    setHighlightedPendingIndex(null)
+  }
+
+  function clearPendingSection() {
+    setPendingSectionFocus(false)
+    setHighlightedPendingIndex(null)
+  }
+
   function handleSavePending() {
     if (!canSavePending) return
 
@@ -411,12 +430,149 @@ export default function Counter() {
 
   const saveLabel = savedAction === 'collect' ? '✓ Saved' : 'Save &\nCollect'
 
+  function jumpToAmountField() {
+    if (payType === 'split') {
+      if (billAmount > 0) {
+        setPaymentStep(true)
+        if (!paidStr && dueAmount > 0) setPaidStr(String(dueAmount))
+        setActiveField('cashSplit')
+      } else {
+        setActiveField('bill')
+      }
+      return
+    }
+    if (payType === 'cash') {
+      if (billAmount > 0) {
+        setPaymentStep(true)
+        if (!paidStr && dueAmount > 0) setPaidStr(String(dueAmount))
+        setActiveField('give')
+      } else {
+        setActiveField('bill')
+      }
+      return
+    }
+    if (billAmount > 0) openPaymentStep()
+    else setActiveField('bill')
+  }
+
+  function focusNameSection() {
+    setNameSectionFocus(true)
+    clearPendingSection()
+    customerNameInputRef.current?.focus()
+    customerNameInputRef.current?.select()
+  }
+
+  function focusPendingSection() {
+    setPendingSectionFocus(true)
+    setNameSectionFocus(false)
+    customerNameInputRef.current?.blur()
+
+    const panel = pendingPanelRef.current
+    if (panel) {
+      panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      panel.focus()
+    }
+
+    if (pendingBills.length === 0) {
+      setHighlightedPendingIndex(null)
+      return
+    }
+
+    if (loadedPendingId) {
+      const idx = pendingBills.findIndex((bill) => bill.id === loadedPendingId)
+      setHighlightedPendingIndex(idx >= 0 ? idx : 0)
+      return
+    }
+
+    setHighlightedPendingIndex(0)
+  }
+
+  function focusAmountSection() {
+    const fromOtherSection =
+      nameSectionFocus ||
+      pendingSectionFocus ||
+      document.activeElement === customerNameInputRef.current
+
+    setNameSectionFocus(false)
+    clearPendingSection()
+    customerNameInputRef.current?.blur()
+
+    if (fromOtherSection) {
+      jumpToAmountField()
+    } else {
+      handleEnter()
+    }
+  }
+
+  const focusNameRef = useRef(focusNameSection)
+  const focusPendingRef = useRef(focusPendingSection)
+  const focusAmountRef = useRef(focusAmountSection)
+  focusNameRef.current = focusNameSection
+  focusPendingRef.current = focusPendingSection
+  focusAmountRef.current = focusAmountSection
+
   const saveHandlerRef = useRef(handleSave)
   const savePendingHandlerRef = useRef(handleSavePending)
   const cyclePayTypeRef = useRef(cyclePayType)
+  const pendingBillsRef = useRef(pendingBills)
+  const highlightedPendingIndexRef = useRef(highlightedPendingIndex)
+  const selectPendingBillRef = useRef(selectPendingBill)
   saveHandlerRef.current = handleSave
   savePendingHandlerRef.current = handleSavePending
   cyclePayTypeRef.current = cyclePayType
+  pendingBillsRef.current = pendingBills
+  highlightedPendingIndexRef.current = highlightedPendingIndex
+  selectPendingBillRef.current = selectPendingBill
+
+  useEffect(() => {
+    if (!pendingSectionFocus) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return
+
+      const target = e.target
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+          return
+        }
+      }
+
+      const bills = pendingBillsRef.current
+      if (bills.length === 0) return
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightedPendingIndex((current) => {
+          const idx = current ?? 0
+          if (e.key === 'ArrowDown') return (idx + 1) % bills.length
+          return (idx - 1 + bills.length) % bills.length
+        })
+        return
+      }
+
+      if (e.key === 'Enter') {
+        const idx = highlightedPendingIndexRef.current
+        if (idx == null || idx < 0 || idx >= bills.length) return
+        e.preventDefault()
+        selectPendingBillRef.current(bills[idx])
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [pendingSectionFocus])
+
+  useEffect(() => {
+    if (!pendingSectionFocus || highlightedPendingIndex == null) return
+
+    const panel = pendingPanelRef.current
+    const billId = pendingBills[highlightedPendingIndex]?.id
+    if (!panel || !billId) return
+
+    const item = panel.querySelector(`[data-bill-id="${billId}"]`)
+    item?.scrollIntoView({ block: 'nearest' })
+  }, [pendingSectionFocus, highlightedPendingIndex, pendingBills])
 
   useEffect(() => {
     if (isSaving) return
@@ -441,6 +597,24 @@ export default function Counter() {
       if (e.code === 'KeyA') {
         e.preventDefault()
         cyclePayTypeRef.current()
+        return
+      }
+
+      if (e.code === 'KeyN') {
+        e.preventDefault()
+        focusNameRef.current()
+        return
+      }
+
+      if (e.code === 'KeyW') {
+        e.preventDefault()
+        focusPendingRef.current()
+        return
+      }
+
+      if (e.code === 'KeyE') {
+        e.preventDefault()
+        focusAmountRef.current()
       }
     }
 
@@ -458,8 +632,13 @@ export default function Counter() {
               label="Bill"
               value={billStr}
               active={activeField === 'bill'}
-              onSelect={() => setActiveField('bill')}
+              onSelect={() => {
+                setNameSectionFocus(false)
+                clearPendingSection()
+                setActiveField('bill')
+              }}
               compact
+              shortcutHint="Alt+E"
             />
             {payType === 'split' ? (
               <div className="counter-readonly counter-readonly--mirror counter-readonly--disabled">
@@ -473,7 +652,11 @@ export default function Counter() {
                 label="Customer Give"
                 value={giveStr}
                 active={activeField === 'give'}
-                onSelect={() => setActiveField('give')}
+                onSelect={() => {
+                  setNameSectionFocus(false)
+                  clearPendingSection()
+                  setActiveField('give')
+                }}
                 compact
               />
             ) : (
@@ -530,16 +713,22 @@ export default function Counter() {
             </div>
           )}
 
-          <div className="counter-customer">
+          <div className={`counter-customer ${nameSectionFocus ? 'counter-customer--focused' : ''}`}>
             <label className="counter-customer-label" htmlFor="customer-name">
-              Customer Name
+              Customer Name <span className="counter-shortcut-hint">Alt+N</span>
             </label>
             <input
+              ref={customerNameInputRef}
               id="customer-name"
               type="text"
               className="counter-customer-input"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
+              onFocus={() => {
+                setNameSectionFocus(true)
+                clearPendingSection()
+              }}
+              onBlur={() => setNameSectionFocus(false)}
               placeholder="Optional"
               autoComplete="name"
             />
@@ -620,7 +809,18 @@ export default function Counter() {
           </div>
         </div>
 
-        <PendingBillsPanel bills={pendingBills} onSelect={loadPendingBill} />
+        <PendingBillsPanel
+          bills={pendingBills}
+          onSelect={selectPendingBill}
+          focused={pendingSectionFocus}
+          highlightedBillId={
+            highlightedPendingIndex != null
+              ? pendingBills[highlightedPendingIndex]?.id
+              : null
+          }
+          panelRef={pendingPanelRef}
+          shortcutHint="Alt+W"
+        />
       </div>
     </div>
   )

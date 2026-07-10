@@ -1,3 +1,4 @@
+import type { RefObject } from 'react'
 import type { Sale } from '../types'
 import { formatDate, formatMoney } from '../utils/format'
 import './PendingBillsPanel.css'
@@ -5,15 +6,32 @@ import './PendingBillsPanel.css'
 interface PendingBillsPanelProps {
   bills: Sale[]
   onSelect: (bill: Sale) => void
+  focused?: boolean
+  highlightedBillId?: string | null
+  panelRef?: RefObject<HTMLElement | null>
+  shortcutHint?: string
 }
-
-export default function PendingBillsPanel({ bills, onSelect }: PendingBillsPanelProps) {
+export default function PendingBillsPanel({
+  bills,
+  onSelect,
+  focused,
+  highlightedBillId,
+  panelRef,
+  shortcutHint,
+}: PendingBillsPanelProps) {
   const total = bills.reduce((sum, b) => sum + b.billAmount, 0)
 
   return (
-    <aside className="pending-bills">
+    <aside
+      ref={panelRef}
+      tabIndex={-1}
+      className={`pending-bills ${focused ? 'pending-bills--focused' : ''}`}
+    >
       <div className="pending-bills-header">
-        <span className="pending-bills-title">Pending</span>
+        <span className="pending-bills-title">
+          Pending
+          {shortcutHint ? <span className="pending-bills-shortcut">{shortcutHint}</span> : null}
+        </span>
         <span className="pending-bills-total">{formatMoney(total)}</span>
       </div>
 
@@ -25,7 +43,9 @@ export default function PendingBillsPanel({ bills, onSelect }: PendingBillsPanel
             <li key={bill.id} className="pending-bills-item">
               <button
                 type="button"
-                className="pending-bills-load pending-bills-load--full"
+                data-bill-id={bill.id}
+                tabIndex={-1}
+                className={`pending-bills-load pending-bills-load--full ${highlightedBillId === bill.id ? 'pending-bills-load--highlighted' : ''}`}
                 onClick={() => onSelect(bill)}
               >
                 <span className="pending-bills-amount">{formatMoney(bill.billAmount)}</span>

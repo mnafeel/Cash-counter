@@ -7,6 +7,7 @@ interface AmountDisplayProps {
   active?: boolean
   onSelect?: () => void
   compact?: boolean
+  shortcutHint?: string
 }
 
 export default function AmountDisplay({
@@ -15,6 +16,7 @@ export default function AmountDisplay({
   active,
   onSelect,
   compact,
+  shortcutHint,
 }: AmountDisplayProps) {
   const display = value ? formatMoney(parseAmount(value)) : '0'
 
@@ -24,7 +26,10 @@ export default function AmountDisplay({
       className={`amount-display ${compact ? 'amount-display--compact' : ''} ${active ? 'amount-display--active' : ''}`}
       onClick={onSelect}
     >
-      <span className="amount-display-label">{label}</span>
+      <span className="amount-display-label">
+        {label}
+        {shortcutHint ? <span className="amount-display-shortcut">{shortcutHint}</span> : null}
+      </span>
       <span className="amount-display-value">{display}</span>
       {active && !compact && <span className="amount-display-hint">Tap numbers below</span>}
     </button>

@@ -205,6 +205,21 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
   white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.counter-shortcut-hint {
+  font-size: 0.42rem;
+  font-weight: 700;
+  opacity: 0.7;
+  letter-spacing: 0.03em;
+}
+
+.counter-customer--focused {
+  border-color: var(--cream);
+  box-shadow: 0 0 0 1px var(--cream-dim);
 }
 
 .counter-customer-input {

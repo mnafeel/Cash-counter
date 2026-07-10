@@ -25,6 +25,21 @@
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.amount-display-shortcut {
+  font-size: 0.48rem;
+  font-weight: 700;
+  opacity: 0.7;
+  letter-spacing: 0.03em;
+}
+
+.amount-display--compact .amount-display-shortcut {
+  font-size: clamp(0.4rem, calc(var(--app-height, 800px) * 0.01), 0.52rem);
 }
 
 .amount-display-value {

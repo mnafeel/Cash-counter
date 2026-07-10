@@ -28,6 +28,23 @@
   color: var(--cream-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.pending-bills-shortcut {
+  font-size: clamp(0.48rem, calc(var(--app-height, 800px) * 0.012), 0.62rem);
+  font-weight: 700;
+  opacity: 0.75;
+  letter-spacing: 0.03em;
+}
+
+.pending-bills--focused {
+  border-color: var(--cream);
+  box-shadow: 0 0 0 1px var(--cream-dim);
+  outline: none;
 }
 
 .pending-bills-total {
@@ -88,6 +105,12 @@
 .pending-bills-load:active {
   background: var(--surface-2);
   border-color: var(--cream-dim);
+}
+
+.pending-bills-load--highlighted {
+  border-color: var(--cream);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--cream-dim);
 }
 
 .pending-bills-load--full {
