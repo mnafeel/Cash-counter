@@ -54,6 +54,11 @@ export default function Expenses() {
     if (activeField === 'pay') paySectionRef.current?.focus()
   }, [activeField])
 
+  useEffect(() => {
+    setActiveField('name')
+    nameInputRef.current?.focus()
+  }, [])
+
   function handleEnter() {
     focusField(nextExpenseField(activeField))
   }
