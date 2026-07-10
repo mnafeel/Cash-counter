@@ -57,6 +57,13 @@ export default function Counter() {
   const [highlightedPendingIndex, setHighlightedPendingIndex] = useState<number | null>(null)
   const customerNameInputRef = useRef<HTMLInputElement>(null)
   const pendingPanelRef = useRef<HTMLElement>(null)
+  const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (highlightedNameIndex >= 0) {
+      activeNameSuggestionRef.current?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [highlightedNameIndex])
 
   const customerNameSuggestions = useMemo(() => {
     const seen = new Map<string, string>()
@@ -793,6 +800,7 @@ export default function Counter() {
                   <li key={name}>
                     <button
                       type="button"
+                      ref={index === highlightedNameIndex ? activeNameSuggestionRef : null}
                       className={`counter-customer-suggestion ${index === highlightedNameIndex ? 'counter-customer-suggestion--active' : ''}`}
                       onMouseEnter={() => setHighlightedNameIndex(index)}
                       onMouseDown={(e) => {

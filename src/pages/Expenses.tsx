@@ -29,6 +29,7 @@ export default function Expenses() {
   const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const paySectionRef = useRef<HTMLDivElement>(null)
+  const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
 
   const expenseNameSuggestions = useMemo(() => {
     const seen = new Map<string, string>()
@@ -84,6 +85,12 @@ export default function Expenses() {
     setActiveField('name')
     nameInputRef.current?.focus()
   }, [])
+
+  useEffect(() => {
+    if (highlightedNameIndex >= 0) {
+      activeNameSuggestionRef.current?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [highlightedNameIndex])
 
   function handleEnter() {
     focusField(nextExpenseField(activeField))
@@ -195,6 +202,7 @@ export default function Expenses() {
                 <li key={item}>
                   <button
                     type="button"
+                    ref={index === highlightedNameIndex ? activeNameSuggestionRef : null}
                     className={`expense-name-suggestion ${index === highlightedNameIndex ? 'expense-name-suggestion--active' : ''}`}
                     onMouseEnter={() => setHighlightedNameIndex(index)}
                     onMouseDown={(e) => {
