@@ -48,7 +48,12 @@ export default function PendingBillsPanel({
                 className={`pending-bills-load pending-bills-load--full ${highlightedBillId === bill.id ? 'pending-bills-load--highlighted' : ''}`}
                 onClick={() => onSelect(bill)}
               >
-                <span className="pending-bills-amount">{formatMoney(bill.billAmount)}</span>
+                <span className="pending-bills-amount">
+                  {formatMoney(bill.billAmount)}
+                  {bill.payType === 'cheque' ? (
+                    <span className="pending-bills-tag">🧾 Cheque</span>
+                  ) : null}
+                </span>
                 {bill.customerName ? (
                   <span className="pending-bills-name">{bill.customerName}</span>
                 ) : null}

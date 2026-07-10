@@ -70,23 +70,25 @@ function filteredPaidSales(data: AppData, filter?: SalesReportFilter): Sale[] {
 
 function salePayLabel(sale: Sale): string {
   if (sale.payType === 'bank') return '🏦 Bank'
+  if (sale.payType === 'cheque') return '🧾 Cheque'
   if (sale.payType === 'split') {
-    return `💵 ${formatMoney(sale.cashAmount ?? 0)} · 🏦 ${formatMoney(sale.bankAmount ?? 0)}`
+    const base = `💵 ${formatMoney(sale.cashAmount ?? 0)} · 🏦 ${formatMoney(sale.bankAmount ?? 0)}`
+    return (sale.chequeAmount ?? 0) > 0 ? `${base} · 🧾 ${formatMoney(sale.chequeAmount ?? 0)}` : base
   }
   return '💵 Cash'
 }
 
 export function saleCashCollected(sale: Sale): number {
   if (sale.status === 'pending') return 0
-  if (sale.payType === 'bank' || sale.payType === 'credit') return 0
+  if (sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque') return 0
   if (sale.payType === 'split') return sale.cashAmount ?? 0
   return sale.billAmount
 }
 
 export function saleBankCollected(sale: Sale): number {
   if (sale.status === 'pending') return 0
-  if (sale.payType === 'bank') return sale.billAmount
-  if (sale.payType === 'split') return sale.bankAmount ?? 0
+  if (sale.payType === 'bank' || sale.payType === 'cheque') return sale.billAmount
+  if (sale.payType === 'split') return (sale.bankAmount ?? 0) + (sale.chequeAmount ?? 0)
   return 0
 }
 

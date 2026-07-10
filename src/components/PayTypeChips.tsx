@@ -6,6 +6,7 @@ const PAY_OPTIONS: { id: PayType; label: string; icon: string }[] = [
   { id: 'bank', label: 'Bank', icon: '🏦' },
   { id: 'credit', label: 'Credit', icon: '💳' },
   { id: 'split', label: 'Split', icon: '➗' },
+  { id: 'cheque', label: 'Cheque', icon: '🧾' },
 ]
 
 interface PayTypeChipsProps {

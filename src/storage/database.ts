@@ -66,7 +66,7 @@ export function clearAllLocalData(): AppData {
 
 function saleCashToDrawer(sale: Sale): number {
   if (sale.status === 'pending') return 0
-  if (sale.payType === 'bank' || sale.payType === 'credit') return 0
+  if (sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque') return 0
   if (sale.payType === 'split') return sale.cashAmount ?? 0
   return sale.billAmount
 }
@@ -93,8 +93,8 @@ function expenseCashToDrawer(expense: Expense): number {
 
 function saleBankToBalance(sale: Sale): number {
   if (sale.status === 'pending') return 0
-  if (sale.payType === 'bank') return sale.billAmount
-  if (sale.payType === 'split') return sale.bankAmount ?? 0
+  if (sale.payType === 'bank' || sale.payType === 'cheque') return sale.billAmount
+  if (sale.payType === 'split') return (sale.bankAmount ?? 0) + (sale.chequeAmount ?? 0)
   return 0
 }
 
@@ -230,6 +230,7 @@ export function updatePendingBill(
     payType?: PayType
     cashAmount?: number
     bankAmount?: number
+    chequeAmount?: number
   },
 ): AppData {
   const next = {
@@ -244,6 +245,7 @@ export function updatePendingBill(
             payType: updates.payType,
             cashAmount: updates.payType === 'split' ? updates.cashAmount : undefined,
             bankAmount: updates.payType === 'split' ? updates.bankAmount : undefined,
+            chequeAmount: updates.payType === 'split' ? updates.chequeAmount : undefined,
             updatedAt: new Date().toISOString(),
           }
         : s,
@@ -264,6 +266,7 @@ export function collectPendingBill(
     payType: PayType
     cashAmount?: number
     bankAmount?: number
+    chequeAmount?: number
     customerName?: string
   },
 ): AppData {

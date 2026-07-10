@@ -53,6 +53,7 @@ interface CashContextValue {
     payType?: PayType
     cashAmount?: number
     bankAmount?: number
+    chequeAmount?: number
     creditAmount?: number
     customerName?: string
     status?: SaleStatus
@@ -66,6 +67,7 @@ interface CashContextValue {
       payType?: PayType
       cashAmount?: number
       bankAmount?: number
+      chequeAmount?: number
     },
   ) => void
   collectPendingSale: (
@@ -78,6 +80,7 @@ interface CashContextValue {
       payType: PayType
       cashAmount?: number
       bankAmount?: number
+      chequeAmount?: number
       customerName?: string
     },
   ) => void
@@ -140,6 +143,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       payType?: PayType
       cashAmount?: number
       bankAmount?: number
+      chequeAmount?: number
       creditAmount?: number
       customerName?: string
       status?: SaleStatus
@@ -159,6 +163,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         payType?: PayType
         cashAmount?: number
         bankAmount?: number
+        chequeAmount?: number
       },
     ) => {
       setData((prev) => updatePendingBill(prev, id, sale))
@@ -177,6 +182,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         payType: PayType
         cashAmount?: number
         bankAmount?: number
+        chequeAmount?: number
         customerName?: string
       },
     ) => {

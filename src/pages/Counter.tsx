@@ -7,14 +7,14 @@ import PendingBillsPanel from '../components/PendingBillsPanel'
 import RoundTypeChips from '../components/RoundTypeChips'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import type { Sale } from '../types'
-import { formatMoney, parseAmount } from '../utils/format'
+import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { getBillRoundOptions } from '../utils/roundSuggestions'
 import './Counter.css'
 
-type ActiveField = 'bill' | 'give' | 'paid' | 'cashSplit' | 'bankSplit'
+type ActiveField = 'bill' | 'give' | 'paid' | 'cashSplit' | 'bankSplit' | 'chequeSplit'
 
-const COUNTER_PAY_TYPES: PayType[] = ['cash', 'bank', 'split']
+const COUNTER_PAY_TYPES: PayType[] = ['cash', 'bank', 'split', 'cheque']
 
 function needsGive(payType: PayType): boolean {
   return payType === 'cash'
@@ -26,6 +26,7 @@ function keyboardHint(activeField: ActiveField, payType: PayType): string {
   if (activeField === 'paid') return 'Customer Paid'
   if (activeField === 'cashSplit') return payType === 'split' ? 'Cash · Bank auto-fills' : 'Cash'
   if (activeField === 'bankSplit') return payType === 'split' ? 'Bank · Cash auto-fills' : 'Bank'
+  if (activeField === 'chequeSplit') return 'Cheque · Bank adjusts'
   return 'Amount'
 }
 
@@ -43,6 +44,7 @@ export default function Counter() {
   const [paidStr, setPaidStr] = useState('')
   const [cashSplitStr, setCashSplitStr] = useState('')
   const [bankSplitStr, setBankSplitStr] = useState('')
+  const [chequeSplitStr, setChequeSplitStr] = useState('')
   const [roundOffAmount, setRoundOffAmount] = useState<number | null>(null)
   const [paymentStep, setPaymentStep] = useState(false)
   const [payType, setPayType] = useState<PayType>('cash')
@@ -53,6 +55,7 @@ export default function Counter() {
   const [nameSectionFocus, setNameSectionFocus] = useState(false)
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
   const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
+  const [chequeListOpen, setChequeListOpen] = useState(false)
   const [pendingSectionFocus, setPendingSectionFocus] = useState(false)
   const [highlightedPendingIndex, setHighlightedPendingIndex] = useState<number | null>(null)
   const customerNameInputRef = useRef<HTMLInputElement>(null)
@@ -96,16 +99,27 @@ export default function Counter() {
       .slice(0, 8)
   }, [customerName, customerNameSuggestions])
 
+  const chequePendingBills = useMemo(
+    () => pendingBills.filter((bill) => bill.payType === 'cheque'),
+    [pendingBills],
+  )
+
+  const billPendingBills = useMemo(
+    () => pendingBills.filter((bill) => bill.payType !== 'cheque'),
+    [pendingBills],
+  )
+
   const billAmount = parseAmount(billStr)
   const giveAmount = parseAmount(giveStr)
   const paidAmount = parseAmount(paidStr)
   const cashSplitAmount = parseAmount(cashSplitStr)
   const bankSplitAmount = parseAmount(bankSplitStr)
+  const chequeSplitAmount = parseAmount(chequeSplitStr)
   const dueAmount = roundOffAmount ?? billAmount
 
   const splitTotal = paidAmount > 0 ? paidAmount : dueAmount
 
-  const splitPaidTotal = cashSplitAmount + bankSplitAmount
+  const splitPaidTotal = cashSplitAmount + bankSplitAmount + chequeSplitAmount
 
   const paidForReturn =
     payType === 'split'
@@ -125,7 +139,7 @@ export default function Counter() {
       : 0
 
   const changeAmount =
-    payType === 'bank' || payType === 'split'
+    payType === 'bank' || payType === 'split' || payType === 'cheque'
       ? 0
       : Math.max(0, giveAmount - paidForReturn)
 
@@ -143,7 +157,7 @@ export default function Counter() {
       : payType === 'cash' && giveAmount > 0 && paidForReturn > 0
 
   const returnDisplay = (() => {
-    if (payType === 'bank') return '—'
+    if (payType === 'bank' || payType === 'cheque') return '—'
     if (payType === 'split') {
       if (splitTotal <= 0 || splitPaidTotal <= 0) return '—'
       if (splitShortfall > 0) return `+${formatMoney(splitShortfall)}`
@@ -157,7 +171,7 @@ export default function Counter() {
 
   const isValid =
     billAmount > 0 &&
-    (payType === 'bank'
+    (payType === 'bank' || payType === 'cheque'
       ? paymentStep && paidAmount > 0
       : payType === 'cash'
         ? paymentStep && paidAmount > 0 && giveAmount >= paidAmount
@@ -166,7 +180,8 @@ export default function Counter() {
             splitPaidTotal === splitTotal &&
             cashSplitAmount >= 0 &&
             bankSplitAmount >= 0 &&
-            (cashSplitAmount > 0 || bankSplitAmount > 0)
+            chequeSplitAmount >= 0 &&
+            (cashSplitAmount > 0 || bankSplitAmount > 0 || chequeSplitAmount > 0)
           : false)
 
   const canSavePending = dueAmount > 0 && savedAction === null
@@ -191,7 +206,8 @@ export default function Counter() {
   function applySplitCash(nextCashStr: string, totalOverride?: number) {
     setCashSplitStr(nextCashStr)
     const total = totalOverride ?? splitTotal
-    if (total <= 0) {
+    const base = Math.max(0, total - chequeSplitAmount)
+    if (base <= 0) {
       setBankSplitStr('')
       return
     }
@@ -200,14 +216,15 @@ export default function Counter() {
       return
     }
     const cash = parseAmount(nextCashStr)
-    const bank = Math.max(0, total - cash)
+    const bank = Math.max(0, base - cash)
     setBankSplitStr(formatSplitPart(bank))
   }
 
   function applySplitBank(nextBankStr: string, totalOverride?: number) {
     setBankSplitStr(nextBankStr)
     const total = totalOverride ?? splitTotal
-    if (total <= 0) {
+    const base = Math.max(0, total - chequeSplitAmount)
+    if (base <= 0) {
       setCashSplitStr('')
       return
     }
@@ -216,8 +233,17 @@ export default function Counter() {
       return
     }
     const bank = parseAmount(nextBankStr)
-    const cash = Math.max(0, total - bank)
+    const cash = Math.max(0, base - bank)
     setCashSplitStr(formatSplitPart(cash))
+  }
+
+  function applySplitCheque(nextChequeStr: string, totalOverride?: number) {
+    setChequeSplitStr(nextChequeStr)
+    const total = totalOverride ?? splitTotal
+    const cheque = parseAmount(nextChequeStr)
+    const base = Math.max(0, total - cheque)
+    const bank = Math.max(0, base - cashSplitAmount)
+    setBankSplitStr(formatSplitPart(bank))
   }
 
   function openSplitMode() {
@@ -231,6 +257,7 @@ export default function Counter() {
     if (dueAmount > 0) setPaidStr(String(dueAmount))
     setCashSplitStr('')
     setBankSplitStr('')
+    setChequeSplitStr('')
     setActiveField('cashSplit')
   }
 
@@ -268,6 +295,10 @@ export default function Counter() {
       return
     }
     if (activeField === 'bankSplit') {
+      setActiveField('chequeSplit')
+      return
+    }
+    if (activeField === 'chequeSplit') {
       setActiveField('cashSplit')
       return
     }
@@ -277,6 +308,7 @@ export default function Counter() {
     setPayType(type)
     setCashSplitStr('')
     setBankSplitStr('')
+    setChequeSplitStr('')
     if (!needsGive(type)) setGiveStr('')
     if (!paidStr && dueAmount > 0) setPaidStr(String(dueAmount))
 
@@ -311,10 +343,12 @@ export default function Counter() {
           setPaidStr(String(newDue))
           if (cashSplitStr) applySplitCash(cashSplitStr, newDue)
           else if (bankSplitStr) applySplitBank(bankSplitStr, newDue)
+          else if (chequeSplitStr) applySplitCheque(chequeSplitStr, newDue)
         } else {
           setPaidStr('')
           setCashSplitStr('')
           setBankSplitStr('')
+          setChequeSplitStr('')
         }
       } else {
         setPaymentStep(false)
@@ -330,6 +364,8 @@ export default function Counter() {
       applySplitCash(applyNumpadAction(cashSplitStr, action))
     } else if (activeField === 'bankSplit') {
       applySplitBank(applyNumpadAction(bankSplitStr, action))
+    } else if (activeField === 'chequeSplit') {
+      applySplitCheque(applyNumpadAction(chequeSplitStr, action))
     }
   }
 
@@ -346,6 +382,7 @@ export default function Counter() {
     setPaidStr('')
     setCashSplitStr('')
     setBankSplitStr('')
+    setChequeSplitStr('')
     setRoundOffAmount(null)
     setPaymentStep(false)
     setPayType('cash')
@@ -353,6 +390,7 @@ export default function Counter() {
     setActiveField('bill')
     setSavedAction(null)
     setLoadedPendingId(null)
+    setChequeListOpen(false)
   }
 
   function buildPendingPayload() {
@@ -370,6 +408,7 @@ export default function Counter() {
         ...base,
         cashAmount: cashSplitAmount,
         bankAmount: bankSplitAmount,
+        chequeAmount: chequeSplitAmount,
       }
     }
 
@@ -394,14 +433,16 @@ export default function Counter() {
     if (type === 'split') {
       setCashSplitStr(bill.cashAmount ? formatSplitPart(bill.cashAmount) : '')
       setBankSplitStr(bill.bankAmount ? formatSplitPart(bill.bankAmount) : '')
+      setChequeSplitStr(bill.chequeAmount ? formatSplitPart(bill.chequeAmount) : '')
       setActiveField('cashSplit')
       return
     }
 
     setCashSplitStr('')
     setBankSplitStr('')
+    setChequeSplitStr('')
 
-    if (type === 'bank') {
+    if (type === 'bank' || type === 'cheque') {
       setActiveField('paid')
       return
     }
@@ -445,17 +486,28 @@ export default function Counter() {
     const cashAmount =
       payType === 'cash' ? paidAmount : payType === 'split' ? cashSplitAmount : 0
     const bankAmount =
-      payType === 'bank' ? paidAmount : payType === 'split' ? bankSplitAmount : 0
+      payType === 'bank' || payType === 'cheque'
+        ? paidAmount
+        : payType === 'split'
+          ? bankSplitAmount
+          : 0
+    const chequeAmount = payType === 'split' ? chequeSplitAmount : 0
     const name = customerName.trim() || undefined
 
     const salePayload = {
       billAmount: payType === 'split' ? splitTotal : paidAmount,
       originalBillAmount: billAmount,
-      paidAmount: payType === 'bank' ? paidAmount : payType === 'split' ? cashSplitAmount : giveAmount,
+      paidAmount:
+        payType === 'bank' || payType === 'cheque'
+          ? paidAmount
+          : payType === 'split'
+            ? cashSplitAmount
+            : giveAmount,
       changeAmount: payType === 'split' ? 0 : changeAmount,
       payType,
       cashAmount,
       bankAmount,
+      chequeAmount,
       customerName: name,
     }
 
@@ -468,7 +520,12 @@ export default function Counter() {
     setTimeout(resetForm, 900)
   }
 
-  const saveLabel = savedAction === 'collect' ? '✓ Saved' : 'Save &\nCollect'
+  const saveLabel =
+    savedAction === 'collect'
+      ? '✓ Saved'
+      : payType === 'cheque'
+        ? 'Approve\n& Bank'
+        : 'Save &\nCollect'
 
   function jumpToAmountField() {
     if (payType === 'split') {
@@ -513,13 +570,13 @@ export default function Counter() {
       panel.focus()
     }
 
-    if (pendingBills.length === 0) {
+    if (billPendingBills.length === 0) {
       setHighlightedPendingIndex(null)
       return
     }
 
     if (loadedPendingId) {
-      const idx = pendingBills.findIndex((bill) => bill.id === loadedPendingId)
+      const idx = billPendingBills.findIndex((bill) => bill.id === loadedPendingId)
       setHighlightedPendingIndex(idx >= 0 ? idx : 0)
       return
     }
@@ -554,13 +611,13 @@ export default function Counter() {
   const saveHandlerRef = useRef(handleSave)
   const savePendingHandlerRef = useRef(handleSavePending)
   const cyclePayTypeRef = useRef(cyclePayType)
-  const pendingBillsRef = useRef(pendingBills)
+  const pendingBillsRef = useRef(billPendingBills)
   const highlightedPendingIndexRef = useRef(highlightedPendingIndex)
   const selectPendingBillRef = useRef(selectPendingBill)
   saveHandlerRef.current = handleSave
   savePendingHandlerRef.current = handleSavePending
   cyclePayTypeRef.current = cyclePayType
-  pendingBillsRef.current = pendingBills
+  pendingBillsRef.current = billPendingBills
   highlightedPendingIndexRef.current = highlightedPendingIndex
   selectPendingBillRef.current = selectPendingBill
 
@@ -680,14 +737,7 @@ export default function Counter() {
               compact
               shortcutHint="Alt+E"
             />
-            {payType === 'split' ? (
-              <div className="counter-readonly counter-readonly--mirror counter-readonly--disabled">
-                <span className="counter-readonly-label">Customer Give</span>
-                <span className="counter-readonly-value">
-                  {cashSplitAmount > 0 ? formatMoney(cashSplitAmount) : '—'}
-                </span>
-              </div>
-            ) : needsGive(payType) ? (
+            {payType === 'split' ? null : needsGive(payType) ? (
               <AmountDisplay
                 label="Customer Give"
                 value={giveStr}
@@ -719,6 +769,13 @@ export default function Counter() {
                   value={bankSplitStr}
                   active={activeField === 'bankSplit'}
                   onSelect={() => setActiveField('bankSplit')}
+                  compact
+                />
+                <AmountDisplay
+                  label="Cheque"
+                  value={chequeSplitStr}
+                  active={activeField === 'chequeSplit'}
+                  onSelect={() => setActiveField('chequeSplit')}
                   compact
                 />
               </>
@@ -857,6 +914,7 @@ export default function Counter() {
                     setPaidStr(String(amt))
                     if (cashSplitStr) applySplitCash(cashSplitStr, amt)
                     else if (bankSplitStr) applySplitBank(bankSplitStr, amt)
+                    else if (chequeSplitStr) applySplitCheque(chequeSplitStr, amt)
                     else openSplitMode()
                   } else if (paymentStep) setPaidStr(String(amt))
                   else if (needsGive(payType)) setActiveField('give')
@@ -870,18 +928,64 @@ export default function Counter() {
             )}
             </div>
 
+          {payType === 'cheque' && (
+            <div className="counter-cheque-bar">
+              <button
+                type="button"
+                className="counter-cheque-open"
+                onClick={() => setChequeListOpen((open) => !open)}
+                disabled={chequePendingBills.length === 0}
+              >
+                <span>🧾 Cheque Bills ({chequePendingBills.length})</span>
+                <span className="counter-cheque-open-caret">{chequeListOpen ? '▲' : '▼'}</span>
+              </button>
+              {chequeListOpen && chequePendingBills.length > 0 && (
+                <ul className="counter-cheque-list" role="listbox">
+                  {chequePendingBills.map((bill) => (
+                    <li key={bill.id}>
+                      <button
+                        type="button"
+                        className={`counter-cheque-item ${loadedPendingId === bill.id ? 'counter-cheque-item--active' : ''}`}
+                        onClick={() => {
+                          selectPendingBill(bill)
+                          setChequeListOpen(false)
+                        }}
+                      >
+                        <span className="counter-cheque-item-amount">
+                          {formatMoney(bill.billAmount)}
+                        </span>
+                        {bill.customerName ? (
+                          <span className="counter-cheque-item-name">{bill.customerName}</span>
+                        ) : null}
+                        <span className="counter-cheque-item-date">
+                          {formatDate(bill.updatedAt ?? bill.createdAt)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           <div className="counter-actions counter-actions--3">
             <button type="button" className="btn btn-secondary" onClick={resetForm}>
               Clear
             </button>
             <button
               type="button"
-              className={`btn btn-pending btn-with-shortcut ${savedAction === 'pending' ? 'btn-saved' : ''}`}
+              className={`btn ${payType === 'cheque' ? 'btn-cheque' : 'btn-pending'} btn-with-shortcut ${savedAction === 'pending' ? 'btn-saved' : ''}`}
               onClick={handleSavePending}
               disabled={!canSavePending}
             >
               <span className="btn-text">
-                {savedAction === 'pending' ? '✓ Saved' : 'Bill\nPending'}
+                {savedAction === 'pending'
+                  ? '✓ Saved'
+                  : payType === 'cheque'
+                    ? loadedPendingId
+                      ? 'Update\nCheque'
+                      : 'Cheque\nPending'
+                    : 'Bill\nPending'}
               </span>
               {savedAction !== 'pending' ? (
                 <span className="btn-shortcut">Alt+B</span>
@@ -903,12 +1007,12 @@ export default function Counter() {
         </div>
 
         <PendingBillsPanel
-          bills={pendingBills}
+          bills={billPendingBills}
           onSelect={selectPendingBill}
           focused={pendingSectionFocus}
           highlightedBillId={
             highlightedPendingIndex != null
-              ? pendingBills[highlightedPendingIndex]?.id
+              ? billPendingBills[highlightedPendingIndex]?.id
               : null
           }
           panelRef={pendingPanelRef}
