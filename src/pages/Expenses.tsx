@@ -73,6 +73,26 @@ export default function Expenses() {
   numpadHandlerRef.current = handleNumpad
   useNumpadKeyboard((action) => numpadHandlerRef.current(action), !saved)
 
+  const saveHandlerRef = useRef(handleSave)
+  saveHandlerRef.current = handleSave
+
+  useEffect(() => {
+    if (saved) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
+
+      if (e.code === 'KeyS') {
+        if (!isValid) return
+        e.preventDefault()
+        saveHandlerRef.current()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [saved, isValid])
+
   function handleClear() {
     setAmountStr('')
     setName('')
@@ -147,11 +167,12 @@ export default function Expenses() {
         </button>
         <button
           type="button"
-          className={`btn btn-danger ${saved ? 'btn-saved' : ''}`}
+          className={`btn btn-danger btn-with-shortcut ${saved ? 'btn-saved' : ''}`}
           onClick={handleSave}
           disabled={!isValid || saved}
         >
-          {saved ? '✓ Saved' : 'Record Expense'}
+          <span className="btn-text">{saved ? '✓ Saved' : 'Record Expense'}</span>
+          {!saved ? <span className="btn-shortcut">Alt+S</span> : null}
         </button>
       </div>
     </div>

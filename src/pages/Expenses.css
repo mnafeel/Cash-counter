@@ -102,6 +102,19 @@
   font-weight: 700;
 }
 
+.expenses-actions .btn-with-shortcut {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.expenses-actions .btn-shortcut {
+  font-size: clamp(0.5rem, calc(var(--counter-height, 560px) * 0.014), 0.72rem);
+  font-weight: 700;
+  opacity: 0.75;
+  line-height: 1;
+  letter-spacing: 0.03em;
+}
+
 html[data-screen='tablet'] .expenses-top {
   gap: 4px;
 }
