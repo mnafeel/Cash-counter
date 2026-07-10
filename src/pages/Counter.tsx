@@ -37,7 +37,7 @@ function formatSplitPart(amount: number): string {
 type SavedAction = 'collect' | 'pending' | null
 
 export default function Counter() {
-  const { recordSale, updatePendingSale, collectPendingSale, pendingBills } = useCash()
+  const { recordSale, updatePendingSale, collectPendingSale, pendingBills, data } = useCash()
   const [billStr, setBillStr] = useState('')
   const [giveStr, setGiveStr] = useState('')
   const [paidStr, setPaidStr] = useState('')
@@ -55,6 +55,17 @@ export default function Counter() {
   const [highlightedPendingIndex, setHighlightedPendingIndex] = useState<number | null>(null)
   const customerNameInputRef = useRef<HTMLInputElement>(null)
   const pendingPanelRef = useRef<HTMLElement>(null)
+
+  const customerNameSuggestions = useMemo(() => {
+    const seen = new Map<string, string>()
+    for (let i = data.sales.length - 1; i >= 0; i--) {
+      const raw = data.sales[i]?.customerName?.trim()
+      if (!raw) continue
+      const key = raw.toLowerCase()
+      if (!seen.has(key)) seen.set(key, raw)
+    }
+    return Array.from(seen.values())
+  }, [data.sales])
 
   const billAmount = parseAmount(billStr)
   const giveAmount = parseAmount(giveStr)
@@ -730,8 +741,14 @@ export default function Counter() {
               }}
               onBlur={() => setNameSectionFocus(false)}
               placeholder="Optional"
-              autoComplete="name"
+              autoComplete="off"
+              list="customer-name-suggestions"
             />
+            <datalist id="customer-name-suggestions">
+              {customerNameSuggestions.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
           </div>
 
           <div className="counter-pay">
