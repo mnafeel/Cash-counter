@@ -58,10 +58,19 @@ export default function Counter() {
   const customerNameInputRef = useRef<HTMLInputElement>(null)
   const pendingPanelRef = useRef<HTMLElement>(null)
   const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
+  const nameSuggestionsListRef = useRef<HTMLUListElement>(null)
 
   useEffect(() => {
-    if (highlightedNameIndex >= 0) {
-      activeNameSuggestionRef.current?.scrollIntoView({ block: 'nearest' })
+    if (highlightedNameIndex < 0) return
+    const item = activeNameSuggestionRef.current
+    const list = nameSuggestionsListRef.current
+    if (!item || !list) return
+    const itemTop = item.offsetTop
+    const itemBottom = itemTop + item.offsetHeight
+    if (itemTop < list.scrollTop) {
+      list.scrollTop = itemTop
+    } else if (itemBottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = itemBottom - list.clientHeight
     }
   }, [highlightedNameIndex])
 
@@ -795,7 +804,7 @@ export default function Counter() {
               autoComplete="off"
             />
             {nameDropdownOpen && filteredNameSuggestions.length > 0 && (
-              <ul className="counter-customer-suggestions" role="listbox">
+              <ul ref={nameSuggestionsListRef} className="counter-customer-suggestions" role="listbox">
                 {filteredNameSuggestions.map((name, index) => (
                   <li key={name}>
                     <button

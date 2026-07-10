@@ -30,6 +30,7 @@ export default function Expenses() {
   const nameInputRef = useRef<HTMLInputElement>(null)
   const paySectionRef = useRef<HTMLDivElement>(null)
   const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
+  const nameSuggestionsListRef = useRef<HTMLUListElement>(null)
 
   const expenseNameSuggestions = useMemo(() => {
     const seen = new Map<string, string>()
@@ -87,8 +88,16 @@ export default function Expenses() {
   }, [])
 
   useEffect(() => {
-    if (highlightedNameIndex >= 0) {
-      activeNameSuggestionRef.current?.scrollIntoView({ block: 'nearest' })
+    if (highlightedNameIndex < 0) return
+    const item = activeNameSuggestionRef.current
+    const list = nameSuggestionsListRef.current
+    if (!item || !list) return
+    const itemTop = item.offsetTop
+    const itemBottom = itemTop + item.offsetHeight
+    if (itemTop < list.scrollTop) {
+      list.scrollTop = itemTop
+    } else if (itemBottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = itemBottom - list.clientHeight
     }
   }, [highlightedNameIndex])
 
@@ -197,7 +206,7 @@ export default function Expenses() {
             autoComplete="off"
           />
           {nameDropdownOpen && filteredNameSuggestions.length > 0 && (
-            <ul className="expense-name-suggestions" role="listbox">
+            <ul ref={nameSuggestionsListRef} className="expense-name-suggestions" role="listbox">
               {filteredNameSuggestions.map((item, index) => (
                 <li key={item}>
                   <button
