@@ -94,6 +94,19 @@
   border-bottom: 3px solid var(--cream);
 }
 
+.nav-shortcut-hint {
+  flex-shrink: 0;
+  align-self: center;
+  margin-left: auto;
+  padding: 4px 8px 8px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  opacity: 0.75;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
 .nav-icon {
   font-size: 1.25rem;
 }
@@ -146,6 +159,11 @@
   padding: 6px 10px 8px;
   font-size: 0.65rem;
   min-width: 56px;
+}
+
+.layout--fit .header--compact .nav-shortcut-hint {
+  font-size: 0.48rem;
+  padding: 2px 6px 6px;
 }
 
 .layout--fit .header--compact .nav-icon {

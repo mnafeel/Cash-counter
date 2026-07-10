@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect } from 'react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useDeviceSize } from '../hooks/useDeviceSize'
 import './Layout.css'
 
@@ -9,8 +10,31 @@ const navItems = [
   { to: '/history', label: 'History', icon: '📋' },
 ]
 
+function getNavIndex(pathname: string): number {
+  if (pathname === '/' || pathname === '') return 0
+  const idx = navItems.findIndex((item) => item.to !== '/' && pathname.startsWith(item.to))
+  return idx >= 0 ? idx : 0
+}
+
 export default function Layout() {
   useDeviceSize()
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
+      if (e.code !== 'KeyQ') return
+
+      e.preventDefault()
+      const idx = getNavIndex(location.pathname)
+      const next = navItems[(idx + 1) % navItems.length]
+      navigate(next.to)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [location.pathname, navigate])
 
   return (
     <div className="layout layout--fit">
@@ -34,6 +58,9 @@ export default function Layout() {
               <span className="nav-label">{item.label}</span>
             </NavLink>
           ))}
+          <span className="nav-shortcut-hint" aria-hidden="true">
+            Alt+Q
+          </span>
         </nav>
       </header>
       <main className="main main--fit">
