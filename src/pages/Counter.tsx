@@ -51,6 +51,7 @@ export default function Counter() {
   const [savedAction, setSavedAction] = useState<SavedAction>(null)
   const [loadedPendingId, setLoadedPendingId] = useState<string | null>(null)
   const [nameSectionFocus, setNameSectionFocus] = useState(false)
+  const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
   const [pendingSectionFocus, setPendingSectionFocus] = useState(false)
   const [highlightedPendingIndex, setHighlightedPendingIndex] = useState<number | null>(null)
   const customerNameInputRef = useRef<HTMLInputElement>(null)
@@ -66,6 +67,17 @@ export default function Counter() {
     }
     return Array.from(seen.values())
   }, [data.sales])
+
+  const filteredNameSuggestions = useMemo(() => {
+    const query = customerName.trim().toLowerCase()
+    if (!query) return customerNameSuggestions.slice(0, 8)
+    return customerNameSuggestions
+      .filter((name) => {
+        const lower = name.toLowerCase()
+        return lower.includes(query) && lower !== query
+      })
+      .slice(0, 8)
+  }, [customerName, customerNameSuggestions])
 
   const billAmount = parseAmount(billStr)
   const giveAmount = parseAmount(giveStr)
@@ -734,21 +746,44 @@ export default function Counter() {
               type="text"
               className="counter-customer-input"
               value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
+              onChange={(e) => {
+                setCustomerName(e.target.value)
+                setNameDropdownOpen(true)
+              }}
               onFocus={() => {
                 setNameSectionFocus(true)
+                setNameDropdownOpen(true)
                 clearPendingSection()
               }}
-              onBlur={() => setNameSectionFocus(false)}
+              onBlur={() => {
+                setNameSectionFocus(false)
+                setNameDropdownOpen(false)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setNameDropdownOpen(false)
+              }}
               placeholder="Optional"
               autoComplete="off"
-              list="customer-name-suggestions"
             />
-            <datalist id="customer-name-suggestions">
-              {customerNameSuggestions.map((name) => (
-                <option key={name} value={name} />
-              ))}
-            </datalist>
+            {nameDropdownOpen && filteredNameSuggestions.length > 0 && (
+              <ul className="counter-customer-suggestions" role="listbox">
+                {filteredNameSuggestions.map((name) => (
+                  <li key={name}>
+                    <button
+                      type="button"
+                      className="counter-customer-suggestion"
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        setCustomerName(name)
+                        setNameDropdownOpen(false)
+                      }}
+                    >
+                      {name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           <div className="counter-pay">
