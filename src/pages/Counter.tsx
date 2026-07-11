@@ -1018,7 +1018,10 @@ export default function Counter() {
                 disabled={chequePendingBills.length === 0}
               >
                 <span>🧾 Cheque Bills ({chequePendingBills.length})</span>
-                <span className="counter-cheque-open-caret">{chequeListOpen ? '▲' : '▼'}</span>
+                <span className="counter-cheque-open-meta">
+                  <span className="counter-cheque-open-hint">Alt+C</span>
+                  <span className="counter-cheque-open-caret">{chequeListOpen ? '▲' : '▼'}</span>
+                </span>
               </button>
               {chequeListOpen && chequePendingBills.length > 0 && (
                 <ul ref={chequeListRef} className="counter-cheque-list" role="listbox">

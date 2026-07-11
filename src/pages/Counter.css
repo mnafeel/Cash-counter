@@ -478,6 +478,19 @@
   opacity: 0.4;
 }
 
+.counter-cheque-open-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.counter-cheque-open-hint {
+  font-size: 0.6rem;
+  font-weight: 700;
+  opacity: 0.75;
+  letter-spacing: 0.03em;
+}
+
 .counter-cheque-open-caret {
   font-size: 0.6rem;
   opacity: 0.8;
