@@ -306,6 +306,168 @@
   transform: scale(0.97);
 }
 
+.home-balance-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.home-cash-history-btn {
+  padding: 3px 8px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cream-dim);
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.home-cash-history-btn:active {
+  border-color: var(--cream);
+  color: var(--cream);
+}
+
+.home-cash-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.home-cash-dates--panel {
+  justify-content: flex-start;
+  flex-shrink: 0;
+}
+
+.home-cash-date-chip {
+  padding: 3px 8px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.home-cash-date-chip--active {
+  color: var(--cream);
+  border-color: var(--cream);
+  background: var(--surface);
+}
+
+.home-cash-date-input {
+  padding: 3px 8px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+  color-scheme: dark;
+}
+
+.home-cash-date-input--active {
+  color: var(--cream);
+  border-color: var(--cream);
+}
+
+.home-cash-period-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 8px;
+  margin: 6px 0 0;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.home-cash-period-summary span:nth-child(3) {
+  color: var(--cream);
+}
+
+.home-cash-panel {
+  max-height: min(88vh, 560px);
+}
+
+.home-cash-panel-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  flex-shrink: 0;
+}
+
+.home-cash-panel-summary span:last-child {
+  color: var(--cream);
+}
+
+.home-cash-list {
+  list-style: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.home-cash-item {
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.home-cash-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.home-cash-item-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--cream);
+}
+
+.home-cash-item-amount {
+  font-size: 0.78rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.home-cash-item-amount--in {
+  color: var(--success-text);
+}
+
+.home-cash-item-amount--out {
+  color: var(--danger-text);
+}
+
+.home-cash-item-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
 .home-add-overlay {
   position: fixed;
   inset: 0;

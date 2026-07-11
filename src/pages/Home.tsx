@@ -16,6 +16,18 @@ import {
   type HistoryItemType,
 } from '../utils/historyItems'
 import {
+  buildBankActivityItems,
+  matchesBankDateFilter,
+  summarizeBankActivity,
+  type BankDateFilter,
+} from '../utils/bankActivity'
+import {
+  buildCashActivityItems,
+  matchesCashDateFilter,
+  summarizeCashActivity,
+  type CashDateFilter,
+} from '../utils/cashActivity'
+import {
   buildSalesBillList,
   buildSalesReport,
   formatSalesBreakdown,
@@ -31,6 +43,12 @@ import './Home.css'
 const DEFAULT_PIN = '0000'
 
 type PanelField = 'note' | 'amount'
+
+const BALANCE_DATE_OPTIONS: { id: CashDateFilter; label: string }[] = [
+  { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: 'week', label: 'Week' },
+]
 
 export default function Home() {
   const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense } =
@@ -55,6 +73,12 @@ export default function Home() {
   const [reportView, setReportView] = useState<'summary' | 'bills'>('summary')
   const [deleteRecordSearch, setDeleteRecordSearch] = useState('')
   const [deleteRecordFilter, setDeleteRecordFilter] = useState<HistoryFilter>('all')
+  const [showCashHistory, setShowCashHistory] = useState(false)
+  const [cashDateFilter, setCashDateFilter] = useState<CashDateFilter>('today')
+  const [cashSelectedDate, setCashSelectedDate] = useState('')
+  const [showBankHistory, setShowBankHistory] = useState(false)
+  const [bankDateFilter, setBankDateFilter] = useState<BankDateFilter>('today')
+  const [bankSelectedDate, setBankSelectedDate] = useState('')
   const noteInputRef = useRef<HTMLInputElement>(null)
 
   const homePin = normalizePin(data.homePin, DEFAULT_PIN)
@@ -94,6 +118,28 @@ export default function Home() {
     (e) => new Date(e.createdAt).toDateString() === today && e.kind === 'expense',
   )
   const todayExpensesTotal = todayExpenses.reduce((sum, e) => sum + e.amount, 0)
+
+  const cashActivityItems = useMemo(() => {
+    return buildCashActivityItems(data).filter((item) =>
+      matchesCashDateFilter(item.date, cashDateFilter, cashSelectedDate),
+    )
+  }, [data, cashDateFilter, cashSelectedDate])
+
+  const cashActivitySummary = useMemo(
+    () => summarizeCashActivity(cashActivityItems),
+    [cashActivityItems],
+  )
+
+  const bankActivityItems = useMemo(() => {
+    return buildBankActivityItems(data).filter((item) =>
+      matchesBankDateFilter(item.date, bankDateFilter, bankSelectedDate),
+    )
+  }, [data, bankDateFilter, bankSelectedDate])
+
+  const bankActivitySummary = useMemo(
+    () => summarizeBankActivity(bankActivityItems),
+    [bankActivityItems],
+  )
 
   const reportFilter = useMemo(
     () => ({
@@ -345,20 +391,100 @@ export default function Home() {
           <div className="home-balance-card">
             <div className="home-balance-head">
               <p className="home-hero-label">💵 Cash in Drawer</p>
-              <button type="button" className="home-add-btn" onClick={() => openAdd('cash')}>
-                + Add
-              </button>
+              <div className="home-balance-actions">
+                <button
+                  type="button"
+                  className="home-cash-history-btn"
+                  onClick={() => setShowCashHistory(true)}
+                >
+                  History
+                </button>
+                <button type="button" className="home-add-btn" onClick={() => openAdd('cash')}>
+                  + Add
+                </button>
+              </div>
             </div>
             <BigAmount label="" value={balance} variant="primary" size="lg" />
+            <div className="home-cash-dates">
+              {BALANCE_DATE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`home-cash-date-chip ${cashDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                  onClick={() => {
+                    setCashDateFilter(opt.id)
+                    setCashSelectedDate('')
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <input
+                type="date"
+                className={`home-cash-date-input ${cashDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+                value={cashSelectedDate}
+                onChange={(e) => {
+                  setCashSelectedDate(e.target.value)
+                  if (e.target.value) setCashDateFilter('date')
+                }}
+                aria-label="Pick date for cash history"
+              />
+            </div>
+            <p className="home-cash-period-summary">
+              <span>In {formatMoney(cashActivitySummary.cashIn)}</span>
+              <span>Out {formatMoney(cashActivitySummary.cashOut)}</span>
+              <span>Net {formatMoney(cashActivitySummary.net)}</span>
+              <span>{cashActivitySummary.count} items</span>
+            </p>
           </div>
           <div className="home-balance-card home-balance-card--bank">
             <div className="home-balance-head">
               <p className="home-hero-label">🏦 Bank Balance</p>
-              <button type="button" className="home-add-btn" onClick={() => openAdd('bank')}>
-                + Add
-              </button>
+              <div className="home-balance-actions">
+                <button
+                  type="button"
+                  className="home-cash-history-btn"
+                  onClick={() => setShowBankHistory(true)}
+                >
+                  History
+                </button>
+                <button type="button" className="home-add-btn" onClick={() => openAdd('bank')}>
+                  + Add
+                </button>
+              </div>
             </div>
             <BigAmount label="" value={bankBalance} variant="primary" size="lg" />
+            <div className="home-cash-dates">
+              {BALANCE_DATE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`home-cash-date-chip ${bankDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                  onClick={() => {
+                    setBankDateFilter(opt.id)
+                    setBankSelectedDate('')
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <input
+                type="date"
+                className={`home-cash-date-input ${bankDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+                value={bankSelectedDate}
+                onChange={(e) => {
+                  setBankSelectedDate(e.target.value)
+                  if (e.target.value) setBankDateFilter('date')
+                }}
+                aria-label="Pick date for bank history"
+              />
+            </div>
+            <p className="home-cash-period-summary">
+              <span>In {formatMoney(bankActivitySummary.bankIn)}</span>
+              <span>Out {formatMoney(bankActivitySummary.bankOut)}</span>
+              <span>Net {formatMoney(bankActivitySummary.net)}</span>
+              <span>{bankActivitySummary.count} items</span>
+            </p>
           </div>
         </div>
 
@@ -428,6 +554,158 @@ export default function Home() {
           </Link>
         ))}
       </section>
+
+      {showCashHistory && (
+        <div className="home-add-overlay" role="dialog" aria-modal="true">
+          <div className="home-add-panel home-cash-panel">
+            <div className="home-add-panel-head">
+              <h3>Cash in Drawer · History</h3>
+              <button
+                type="button"
+                className="home-add-close"
+                onClick={() => setShowCashHistory(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="home-cash-dates home-cash-dates--panel">
+              {BALANCE_DATE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`home-cash-date-chip ${cashDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                  onClick={() => {
+                    setCashDateFilter(opt.id)
+                    setCashSelectedDate('')
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <input
+                type="date"
+                className={`home-cash-date-input ${cashDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+                value={cashSelectedDate}
+                onChange={(e) => {
+                  setCashSelectedDate(e.target.value)
+                  if (e.target.value) setCashDateFilter('date')
+                }}
+                aria-label="Pick date for cash history"
+              />
+            </div>
+
+            <div className="home-cash-panel-summary">
+              <span>In {formatMoney(cashActivitySummary.cashIn)}</span>
+              <span>Out {formatMoney(cashActivitySummary.cashOut)}</span>
+              <span>Net {formatMoney(cashActivitySummary.net)}</span>
+            </div>
+
+            {cashActivityItems.length === 0 ? (
+              <p className="home-delete-empty">No cash activity for this period.</p>
+            ) : (
+              <ul className="home-cash-list">
+                {cashActivityItems.map((item) => (
+                  <li key={item.id} className="home-cash-item">
+                    <div className="home-cash-item-info">
+                      <div className="home-cash-item-top">
+                        <span className="home-cash-item-label">{item.label}</span>
+                        <span
+                          className={`home-cash-item-amount ${item.direction === 'in' ? 'home-cash-item-amount--in' : 'home-cash-item-amount--out'}`}
+                        >
+                          {item.direction === 'in' ? '+' : '-'}
+                          {formatMoney(item.amount)}
+                        </span>
+                      </div>
+                      <span className="home-cash-item-meta">
+                        {item.name ? `${item.name} · ` : ''}
+                        {formatDate(item.date)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showBankHistory && (
+        <div className="home-add-overlay" role="dialog" aria-modal="true">
+          <div className="home-add-panel home-cash-panel">
+            <div className="home-add-panel-head">
+              <h3>Bank Balance · History</h3>
+              <button
+                type="button"
+                className="home-add-close"
+                onClick={() => setShowBankHistory(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="home-cash-dates home-cash-dates--panel">
+              {BALANCE_DATE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`home-cash-date-chip ${bankDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                  onClick={() => {
+                    setBankDateFilter(opt.id)
+                    setBankSelectedDate('')
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <input
+                type="date"
+                className={`home-cash-date-input ${bankDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+                value={bankSelectedDate}
+                onChange={(e) => {
+                  setBankSelectedDate(e.target.value)
+                  if (e.target.value) setBankDateFilter('date')
+                }}
+                aria-label="Pick date for bank history"
+              />
+            </div>
+
+            <div className="home-cash-panel-summary">
+              <span>In {formatMoney(bankActivitySummary.bankIn)}</span>
+              <span>Out {formatMoney(bankActivitySummary.bankOut)}</span>
+              <span>Net {formatMoney(bankActivitySummary.net)}</span>
+            </div>
+
+            {bankActivityItems.length === 0 ? (
+              <p className="home-delete-empty">No bank activity for this period.</p>
+            ) : (
+              <ul className="home-cash-list">
+                {bankActivityItems.map((item) => (
+                  <li key={item.id} className="home-cash-item">
+                    <div className="home-cash-item-info">
+                      <div className="home-cash-item-top">
+                        <span className="home-cash-item-label">{item.label}</span>
+                        <span
+                          className={`home-cash-item-amount ${item.direction === 'in' ? 'home-cash-item-amount--in' : 'home-cash-item-amount--out'}`}
+                        >
+                          {item.direction === 'in' ? '+' : '-'}
+                          {formatMoney(item.amount)}
+                        </span>
+                      </div>
+                      <span className="home-cash-item-meta">
+                        {item.name ? `${item.name} · ` : ''}
+                        {formatDate(item.date)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
 
       {showSalesReport && (
         <div className="home-add-overlay" role="dialog" aria-modal="true">

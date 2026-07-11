@@ -25,6 +25,12 @@ import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import './Settings.css'
 
 type SettingsField = 'openingCash' | 'openingBank' | 'pin' | 'pinConfirm'
+type SettingsTab = 'general' | 'cloud'
+
+const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
+  { id: 'general', label: 'General' },
+  { id: 'cloud', label: 'Cloud' },
+]
 
 export default function Settings() {
   const {
@@ -37,6 +43,7 @@ export default function Settings() {
     replaceAllData,
     resetAllData,
   } = useCash()
+  const [tab, setTab] = useState<SettingsTab>('general')
   const [openingStr, setOpeningStr] = useState(String(data.openingBalance))
   const [openingBankStr, setOpeningBankStr] = useState(String(data.openingBankBalance ?? 0))
   const [pinStr, setPinStr] = useState('')
@@ -55,7 +62,6 @@ export default function Settings() {
   const [lastBackup, setLastBackup] = useState<string | null>(getLocalLastBackupTime())
 
   const firebaseBuilt = isFirebaseConfigured()
-
   const opening = parseAmount(openingStr)
   const openingBank = parseAmount(openingBankStr)
 
@@ -99,12 +105,10 @@ export default function Settings() {
   }
 
   function handleNumpad(action: NumpadAction) {
-    if (action === 'enter') return
-
+    if (tab !== 'general' || action === 'enter') return
     const isPinField = activeField === 'pin' || activeField === 'pinConfirm'
     const prev = activeValue()
     const next = isPinField ? applyPinAction(prev, action) : applyNumpadAction(prev, action)
-
     if (isPinField && next.length > 4) return
     setActiveValue(next)
     setPinError('')
@@ -116,7 +120,6 @@ export default function Settings() {
 
   function handleSave() {
     setPinError('')
-
     if (pinStr || pinConfirmStr) {
       if (pinStr.length !== 4 || pinConfirmStr.length !== 4) {
         setPinError('PIN must be exactly 4 digits.')
@@ -128,7 +131,6 @@ export default function Settings() {
       }
       updateHomePin(pinStr)
     }
-
     updateOpeningBalance(opening)
     updateOpeningBankBalance(openingBank)
     setSaved(true)
@@ -156,14 +158,12 @@ export default function Settings() {
       setBackupStatus(`Opened · full data loaded · ${cloudDataSummary(restored)}`)
       return
     }
-
     if (isNewAccount) {
       const at = await backupNow(data)
       setLastBackup(at)
       setBackupStatus(`Username created · ${cloudDataSummary(data)} saved to cloud`)
       return
     }
-
     setBackupStatus('No cloud data yet for this username.')
     setBackupError(true)
   }
@@ -232,7 +232,6 @@ export default function Settings() {
       'Logout? All local data on this device will be removed. Your cloud backup stays safe. Open username again to load full data.',
     )
     if (!ok) return
-
     setBackupBusy(true)
     try {
       await logoutCloud()
@@ -260,169 +259,179 @@ export default function Settings() {
 
   return (
     <div className="settings-page">
-      <div className="settings-scroll">
-        <div className="settings-header">
-          <h2>Settings</h2>
-          <p>Opening balances, PIN & cloud username</p>
-        </div>
+      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+        {SETTINGS_TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            className={`settings-tab ${tab === item.id ? 'settings-tab--active' : ''}`}
+            onClick={() => setTab(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
 
-        <div className="settings-fields">
-          <AmountDisplay
-            label="Opening Cash"
-            value={openingStr}
-            active={activeField === 'openingCash'}
-            onSelect={() => setActiveField('openingCash')}
-            compact
-          />
-          <AmountDisplay
-            label="Opening Bank"
-            value={openingBankStr}
-            active={activeField === 'openingBank'}
-            onSelect={() => setActiveField('openingBank')}
-            compact
-          />
-          <AmountDisplay
-            label="New Home PIN"
-            value={pinStr ? '•'.repeat(pinStr.length) : ''}
-            active={activeField === 'pin'}
-            onSelect={() => setActiveField('pin')}
-            compact
-          />
-          <AmountDisplay
-            label="Confirm PIN"
-            value={pinConfirmStr ? '•'.repeat(pinConfirmStr.length) : ''}
-            active={activeField === 'pinConfirm'}
-            onSelect={() => setActiveField('pinConfirm')}
-            compact
-          />
-        </div>
-
-        <NumberKeyboard onPress={handleNumpad} showEnter={false} />
-
-        {pinError && <p className="settings-pin-error">{pinError}</p>}
-
-        <div className="settings-info">
-          <div className="settings-row">
-            <span>Current cash</span>
-            <span className="settings-highlight">{formatMoney(balance)}</span>
-          </div>
-          <div className="settings-row">
-            <span>Current bank</span>
-            <span className="settings-highlight">{formatMoney(bankBalance)}</span>
-          </div>
-        </div>
-
-        <section className="settings-backup">
-          <div className="settings-backup-head">
-            <h3>Cloud Username</h3>
-            <p>Create username or Open — same username always loads that data from cloud.</p>
-          </div>
-
-          <p className="settings-backup-meta">Firebase connected · cash-counter-84178</p>
-
-          {cloudUser && (
-            <div className="settings-backup-open">
-              <p className="settings-backup-signed-in">Open · {getCloudUsername(cloudUser)}</p>
-              <div className="settings-backup-summary">
-                <span>{data.sales.length} bills</span>
-                <span>{data.expenses.length} records</span>
-                <span>Cash {formatMoney(balance)}</span>
-                <span>Bank {formatMoney(bankBalance)}</span>
+      <div className={`settings-body ${tab === 'general' ? 'settings-body--general' : ''}`}>
+        {tab === 'general' && (
+          <div className="settings-general">
+            <div className="settings-header">
+              <h2>General</h2>
+              <p>Opening balances & home PIN</p>
+            </div>
+            <div className="settings-fields">
+              <AmountDisplay
+                label="Opening Cash"
+                value={openingStr}
+                active={activeField === 'openingCash'}
+                onSelect={() => setActiveField('openingCash')}
+                compact
+              />
+              <AmountDisplay
+                label="Opening Bank"
+                value={openingBankStr}
+                active={activeField === 'openingBank'}
+                onSelect={() => setActiveField('openingBank')}
+                compact
+              />
+              <AmountDisplay
+                label="New Home PIN"
+                value={pinStr ? '•'.repeat(pinStr.length) : ''}
+                active={activeField === 'pin'}
+                onSelect={() => setActiveField('pin')}
+                compact
+              />
+              <AmountDisplay
+                label="Confirm PIN"
+                value={pinConfirmStr ? '•'.repeat(pinConfirmStr.length) : ''}
+                active={activeField === 'pinConfirm'}
+                onSelect={() => setActiveField('pinConfirm')}
+                compact
+              />
+            </div>
+            <div className="settings-info">
+              <div className="settings-row">
+                <span>Current cash</span>
+                <span className="settings-highlight">{formatMoney(balance)}</span>
               </div>
-              <label className="settings-backup-toggle">
-                <input type="checkbox" checked={autoBackup} onChange={toggleAutoBackup} />
-                Auto backup on every change
+              <div className="settings-row">
+                <span>Current bank</span>
+                <span className="settings-highlight">{formatMoney(bankBalance)}</span>
+              </div>
+            </div>
+            {pinError && <p className="settings-pin-error">{pinError}</p>}
+            <div className="settings-keyboard-wrap">
+              <NumberKeyboard onPress={handleNumpad} showEnter={false} />
+            </div>
+            <button
+              type="button"
+              className={`btn btn-primary settings-save-btn ${saved ? 'btn-saved' : ''}`}
+              onClick={handleSave}
+            >
+              {saved ? '✓ Saved!' : 'Save Settings'}
+            </button>
+            <p className="settings-note">PIN default 0000. Leave PIN empty to keep current.</p>
+          </div>
+        )}
+
+        {tab === 'cloud' && (
+          <div className="settings-scroll">
+          <section className="settings-panel">
+            <div className="settings-header">
+              <h2>Cloud Username</h2>
+              <p>Create or open — same username loads same data</p>
+            </div>
+            <p className="settings-backup-meta">Firebase · cash-counter-84178</p>
+            {cloudUser && (
+              <div className="settings-backup-open">
+                <p className="settings-backup-signed-in">Open · {getCloudUsername(cloudUser)}</p>
+                <div className="settings-backup-summary">
+                  <span>{data.sales.length} bills</span>
+                  <span>{data.expenses.length} records</span>
+                  <span>Cash {formatMoney(balance)}</span>
+                  <span>Bank {formatMoney(bankBalance)}</span>
+                </div>
+                <label className="settings-backup-toggle">
+                  <input type="checkbox" checked={autoBackup} onChange={toggleAutoBackup} />
+                  Auto backup on every change
+                </label>
+                {lastBackup && (
+                  <p className="settings-backup-meta">
+                    Last cloud save: {new Date(lastBackup).toLocaleString()}
+                  </p>
+                )}
+                <div className="settings-backup-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={backupBusy || !firebaseBuilt}
+                    onClick={() => void handleBackupNow()}
+                  >
+                    Save to cloud
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    disabled={backupBusy}
+                    onClick={() => void handleCloudLogout()}
+                  >
+                    Logout
+                  </button>
+                </div>
+              </div>
+            )}
+            <div className="settings-backup-form">
+              <label className="settings-backup-field">
+                <span>Cloud Username</span>
+                <input
+                  type="text"
+                  value={cloudUsername}
+                  onChange={(e) => setCloudUsername(e.target.value)}
+                  autoComplete="username"
+                  placeholder="e.g. shalimar"
+                  autoCapitalize="none"
+                />
               </label>
-              {lastBackup && (
-                <p className="settings-backup-meta">
-                  Last cloud save: {new Date(lastBackup).toLocaleString()}
-                </p>
-              )}
-              <div className="settings-backup-actions">
+              <label className="settings-backup-field">
+                <span>Cloud Password</span>
+                <input
+                  type="password"
+                  value={cloudPassword}
+                  onChange={(e) => setCloudPassword(e.target.value)}
+                  autoComplete="current-password"
+                  placeholder="Min 6 characters"
+                />
+              </label>
+              <div className="settings-backup-actions settings-backup-actions--create">
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={backupBusy || !cloudUsername.trim() || cloudPassword.length < 6}
+                  onClick={() => void handleCloudCreate()}
+                >
+                  Create username
+                </button>
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  disabled={backupBusy || !firebaseBuilt}
-                  onClick={() => void handleBackupNow()}
+                  disabled={backupBusy || !cloudUsername.trim() || cloudPassword.length < 6}
+                  onClick={() => void handleCloudOpen()}
                 >
-                  Save to cloud
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  disabled={backupBusy}
-                  onClick={() => void handleCloudLogout()}
-                >
-                  Logout
+                  Open
                 </button>
               </div>
             </div>
-          )}
-
-          <div className="settings-backup-form">
-            <span className="settings-backup-form-label">
-              {cloudUser ? 'Create new username or open another' : 'Create username or open'}
-            </span>
-            <label className="settings-backup-field">
-              <span>Cloud Username</span>
-              <input
-                type="text"
-                value={cloudUsername}
-                onChange={(e) => setCloudUsername(e.target.value)}
-                autoComplete="username"
-                placeholder="e.g. shalimar"
-                autoCapitalize="none"
-              />
-            </label>
-            <label className="settings-backup-field">
-              <span>Cloud Password</span>
-              <input
-                type="password"
-                value={cloudPassword}
-                onChange={(e) => setCloudPassword(e.target.value)}
-                autoComplete="current-password"
-                placeholder="Min 6 characters"
-              />
-            </label>
-            <div className="settings-backup-actions settings-backup-actions--create">
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={backupBusy || !cloudUsername.trim() || cloudPassword.length < 6}
-                onClick={() => void handleCloudCreate()}
-              >
-                Create username
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={backupBusy || !cloudUsername.trim() || cloudPassword.length < 6}
-                onClick={() => void handleCloudOpen()}
-              >
-                Open
-              </button>
-            </div>
+            {backupStatus && (
+              <p className={`settings-backup-status ${backupError ? 'settings-backup-status--error' : ''}`}>
+                {backupStatus}
+              </p>
+            )}
+          </section>
           </div>
-
-          {backupStatus && (
-            <p className={`settings-backup-status ${backupError ? 'settings-backup-status--error' : ''}`}>
-              {backupStatus}
-            </p>
-          )}
-        </section>
+        )}
       </div>
-
-      <button
-        type="button"
-        className={`btn btn-primary settings-save-btn ${saved ? 'btn-saved' : ''}`}
-        onClick={handleSave}
-      >
-        {saved ? '✓ Saved!' : 'Save Settings'}
-      </button>
-
-      <p className="settings-note">
-        Home PIN default is 0000. Leave PIN fields empty to keep current PIN.
-      </p>
     </div>
   )
 }
