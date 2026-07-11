@@ -141,6 +141,9 @@ export default function Home() {
     [bankActivityItems],
   )
 
+  const cashPeriodStart = balance - cashActivitySummary.net
+  const bankPeriodStart = bankBalance - bankActivitySummary.net
+
   const reportFilter = useMemo(
     () => ({
       fromDate: reportFromDate || undefined,
@@ -405,6 +408,9 @@ export default function Home() {
               </div>
             </div>
             <BigAmount label="" value={balance} variant="primary" size="lg" />
+            <p className="home-balance-last">
+              Last <strong>{formatMoney(cashPeriodStart)}</strong>
+            </p>
             <div className="home-cash-dates">
               {BALANCE_DATE_OPTIONS.map((opt) => (
                 <button
@@ -454,6 +460,9 @@ export default function Home() {
               </div>
             </div>
             <BigAmount label="" value={bankBalance} variant="primary" size="lg" />
+            <p className="home-balance-last">
+              Last <strong>{formatMoney(bankPeriodStart)}</strong>
+            </p>
             <div className="home-cash-dates">
               {BALANCE_DATE_OPTIONS.map((opt) => (
                 <button
@@ -597,6 +606,7 @@ export default function Home() {
             </div>
 
             <div className="home-cash-panel-summary">
+              <span>Last {formatMoney(cashPeriodStart)}</span>
               <span>In {formatMoney(cashActivitySummary.cashIn)}</span>
               <span>Out {formatMoney(cashActivitySummary.cashOut)}</span>
               <span>Net {formatMoney(cashActivitySummary.net)}</span>
@@ -673,6 +683,7 @@ export default function Home() {
             </div>
 
             <div className="home-cash-panel-summary">
+              <span>Last {formatMoney(bankPeriodStart)}</span>
               <span>In {formatMoney(bankActivitySummary.bankIn)}</span>
               <span>Out {formatMoney(bankActivitySummary.bankOut)}</span>
               <span>Net {formatMoney(bankActivitySummary.net)}</span>

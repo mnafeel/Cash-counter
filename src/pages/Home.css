@@ -379,6 +379,18 @@
   border-color: var(--cream);
 }
 
+.home-balance-last {
+  margin: 2px 0 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.home-balance-last strong {
+  color: var(--cream-dim);
+  font-weight: 800;
+}
+
 .home-cash-period-summary {
   display: flex;
   flex-wrap: wrap;
