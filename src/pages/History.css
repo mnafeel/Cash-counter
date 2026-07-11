@@ -46,10 +46,86 @@
 }
 
 .history-filters,
-.history-sorts {
+.history-sorts,
+.history-dates {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  align-items: center;
+}
+
+.history-date-input {
+  padding: 4px 8px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+  color-scheme: dark;
+}
+
+.history-date-input--active {
+  color: var(--cream);
+  border-color: var(--cream);
+  background: var(--brown-dark);
+}
+
+.history-summary {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.history-summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--cream);
+  border-radius: var(--radius-sm);
+  min-width: 0;
+}
+
+.history-summary-item--deposit {
+  border-left-color: var(--deposit-border);
+}
+
+.history-summary-item--transfer {
+  border-left-color: var(--transfer-border);
+}
+
+.history-summary-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--cream-dim);
+  white-space: nowrap;
+}
+
+.history-summary-value {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.history-summary-item--sale .history-summary-value,
+.history-summary-item--deposit .history-summary-value {
+  color: var(--success-text);
+}
+
+.history-summary-item--expense .history-summary-value {
+  color: var(--cream-dim);
+}
+
+.history-summary-item--transfer .history-summary-value {
+  color: var(--transfer-text);
 }
 
 .history-chip {

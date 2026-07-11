@@ -12,6 +12,7 @@ import {
 import './History.css'
 
 type HistorySort = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
+type DateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'date'
 
 const FILTER_OPTIONS: { id: HistoryFilter; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -19,6 +20,57 @@ const FILTER_OPTIONS: { id: HistoryFilter; label: string }[] = [
   { id: 'expense', label: 'Expenses' },
   { id: 'deposit', label: 'Added' },
   { id: 'transfer', label: 'Transfer' },
+]
+
+const DATE_FILTER_OPTIONS: { id: DateFilter; label: string }[] = [
+  { id: 'all', label: 'All time' },
+  { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: 'week', label: 'This week' },
+]
+
+function isSameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
+function matchesDateFilter(iso: string, dateFilter: DateFilter, selectedDate: string): boolean {
+  if (dateFilter === 'all') return true
+  const d = new Date(iso)
+  const now = new Date()
+
+  if (dateFilter === 'today') return isSameDay(d, now)
+
+  if (dateFilter === 'yesterday') {
+    const y = new Date(now)
+    y.setDate(now.getDate() - 1)
+    return isSameDay(d, y)
+  }
+
+  if (dateFilter === 'week') {
+    const start = new Date(now)
+    start.setDate(now.getDate() - 6)
+    start.setHours(0, 0, 0, 0)
+    return d.getTime() >= start.getTime()
+  }
+
+  if (dateFilter === 'date') {
+    if (!selectedDate) return true
+    const [y, m, day] = selectedDate.split('-').map(Number)
+    return isSameDay(d, new Date(y, m - 1, day))
+  }
+
+  return true
+}
+
+const TYPE_SUMMARY: { id: HistoryItemType; label: string; icon: string; sign: string }[] = [
+  { id: 'sale', label: 'Bills', icon: '💵', sign: '+' },
+  { id: 'expense', label: 'Expenses', icon: '📤', sign: '-' },
+  { id: 'deposit', label: 'Added', icon: '📥', sign: '+' },
+  { id: 'transfer', label: 'Transfer', icon: '🔄', sign: '' },
 ]
 
 const SORT_OPTIONS: { id: HistorySort; label: string }[] = [
@@ -51,6 +103,8 @@ export default function History() {
   const { data, updateHistoryName } = useCash()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [sort, setSort] = useState<HistorySort>('date-desc')
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
+  const [selectedDate, setSelectedDate] = useState('')
   const [search, setSearch] = useState('')
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
@@ -60,6 +114,7 @@ export default function History() {
 
   const items = useMemo(() => {
     let next = allItems.filter((item) => filter === 'all' || item.type === filter)
+    next = next.filter((item) => matchesDateFilter(item.date, dateFilter, selectedDate))
     next = next.filter((item) => matchesHistorySearch(item, search))
 
     next.sort((a, b) => {
@@ -72,7 +127,26 @@ export default function History() {
     })
 
     return next
-  }, [allItems, filter, sort, search])
+  }, [allItems, filter, sort, dateFilter, selectedDate, search])
+
+  const typeTotals = useMemo(() => {
+    const totals: Record<HistoryItemType, { sum: number; count: number }> = {
+      sale: { sum: 0, count: 0 },
+      expense: { sum: 0, count: 0 },
+      deposit: { sum: 0, count: 0 },
+      transfer: { sum: 0, count: 0 },
+    }
+    for (const item of items) {
+      totals[item.type].sum += item.amount
+      totals[item.type].count += 1
+    }
+    return totals
+  }, [items])
+
+  const summaryTypes =
+    filter === 'all'
+      ? TYPE_SUMMARY.filter((t) => typeTotals[t.id].count > 0)
+      : TYPE_SUMMARY.filter((t) => t.id === filter)
 
   const searchHint =
     filter === 'sale'
@@ -141,7 +215,47 @@ export default function History() {
             </button>
           ))}
         </div>
+
+        <div className="history-dates" role="group" aria-label="Filter by date">
+          {DATE_FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              className={`history-chip history-chip--date ${dateFilter === opt.id ? 'history-chip--active' : ''}`}
+              onClick={() => setDateFilter(opt.id)}
+            >
+              {opt.label}
+            </button>
+          ))}
+          <input
+            type="date"
+            className={`history-date-input ${dateFilter === 'date' ? 'history-date-input--active' : ''}`}
+            value={selectedDate}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => {
+              setSelectedDate(e.target.value)
+              setDateFilter(e.target.value ? 'date' : 'all')
+            }}
+            aria-label="Pick a date"
+          />
+        </div>
       </div>
+
+      {summaryTypes.length > 0 && items.length > 0 ? (
+        <div className="history-summary">
+          {summaryTypes.map((t) => (
+            <div key={t.id} className={`history-summary-item history-summary-item--${t.id}`}>
+              <span className="history-summary-label">
+                {t.icon} {t.label} ({typeTotals[t.id].count})
+              </span>
+              <span className="history-summary-value">
+                {t.sign}
+                {formatMoney(typeTotals[t.id].sum)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {items.length === 0 ? (
         <div className="history-empty">
