@@ -1,6 +1,12 @@
 import type { AppData, Expense, Sale } from '../types'
 import { saleBankCollected } from './salesReport'
-import { type CashActivityItem, type CashDateFilter, matchesCashDateFilter } from './cashActivity'
+import {
+  cashClosingLabel,
+  cashOpeningLabel,
+  type CashActivityItem,
+  type CashDateFilter,
+  matchesCashDateFilter,
+} from './cashActivity'
 
 export type { CashDateFilter as BankDateFilter, CashActivityItem as BankActivityItem }
 export { matchesCashDateFilter as matchesBankDateFilter }
@@ -86,4 +92,33 @@ export function summarizeBankActivity(items: CashActivityItem[]) {
     else bankOut += item.amount
   }
   return { bankIn, bankOut, net: bankIn - bankOut, count: items.length }
+}
+
+/** Balance at 12 AM (start of day) before that period's bank activity. */
+export function getBankOpeningBalance(
+  data: AppData,
+  currentBalance: number,
+  dateFilter: CashDateFilter,
+  selectedDate = '',
+): number {
+  const items = buildBankActivityItems(data).filter((item) =>
+    matchesCashDateFilter(item.date, dateFilter, selectedDate),
+  )
+  return currentBalance - summarizeBankActivity(items).net
+}
+
+export { cashOpeningLabel as bankOpeningLabel, cashClosingLabel as bankClosingLabel }
+
+/** End-of-day balance after that period's bank activity (night 12 AM closing). */
+export function getBankClosingBalance(
+  data: AppData,
+  currentBalance: number,
+  dateFilter: CashDateFilter,
+  selectedDate = '',
+): number {
+  const opening = getBankOpeningBalance(data, currentBalance, dateFilter, selectedDate)
+  const items = buildBankActivityItems(data).filter((item) =>
+    matchesCashDateFilter(item.date, dateFilter, selectedDate),
+  )
+  return opening + summarizeBankActivity(items).net
 }

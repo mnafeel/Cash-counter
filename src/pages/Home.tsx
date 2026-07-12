@@ -17,12 +17,20 @@ import {
 } from '../utils/historyItems'
 import {
   buildBankActivityItems,
+  bankClosingLabel,
+  bankOpeningLabel,
+  getBankClosingBalance,
+  getBankOpeningBalance,
   matchesBankDateFilter,
   summarizeBankActivity,
   type BankDateFilter,
 } from '../utils/bankActivity'
 import {
   buildCashActivityItems,
+  cashClosingLabel,
+  cashOpeningLabel,
+  getCashClosingBalance,
+  getCashOpeningBalance,
   matchesCashDateFilter,
   summarizeCashActivity,
   type CashDateFilter,
@@ -141,8 +149,28 @@ export default function Home() {
     [bankActivityItems],
   )
 
-  const cashPeriodStart = balance - cashActivitySummary.net
-  const bankPeriodStart = bankBalance - bankActivitySummary.net
+  const cashOpeningToday = useMemo(
+    () => getCashOpeningBalance(data, balance, cashDateFilter, cashSelectedDate),
+    [data, balance, cashDateFilter, cashSelectedDate],
+  )
+  const bankOpeningToday = useMemo(
+    () => getBankOpeningBalance(data, bankBalance, bankDateFilter, bankSelectedDate),
+    [data, bankBalance, bankDateFilter, bankSelectedDate],
+  )
+
+  const cashClosingPeriod = useMemo(
+    () => getCashClosingBalance(data, balance, cashDateFilter, cashSelectedDate),
+    [data, balance, cashDateFilter, cashSelectedDate],
+  )
+  const bankClosingPeriod = useMemo(
+    () => getBankClosingBalance(data, bankBalance, bankDateFilter, bankSelectedDate),
+    [data, bankBalance, bankDateFilter, bankSelectedDate],
+  )
+
+  const cashPeriodStart = cashOpeningToday
+  const bankPeriodStart = bankOpeningToday
+  const cashPeriodClose = cashClosingPeriod
+  const bankPeriodClose = bankClosingPeriod
 
   const reportFilter = useMemo(
     () => ({
@@ -408,9 +436,6 @@ export default function Home() {
               </div>
             </div>
             <BigAmount label="" value={balance} variant="primary" size="lg" />
-            <p className="home-balance-last">
-              Last <strong>{formatMoney(cashPeriodStart)}</strong>
-            </p>
             <div className="home-cash-dates">
               {BALANCE_DATE_OPTIONS.map((opt) => (
                 <button
@@ -436,6 +461,16 @@ export default function Home() {
                 aria-label="Pick date for cash history"
               />
             </div>
+            <div className="home-balance-day">
+              <p className="home-balance-last">
+                {cashOpeningLabel(cashDateFilter)}{' '}
+                <strong>{formatMoney(cashOpeningToday)}</strong>
+              </p>
+              <p className="home-balance-last home-balance-last--close">
+                {cashClosingLabel(cashDateFilter)}{' '}
+                <strong>{formatMoney(cashClosingPeriod)}</strong>
+              </p>
+            </div>
             <p className="home-cash-period-summary">
               <span>In {formatMoney(cashActivitySummary.cashIn)}</span>
               <span>Out {formatMoney(cashActivitySummary.cashOut)}</span>
@@ -460,9 +495,6 @@ export default function Home() {
               </div>
             </div>
             <BigAmount label="" value={bankBalance} variant="primary" size="lg" />
-            <p className="home-balance-last">
-              Last <strong>{formatMoney(bankPeriodStart)}</strong>
-            </p>
             <div className="home-cash-dates">
               {BALANCE_DATE_OPTIONS.map((opt) => (
                 <button
@@ -487,6 +519,16 @@ export default function Home() {
                 }}
                 aria-label="Pick date for bank history"
               />
+            </div>
+            <div className="home-balance-day">
+              <p className="home-balance-last">
+                {bankOpeningLabel(bankDateFilter)}{' '}
+                <strong>{formatMoney(bankOpeningToday)}</strong>
+              </p>
+              <p className="home-balance-last home-balance-last--close">
+                {bankClosingLabel(bankDateFilter)}{' '}
+                <strong>{formatMoney(bankClosingPeriod)}</strong>
+              </p>
             </div>
             <p className="home-cash-period-summary">
               <span>In {formatMoney(bankActivitySummary.bankIn)}</span>
@@ -606,7 +648,12 @@ export default function Home() {
             </div>
 
             <div className="home-cash-panel-summary">
-              <span>Last {formatMoney(cashPeriodStart)}</span>
+              <span>
+                {cashOpeningLabel(cashDateFilter)} {formatMoney(cashPeriodStart)}
+              </span>
+              <span>
+                {cashClosingLabel(cashDateFilter)} {formatMoney(cashPeriodClose)}
+              </span>
               <span>In {formatMoney(cashActivitySummary.cashIn)}</span>
               <span>Out {formatMoney(cashActivitySummary.cashOut)}</span>
               <span>Net {formatMoney(cashActivitySummary.net)}</span>
@@ -683,7 +730,12 @@ export default function Home() {
             </div>
 
             <div className="home-cash-panel-summary">
-              <span>Last {formatMoney(bankPeriodStart)}</span>
+              <span>
+                {bankOpeningLabel(bankDateFilter)} {formatMoney(bankPeriodStart)}
+              </span>
+              <span>
+                {bankClosingLabel(bankDateFilter)} {formatMoney(bankPeriodClose)}
+              </span>
               <span>In {formatMoney(bankActivitySummary.bankIn)}</span>
               <span>Out {formatMoney(bankActivitySummary.bankOut)}</span>
               <span>Net {formatMoney(bankActivitySummary.net)}</span>

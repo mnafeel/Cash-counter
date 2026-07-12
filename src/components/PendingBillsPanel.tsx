@@ -50,8 +50,14 @@ export default function PendingBillsPanel({
               >
                 <span className="pending-bills-amount">
                   {formatMoney(bill.billAmount)}
+                  {bill.source === 'tally' ? (
+                    <span className="pending-bills-tag">📒 Tally</span>
+                  ) : null}
                   {bill.payType === 'cheque' ? (
                     <span className="pending-bills-tag">🧾 Cheque</span>
+                  ) : null}
+                  {bill.payType === 'credit' ? (
+                    <span className="pending-bills-tag">💳 Credit</span>
                   ) : null}
                 </span>
                 {bill.customerName ? (

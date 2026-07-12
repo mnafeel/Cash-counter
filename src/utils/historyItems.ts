@@ -26,9 +26,11 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
     ...data.sales.map((s) => {
       const payLabel =
         s.status === 'pending'
-          ? s.payType === 'cheque'
-            ? '🧾 Cheque Pending'
-            : '📋 Pending'
+          ? s.source === 'tally'
+            ? '📒 Tally Pending'
+            : s.payType === 'cheque'
+              ? '🧾 Cheque Pending'
+              : '📋 Pending'
           : s.payType === 'bank'
             ? '🏦 Bank'
             : s.payType === 'cheque'
@@ -36,7 +38,7 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
               : s.payType === 'credit'
                 ? '💳 Credit'
                 : s.payType === 'split'
-                  ? `💵 ${formatMoney(s.cashAmount ?? 0)} · 🏦 ${formatMoney(s.bankAmount ?? 0)}${(s.chequeAmount ?? 0) > 0 ? ` · 🧾 ${formatMoney(s.chequeAmount ?? 0)}` : ''}`
+                  ? `💵 ${formatMoney(s.cashAmount ?? 0)} · 🏦 ${formatMoney(s.bankAmount ?? 0)}${(s.chequeAmount ?? 0) > 0 ? ` · 🧾 ${formatMoney(s.chequeAmount ?? 0)}` : ''}${(s.creditAmount ?? 0) > 0 ? ` · 💳 ${formatMoney(s.creditAmount ?? 0)}` : ''}`
                   : '💵 Cash'
       const orig =
         s.originalBillAmount && s.originalBillAmount !== s.billAmount

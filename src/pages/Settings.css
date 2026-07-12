@@ -9,7 +9,7 @@
 
 .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   flex-shrink: 0;
 }
@@ -364,6 +364,39 @@
 
 .settings-backup-status--error {
   color: var(--danger-text);
+}
+
+.settings-tally-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.settings-tally-scope {
+  padding: 6px 12px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.settings-tally-scope--active {
+  color: var(--cream);
+  border-color: var(--cream-dim);
+  background: var(--surface);
+}
+
+.settings-tally-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
 .settings-save-btn {

@@ -135,3 +135,46 @@ export function summarizeCashActivity(items: CashActivityItem[]) {
   }
   return { cashIn, cashOut, net: cashIn - cashOut, count: items.length }
 }
+
+/** Balance at 12 AM (start of day) before that period's cash activity. */
+export function getCashOpeningBalance(
+  data: AppData,
+  currentBalance: number,
+  dateFilter: CashDateFilter,
+  selectedDate = '',
+): number {
+  const items = buildCashActivityItems(data).filter((item) =>
+    matchesCashDateFilter(item.date, dateFilter, selectedDate),
+  )
+  return currentBalance - summarizeCashActivity(items).net
+}
+
+export function cashOpeningLabel(dateFilter: CashDateFilter): string {
+  if (dateFilter === 'today') return 'Opening (12 AM)'
+  if (dateFilter === 'yesterday') return 'Opening (12 AM)'
+  if (dateFilter === 'week') return 'Opening (week start)'
+  if (dateFilter === 'date') return 'Opening (12 AM)'
+  return 'Opening'
+}
+
+export function cashClosingLabel(dateFilter: CashDateFilter): string {
+  if (dateFilter === 'today') return 'Closing (12 AM night)'
+  if (dateFilter === 'yesterday') return 'Closing (12 AM night)'
+  if (dateFilter === 'week') return 'Closing (week end)'
+  if (dateFilter === 'date') return 'Closing (12 AM night)'
+  return 'Closing'
+}
+
+/** End-of-day balance after that period's cash activity (night 12 AM closing). */
+export function getCashClosingBalance(
+  data: AppData,
+  currentBalance: number,
+  dateFilter: CashDateFilter,
+  selectedDate = '',
+): number {
+  const opening = getCashOpeningBalance(data, currentBalance, dateFilter, selectedDate)
+  const items = buildCashActivityItems(data).filter((item) =>
+    matchesCashDateFilter(item.date, dateFilter, selectedDate),
+  )
+  return opening + summarizeCashActivity(items).net
+}

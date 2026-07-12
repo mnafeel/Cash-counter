@@ -15,6 +15,7 @@ interface PayTypeChipsProps {
   options?: PayType[]
   label?: string
   shortcutHint?: string
+  disabled?: boolean
 }
 
 export default function PayTypeChips({
@@ -23,13 +24,14 @@ export default function PayTypeChips({
   options,
   label = 'Payment',
   shortcutHint,
+  disabled = false,
 }: PayTypeChipsProps) {
   const visible = options
     ? PAY_OPTIONS.filter((opt) => options.includes(opt.id))
     : PAY_OPTIONS
 
   return (
-    <div className="pay-type-chips">
+    <div className={`pay-type-chips ${disabled ? 'pay-type-chips--disabled' : ''}`}>
       <div className="pay-type-chips-head">
         <span className="pay-type-chips-label">{label}</span>
         {shortcutHint ? (
@@ -42,7 +44,8 @@ export default function PayTypeChips({
             key={opt.id}
             type="button"
             className={`pay-type-chip ${value === opt.id ? 'pay-type-chip--active' : ''}`}
-            onClick={() => onChange(opt.id)}
+            onClick={() => !disabled && onChange(opt.id)}
+            disabled={disabled}
           >
             <span className="pay-type-chip-icon">{opt.icon}</span>
             <span className="pay-type-chip-label">{opt.label}</span>

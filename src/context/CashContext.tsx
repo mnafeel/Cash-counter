@@ -26,8 +26,10 @@ import {
   getBankBalance,
   getCurrentBalance,
   getPendingBills,
+  importTallyBills,
   loadData,
   replaceData,
+  replaceDataPreservingTallyPending,
   clearAllLocalData,
   setHomePin,
   setOpeningBalance,
@@ -38,6 +40,15 @@ import {
 } from '../storage/database'
 import { isFirebaseConfigured } from '../firebase/config'
 import { restoreCloudDataForUser, subscribeToAuth } from '../firebase/backup'
+import {
+  fetchTallyBills,
+  getTallyApiUrl,
+  getTallyDateScope,
+  setTallyApiUrl,
+  setTallyDateScope,
+  testTallyConnection,
+  type TallyDateScope,
+} from '../tally/localSource'
 import { applyTheme } from '../utils/theme'
 
 interface CashContextValue {
@@ -46,6 +57,7 @@ interface CashContextValue {
   bankBalance: number
   pendingBills: Sale[]
   recordSale: (sale: {
+    id?: string
     billAmount: number
     originalBillAmount?: number
     paidAmount: number
@@ -55,6 +67,8 @@ interface CashContextValue {
     bankAmount?: number
     chequeAmount?: number
     creditAmount?: number
+    chequeApproved?: boolean
+    parentSplitId?: string
     customerName?: string
     status?: SaleStatus
   }) => void
@@ -68,6 +82,7 @@ interface CashContextValue {
       cashAmount?: number
       bankAmount?: number
       chequeAmount?: number
+      creditAmount?: number
     },
   ) => void
   collectPendingSale: (
@@ -81,6 +96,8 @@ interface CashContextValue {
       cashAmount?: number
       bankAmount?: number
       chequeAmount?: number
+      creditAmount?: number
+      chequeApproved?: boolean
       customerName?: string
     },
   ) => void
@@ -104,9 +121,35 @@ interface CashContextValue {
   replaceAllData: (data: AppData) => void
   resetAllData: () => void
   refresh: () => void
+  getTallyApiUrl: () => string
+  getTallyDateScope: () => TallyDateScope
+  saveTallyApiUrl: (url: string) => void
+  saveTallyDateScope: (scope: TallyDateScope) => void
+  syncTallyBills: () => Promise<{ connected: boolean; billCount: number; imported: number }>
 }
 
 const CashContext = createContext<CashContextValue | null>(null)
+
+function tallyBillsToImport(bills: Awaited<ReturnType<typeof fetchTallyBills>>) {
+  return bills.map((bill) => ({
+    sourceId: bill.id,
+    billAmount: bill.billAmount,
+    customerName: bill.customerName,
+    createdAt: bill.createdAt,
+  }))
+}
+
+function applyTallyImport(data: AppData, bills: Awaited<ReturnType<typeof fetchTallyBills>>) {
+  if (bills.length === 0) return { next: data, imported: 0 }
+  const existing = new Set(
+    data.sales
+      .filter((s) => s.source === 'tally' && s.sourceId)
+      .map((s) => s.sourceId as string),
+  )
+  const imported = bills.filter((b) => !existing.has(b.id)).length
+  const next = importTallyBills(data, tallyBillsToImport(bills))
+  return { next, imported }
+}
 
 export function CashProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => loadData())
@@ -121,14 +164,66 @@ export function CashProvider({ children }: { children: ReactNode }) {
       if (!user) return
       try {
         const restored = await restoreCloudDataForUser()
-        if (restored) setData(replaceData(restored))
+        if (restored) setData((prev) => replaceDataPreservingTallyPending(prev, restored))
       } catch {
         /* cloud restore optional on session resume */
       }
     })
   }, [])
 
+  useEffect(() => {
+    let active = true
+    let timer: ReturnType<typeof setInterval> | null = null
+
+    const importBills = async () => {
+      const apiUrl = getTallyApiUrl()
+      if (!apiUrl) return
+      const bills = await fetchTallyBills()
+      if (!active || bills.length === 0) return
+      setData((prev) => applyTallyImport(prev, bills).next)
+    }
+
+    void importBills()
+    timer = setInterval(() => void importBills(), 30000)
+
+    return () => {
+      active = false
+      if (timer) clearInterval(timer)
+    }
+  }, [])
+
   const refresh = useCallback(() => setData(loadData()), [])
+
+  const syncTallyBills = useCallback(async () => {
+    const apiUrl = getTallyApiUrl()
+    if (!apiUrl) return { connected: false, billCount: 0, imported: 0 }
+    const test = await testTallyConnection(apiUrl, getTallyDateScope())
+    if (!test.connected) return { connected: false, billCount: 0, imported: 0 }
+    const bills = await fetchTallyBills()
+    let imported = 0
+    setData((prev) => {
+      const result = applyTallyImport(prev, bills)
+      imported = result.imported
+      return result.next
+    })
+    return { connected: true, billCount: bills.length, imported }
+  }, [])
+
+  const saveTallyApiUrlHandler = useCallback(
+    (url: string) => {
+      setTallyApiUrl(url)
+      void syncTallyBills()
+    },
+    [syncTallyBills],
+  )
+
+  const saveTallyDateScopeHandler = useCallback(
+    (scope: TallyDateScope) => {
+      setTallyDateScope(scope)
+      void syncTallyBills()
+    },
+    [syncTallyBills],
+  )
 
   const balance = useMemo(() => getCurrentBalance(data), [data])
   const bankBalance = useMemo(() => getBankBalance(data), [data])
@@ -136,6 +231,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const recordSale = useCallback(
     (sale: {
+      id?: string
       billAmount: number
       originalBillAmount?: number
       paidAmount: number
@@ -145,6 +241,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       bankAmount?: number
       chequeAmount?: number
       creditAmount?: number
+      chequeApproved?: boolean
+      parentSplitId?: string
       customerName?: string
       status?: SaleStatus
     }) => {
@@ -164,6 +262,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         cashAmount?: number
         bankAmount?: number
         chequeAmount?: number
+        creditAmount?: number
       },
     ) => {
       setData((prev) => updatePendingBill(prev, id, sale))
@@ -183,6 +282,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
         cashAmount?: number
         bankAmount?: number
         chequeAmount?: number
+        creditAmount?: number
+        chequeApproved?: boolean
         customerName?: string
       },
     ) => {
@@ -280,6 +381,11 @@ export function CashProvider({ children }: { children: ReactNode }) {
       replaceAllData,
       resetAllData,
       refresh,
+      getTallyApiUrl,
+      getTallyDateScope,
+      saveTallyApiUrl: saveTallyApiUrlHandler,
+      saveTallyDateScope: saveTallyDateScopeHandler,
+      syncTallyBills,
     }),
     [
       data,
@@ -300,6 +406,9 @@ export function CashProvider({ children }: { children: ReactNode }) {
       replaceAllData,
       resetAllData,
       refresh,
+      saveTallyApiUrlHandler,
+      saveTallyDateScopeHandler,
+      syncTallyBills,
     ],
   )
 

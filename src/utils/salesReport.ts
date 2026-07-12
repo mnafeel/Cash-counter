@@ -73,7 +73,11 @@ function salePayLabel(sale: Sale): string {
   if (sale.payType === 'cheque') return '🧾 Cheque'
   if (sale.payType === 'split') {
     const base = `💵 ${formatMoney(sale.cashAmount ?? 0)} · 🏦 ${formatMoney(sale.bankAmount ?? 0)}`
-    return (sale.chequeAmount ?? 0) > 0 ? `${base} · 🧾 ${formatMoney(sale.chequeAmount ?? 0)}` : base
+    const withCheque =
+      (sale.chequeAmount ?? 0) > 0 ? `${base} · 🧾 ${formatMoney(sale.chequeAmount ?? 0)}` : base
+    return (sale.creditAmount ?? 0) > 0
+      ? `${withCheque} · 💳 ${formatMoney(sale.creditAmount ?? 0)}`
+      : withCheque
   }
   return '💵 Cash'
 }
@@ -88,7 +92,7 @@ export function saleCashCollected(sale: Sale): number {
 export function saleBankCollected(sale: Sale): number {
   if (sale.status === 'pending') return 0
   if (sale.payType === 'bank' || sale.payType === 'cheque') return sale.billAmount
-  if (sale.payType === 'split') return (sale.bankAmount ?? 0) + (sale.chequeAmount ?? 0)
+  if (sale.payType === 'split') return sale.bankAmount ?? 0
   return 0
 }
 

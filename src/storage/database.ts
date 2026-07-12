@@ -94,7 +94,7 @@ function expenseCashToDrawer(expense: Expense): number {
 function saleBankToBalance(sale: Sale): number {
   if (sale.status === 'pending') return 0
   if (sale.payType === 'bank' || sale.payType === 'cheque') return sale.billAmount
-  if (sale.payType === 'split') return (sale.bankAmount ?? 0) + (sale.chequeAmount ?? 0)
+  if (sale.payType === 'split') return sale.bankAmount ?? 0
   return 0
 }
 
@@ -120,16 +120,83 @@ export function getCurrentBalance(data: AppData): number {
   return data.openingBalance + salesTotal - expensesTotal
 }
 
-export function addSale(data: AppData, sale: Omit<Sale, 'id' | 'createdAt'>): AppData {
+export function addSale(
+  data: AppData,
+  sale: Omit<Sale, 'id' | 'createdAt'> & { id?: string },
+): AppData {
+  const presetId = sale.id
+  const { id: _id, ...rest } = sale
   const newSale: Sale = {
-    ...sale,
-    status: sale.status ?? 'paid',
-    id: crypto.randomUUID(),
+    ...rest,
+    status: rest.status ?? 'paid',
+    id: presetId ?? crypto.randomUUID(),
     createdAt: new Date().toISOString(),
   }
   const next = { ...data, sales: [newSale, ...data.sales] }
   saveData(next)
   return next
+}
+
+/**
+ * Import a Tally sales voucher as a pending bill (party name + amount).
+ * De-duplicates on sourceId. Does not persist — use importTallyBills for batch save.
+ */
+export function addTallyPendingBill(
+  data: AppData,
+  bill: { sourceId: string; billAmount: number; customerName?: string; createdAt?: string },
+): AppData {
+  if (!bill.sourceId || !(bill.billAmount > 0)) return data
+  if (data.sales.some((s) => s.source === 'tally' && s.sourceId === bill.sourceId)) {
+    return data
+  }
+  const now = new Date().toISOString()
+  const newSale: Sale = {
+    id: crypto.randomUUID(),
+    billAmount: bill.billAmount,
+    paidAmount: 0,
+    changeAmount: 0,
+    status: 'pending',
+    payType: 'credit',
+    customerName: bill.customerName?.trim() || undefined,
+    source: 'tally',
+    sourceId: bill.sourceId,
+    createdAt: bill.createdAt ?? now,
+    updatedAt: now,
+  }
+  return { ...data, sales: [newSale, ...data.sales] }
+}
+
+export function importTallyBills(
+  data: AppData,
+  bills: { sourceId: string; billAmount: number; customerName?: string; createdAt?: string }[],
+): AppData {
+  let next = data
+  for (const bill of bills) {
+    next = addTallyPendingBill(next, bill)
+  }
+  if (next !== data) saveData(next)
+  return next
+}
+
+function mergePreservedTallyPending(local: AppData, restored: AppData): AppData {
+  const restoredIds = new Set(
+    restored.sales
+      .filter((s) => s.source === 'tally' && s.sourceId)
+      .map((s) => s.sourceId as string),
+  )
+  const extra = local.sales.filter(
+    (s) =>
+      s.status === 'pending' &&
+      s.source === 'tally' &&
+      s.sourceId &&
+      !restoredIds.has(s.sourceId),
+  )
+  if (extra.length === 0) return restored
+  return { ...restored, sales: [...extra, ...restored.sales] }
+}
+
+export function replaceDataPreservingTallyPending(local: AppData, restored: AppData): AppData {
+  return replaceData(mergePreservedTallyPending(local, restored))
 }
 
 export function addTransfer(
@@ -231,6 +298,7 @@ export function updatePendingBill(
     cashAmount?: number
     bankAmount?: number
     chequeAmount?: number
+    creditAmount?: number
   },
 ): AppData {
   const next = {
@@ -246,6 +314,7 @@ export function updatePendingBill(
             cashAmount: updates.payType === 'split' ? updates.cashAmount : undefined,
             bankAmount: updates.payType === 'split' ? updates.bankAmount : undefined,
             chequeAmount: updates.payType === 'split' ? updates.chequeAmount : undefined,
+            creditAmount: updates.payType === 'split' ? updates.creditAmount : undefined,
             updatedAt: new Date().toISOString(),
           }
         : s,
@@ -267,6 +336,8 @@ export function collectPendingBill(
     cashAmount?: number
     bankAmount?: number
     chequeAmount?: number
+    creditAmount?: number
+    chequeApproved?: boolean
     customerName?: string
   },
 ): AppData {
@@ -279,7 +350,8 @@ export function collectPendingBill(
             ...s,
             ...sale,
             status: 'paid' as const,
-            creditAmount: undefined,
+            creditAmount: sale.payType === 'split' ? sale.creditAmount : undefined,
+            chequeApproved: sale.payType === 'split' ? sale.chequeApproved : undefined,
             updatedAt: now,
           }
         : s,

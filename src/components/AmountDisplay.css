@@ -75,6 +75,52 @@
   font-size: clamp(0.85rem, calc(var(--app-height, 800px) * 0.028), 1.45rem);
 }
 
+.amount-display-prior {
+  font-size: clamp(0.42rem, calc(var(--app-height, 800px) * 0.011), 0.56rem);
+  font-weight: 700;
+  color: #9bc98a;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amount-display--has-prior {
+  border-color: rgba(120, 180, 100, 0.4);
+  background: rgba(80, 120, 60, 0.1);
+}
+
+.amount-display--has-prior.amount-display--active {
+  border-color: var(--cream);
+  background: var(--surface-2);
+}
+
+.amount-display--pending-readonly {
+  cursor: default;
+  pointer-events: none;
+  border-color: rgba(200, 170, 80, 0.55);
+  background: rgba(120, 90, 30, 0.18);
+}
+
+.amount-display--pending-readonly .amount-display-label,
+.amount-display--pending-readonly .amount-display-value {
+  color: #e8d4a8;
+}
+
+.amount-display-prior--pending {
+  color: #e8c878;
+}
+
+.amount-display-prior--credit {
+  color: #d4a8e8;
+}
+
+.amount-display-prior--credit-paid {
+  color: #9bc98a;
+}
+
 html[data-screen='tablet'] .amount-display--compact .amount-display-value {
   font-size: clamp(0.8rem, calc(var(--app-height, 900px) * 0.026), 1.2rem);
 }

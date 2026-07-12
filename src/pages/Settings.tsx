@@ -20,16 +20,24 @@ import {
 import { backupNow, setBackupStatusListener } from '../firebase/sync'
 import type { AppData } from '../types'
 import { formatMoney, parseAmount } from '../utils/format'
+import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import './Settings.css'
 
 type SettingsField = 'openingCash' | 'openingBank' | 'pin' | 'pinConfirm'
-type SettingsTab = 'general' | 'cloud'
+type SettingsTab = 'general' | 'tally' | 'cloud'
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'general', label: 'General' },
+  { id: 'tally', label: 'Tally' },
   { id: 'cloud', label: 'Cloud' },
+]
+
+const TALLY_SCOPE_OPTIONS: { id: TallyDateScope; label: string }[] = [
+  { id: 'today', label: 'Today' },
+  { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
 ]
 
 export default function Settings() {
@@ -42,6 +50,12 @@ export default function Settings() {
     updateHomePin,
     replaceAllData,
     resetAllData,
+    recordSale,
+    getTallyApiUrl,
+    getTallyDateScope,
+    saveTallyApiUrl,
+    saveTallyDateScope,
+    syncTallyBills,
   } = useCash()
   const [tab, setTab] = useState<SettingsTab>('general')
   const [openingStr, setOpeningStr] = useState(String(data.openingBalance))
@@ -60,6 +74,14 @@ export default function Settings() {
   const [backupError, setBackupError] = useState(false)
   const [backupBusy, setBackupBusy] = useState(false)
   const [lastBackup, setLastBackup] = useState<string | null>(getLocalLastBackupTime())
+
+  const [tallyUrl, setTallyUrl] = useState(() => getTallyApiUrl() || 'http://localhost:9999')
+  const [tallyScope, setTallyScope] = useState<TallyDateScope>(() => getTallyDateScope())
+  const [tallyStatus, setTallyStatus] = useState('')
+  const [tallyError, setTallyError] = useState(false)
+  const [tallyBusy, setTallyBusy] = useState(false)
+  const [manualName, setManualName] = useState('')
+  const [manualAmount, setManualAmount] = useState('')
 
   const firebaseBuilt = isFirebaseConfigured()
   const opening = parseAmount(openingStr)
@@ -257,6 +279,71 @@ export default function Settings() {
     setAutoBackupEnabled(next)
   }
 
+  async function handleTallyTest() {
+    setTallyBusy(true)
+    setTallyError(false)
+    try {
+      const result = await testTallyConnection(tallyUrl, tallyScope)
+      if (!result.connected) {
+        setTallyStatus(result.error ?? 'Cannot connect to Tally API.')
+        setTallyError(true)
+        return
+      }
+      if (result.error) {
+        setTallyStatus(`Connected · ${result.error}`)
+        setTallyError(true)
+        return
+      }
+      setTallyStatus(`Connected · ${result.billCount} bill(s) found in Tally`)
+      setTallyError(false)
+    } finally {
+      setTallyBusy(false)
+    }
+  }
+
+  async function handleTallySaveSync() {
+    setTallyBusy(true)
+    setTallyError(false)
+    try {
+      saveTallyApiUrl(tallyUrl)
+      saveTallyDateScope(tallyScope)
+      const result = await syncTallyBills()
+      if (!result.connected) {
+        setTallyStatus('Saved but cannot connect. Check Tally F12 HTTP server is ON.')
+        setTallyError(true)
+        return
+      }
+      setTallyStatus(
+        `Saved · ${result.billCount} from Tally · ${result.imported} new in Pending Bills`,
+      )
+      setTallyError(false)
+    } finally {
+      setTallyBusy(false)
+    }
+  }
+
+  function handleManualPending() {
+    const amount = parseAmount(manualAmount)
+    const name = manualName.trim()
+    if (!(amount > 0)) {
+      setTallyStatus('Enter a valid bill amount.')
+      setTallyError(true)
+      return
+    }
+    recordSale({
+      billAmount: amount,
+      paidAmount: 0,
+      changeAmount: 0,
+      payType: 'credit',
+      status: 'pending',
+      customerName: name || undefined,
+    })
+    setManualName('')
+    setManualAmount('')
+    setTallyStatus(`Added pending bill${name ? ` · ${name}` : ''} · ${formatMoney(amount)}`)
+    setTallyError(false)
+  }
+
   return (
     <div className="settings-page">
       <div className="settings-tabs" role="tablist" aria-label="Settings sections">
@@ -333,6 +420,102 @@ export default function Settings() {
               {saved ? '✓ Saved!' : 'Save Settings'}
             </button>
             <p className="settings-note">PIN default 0000. Leave PIN empty to keep current.</p>
+          </div>
+        )}
+
+        {tab === 'tally' && (
+          <div className="settings-scroll">
+            <section className="settings-panel settings-tally">
+              <div className="settings-header">
+                <h2>Tally Prime</h2>
+                <p>Direct API — party name &amp; bill amount → Pending Bills</p>
+              </div>
+
+              <label className="settings-backup-field">
+                <span>Tally API URL</span>
+                <input
+                  type="url"
+                  value={tallyUrl}
+                  onChange={(e) => setTallyUrl(e.target.value)}
+                  placeholder="http://localhost:9999"
+                  autoCapitalize="none"
+                />
+              </label>
+              <p className="settings-backup-meta">
+                Tally Prime → <strong>F12</strong> → enable HTTP server (port <strong>9000</strong> or{' '}
+                <strong>9999</strong>). Example: <code>http://192.168.1.99:9999</code>
+              </p>
+
+              <span className="settings-backup-form-label">Bills from Tally</span>
+              <div className="settings-tally-scopes" role="group" aria-label="Tally date range">
+                {TALLY_SCOPE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`settings-tally-scope ${tallyScope === opt.id ? 'settings-tally-scope--active' : ''}`}
+                    onClick={() => setTallyScope(opt.id)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="settings-backup-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={tallyBusy || !tallyUrl.trim()}
+                  onClick={() => void handleTallyTest()}
+                >
+                  Test connection
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={tallyBusy || !tallyUrl.trim()}
+                  onClick={() => void handleTallySaveSync()}
+                >
+                  Save &amp; sync now
+                </button>
+              </div>
+
+              <div className="settings-tally-manual">
+                <span className="settings-backup-form-label">Manual pending (if API fails)</span>
+                <label className="settings-backup-field">
+                  <span>Customer / party name</span>
+                  <input
+                    type="text"
+                    value={manualName}
+                    onChange={(e) => setManualName(e.target.value)}
+                    placeholder="Name from Tally bill"
+                  />
+                </label>
+                <label className="settings-backup-field">
+                  <span>Bill amount</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={manualAmount}
+                    onChange={(e) => setManualAmount(e.target.value)}
+                    placeholder="Amount"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={!manualAmount.trim()}
+                  onClick={handleManualPending}
+                >
+                  Add to Pending
+                </button>
+              </div>
+
+              {tallyStatus && (
+                <p className={`settings-backup-status ${tallyError ? 'settings-backup-status--error' : ''}`}>
+                  {tallyStatus}
+                </p>
+              )}
+            </section>
           </div>
         )}
 

@@ -5,6 +5,11 @@
   gap: 4px;
 }
 
+.pay-type-chips--disabled {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
 .pay-type-chips-head {
   display: flex;
   align-items: center;

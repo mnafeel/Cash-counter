@@ -12,9 +12,9 @@ import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { getBillRoundOptions } from '../utils/roundSuggestions'
 import './Counter.css'
 
-type ActiveField = 'bill' | 'give' | 'paid' | 'cashSplit' | 'bankSplit' | 'chequeSplit'
+type ActiveField = 'bill' | 'give' | 'paid' | 'cashSplit' | 'bankSplit' | 'chequeSplit' | 'creditSplit'
 
-const COUNTER_PAY_TYPES: PayType[] = ['cash', 'bank', 'split', 'cheque']
+const COUNTER_PAY_TYPES: PayType[] = ['cash', 'bank', 'credit', 'split', 'cheque']
 
 function needsGive(payType: PayType): boolean {
   return payType === 'cash'
@@ -27,6 +27,7 @@ function keyboardHint(activeField: ActiveField, payType: PayType): string {
   if (activeField === 'cashSplit') return payType === 'split' ? 'Cash · Bank auto-fills' : 'Cash'
   if (activeField === 'bankSplit') return payType === 'split' ? 'Bank · Cash auto-fills' : 'Bank'
   if (activeField === 'chequeSplit') return 'Cheque · Bank adjusts'
+  if (activeField === 'creditSplit') return 'Credit · Bank adjusts'
   return 'Amount'
 }
 
@@ -45,6 +46,7 @@ export default function Counter() {
   const [cashSplitStr, setCashSplitStr] = useState('')
   const [bankSplitStr, setBankSplitStr] = useState('')
   const [chequeSplitStr, setChequeSplitStr] = useState('')
+  const [creditSplitStr, setCreditSplitStr] = useState('')
   const [roundOffAmount, setRoundOffAmount] = useState<number | null>(null)
   const [paymentStep, setPaymentStep] = useState(false)
   const [payType, setPayType] = useState<PayType>('cash')
@@ -57,6 +59,16 @@ export default function Counter() {
   const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
   const [chequeListOpen, setChequeListOpen] = useState(false)
   const [highlightedChequeIndex, setHighlightedChequeIndex] = useState(-1)
+  const [creditListOpen, setCreditListOpen] = useState(false)
+  const [highlightedCreditIndex, setHighlightedCreditIndex] = useState(-1)
+  const [collectingCreditId, setCollectingCreditId] = useState<string | null>(null)
+  const [splitChequeApprovedAmount, setSplitChequeApprovedAmount] = useState(0)
+  const [splitSiblingChequePending, setSplitSiblingChequePending] = useState(0)
+  const [splitSiblingCreditPending, setSplitSiblingCreditPending] = useState(0)
+  const [splitSiblingCreditPaid, setSplitSiblingCreditPaid] = useState(0)
+  const [siblingChequePendingId, setSiblingChequePendingId] = useState<string | null>(null)
+  const [balanceDueAmount, setBalanceDueAmount] = useState<number | null>(null)
+  const [originalBillHint, setOriginalBillHint] = useState<number | null>(null)
   const [pendingSectionFocus, setPendingSectionFocus] = useState(false)
   const [highlightedPendingIndex, setHighlightedPendingIndex] = useState<number | null>(null)
   const customerNameInputRef = useRef<HTMLInputElement>(null)
@@ -105,10 +117,27 @@ export default function Counter() {
     [pendingBills],
   )
 
-  const billPendingBills = useMemo(
-    () => pendingBills.filter((bill) => bill.payType !== 'cheque'),
+  const creditPendingBills = useMemo(
+    () => pendingBills.filter((bill) => bill.payType === 'credit'),
     [pendingBills],
   )
+
+  const chequePendingTotal = useMemo(
+    () => chequePendingBills.reduce((sum, bill) => sum + bill.billAmount, 0),
+    [chequePendingBills],
+  )
+
+  const creditPendingTotal = useMemo(
+    () => creditPendingBills.reduce((sum, bill) => sum + bill.billAmount, 0),
+    [creditPendingBills],
+  )
+
+  const billPendingBills = useMemo(
+    () => pendingBills.filter((bill) => bill.payType !== 'cheque' && bill.payType !== 'credit'),
+    [pendingBills],
+  )
+
+  const balanceOnlyMode = balanceDueAmount != null && balanceDueAmount > 0
 
   const billAmount = parseAmount(billStr)
   const giveAmount = parseAmount(giveStr)
@@ -116,11 +145,112 @@ export default function Counter() {
   const cashSplitAmount = parseAmount(cashSplitStr)
   const bankSplitAmount = parseAmount(bankSplitStr)
   const chequeSplitAmount = parseAmount(chequeSplitStr)
+  const creditSplitAmount = parseAmount(creditSplitStr)
+  const chequeInSplitTotal =
+    splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : chequeSplitAmount
   const dueAmount = roundOffAmount ?? billAmount
 
-  const splitTotal = paidAmount > 0 ? paidAmount : dueAmount
+  const splitTotal =
+    collectingCreditId && payType === 'split'
+      ? paidAmount > 0
+        ? paidAmount
+        : dueAmount
+      : paidAmount > 0
+        ? paidAmount
+        : dueAmount
 
-  const splitPaidTotal = cashSplitAmount + bankSplitAmount + chequeSplitAmount
+  const isLoadedChequeSplitCollect =
+    payType === 'split' &&
+    balanceOnlyMode &&
+    loadedPendingId != null &&
+    !collectingCreditId
+
+  const splitFieldLocked = (() => {
+    const unlocked = { cash: false, bank: false, credit: false, cheque: false }
+    const balanceChequeCollect =
+      balanceOnlyMode &&
+      payType === 'split' &&
+      (splitChequeApprovedAmount > 0 ||
+        splitSiblingCreditPending > 0 ||
+        isLoadedChequeSplitCollect)
+    if (payType !== 'split' || (!collectingCreditId && !balanceChequeCollect)) return unlocked
+
+    const total = splitTotal
+    const cashCovers = total > 0 && cashSplitAmount >= total
+    const bankCovers = total > 0 && bankSplitAmount >= total
+    const chequeCovers = total > 0 && chequeSplitAmount >= total
+
+    return {
+      cash: bankCovers || chequeCovers,
+      bank: cashCovers || chequeCovers,
+      credit: Boolean(collectingCreditId) || splitSiblingCreditPending > 0 || splitSiblingCreditPaid > 0,
+      cheque: cashCovers || bankCovers,
+    }
+  })()
+
+  function isSplitFieldLocked(field: ActiveField): boolean {
+    if (field === 'cashSplit') return splitFieldLocked.cash
+    if (field === 'bankSplit') return splitFieldLocked.bank
+    if (field === 'creditSplit') return splitFieldLocked.credit
+    if (field === 'chequeSplit') return splitFieldLocked.cheque
+    return false
+  }
+
+  function nextUnlockedSplitField(current: ActiveField): ActiveField {
+    const order: ActiveField[] = ['cashSplit', 'bankSplit', 'chequeSplit', 'creditSplit']
+    const idx = order.indexOf(current)
+    if (idx < 0) return 'cashSplit'
+    for (let step = 1; step <= order.length; step++) {
+      const next = order[(idx + step) % order.length]
+      if (!isSplitFieldLocked(next)) return next
+    }
+    return current
+  }
+
+  const splitPaidTotal =
+    collectingCreditId ||
+    (balanceOnlyMode && splitChequeApprovedAmount > 0) ||
+    isLoadedChequeSplitCollect
+      ? cashSplitAmount + bankSplitAmount + chequeSplitAmount
+      : cashSplitAmount +
+        bankSplitAmount +
+        (splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : chequeSplitAmount) +
+        (splitSiblingCreditPending > 0 && !collectingCreditId ? 0 : creditSplitAmount)
+
+  const splitPaidTotalDisplay = (() => {
+    if (splitPaidTotal > 0) return splitPaidTotal
+    if (collectingCreditId || (balanceOnlyMode && payType === 'split')) return 0
+    return splitTotal > 0 ? splitTotal : 0
+  })()
+
+  const showPriorChequeInPaidTotal =
+    payType === 'split' &&
+    splitChequeApprovedAmount > 0 &&
+    (collectingCreditId || creditSplitAmount > 0)
+
+  const showPendingChequeInPaidTotal =
+    payType === 'split' && splitSiblingChequePending > 0 && Boolean(collectingCreditId)
+
+  const showPendingCreditInPaidTotal =
+    payType === 'split' && splitSiblingCreditPending > 0 && loadedPendingId != null
+
+  const showPaidCreditInPaidTotal =
+    payType === 'split' && splitSiblingCreditPaid > 0 && isLoadedChequeSplitCollect
+
+  const showSplitDueHint =
+    payType === 'split' &&
+    splitTotal > 0 &&
+    (collectingCreditId ||
+      balanceOnlyMode ||
+      showPriorChequeInPaidTotal ||
+      showPendingChequeInPaidTotal ||
+      showPendingCreditInPaidTotal ||
+      showPaidCreditInPaidTotal)
+
+  const splitPaidTotalBill =
+    originalBillHint && originalBillHint > splitTotal
+      ? originalBillHint
+      : splitTotal
 
   const paidForReturn =
     payType === 'split'
@@ -140,9 +270,11 @@ export default function Counter() {
       : 0
 
   const changeAmount =
-    payType === 'bank' || payType === 'split' || payType === 'cheque'
-      ? 0
-      : Math.max(0, giveAmount - paidForReturn)
+    payType === 'cash'
+      ? Math.max(0, giveAmount - paidForReturn)
+      : payType === 'bank' || payType === 'split' || payType === 'cheque' || payType === 'credit'
+        ? 0
+        : Math.max(0, giveAmount - paidForReturn)
 
   const needMore =
     payType === 'cash' &&
@@ -158,7 +290,7 @@ export default function Counter() {
       : payType === 'cash' && giveAmount > 0 && paidForReturn > 0
 
   const returnDisplay = (() => {
-    if (payType === 'bank' || payType === 'cheque') return '—'
+    if (payType === 'bank' || payType === 'cheque' || payType === 'credit') return '—'
     if (payType === 'split') {
       if (splitTotal <= 0 || splitPaidTotal <= 0) return '—'
       if (splitShortfall > 0) return `+${formatMoney(splitShortfall)}`
@@ -172,24 +304,71 @@ export default function Counter() {
 
   const isValid =
     billAmount > 0 &&
-    (payType === 'bank' || payType === 'cheque'
-      ? paymentStep && paidAmount > 0
-      : payType === 'cash'
-        ? paymentStep && paidAmount > 0 && giveAmount >= paidAmount
-        : payType === 'split'
-          ? splitTotal > 0 &&
-            splitPaidTotal === splitTotal &&
-            cashSplitAmount >= 0 &&
-            bankSplitAmount >= 0 &&
-            chequeSplitAmount >= 0 &&
-            (cashSplitAmount > 0 || bankSplitAmount > 0 || chequeSplitAmount > 0)
-          : false)
+    (collectingCreditId
+      ? payType === 'split'
+        ? splitTotal > 0 &&
+          splitPaidTotal === splitTotal &&
+          creditSplitAmount === 0 &&
+          (cashSplitAmount > 0 || bankSplitAmount > 0 || chequeSplitAmount > 0)
+        : paymentStep && paidAmount > 0 && giveAmount >= paidAmount
+      : payType === 'bank' || payType === 'cheque'
+        ? paymentStep && paidAmount > 0
+        : payType === 'credit'
+          ? false
+          : payType === 'cash'
+            ? paymentStep && paidAmount > 0 && giveAmount >= paidAmount
+            : payType === 'split'
+              ? splitTotal > 0 &&
+                splitPaidTotal === splitTotal &&
+                cashSplitAmount >= 0 &&
+                bankSplitAmount >= 0 &&
+                chequeSplitAmount >= 0 &&
+                creditSplitAmount >= 0 &&
+                (cashSplitAmount > 0 ||
+                  bankSplitAmount > 0 ||
+                  chequeSplitAmount > 0 ||
+                  creditSplitAmount > 0)
+              : false)
 
   const canSavePending = dueAmount > 0 && savedAction === null
   const isSaving = savedAction !== null
 
+  const splitHasCredit = payType === 'split' && creditSplitAmount > 0
+  const splitHasNewChequePending = payType === 'split' && chequeSplitAmount > 0
+  const splitHasChequePending = splitHasNewChequePending
+  const splitHasChequeApproved = payType === 'split' && splitChequeApprovedAmount > 0
+  const splitHasCheque = splitHasNewChequePending || splitHasChequeApproved
+  const splitHasBoth = splitHasCredit && splitHasNewChequePending
+  const splitHasExtras = splitHasCredit || splitHasCheque
+  const isSplitComplete = payType === 'split' && isValid
+
+  const canSendSplitCreditPending =
+    splitHasCredit && !splitHasBoth && billAmount > 0 && savedAction === null
+  const canSendSplitChequePending =
+    splitHasChequePending && !splitHasBoth && billAmount > 0 && savedAction === null
+  const canSendSplitBothPending =
+    splitHasBoth && billAmount > 0 && savedAction === null
+  const canSplitChequeApprove =
+    savedAction === null &&
+    splitHasChequePending &&
+    (isSplitComplete ||
+      (isLoadedChequeSplitCollect &&
+        chequeSplitAmount > 0 &&
+        cashSplitAmount + bankSplitAmount + chequeSplitAmount === splitTotal))
+
+  const canApproveSiblingCheque =
+    Boolean(collectingCreditId) &&
+    payType === 'split' &&
+    splitSiblingChequePending > 0 &&
+    siblingChequePendingId != null &&
+    savedAction === null
+
+  const creditCollectRemaining =
+    collectingCreditId && creditSplitAmount > 0 ? creditSplitAmount : undefined
+
   const billRoundOptions = useMemo(() => getBillRoundOptions(billAmount), [billAmount])
-  const showRoundChips = billAmount > 0 && billRoundOptions.length > 0
+  const showRoundChips =
+    !balanceOnlyMode && billAmount > 0 && billRoundOptions.length > 0
 
   const customerPaidPreview =
     payType === 'split'
@@ -204,11 +383,70 @@ export default function Counter() {
           ? formatMoney(dueAmount)
           : '—'
 
+  function pinSiblingCreditPending() {
+    if (splitSiblingCreditPending > 0) {
+      setCreditSplitStr(formatSplitPart(splitSiblingCreditPending))
+    }
+  }
+
   function applySplitCash(nextCashStr: string, totalOverride?: number) {
-    setCashSplitStr(nextCashStr)
     const total = totalOverride ?? splitTotal
-    const base = Math.max(0, total - chequeSplitAmount)
-    if (base <= 0) {
+
+    if (isLoadedChequeSplitCollect) {
+      setCashSplitStr(nextCashStr)
+      if (nextCashStr === '') {
+        pinSiblingCreditPending()
+        return
+      }
+      const cash = parseAmount(nextCashStr)
+      let bank = parseAmount(bankSplitStr)
+      let cheque = chequeSplitAmount
+      const room = Math.max(0, total - cash)
+      if (cheque > 0) {
+        cheque = Math.min(cheque, room)
+        setChequeSplitStr(formatSplitPart(cheque))
+        bank = Math.min(bank, Math.max(0, room - cheque))
+        setBankSplitStr(formatSplitPart(bank))
+      } else if (bank > 0) {
+        bank = Math.min(bank, room)
+        setBankSplitStr(formatSplitPart(bank))
+        setChequeSplitStr(formatSplitPart(Math.max(0, total - cash - bank)))
+      } else {
+        setChequeSplitStr(formatSplitPart(Math.max(0, room)))
+      }
+      pinSiblingCreditPending()
+      return
+    }
+
+    if (collectingCreditId) {
+      setCashSplitStr(nextCashStr)
+      if (nextCashStr === '') {
+        const bank = parseAmount(bankSplitStr)
+        const cheque = chequeSplitAmount
+        setCreditSplitStr(formatSplitPart(Math.max(0, total - bank - cheque)))
+        return
+      }
+      const cash = parseAmount(nextCashStr)
+      let bank = parseAmount(bankSplitStr)
+      let cheque = chequeSplitAmount
+      const room = Math.max(0, total - cash)
+      if (cheque > 0) {
+        cheque = Math.min(cheque, room)
+        setChequeSplitStr(formatSplitPart(cheque))
+        bank = Math.min(bank, Math.max(0, room - cheque))
+        setBankSplitStr(formatSplitPart(bank))
+      } else if (bank > 0) {
+        bank = Math.min(bank, room)
+        setBankSplitStr(formatSplitPart(bank))
+      }
+      setCreditSplitStr(formatSplitPart(Math.max(0, total - cash - bank - cheque)))
+      return
+    }
+
+    setCashSplitStr(nextCashStr)
+    const fixed = chequeInSplitTotal + creditSplitAmount
+    const room = Math.max(0, total - fixed)
+    if (room <= 0) {
       setBankSplitStr('')
       return
     }
@@ -217,15 +455,74 @@ export default function Counter() {
       return
     }
     const cash = parseAmount(nextCashStr)
-    const bank = Math.max(0, base - cash)
-    setBankSplitStr(formatSplitPart(bank))
+    let bank = parseAmount(bankSplitStr)
+    if (bank > 0) {
+      bank = Math.min(bank, Math.max(0, room - cash))
+      setBankSplitStr(formatSplitPart(bank))
+    } else {
+      bank = Math.max(0, room - cash)
+      setBankSplitStr(formatSplitPart(bank))
+    }
   }
 
   function applySplitBank(nextBankStr: string, totalOverride?: number) {
-    setBankSplitStr(nextBankStr)
     const total = totalOverride ?? splitTotal
-    const base = Math.max(0, total - chequeSplitAmount)
-    if (base <= 0) {
+
+    if (isLoadedChequeSplitCollect) {
+      setBankSplitStr(nextBankStr)
+      if (nextBankStr === '') {
+        pinSiblingCreditPending()
+        return
+      }
+      const bank = parseAmount(nextBankStr)
+      let cash = parseAmount(cashSplitStr)
+      let cheque = chequeSplitAmount
+      const room = Math.max(0, total - bank)
+      if (cheque > 0) {
+        cheque = Math.min(cheque, room)
+        setChequeSplitStr(formatSplitPart(cheque))
+        cash = Math.min(cash, Math.max(0, room - cheque))
+        setCashSplitStr(formatSplitPart(cash))
+      } else if (cash > 0) {
+        cash = Math.min(cash, room)
+        setCashSplitStr(formatSplitPart(cash))
+        setChequeSplitStr(formatSplitPart(Math.max(0, total - bank - cash)))
+      } else {
+        setChequeSplitStr(formatSplitPart(Math.max(0, room)))
+      }
+      pinSiblingCreditPending()
+      return
+    }
+
+    if (collectingCreditId) {
+      setBankSplitStr(nextBankStr)
+      if (nextBankStr === '') {
+        const cash = parseAmount(cashSplitStr)
+        const cheque = chequeSplitAmount
+        setCreditSplitStr(formatSplitPart(Math.max(0, total - cash - cheque)))
+        return
+      }
+      const bank = parseAmount(nextBankStr)
+      let cash = parseAmount(cashSplitStr)
+      let cheque = chequeSplitAmount
+      const room = Math.max(0, total - bank)
+      if (cheque > 0) {
+        cheque = Math.min(cheque, room)
+        setChequeSplitStr(formatSplitPart(cheque))
+        cash = Math.min(cash, Math.max(0, room - cheque))
+        setCashSplitStr(formatSplitPart(cash))
+      } else if (cash > 0) {
+        cash = Math.min(cash, room)
+        setCashSplitStr(formatSplitPart(cash))
+      }
+      setCreditSplitStr(formatSplitPart(Math.max(0, total - bank - cash - cheque)))
+      return
+    }
+
+    setBankSplitStr(nextBankStr)
+    const fixed = chequeInSplitTotal + creditSplitAmount
+    const room = Math.max(0, total - fixed)
+    if (room <= 0) {
       setCashSplitStr('')
       return
     }
@@ -234,17 +531,114 @@ export default function Counter() {
       return
     }
     const bank = parseAmount(nextBankStr)
-    const cash = Math.max(0, base - bank)
-    setCashSplitStr(formatSplitPart(cash))
+    let cash = parseAmount(cashSplitStr)
+    if (cash > 0) {
+      cash = Math.min(cash, Math.max(0, room - bank))
+      setCashSplitStr(formatSplitPart(cash))
+    } else {
+      cash = Math.max(0, room - bank)
+      setCashSplitStr(formatSplitPart(cash))
+    }
   }
 
   function applySplitCheque(nextChequeStr: string, totalOverride?: number) {
-    setChequeSplitStr(nextChequeStr)
     const total = totalOverride ?? splitTotal
+
+    if (isLoadedChequeSplitCollect) {
+      setChequeSplitStr(nextChequeStr)
+      if (nextChequeStr === '') {
+        pinSiblingCreditPending()
+        return
+      }
+      const cheque = parseAmount(nextChequeStr)
+      const room = Math.max(0, total - cheque)
+      let cash = parseAmount(cashSplitStr)
+      let bank = parseAmount(bankSplitStr)
+      if (cash > 0) {
+        cash = Math.min(cash, room)
+        setCashSplitStr(formatSplitPart(cash))
+        bank = Math.min(bank, Math.max(0, room - cash))
+        setBankSplitStr(formatSplitPart(bank))
+      } else if (bank > 0) {
+        bank = Math.min(bank, room)
+        setBankSplitStr(formatSplitPart(bank))
+      }
+      pinSiblingCreditPending()
+      return
+    }
+
+    if (collectingCreditId) {
+      setChequeSplitStr(nextChequeStr)
+      if (nextChequeStr === '') {
+        const cash = parseAmount(cashSplitStr)
+        const bank = parseAmount(bankSplitStr)
+        setCreditSplitStr(formatSplitPart(Math.max(0, total - cash - bank)))
+        return
+      }
+      const cheque = parseAmount(nextChequeStr)
+      let cash = parseAmount(cashSplitStr)
+      let bank = parseAmount(bankSplitStr)
+      const room = Math.max(0, total - cheque)
+      if (cash > 0) {
+        cash = Math.min(cash, room)
+        setCashSplitStr(formatSplitPart(cash))
+        bank = Math.min(bank, Math.max(0, room - cash))
+        setBankSplitStr(formatSplitPart(bank))
+      } else if (bank > 0) {
+        bank = Math.min(bank, room)
+        setBankSplitStr(formatSplitPart(bank))
+      }
+      setCreditSplitStr(formatSplitPart(Math.max(0, total - cheque - cash - bank)))
+      return
+    }
+
+    setChequeSplitStr(nextChequeStr)
     const cheque = parseAmount(nextChequeStr)
     const base = Math.max(0, total - cheque)
-    const bank = Math.max(0, base - cashSplitAmount)
+    const bank = Math.max(0, base - cashSplitAmount - creditSplitAmount)
     setBankSplitStr(formatSplitPart(bank))
+  }
+
+  function applySplitCredit(nextCreditStr: string, totalOverride?: number) {
+    if (isLoadedChequeSplitCollect) return
+
+    const total = totalOverride ?? splitTotal
+
+    if (collectingCreditId) {
+      setCreditSplitStr(nextCreditStr)
+      const credit = parseAmount(nextCreditStr)
+      let bank = parseAmount(bankSplitStr)
+      let cash = parseAmount(cashSplitStr)
+      const room = Math.max(0, total - credit)
+      if (cash > 0) {
+        cash = Math.min(cash, room)
+        setCashSplitStr(formatSplitPart(cash))
+        bank = Math.min(bank, Math.max(0, room - cash))
+        setBankSplitStr(formatSplitPart(bank))
+      } else if (bank > 0) {
+        bank = Math.min(bank, room)
+        setBankSplitStr(formatSplitPart(bank))
+      }
+      return
+    }
+
+    setCreditSplitStr(nextCreditStr)
+    const credit = parseAmount(nextCreditStr)
+    const room = Math.max(0, total - credit - chequeInSplitTotal)
+    let cash = parseAmount(cashSplitStr)
+    let bank = parseAmount(bankSplitStr)
+    if (cash > 0) {
+      cash = Math.min(cash, room)
+      setCashSplitStr(formatSplitPart(cash))
+      bank = Math.min(bank, Math.max(0, room - cash))
+      setBankSplitStr(formatSplitPart(bank))
+    } else if (bank > 0) {
+      bank = Math.min(bank, room)
+      setBankSplitStr(formatSplitPart(bank))
+    } else {
+      bank = Math.max(0, room)
+      setBankSplitStr(formatSplitPart(bank))
+    }
   }
 
   function openSplitMode() {
@@ -259,6 +653,7 @@ export default function Counter() {
     setCashSplitStr('')
     setBankSplitStr('')
     setChequeSplitStr('')
+    setCreditSplitStr('')
     setActiveField('cashSplit')
   }
 
@@ -292,24 +687,31 @@ export default function Counter() {
       return
     }
     if (activeField === 'cashSplit') {
-      setActiveField('bankSplit')
+      setActiveField(nextUnlockedSplitField('cashSplit'))
       return
     }
     if (activeField === 'bankSplit') {
-      setActiveField('chequeSplit')
+      setActiveField(nextUnlockedSplitField('bankSplit'))
       return
     }
     if (activeField === 'chequeSplit') {
-      setActiveField('cashSplit')
+      setActiveField(nextUnlockedSplitField('chequeSplit'))
+      return
+    }
+    if (activeField === 'creditSplit') {
+      setActiveField(nextUnlockedSplitField('creditSplit'))
       return
     }
   }
 
   function handlePayTypeChange(type: PayType) {
+    if (balanceOnlyMode) return
     setPayType(type)
+    if (type !== 'cash') setCollectingCreditId(null)
     setCashSplitStr('')
     setBankSplitStr('')
     setChequeSplitStr('')
+    setCreditSplitStr('')
     if (!needsGive(type)) setGiveStr('')
     if (!paidStr && dueAmount > 0) setPaidStr(String(dueAmount))
 
@@ -323,15 +725,42 @@ export default function Counter() {
   }
 
   function cyclePayType() {
+    if (balanceOnlyMode) return
     const idx = COUNTER_PAY_TYPES.indexOf(payType)
     const next = COUNTER_PAY_TYPES[(idx + 1) % COUNTER_PAY_TYPES.length]
     handlePayTypeChange(next)
   }
 
   function openChequeTab() {
-    handlePayTypeChange('cheque')
-    setChequeListOpen(true)
-    setHighlightedChequeIndex(chequePendingBills.length > 0 ? 0 : -1)
+    if (creditListOpen) {
+      setCreditListOpen(false)
+      setHighlightedCreditIndex(-1)
+      setChequeListOpen(true)
+      setHighlightedChequeIndex(chequePendingBills.length > 0 ? 0 : -1)
+      return
+    }
+    setChequeListOpen((open) => {
+      const next = !open
+      if (next) setHighlightedChequeIndex(chequePendingBills.length > 0 ? 0 : -1)
+      else setHighlightedChequeIndex(-1)
+      return next
+    })
+  }
+
+  function openCreditTab() {
+    if (chequeListOpen) {
+      setChequeListOpen(false)
+      setHighlightedChequeIndex(-1)
+      setCreditListOpen(true)
+      setHighlightedCreditIndex(creditPendingBills.length > 0 ? 0 : -1)
+      return
+    }
+    setCreditListOpen((open) => {
+      const next = !open
+      if (next) setHighlightedCreditIndex(creditPendingBills.length > 0 ? 0 : -1)
+      else setHighlightedCreditIndex(-1)
+      return next
+    })
   }
 
   function handleNumpad(action: NumpadAction) {
@@ -341,6 +770,7 @@ export default function Counter() {
     }
 
     if (activeField === 'bill') {
+      if (balanceOnlyMode) return
       const next = applyNumpadAction(billStr, action)
       setBillStr(next)
       setRoundOffAmount(null)
@@ -351,28 +781,39 @@ export default function Counter() {
           if (cashSplitStr) applySplitCash(cashSplitStr, newDue)
           else if (bankSplitStr) applySplitBank(bankSplitStr, newDue)
           else if (chequeSplitStr) applySplitCheque(chequeSplitStr, newDue)
+          else if (creditSplitStr) applySplitCredit(creditSplitStr, newDue)
         } else {
           setPaidStr('')
           setCashSplitStr('')
           setBankSplitStr('')
           setChequeSplitStr('')
+          setCreditSplitStr('')
         }
       } else {
         setPaymentStep(false)
         setPaidStr('')
         setCashSplitStr('')
         setBankSplitStr('')
+        setChequeSplitStr('')
+        setCreditSplitStr('')
       }
-    } else if (activeField === 'give') {
+    } else     if (activeField === 'give') {
       setGiveStr((prev) => applyNumpadAction(prev, action))
     } else if (activeField === 'paid') {
+      if (balanceOnlyMode && (payType === 'cheque' || collectingCreditId)) return
       setPaidStr((prev) => applyNumpadAction(prev, action))
     } else if (activeField === 'cashSplit') {
+      if (isSplitFieldLocked('cashSplit')) return
       applySplitCash(applyNumpadAction(cashSplitStr, action))
     } else if (activeField === 'bankSplit') {
+      if (isSplitFieldLocked('bankSplit')) return
       applySplitBank(applyNumpadAction(bankSplitStr, action))
     } else if (activeField === 'chequeSplit') {
+      if (isSplitFieldLocked('chequeSplit')) return
       applySplitCheque(applyNumpadAction(chequeSplitStr, action))
+    } else if (activeField === 'creditSplit') {
+      if (isSplitFieldLocked('creditSplit')) return
+      applySplitCredit(applyNumpadAction(creditSplitStr, action))
     }
   }
 
@@ -390,6 +831,7 @@ export default function Counter() {
     setCashSplitStr('')
     setBankSplitStr('')
     setChequeSplitStr('')
+    setCreditSplitStr('')
     setRoundOffAmount(null)
     setPaymentStep(false)
     setPayType('cash')
@@ -397,7 +839,16 @@ export default function Counter() {
     setActiveField('bill')
     setSavedAction(null)
     setLoadedPendingId(null)
+    setCollectingCreditId(null)
+    setSplitChequeApprovedAmount(0)
+    setSplitSiblingChequePending(0)
+    setSplitSiblingCreditPending(0)
+    setSplitSiblingCreditPaid(0)
+    setSiblingChequePendingId(null)
+    setBalanceDueAmount(null)
+    setOriginalBillHint(null)
     setChequeListOpen(false)
+    setCreditListOpen(false)
   }
 
   function buildPendingPayload() {
@@ -416,31 +867,82 @@ export default function Counter() {
         cashAmount: cashSplitAmount,
         bankAmount: bankSplitAmount,
         chequeAmount: chequeSplitAmount,
+        creditAmount: creditSplitAmount,
       }
     }
 
     return base
   }
 
+  function findSiblingPending(bill: Sale) {
+    if (!bill.parentSplitId) {
+      return {
+        cheque: 0,
+        chequeId: null as string | null,
+        credit: 0,
+        creditId: null as string | null,
+        creditPaid: 0,
+      }
+    }
+    const siblings = data.sales.filter(
+      (s) => s.parentSplitId === bill.parentSplitId && s.id !== bill.id,
+    )
+    const pending = siblings.filter((s) => s.status === 'pending')
+    const chequeSib = pending.find((s) => s.payType === 'cheque')
+    const creditSib = pending.find((s) => s.payType === 'credit')
+    const creditPaidSib = siblings.find((s) => s.payType === 'credit' && s.status === 'paid')
+    return {
+      cheque: chequeSib?.billAmount ?? 0,
+      chequeId: chequeSib?.id ?? null,
+      credit: creditSib?.billAmount ?? 0,
+      creditId: creditSib?.id ?? null,
+      creditPaid: creditPaidSib?.billAmount ?? 0,
+    }
+  }
+
   function loadPendingBill(bill: Sale) {
     const due = bill.billAmount
     const original = bill.originalBillAmount ?? bill.billAmount
     const type = bill.payType ?? 'cash'
+    const isBalanceBill = type === 'cheque' || type === 'credit'
+
+    setChequeListOpen(false)
+    setCreditListOpen(false)
+    setHighlightedChequeIndex(-1)
+    setHighlightedCreditIndex(-1)
+
+    if (type === 'cheque' || type === 'bank') {
+      setCollectingCreditId(null)
+    }
 
     setLoadedPendingId(bill.id)
-    setBillStr(String(original))
+    setBalanceDueAmount(isBalanceBill ? due : null)
+    setOriginalBillHint(isBalanceBill && original !== due ? original : null)
+    setBillStr(String(isBalanceBill ? due : original))
     setGiveStr('')
     setPaidStr(String(due))
-    setRoundOffAmount(original !== due ? due : null)
+    setRoundOffAmount(null)
     setCustomerName(bill.customerName ?? '')
     setPayType(type)
     setPaymentStep(true)
     setSavedAction(null)
 
     if (type === 'split') {
+      setSplitSiblingChequePending(0)
+      setSplitSiblingCreditPending(0)
+      setSplitSiblingCreditPaid(0)
       setCashSplitStr(bill.cashAmount ? formatSplitPart(bill.cashAmount) : '')
-      setBankSplitStr(bill.bankAmount ? formatSplitPart(bill.bankAmount) : '')
-      setChequeSplitStr(bill.chequeAmount ? formatSplitPart(bill.chequeAmount) : '')
+      if (bill.chequeApproved && (bill.chequeAmount ?? 0) > 0) {
+        setSplitChequeApprovedAmount(bill.chequeAmount ?? 0)
+        setChequeSplitStr('')
+        const bankOnly = Math.max(0, (bill.bankAmount ?? 0) - (bill.chequeAmount ?? 0))
+        setBankSplitStr(bankOnly ? formatSplitPart(bankOnly) : '')
+      } else {
+        setSplitChequeApprovedAmount(0)
+        setBankSplitStr(bill.bankAmount ? formatSplitPart(bill.bankAmount) : '')
+        setChequeSplitStr(bill.chequeAmount ? formatSplitPart(bill.chequeAmount) : '')
+      }
+      setCreditSplitStr(bill.creditAmount ? formatSplitPart(bill.creditAmount) : '')
       setActiveField('cashSplit')
       return
     }
@@ -448,8 +950,113 @@ export default function Counter() {
     setCashSplitStr('')
     setBankSplitStr('')
     setChequeSplitStr('')
+    setCreditSplitStr('')
+    setSplitChequeApprovedAmount(0)
+    setSplitSiblingChequePending(0)
+    setSplitSiblingCreditPending(0)
+    setSplitSiblingCreditPaid(0)
+    setSiblingChequePendingId(null)
 
-    if (type === 'bank' || type === 'cheque') {
+    if (type === 'credit') {
+      const parent = bill.parentSplitId
+        ? data.sales.find((sale) => sale.id === bill.parentSplitId)
+        : undefined
+      const siblings = findSiblingPending(bill)
+
+      if (parent?.payType === 'split') {
+        setBillStr(String(due))
+        setPaidStr(String(due))
+        setCashSplitStr('')
+        setBankSplitStr('')
+        setCreditSplitStr(formatSplitPart(due))
+        if (parent.chequeApproved && (parent.chequeAmount ?? 0) > 0) {
+          setSplitChequeApprovedAmount(parent.chequeAmount ?? 0)
+          setSplitSiblingChequePending(0)
+          setSiblingChequePendingId(null)
+          setChequeSplitStr('')
+        } else {
+          setSplitChequeApprovedAmount(0)
+          setChequeSplitStr('')
+          setSplitSiblingChequePending(siblings.cheque)
+          setSiblingChequePendingId(siblings.chequeId)
+        }
+        setSplitSiblingCreditPending(0)
+        setSplitSiblingCreditPaid(0)
+        setPayType('split')
+        setActiveField(
+          parent.chequeApproved && (parent.chequeAmount ?? 0) > 0
+            ? 'chequeSplit'
+            : siblings.cheque > 0
+              ? 'cashSplit'
+              : 'cashSplit',
+        )
+        setOriginalBillHint(
+          parent.originalBillAmount ??
+            bill.originalBillAmount ??
+            (original !== due ? original : null),
+        )
+      } else {
+        setPayType('cash')
+        setActiveField('give')
+      }
+
+      setCollectingCreditId(bill.id)
+      setBalanceDueAmount(due)
+      if (parent?.payType !== 'split') {
+        setOriginalBillHint(original !== due ? original : null)
+      }
+      setPaymentStep(true)
+      return
+    }
+
+    if (type === 'cheque' || type === 'bank') {
+      const parent = bill.parentSplitId
+        ? data.sales.find((sale) => sale.id === bill.parentSplitId)
+        : undefined
+
+      if (type === 'cheque' && parent?.payType === 'split') {
+        const siblings = findSiblingPending(bill)
+        setSplitSiblingChequePending(0)
+        setSplitSiblingCreditPending(siblings.credit)
+        setSplitSiblingCreditPaid(siblings.creditPaid)
+        setSiblingChequePendingId(null)
+        setBillStr(String(due))
+        setPaidStr(String(due))
+        setCashSplitStr('')
+        setBankSplitStr('')
+        setBalanceDueAmount(due)
+        setOriginalBillHint(
+          parent.originalBillAmount ??
+            bill.originalBillAmount ??
+            (original !== due ? original : null),
+        )
+        setPayType('split')
+        setCollectingCreditId(null)
+
+        if (parent.chequeApproved && (parent.chequeAmount ?? 0) > 0) {
+          setSplitChequeApprovedAmount(parent.chequeAmount ?? 0)
+          setChequeSplitStr('')
+        } else {
+          setSplitChequeApprovedAmount(0)
+          setChequeSplitStr(formatSplitPart(due))
+        }
+
+        setCreditSplitStr(
+          siblings.credit > 0
+            ? formatSplitPart(siblings.credit)
+            : siblings.creditPaid > 0
+              ? formatSplitPart(siblings.creditPaid)
+              : '',
+        )
+        setActiveField('chequeSplit')
+        return
+      }
+
+      if (type === 'cheque') {
+        setActiveField('paid')
+        return
+      }
+
       setActiveField('paid')
       return
     }
@@ -468,6 +1075,243 @@ export default function Counter() {
     setHighlightedPendingIndex(null)
   }
 
+  function recordSplitPendingBills(
+    name: string | undefined,
+    options: {
+      credit?: boolean
+      cheque?: boolean
+      splitSaleId?: string
+    } = { credit: true, cheque: true },
+  ) {
+    if (options.credit && creditSplitAmount > 0) {
+      recordSale({
+        billAmount: creditSplitAmount,
+        originalBillAmount: billAmount,
+        paidAmount: 0,
+        changeAmount: 0,
+        payType: 'credit',
+        customerName: name,
+        parentSplitId: options.splitSaleId,
+        status: 'pending',
+      })
+    }
+    if (options.cheque && chequeSplitAmount > 0) {
+      recordSale({
+        billAmount: chequeSplitAmount,
+        originalBillAmount: billAmount,
+        paidAmount: 0,
+        changeAmount: 0,
+        payType: 'cheque',
+        customerName: name,
+        parentSplitId: options.splitSaleId,
+        status: 'pending',
+      })
+    }
+  }
+
+  function saveSplitCollected(
+    name: string | undefined,
+    options: {
+      chequeToBank?: boolean
+      createCreditPending?: boolean
+      createChequePending?: boolean
+    },
+  ) {
+    const chequeToBank = options.chequeToBank ?? false
+    const bankAmount = chequeToBank
+      ? bankSplitAmount + chequeSplitAmount
+      : bankSplitAmount
+    const splitSaleId = loadedPendingId ?? crypto.randomUUID()
+
+    const salePayload = {
+      billAmount: splitTotal,
+      originalBillAmount: billAmount,
+      paidAmount: cashSplitAmount,
+      changeAmount: 0,
+      payType: 'split' as const,
+      cashAmount: cashSplitAmount,
+      bankAmount,
+      chequeAmount: chequeSplitAmount || splitChequeApprovedAmount,
+      creditAmount: creditSplitAmount,
+      chequeApproved: chequeToBank || splitChequeApprovedAmount > 0,
+      customerName: name,
+    }
+
+    if (loadedPendingId) {
+      collectPendingSale(loadedPendingId, salePayload)
+    } else {
+      recordSale({ ...salePayload, id: splitSaleId })
+    }
+
+    recordSplitPendingBills(name, {
+      credit: options.createCreditPending ?? false,
+      cheque: options.createChequePending ?? false,
+      splitSaleId: loadedPendingId ?? splitSaleId,
+    })
+
+    return splitSaleId
+  }
+
+  function handleSplitCreditPending() {
+    if (!canSendSplitCreditPending) return
+    const name = customerName.trim() || undefined
+    if (isSplitComplete) {
+      saveSplitCollected(name, { createCreditPending: true })
+    } else {
+      recordSplitPendingBills(name, { credit: true, cheque: false })
+    }
+    setSavedAction('pending')
+    setTimeout(resetForm, 900)
+  }
+
+  function handleSplitChequePending() {
+    if (!canSendSplitChequePending) return
+    const name = customerName.trim() || undefined
+
+    if (collectingCreditId) {
+      const creditBill = data.sales.find((sale) => sale.id === collectingCreditId)
+      collectPendingSale(collectingCreditId, {
+        billAmount: splitTotal,
+        originalBillAmount: billAmount,
+        paidAmount: cashSplitAmount > 0 ? cashSplitAmount : 0,
+        changeAmount: 0,
+        payType: cashSplitAmount > 0 ? 'split' : 'cheque',
+        cashAmount: cashSplitAmount > 0 ? cashSplitAmount : undefined,
+        chequeAmount: chequeSplitAmount,
+        customerName: name,
+      })
+      recordSale({
+        billAmount: chequeSplitAmount,
+        originalBillAmount: billAmount,
+        paidAmount: 0,
+        changeAmount: 0,
+        payType: 'cheque',
+        customerName: name,
+        parentSplitId: creditBill?.parentSplitId,
+        status: 'pending',
+      })
+      setSavedAction('pending')
+      setTimeout(resetForm, 900)
+      return
+    }
+
+    if (isSplitComplete) {
+      saveSplitCollected(name, { createChequePending: true })
+    } else {
+      recordSplitPendingBills(name, { credit: false, cheque: true })
+    }
+    setSavedAction('pending')
+    setTimeout(resetForm, 900)
+  }
+
+  function handleSplitCreditChequePending() {
+    if (!canSendSplitBothPending) return
+    const name = customerName.trim() || undefined
+    if (isSplitComplete) {
+      saveSplitCollected(name, { createCreditPending: true, createChequePending: true })
+    } else {
+      recordSplitPendingBills(name, { credit: true, cheque: true })
+    }
+    setSavedAction('pending')
+    setTimeout(resetForm, 900)
+  }
+
+  function handleApproveSiblingCheque() {
+    if (!canApproveSiblingCheque || !siblingChequePendingId) return
+    const name = customerName.trim() || undefined
+    const amount = splitSiblingChequePending
+
+    collectPendingSale(siblingChequePendingId, {
+      billAmount: amount,
+      originalBillAmount: originalBillHint ?? billAmount,
+      paidAmount: amount,
+      changeAmount: 0,
+      payType: 'cheque',
+      chequeAmount: amount,
+      chequeApproved: true,
+      bankAmount: amount,
+      customerName: name,
+    })
+
+    setSplitChequeApprovedAmount(amount)
+    setSplitSiblingChequePending(0)
+    setSiblingChequePendingId(null)
+    setSavedAction('collect')
+    setTimeout(() => setSavedAction(null), 900)
+  }
+
+  function handleSplitChequeApprove() {
+    if (!canSplitChequeApprove) return
+    const name = customerName.trim() || undefined
+    const approvedCheque = chequeSplitAmount
+    const loadedBill = loadedPendingId
+      ? data.sales.find((sale) => sale.id === loadedPendingId)
+      : undefined
+    const isLoadedChequePending =
+      loadedBill?.payType === 'cheque' && loadedBill?.status === 'pending'
+    const keepCreditOpen =
+      splitHasCredit &&
+      creditSplitAmount > 0 &&
+      splitSiblingCreditPending === 0 &&
+      !isLoadedChequePending
+
+    if (isLoadedChequePending && loadedPendingId) {
+      collectPendingSale(loadedPendingId, {
+        billAmount: approvedCheque,
+        originalBillAmount: originalBillHint ?? billAmount,
+        paidAmount: approvedCheque,
+        changeAmount: 0,
+        payType: 'cheque',
+        chequeAmount: approvedCheque,
+        chequeApproved: true,
+        bankAmount: approvedCheque,
+        customerName: name,
+      })
+      setSavedAction('collect')
+      setTimeout(resetForm, 900)
+      return
+    }
+
+    if (collectingCreditId) {
+      collectPendingSale(collectingCreditId, {
+        billAmount: splitTotal,
+        originalBillAmount: billAmount,
+        paidAmount: approvedCheque,
+        changeAmount: 0,
+        payType: 'cheque',
+        chequeAmount: approvedCheque,
+        chequeApproved: true,
+        bankAmount: approvedCheque,
+        customerName: name,
+      })
+      setSavedAction('collect')
+      setTimeout(resetForm, 900)
+      return
+    }
+
+    saveSplitCollected(name, {
+      chequeToBank: true,
+      createCreditPending: keepCreditOpen,
+      createChequePending: false,
+    })
+
+    if (keepCreditOpen) {
+      setSplitChequeApprovedAmount(approvedCheque)
+      setChequeSplitStr('')
+      setCashSplitStr('')
+      setBankSplitStr('')
+      setPaidStr('')
+      setGiveStr('')
+      setLoadedPendingId(null)
+      setSavedAction('collect')
+      setTimeout(() => setSavedAction(null), 900)
+      return
+    }
+
+    setSavedAction('collect')
+    setTimeout(resetForm, 900)
+  }
+
   function handleSavePending() {
     if (!canSavePending) return
 
@@ -483,6 +1327,9 @@ export default function Counter() {
         status: 'pending',
       })
     }
+    if (payType === 'split') {
+      recordSplitPendingBills(customerName.trim() || undefined)
+    }
     setSavedAction('pending')
     setTimeout(resetForm, 900)
   }
@@ -490,31 +1337,72 @@ export default function Counter() {
   function handleSave() {
     if (!isValid) return
 
-    const cashAmount =
-      payType === 'cash' ? paidAmount : payType === 'split' ? cashSplitAmount : 0
-    const bankAmount =
-      payType === 'bank' || payType === 'cheque'
-        ? paidAmount
-        : payType === 'split'
-          ? bankSplitAmount
-          : 0
-    const chequeAmount = payType === 'split' ? chequeSplitAmount : 0
     const name = customerName.trim() || undefined
 
+    if (collectingCreditId) {
+      if (payType === 'split') {
+        if (chequeSplitAmount > 0) return
+        collectPendingSale(collectingCreditId, {
+          billAmount: paidAmount,
+          originalBillAmount: billAmount,
+          paidAmount: cashSplitAmount > 0 ? cashSplitAmount : paidAmount,
+          changeAmount: 0,
+          payType:
+            cashSplitAmount > 0 && bankSplitAmount > 0
+              ? 'split'
+              : bankSplitAmount > 0
+                ? 'bank'
+                : 'cash',
+          cashAmount: cashSplitAmount > 0 ? cashSplitAmount : undefined,
+          bankAmount: bankSplitAmount > 0 ? bankSplitAmount : undefined,
+          customerName: name,
+        })
+      } else {
+        collectPendingSale(collectingCreditId, {
+          billAmount: paidAmount,
+          originalBillAmount: billAmount,
+          paidAmount: giveAmount,
+          changeAmount,
+          payType: 'cash',
+          cashAmount: paidAmount,
+          customerName: name,
+        })
+      }
+      setSavedAction('collect')
+      setTimeout(resetForm, 900)
+      return
+    }
+
+    if (payType === 'split') {
+      saveSplitCollected(name, {
+        createCreditPending: splitHasCredit,
+        createChequePending: splitHasChequePending,
+      })
+      setSavedAction('collect')
+      setTimeout(resetForm, 900)
+      return
+    }
+
+    const cashAmount = payType === 'cash' ? paidAmount : 0
+    const bankAmount =
+      payType === 'bank' || payType === 'cheque' ? paidAmount : 0
+    const chequeAmount = payType === 'cheque' ? paidAmount : 0
+    const creditAmount = 0
+
     const salePayload = {
-      billAmount: payType === 'split' ? splitTotal : paidAmount,
+      billAmount: paidAmount,
       originalBillAmount: billAmount,
       paidAmount:
         payType === 'bank' || payType === 'cheque'
           ? paidAmount
-          : payType === 'split'
-            ? cashSplitAmount
-            : giveAmount,
-      changeAmount: payType === 'split' ? 0 : changeAmount,
+          : giveAmount,
+      changeAmount: changeAmount,
       payType,
       cashAmount,
       bankAmount,
       chequeAmount,
+      creditAmount,
+      chequeApproved: payType === 'cheque' ? true : undefined,
       customerName: name,
     }
 
@@ -532,9 +1420,23 @@ export default function Counter() {
       ? '✓ Saved'
       : payType === 'cheque'
         ? 'Approve\n& Bank'
-        : 'Save &\nCollect'
+        : collectingCreditId
+          ? payType === 'split' && bankSplitAmount > 0 && cashSplitAmount === 0
+            ? 'Collect\nBank'
+            : payType === 'split'
+              ? 'Collect\nCash'
+              : 'Collect\nCash'
+          : 'Save &\nCollect'
 
   function jumpToAmountField() {
+    if (balanceOnlyMode && payType === 'split') {
+      setActiveField(nextUnlockedSplitField('cashSplit'))
+      return
+    }
+    if (balanceOnlyMode && payType === 'cheque') {
+      setActiveField('paid')
+      return
+    }
     if (payType === 'split') {
       if (billAmount > 0) {
         setPaymentStep(true)
@@ -619,10 +1521,17 @@ export default function Counter() {
   const savePendingHandlerRef = useRef(handleSavePending)
   const cyclePayTypeRef = useRef(cyclePayType)
   const openChequeRef = useRef(openChequeTab)
+  const openCreditRef = useRef(openCreditTab)
   const chequePendingBillsRef = useRef(chequePendingBills)
+  const creditPendingBillsRef = useRef(creditPendingBills)
   const highlightedChequeIndexRef = useRef(highlightedChequeIndex)
+  const highlightedCreditIndexRef = useRef(highlightedCreditIndex)
   const activeChequeItemRef = useRef<HTMLButtonElement>(null)
+  const activeCreditItemRef = useRef<HTMLButtonElement>(null)
+  const chequeBarRef = useRef<HTMLDivElement>(null)
+  const creditBarRef = useRef<HTMLDivElement>(null)
   const chequeListRef = useRef<HTMLUListElement>(null)
+  const creditListRef = useRef<HTMLUListElement>(null)
   const pendingBillsRef = useRef(billPendingBills)
   const highlightedPendingIndexRef = useRef(highlightedPendingIndex)
   const selectPendingBillRef = useRef(selectPendingBill)
@@ -630,8 +1539,11 @@ export default function Counter() {
   savePendingHandlerRef.current = handleSavePending
   cyclePayTypeRef.current = cyclePayType
   openChequeRef.current = openChequeTab
+  openCreditRef.current = openCreditTab
   chequePendingBillsRef.current = chequePendingBills
+  creditPendingBillsRef.current = creditPendingBills
   highlightedChequeIndexRef.current = highlightedChequeIndex
+  highlightedCreditIndexRef.current = highlightedCreditIndex
   pendingBillsRef.current = billPendingBills
   highlightedPendingIndexRef.current = highlightedPendingIndex
   selectPendingBillRef.current = selectPendingBill
@@ -685,6 +1597,24 @@ export default function Counter() {
     const item = panel.querySelector(`[data-bill-id="${billId}"]`)
     item?.scrollIntoView({ block: 'nearest' })
   }, [pendingSectionFocus, highlightedPendingIndex, pendingBills])
+
+  useEffect(() => {
+    if (!chequeListOpen && !creditListOpen) return
+
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target
+      if (!(target instanceof Node)) return
+      if (chequeBarRef.current?.contains(target)) return
+      if (creditBarRef.current?.contains(target)) return
+      setChequeListOpen(false)
+      setCreditListOpen(false)
+      setHighlightedChequeIndex(-1)
+      setHighlightedCreditIndex(-1)
+    }
+
+    window.addEventListener('pointerdown', onPointerDown)
+    return () => window.removeEventListener('pointerdown', onPointerDown)
+  }, [chequeListOpen, creditListOpen])
 
   useEffect(() => {
     if (!chequeListOpen) return
@@ -747,6 +1677,66 @@ export default function Counter() {
   }, [chequeListOpen, highlightedChequeIndex])
 
   useEffect(() => {
+    if (!creditListOpen) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return
+
+      const target = e.target
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+          return
+        }
+      }
+
+      const bills = creditPendingBillsRef.current
+      if (bills.length === 0) return
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightedCreditIndex((current) => (current + 1) % bills.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightedCreditIndex((current) =>
+          current <= 0 ? bills.length - 1 : current - 1,
+        )
+        return
+      }
+      if (e.key === 'Enter') {
+        const idx = highlightedCreditIndexRef.current
+        if (idx < 0 || idx >= bills.length) return
+        e.preventDefault()
+        selectPendingBillRef.current(bills[idx])
+        setCreditListOpen(false)
+        return
+      }
+      if (e.key === 'Escape') {
+        setCreditListOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [creditListOpen])
+
+  useEffect(() => {
+    if (!creditListOpen || highlightedCreditIndex < 0) return
+    const item = activeCreditItemRef.current
+    const list = creditListRef.current
+    if (!item || !list) return
+    const itemTop = item.offsetTop
+    const itemBottom = itemTop + item.offsetHeight
+    if (itemTop < list.scrollTop) {
+      list.scrollTop = itemTop
+    } else if (itemBottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = itemBottom - list.clientHeight
+    }
+  }, [creditListOpen, highlightedCreditIndex])
+
+  useEffect(() => {
     if (isSaving) return
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -778,6 +1768,12 @@ export default function Counter() {
         return
       }
 
+      if (e.code === 'KeyT') {
+        e.preventDefault()
+        openCreditRef.current()
+        return
+      }
+
       if (e.code === 'KeyN') {
         e.preventDefault()
         focusNameRef.current()
@@ -805,7 +1801,24 @@ export default function Counter() {
       <div className="counter-body">
         <div className="counter-main">
           <div className="counter-top">
-            <div className={`counter-amounts ${payType === 'split' ? 'counter-amounts--split' : ''}`}>
+            <div
+              className={`counter-amounts ${
+                payType === 'split' ? 'counter-amounts--split' : ''
+              }`}
+            >
+            {balanceOnlyMode ? (
+              <div className="counter-readonly counter-readonly--balance">
+                <span className="counter-readonly-label">Balance</span>
+                <span className="counter-readonly-value">
+                  {formatMoney(balanceDueAmount ?? billAmount)}
+                </span>
+                {originalBillHint ? (
+                  <span className="counter-balance-hint">
+                    Bill {formatMoney(originalBillHint)}
+                  </span>
+                ) : null}
+              </div>
+            ) : (
             <AmountDisplay
               label="Bill"
               value={billStr}
@@ -818,6 +1831,7 @@ export default function Counter() {
               compact
               shortcutHint="Alt+E"
             />
+            )}
             {payType === 'split' ? null : needsGive(payType) ? (
               <AmountDisplay
                 label="Customer Give"
@@ -842,24 +1856,94 @@ export default function Counter() {
                   label="Cash"
                   value={cashSplitStr}
                   active={activeField === 'cashSplit'}
-                  onSelect={() => setActiveField('cashSplit')}
+                  onSelect={() => {
+                    if (!splitFieldLocked.cash) setActiveField('cashSplit')
+                  }}
+                  locked={splitFieldLocked.cash}
+                  remainingAmount={creditCollectRemaining}
                   compact
                 />
                 <AmountDisplay
                   label="Bank"
                   value={bankSplitStr}
                   active={activeField === 'bankSplit'}
-                  onSelect={() => setActiveField('bankSplit')}
+                  onSelect={() => {
+                    if (!splitFieldLocked.bank) setActiveField('bankSplit')
+                  }}
+                  locked={splitFieldLocked.bank}
+                  remainingAmount={creditCollectRemaining}
                   compact
                 />
                 <AmountDisplay
                   label="Cheque"
                   value={chequeSplitStr}
                   active={activeField === 'chequeSplit'}
-                  onSelect={() => setActiveField('chequeSplit')}
+                  onSelect={() => {
+                    if (!splitFieldLocked.cheque) setActiveField('chequeSplit')
+                  }}
+                  locked={splitFieldLocked.cheque}
+                  priorApprovedAmount={
+                    splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : undefined
+                  }
+                  priorPendingAmount={
+                    splitSiblingChequePending > 0 ? splitSiblingChequePending : undefined
+                  }
+                  priorCreditPaidAmount={
+                    splitSiblingCreditPaid > 0 ? splitSiblingCreditPaid : undefined
+                  }
+                  remainingAmount={creditCollectRemaining}
                   compact
                 />
+                {splitSiblingCreditPending > 0 ? (
+                  <AmountDisplay
+                    label="Credit"
+                    value={creditSplitStr}
+                    pending
+                    compact
+                  />
+                ) : splitSiblingCreditPaid > 0 ? (
+                  <AmountDisplay
+                    label="Credit"
+                    value={formatSplitPart(splitSiblingCreditPaid)}
+                    approved
+                    compact
+                  />
+                ) : collectingCreditId ? (
+                <AmountDisplay
+                  label="Credit"
+                  value="0"
+                  locked
+                  compact
+                />
+                ) : (
+                <AmountDisplay
+                  label="Credit"
+                  value={creditSplitStr}
+                  active={activeField === 'creditSplit'}
+                  onSelect={() => {
+                    if (!splitFieldLocked.credit) {
+                      setActiveField('creditSplit')
+                    }
+                  }}
+                  locked={splitFieldLocked.credit}
+                  compact
+                />
+                )}
               </>
+            ) : balanceOnlyMode && payType === 'cheque' ? (
+              <div className="counter-readonly counter-readonly--balance">
+                <span className="counter-readonly-label">Cheque</span>
+                <span className="counter-readonly-value">
+                  {formatMoney(balanceDueAmount ?? paidAmount)}
+                </span>
+              </div>
+            ) : balanceOnlyMode && collectingCreditId && payType === 'cash' ? (
+              <div className="counter-readonly counter-readonly--balance">
+                <span className="counter-readonly-label">Customer Paid</span>
+                <span className="counter-readonly-value">
+                  {formatMoney(balanceDueAmount ?? paidAmount)}
+                </span>
+              </div>
             ) : paymentStep ? (
               <AmountDisplay
                 label="Customer Paid"
@@ -877,7 +1961,7 @@ export default function Counter() {
               </div>
             )}
             <div
-              className={`counter-readonly counter-readonly--return ${showReturnLive && !needMore && !splitShortfall && (changeAmount > 0 || (payType === 'split' && splitPaidTotal === splitTotal)) ? 'counter-readonly--ready' : ''} ${needMore || splitShortfall ? 'counter-readonly--warn' : ''} ${(activeField === 'give' || activeField === 'paid' || activeField === 'cashSplit' || activeField === 'bankSplit') && showReturnLive ? 'counter-readonly--live' : ''}`}
+              className={`counter-readonly counter-readonly--return ${showReturnLive && !needMore && !splitShortfall && (changeAmount > 0 || (payType === 'split' && splitPaidTotal === splitTotal)) ? 'counter-readonly--ready' : ''} ${needMore || splitShortfall ? 'counter-readonly--warn' : ''} ${(activeField === 'give' || activeField === 'paid' || activeField === 'cashSplit' || activeField === 'bankSplit' || activeField === 'chequeSplit' || activeField === 'creditSplit') && showReturnLive ? 'counter-readonly--live' : ''}`}
             >
               <span className="counter-readonly-label">Return</span>
               <span className="counter-readonly-value">{returnDisplay}</span>
@@ -887,7 +1971,45 @@ export default function Counter() {
           {payType === 'split' && (
             <div className="counter-split-total">
               <span>Paid Total</span>
-              <strong>{splitTotal > 0 ? formatMoney(splitTotal) : '—'}</strong>
+              <strong>
+                {splitTotal > 0 || splitPaidTotal > 0 ? (
+                  showSplitDueHint ? (
+                    <>
+                      {formatMoney(splitPaidTotalDisplay)}
+                      {showPriorChequeInPaidTotal ? (
+                        <span className="counter-split-total-prior">
+                          {' '}
+                          + ✓{formatMoney(splitChequeApprovedAmount)}
+                        </span>
+                      ) : null}
+                      {showPendingChequeInPaidTotal ? (
+                        <span className="counter-split-total-pending">
+                          {' '}
+                          + ⏳{formatMoney(splitSiblingChequePending)}
+                        </span>
+                      ) : null}
+                      {showPendingCreditInPaidTotal ? (
+                        <span className="counter-split-total-pending">
+                          {' '}
+                          + ⏳{formatMoney(splitSiblingCreditPending)}
+                        </span>
+                      ) : null}
+                      {showPaidCreditInPaidTotal ? (
+                        <span className="counter-split-total-prior">
+                          {' '}
+                          + ✓{formatMoney(splitSiblingCreditPaid)}
+                        </span>
+                      ) : null}
+                      {' / '}
+                      {formatMoney(splitPaidTotalBill)}
+                    </>
+                  ) : (
+                    formatMoney(splitPaidTotalDisplay)
+                  )
+                ) : (
+                  '—'
+                )}
+              </strong>
             </div>
           )}
 
@@ -971,6 +2093,7 @@ export default function Counter() {
               onChange={handlePayTypeChange}
               options={COUNTER_PAY_TYPES}
               shortcutHint="Alt+A"
+              disabled={balanceOnlyMode}
             />
           </div>
 
@@ -996,6 +2119,7 @@ export default function Counter() {
                     if (cashSplitStr) applySplitCash(cashSplitStr, amt)
                     else if (bankSplitStr) applySplitBank(bankSplitStr, amt)
                     else if (chequeSplitStr) applySplitCheque(chequeSplitStr, amt)
+                    else if (creditSplitStr) applySplitCredit(creditSplitStr, amt)
                     else openSplitMode()
                   } else if (paymentStep) setPaidStr(String(amt))
                   else if (needsGive(payType)) setActiveField('give')
@@ -1009,74 +2133,196 @@ export default function Counter() {
             )}
             </div>
 
-          {payType === 'cheque' && (
-            <div className="counter-cheque-bar">
-              <button
-                type="button"
-                className="counter-cheque-open"
-                onClick={() => setChequeListOpen((open) => !open)}
-                disabled={chequePendingBills.length === 0}
-              >
-                <span>🧾 Cheque Bills ({chequePendingBills.length})</span>
-                <span className="counter-cheque-open-meta">
-                  <span className="counter-cheque-open-hint">Alt+C</span>
-                  <span className="counter-cheque-open-caret">{chequeListOpen ? '▲' : '▼'}</span>
-                </span>
-              </button>
-              {chequeListOpen && chequePendingBills.length > 0 && (
-                <ul ref={chequeListRef} className="counter-cheque-list" role="listbox">
-                  {chequePendingBills.map((bill, index) => (
-                    <li key={bill.id}>
-                      <button
-                        type="button"
-                        ref={index === highlightedChequeIndex ? activeChequeItemRef : null}
-                        className={`counter-cheque-item ${index === highlightedChequeIndex || loadedPendingId === bill.id ? 'counter-cheque-item--active' : ''}`}
-                        onMouseEnter={() => setHighlightedChequeIndex(index)}
-                        onClick={() => {
-                          selectPendingBill(bill)
-                          setChequeListOpen(false)
-                        }}
-                      >
-                        <span className="counter-cheque-item-amount">
-                          {formatMoney(bill.billAmount)}
-                        </span>
-                        {bill.customerName ? (
-                          <span className="counter-cheque-item-name">{bill.customerName}</span>
-                        ) : null}
-                        <span className="counter-cheque-item-date">
-                          {formatDate(bill.updatedAt ?? bill.createdAt)}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
+          <div className="counter-cheque-bar" ref={chequeBarRef}>
+            <button
+              type="button"
+              className="counter-cheque-open"
+              onClick={openChequeTab}
+              disabled={chequePendingBills.length === 0}
+            >
+              <span>🧾 Cheque Bills ({chequePendingBills.length})</span>
+              <span className="counter-cheque-open-meta">
+                <span className="counter-cheque-open-total">{formatMoney(chequePendingTotal)}</span>
+                <span className="counter-cheque-open-hint">Alt+C</span>
+                <span className="counter-cheque-open-caret">{chequeListOpen ? '▲' : '▼'}</span>
+              </span>
+            </button>
+            {chequeListOpen && chequePendingBills.length > 0 && (
+              <ul ref={chequeListRef} className="counter-cheque-list" role="listbox">
+                {chequePendingBills.map((bill, index) => (
+                  <li key={bill.id}>
+                    <button
+                      type="button"
+                      ref={index === highlightedChequeIndex ? activeChequeItemRef : null}
+                      className={`counter-cheque-item ${index === highlightedChequeIndex || loadedPendingId === bill.id ? 'counter-cheque-item--active' : ''}`}
+                      onMouseEnter={() => setHighlightedChequeIndex(index)}
+                      onClick={() => selectPendingBill(bill)}
+                    >
+                      <span className="counter-cheque-item-amount">
+                        {formatMoney(bill.billAmount)}
+                      </span>
+                      {bill.customerName ? (
+                        <span className="counter-cheque-item-name">{bill.customerName}</span>
+                      ) : null}
+                      <span className="counter-cheque-item-date">
+                        {formatDate(bill.updatedAt ?? bill.createdAt)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
-          <div className="counter-actions counter-actions--3">
+          <div className="counter-credit-bar" ref={creditBarRef}>
+            <button
+              type="button"
+              className="counter-credit-open"
+              onClick={openCreditTab}
+              disabled={creditPendingBills.length === 0}
+            >
+              <span>💳 Credit Bills ({creditPendingBills.length})</span>
+              <span className="counter-credit-open-meta">
+                <span className="counter-credit-open-total">{formatMoney(creditPendingTotal)}</span>
+                <span className="counter-credit-open-hint">Alt+T</span>
+                <span className="counter-credit-open-caret">{creditListOpen ? '▲' : '▼'}</span>
+              </span>
+            </button>
+            {creditListOpen && creditPendingBills.length > 0 && (
+              <ul ref={creditListRef} className="counter-credit-list" role="listbox">
+                {creditPendingBills.map((bill, index) => (
+                  <li key={bill.id}>
+                    <button
+                      type="button"
+                      ref={index === highlightedCreditIndex ? activeCreditItemRef : null}
+                      className={`counter-credit-item ${index === highlightedCreditIndex || loadedPendingId === bill.id ? 'counter-credit-item--active' : ''}`}
+                      onMouseEnter={() => setHighlightedCreditIndex(index)}
+                      onClick={() => selectPendingBill(bill)}
+                    >
+                      <span className="counter-credit-item-amount">
+                        {formatMoney(bill.billAmount)}
+                      </span>
+                      {bill.customerName ? (
+                        <span className="counter-credit-item-name">{bill.customerName}</span>
+                      ) : null}
+                      <span className="counter-credit-item-date">
+                        {formatDate(bill.updatedAt ?? bill.createdAt)}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div
+            className={`counter-actions ${splitHasExtras ? 'counter-actions--split' : 'counter-actions--3'}`}
+          >
             <button type="button" className="btn btn-secondary" onClick={resetForm}>
               Clear
             </button>
-            <button
-              type="button"
-              className={`btn ${payType === 'cheque' ? 'btn-cheque' : 'btn-pending'} btn-with-shortcut ${savedAction === 'pending' ? 'btn-saved' : ''}`}
-              onClick={handleSavePending}
-              disabled={!canSavePending}
-            >
-              <span className="btn-text">
-                {savedAction === 'pending'
-                  ? '✓ Saved'
-                  : payType === 'cheque'
-                    ? loadedPendingId
-                      ? 'Update\nCheque'
-                      : 'Cheque\nPending'
-                    : 'Bill\nPending'}
-              </span>
-              {savedAction !== 'pending' ? (
-                <span className="btn-shortcut">Alt+B</span>
-              ) : null}
-            </button>
+            {splitHasBoth ? (
+              <button
+                type="button"
+                className={`btn btn-pending btn-with-shortcut ${savedAction === 'pending' ? 'btn-saved' : ''}`}
+                onClick={handleSplitCreditChequePending}
+                disabled={!canSendSplitBothPending}
+              >
+                <span className="btn-text">
+                  {savedAction === 'pending' ? '✓ Saved' : 'Credit·Cheque\nPending'}
+                </span>
+              </button>
+            ) : (
+              <>
+                {splitHasCredit ? (
+                  <button
+                    type="button"
+                    className={`btn btn-credit btn-with-shortcut ${savedAction === 'pending' ? 'btn-saved' : ''}`}
+                    onClick={handleSplitCreditPending}
+                    disabled={!canSendSplitCreditPending}
+                  >
+                    <span className="btn-text">
+                      {savedAction === 'pending' ? '✓ Saved' : 'Credit\nPending'}
+                    </span>
+                  </button>
+                ) : null}
+                {splitHasCheque ? (
+                  <button
+                    type="button"
+                    className={`btn btn-cheque btn-with-shortcut ${savedAction === 'pending' ? 'btn-saved' : ''}`}
+                    onClick={handleSplitChequePending}
+                    disabled={!canSendSplitChequePending}
+                  >
+                    <span className="btn-text">
+                      {savedAction === 'pending' ? '✓ Saved' : 'Cheque\nPending'}
+                    </span>
+                  </button>
+                ) : null}
+              </>
+            )}
+            {splitHasChequePending ? (
+              <button
+                type="button"
+                className={`btn btn-cheque btn-with-shortcut ${savedAction === 'collect' ? 'btn-saved' : ''}`}
+                onClick={handleSplitChequeApprove}
+                disabled={!canSplitChequeApprove || isSaving}
+              >
+                <span className="btn-text">
+                  {savedAction === 'collect' ? '✓ Saved' : 'Approve\n& Bank'}
+                </span>
+              </button>
+            ) : null}
+            {canApproveSiblingCheque ? (
+              <button
+                type="button"
+                className={`btn btn-cheque btn-with-shortcut ${savedAction === 'collect' ? 'btn-saved' : ''}`}
+                onClick={handleApproveSiblingCheque}
+                disabled={isSaving}
+              >
+                <span className="btn-text">
+                  {savedAction === 'collect' ? '✓ Approved' : 'Approve\nCheque'}
+                </span>
+              </button>
+            ) : null}
+            {!splitHasExtras ? (
+              <button
+                type="button"
+                className={`btn ${payType === 'cheque' ? 'btn-cheque' : payType === 'credit' ? 'btn-credit' : 'btn-pending'} btn-with-shortcut ${savedAction === 'pending' ? 'btn-saved' : ''}`}
+                onClick={handleSavePending}
+                disabled={!canSavePending}
+              >
+                <span className="btn-text">
+                  {savedAction === 'pending'
+                    ? '✓ Saved'
+                    : payType === 'cheque'
+                      ? loadedPendingId
+                        ? 'Update\nCheque'
+                        : 'Cheque\nPending'
+                      : payType === 'credit'
+                        ? loadedPendingId
+                          ? 'Update\nCredit'
+                          : 'Credit\nPending'
+                        : 'Bill\nPending'}
+                </span>
+                {savedAction !== 'pending' ? (
+                  <span className="btn-shortcut">Alt+B</span>
+                ) : null}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-pending btn-with-shortcut"
+                onClick={handleSavePending}
+                disabled={!canSavePending}
+              >
+                <span className="btn-text">
+                  {savedAction === 'pending' ? '✓ Saved' : 'Bill\nPending'}
+                </span>
+                {savedAction !== 'pending' ? (
+                  <span className="btn-shortcut">Alt+B</span>
+                ) : null}
+              </button>
+            )}
             <button
               type="button"
               className={`btn btn-primary btn-with-shortcut ${savedAction === 'collect' ? 'btn-saved' : ''}`}
