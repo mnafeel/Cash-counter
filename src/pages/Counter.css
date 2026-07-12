@@ -308,6 +308,22 @@
   gap: 2px;
 }
 
+.counter-amounts--split-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.counter-amounts--split-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.counter-amounts--split-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.counter-amounts--split-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .counter-amounts--split-7 {
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }

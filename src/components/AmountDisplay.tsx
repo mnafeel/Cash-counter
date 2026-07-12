@@ -58,6 +58,7 @@ export default function AmountDisplay({
       >
         <span className="amount-display-label">
           {label}
+          {approved ? ' ✓' : ''}
           {pending ? ' ⏳' : ''}
         </span>
         {priorCreditPaidAmount && priorCreditPaidAmount > 0 ? (
