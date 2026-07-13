@@ -157,6 +157,7 @@ export function addTallyPendingBill(
     changeAmount: 0,
     status: 'pending',
     payType: 'credit',
+    pendingPayType: 'credit',
     customerName: bill.customerName?.trim() || undefined,
     source: 'tally',
     sourceId: bill.sourceId,
@@ -299,6 +300,7 @@ export function updatePendingBill(
     bankAmount?: number
     chequeAmount?: number
     creditAmount?: number
+    pendingPayType?: PayType
   },
 ): AppData {
   const next = {
@@ -311,6 +313,7 @@ export function updatePendingBill(
             originalBillAmount: updates.originalBillAmount,
             customerName: updates.customerName,
             payType: updates.payType,
+            pendingPayType: updates.pendingPayType ?? s.pendingPayType,
             cashAmount: updates.payType === 'split' ? updates.cashAmount : undefined,
             bankAmount: updates.payType === 'split' ? updates.bankAmount : undefined,
             chequeAmount: updates.payType === 'split' ? updates.chequeAmount : undefined,
@@ -349,6 +352,9 @@ export function collectPendingBill(
         ? {
             ...s,
             ...sale,
+            pendingPayType:
+              s.pendingPayType ??
+              (s.payType === 'credit' || s.payType === 'cheque' ? s.payType : undefined),
             status: 'paid' as const,
             creditAmount: sale.payType === 'split' ? sale.creditAmount : undefined,
             chequeApproved: sale.payType === 'split' ? sale.chequeApproved : undefined,

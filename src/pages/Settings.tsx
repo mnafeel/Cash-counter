@@ -335,6 +335,7 @@ export default function Settings() {
       paidAmount: 0,
       changeAmount: 0,
       payType: 'credit',
+      pendingPayType: 'credit',
       status: 'pending',
       customerName: name || undefined,
     })
