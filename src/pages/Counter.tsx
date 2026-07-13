@@ -292,6 +292,15 @@ export default function Counter() {
   const chequeCollectBankMode = chequeCollectLayout && payType === 'bank'
   const chequeCollectChequeMode = chequeCollectLayout && payType === 'cheque'
 
+  const chequeSplitCountsCredit =
+    Boolean(collectingChequeId) && payType === 'split' && !chequeCollectCreditMode
+
+  const showSplitCashGive =
+    showFullSplitGrid &&
+    cashSplitAmount > 0 &&
+    Boolean(collectingBalanceBillId) &&
+    !(collectingChequeId && chequeCollectCreditMode)
+
   const creditCollectDueAmount =
     creditCollectDue > 0 ? creditCollectDue : balanceDueAmount ?? 0
 
@@ -490,19 +499,24 @@ export default function Counter() {
 
   const splitPaidTotal =
     collectingCreditId ||
-    collectingChequeId ||
+    (collectingChequeId && chequeCollectCreditMode) ||
     (balanceOnlyMode && splitChequeApprovedAmount > 0) ||
     isLoadedChequeSplitCollect
       ? splitPaidActive
-      : splitPaidActive +
-        (splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : chequeSplitAmount) +
-        (splitSiblingCreditPending > 0 && !collectingCreditId ? 0 : creditSplitAmount)
+      : chequeSplitCountsCredit
+        ? splitPaidActive + creditSplitAmount
+        : splitPaidActive +
+          (splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : chequeSplitAmount) +
+          (splitSiblingCreditPending > 0 && !collectingCreditId ? 0 : creditSplitAmount)
 
   const splitPaidTotalDisplay = (() => {
     if (showFullSplitGrid) {
+      if (chequeSplitCountsCredit) {
+        const total = splitPaidActive + creditSplitAmount
+        return total > 0 ? total : 0
+      }
       if (splitPaidActive > 0) return splitPaidActive
       if (collectingCreditId) return creditCollectDueAmount
-      if (collectingChequeId) return chequeCollectDueAmount
       if (balanceOnlyMode && payType === 'split') return 0
       return splitTotal > 0 ? splitTotal : 0
     }
@@ -596,28 +610,45 @@ export default function Counter() {
       ? splitPaidTotal - splitTotal
       : 0
 
+  const splitCashChange =
+    showSplitCashGive && giveAmount >= cashSplitAmount ? giveAmount - cashSplitAmount : 0
+
+  const splitCashNeedMore =
+    showSplitCashGive && giveAmount > 0 && giveAmount < cashSplitAmount
+
+  const splitCashShortfall = splitCashNeedMore ? cashSplitAmount - giveAmount : 0
+
   const changeAmount =
     payType === 'cash'
       ? Math.max(0, giveAmount - paidForReturn)
-      : payType === 'bank' || payType === 'split' || payType === 'cheque' || payType === 'credit'
-        ? 0
-        : Math.max(0, giveAmount - paidForReturn)
+      : showSplitCashGive
+        ? splitCashChange
+        : payType === 'bank' || payType === 'split' || payType === 'cheque' || payType === 'credit'
+          ? 0
+          : Math.max(0, giveAmount - paidForReturn)
 
   const needMore =
-    payType === 'cash' &&
-    giveAmount > 0 &&
-    paidForReturn > 0 &&
-    giveAmount < paidForReturn
+    (payType === 'cash' &&
+      giveAmount > 0 &&
+      paidForReturn > 0 &&
+      giveAmount < paidForReturn) ||
+    splitCashNeedMore
 
-  const shortfallAmount = needMore ? paidForReturn - giveAmount : 0
+  const shortfallAmount = splitCashNeedMore
+    ? splitCashShortfall
+    : needMore
+      ? paidForReturn - giveAmount
+      : 0
 
   const showReturnLive =
     showFullSplitGrid
-      ? splitTotal > 0 && splitPaidTotal > 0
+      ? (splitTotal > 0 && splitPaidTotal > 0) || (showSplitCashGive && giveAmount > 0)
       : payType === 'cash' && giveAmount > 0 && paidForReturn > 0
 
   const returnDisplay = (() => {
     if (showFullSplitGrid) {
+      if (splitCashNeedMore) return `+${formatMoney(splitCashShortfall)}`
+      if (splitCashChange > 0) return formatMoney(splitCashChange)
       if (splitTotal <= 0 || splitPaidTotal <= 0) return '—'
       if (splitShortfall > 0) return `+${formatMoney(splitShortfall)}`
       if (splitExcess > 0) return formatMoney(splitExcess)
@@ -634,7 +665,8 @@ export default function Counter() {
     (collectingCreditId
       ? payType === 'split'
         ? creditCollectDisplayAmount === 0 &&
-          (cashSplitAmount > 0 || bankSplitAmount > 0 || chequeSplitAmount > 0)
+          (cashSplitAmount > 0 || bankSplitAmount > 0 || chequeSplitAmount > 0) &&
+          (cashSplitAmount === 0 || giveAmount >= cashSplitAmount)
         : payType === 'cash'
           ? paymentStep && paidAmount > 0 && giveAmount >= paidAmount
           : payType === 'bank' || payType === 'cheque'
@@ -649,7 +681,8 @@ export default function Counter() {
               (cashSplitAmount > 0 ||
                 bankSplitAmount > 0 ||
                 chequeSplitAmount > 0 ||
-                creditSplitAmount > 0)
+                creditSplitAmount > 0) &&
+              (cashSplitAmount === 0 || giveAmount >= cashSplitAmount)
           : payType === 'cash'
             ? paymentStep && paidAmount > 0 && giveAmount >= paidAmount
             : payType === 'bank' || payType === 'cheque'
@@ -1874,7 +1907,8 @@ export default function Counter() {
           billAmount: chequeCollectDueAmount,
           originalBillAmount: originalBillHint ?? billAmount,
           paidAmount: collected,
-          changeAmount: 0,
+          changeAmount:
+            cashSplitAmount > 0 ? Math.max(0, giveAmount - cashSplitAmount) : 0,
           payType:
             cashSplitAmount > 0 && (bankSplitAmount > 0 || chequeSplitAmount > 0)
               ? 'split'
@@ -2188,7 +2222,8 @@ export default function Counter() {
           billAmount: creditCollectDueAmount,
           originalBillAmount: originalBillHint ?? billAmount,
           paidAmount: collected,
-          changeAmount: 0,
+          changeAmount:
+            cashSplitAmount > 0 ? Math.max(0, giveAmount - cashSplitAmount) : 0,
           payType:
             cashSplitAmount > 0 && (bankSplitAmount > 0 || chequeSplitAmount > 0)
               ? 'split'
@@ -2243,7 +2278,8 @@ export default function Counter() {
           billAmount: chequeCollectDueAmount,
           originalBillAmount: originalBillHint ?? billAmount,
           paidAmount: collected,
-          changeAmount: 0,
+          changeAmount:
+            cashSplitAmount > 0 ? Math.max(0, giveAmount - cashSplitAmount) : 0,
           payType:
             cashSplitAmount > 0 && (bankSplitAmount > 0 || chequeSplitAmount > 0)
               ? 'split'
@@ -2799,7 +2835,26 @@ export default function Counter() {
               shortcutHint="Alt+E"
             />
             )}
-            {payType === 'split' ? null : needsGive(payType) ? (
+            {payType === 'split' ? (
+              showSplitCashGive ? (
+              <AmountDisplay
+                label="Customer Give"
+                value={giveStr}
+                active={activeField === 'give'}
+                onSelect={() => {
+                  setNameSectionFocus(false)
+                  clearPendingSection()
+                  setActiveField('give')
+                }}
+                compact
+              />
+              ) : (
+              <div className="counter-readonly counter-readonly--na">
+                <span className="counter-readonly-label">Customer Give</span>
+                <span className="counter-readonly-value">—</span>
+              </div>
+              )
+            ) : needsGive(payType) ? (
               <AmountDisplay
                 label="Customer Give"
                 value={giveStr}
@@ -3017,7 +3072,7 @@ export default function Counter() {
               </div>
             )}
             <div
-              className={`counter-readonly counter-readonly--return ${showReturnLive && !needMore && !splitShortfall && (changeAmount > 0 || (showFullSplitGrid && splitPaidTotal === splitTotal)) ? 'counter-readonly--ready' : ''} ${needMore || splitShortfall ? 'counter-readonly--warn' : ''} ${(activeField === 'give' || activeField === 'paid' || activeField === 'cashSplit' || activeField === 'bankSplit' || activeField === 'chequeSplit' || activeField === 'creditSplit') && showReturnLive ? 'counter-readonly--live' : ''}`}
+              className={`counter-readonly counter-readonly--return ${showReturnLive && !needMore && !splitShortfall && (changeAmount > 0 || splitCashChange > 0 || (showFullSplitGrid && splitPaidTotal === splitTotal)) ? 'counter-readonly--ready' : ''} ${needMore || splitShortfall ? 'counter-readonly--warn' : ''} ${(activeField === 'give' || activeField === 'paid' || activeField === 'cashSplit' || activeField === 'bankSplit' || activeField === 'chequeSplit' || activeField === 'creditSplit') && showReturnLive ? 'counter-readonly--live' : ''}`}
             >
               <span className="counter-readonly-label">Return</span>
               <span className="counter-readonly-value">{returnDisplay}</span>
