@@ -108,6 +108,8 @@ interface CashContextValue {
     amount: number
     name: string
     payType: ExpensePayType
+    cashAmount?: number
+    bankAmount?: number
     kind?: ExpenseKind
   }) => void
   recordTransfer: (transfer: {
@@ -308,6 +310,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       amount: number
       name: string
       payType: ExpensePayType
+      cashAmount?: number
+      bankAmount?: number
       kind?: ExpenseKind
     }) => {
       setData((prev) =>
@@ -315,6 +319,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
           amount: expense.amount,
           name: expense.name.trim(),
           payType: expense.payType,
+          cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
+          bankAmount: expense.payType === 'split' ? expense.bankAmount : undefined,
           kind: expense.kind ?? 'expense',
         }),
       )

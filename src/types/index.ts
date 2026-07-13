@@ -27,7 +27,7 @@ export interface Sale {
   updatedAt?: string
 }
 
-export type ExpensePayType = Extract<PayType, 'cash' | 'bank'>
+export type ExpensePayType = Extract<PayType, 'cash' | 'bank' | 'split'>
 export type ExpenseKind = 'expense' | 'add' | 'transfer'
 export type TransferDirection = 'cash-to-bank' | 'bank-to-cash'
 export type AppTheme = 'brown' | 'navy' | 'light' | 'premium'
@@ -37,6 +37,8 @@ export interface Expense {
   amount: number
   name: string
   payType: ExpensePayType
+  cashAmount?: number
+  bankAmount?: number
   kind?: ExpenseKind
   transferDirection?: TransferDirection
   /** @deprecated legacy field — migrated to name */

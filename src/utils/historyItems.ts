@@ -647,22 +647,30 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
       }
     }
     const isAdd = e.kind === 'add'
-    const payMode: HistoryPaymentMode = e.payType === 'bank' ? 'bank' : 'cash'
+    const payMode: HistoryPaymentMode =
+      e.payType === 'bank' ? 'bank' : e.payType === 'split' ? 'split' : 'cash'
+    const expenseSub =
+      e.payType === 'split'
+        ? `➗ Split · 💵 ${formatMoney(e.cashAmount ?? 0)} + 🏦 ${formatMoney(e.bankAmount ?? 0)}`
+        : e.payType === 'bank'
+          ? '🏦 Bank expense'
+          : '💵 Cash expense'
+    const addSub =
+      e.payType === 'split'
+        ? `➗ Split add · 💵 ${formatMoney(e.cashAmount ?? 0)} + 🏦 ${formatMoney(e.bankAmount ?? 0)}`
+        : e.payType === 'bank'
+          ? '🏦 Added to bank'
+          : '💵 Added to counter'
     return {
       type: isAdd ? ('deposit' as const) : ('expense' as const),
       id: e.id,
       amount: e.amount,
-      sub: isAdd
-        ? e.payType === 'bank'
-          ? '🏦 Added to bank'
-          : '💵 Added to counter'
-        : e.payType === 'bank'
-          ? '🏦 Bank expense'
-          : '💵 Cash expense',
+      sub: isAdd ? addSub : expenseSub,
       name: e.name,
       date: e.createdAt,
       paymentMode: payMode,
-      paymentModes: [payMode],
+      paymentModes:
+        e.payType === 'split' ? (['cash', 'bank', 'split'] as HistoryPaymentMode[]) : [payMode],
     }
   })
 

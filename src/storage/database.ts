@@ -89,6 +89,10 @@ function expenseCashToDrawer(expense: Expense): number {
     return 0
   }
   if (expense.payType === 'bank') return 0
+  if (expense.payType === 'split') {
+    const cash = expense.cashAmount ?? 0
+    return expense.kind === 'add' ? -cash : cash
+  }
   return expense.kind === 'add' ? -expense.amount : expense.amount
 }
 
@@ -105,7 +109,11 @@ function expenseBankToBalance(expense: Expense): number {
     if (expense.transferDirection === 'bank-to-cash') return expense.amount
     return 0
   }
-  if (expense.payType !== 'bank') return 0
+  if (expense.payType === 'cash') return 0
+  if (expense.payType === 'split') {
+    const bank = expense.bankAmount ?? 0
+    return expense.kind === 'add' ? -bank : bank
+  }
   return expense.kind === 'add' ? -expense.amount : expense.amount
 }
 

@@ -15,6 +15,33 @@
   align-items: stretch;
 }
 
+.expenses-top--split {
+  grid-template-columns: 1.2fr 1fr 1fr;
+}
+
+.expenses-split-total {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  font-size: 0.68rem;
+  color: var(--cream-dim);
+}
+
+.expenses-split-total strong {
+  color: var(--cream);
+  font-size: 0.72rem;
+}
+
+.expenses-split-total--warn strong {
+  color: var(--warning, #f5c542);
+}
+
 .expense-name {
   position: relative;
   display: flex;
@@ -168,7 +195,8 @@ html[data-screen='tablet'] .expenses-actions .btn {
 }
 
 @media (max-width: 520px) {
-  .expenses-top {
+  .expenses-top,
+  .expenses-top--split {
     grid-template-columns: 1fr;
   }
 }

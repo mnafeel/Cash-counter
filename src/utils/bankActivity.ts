@@ -53,7 +53,32 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
     return
   }
 
-  if (expense.payType !== 'bank') return
+  if (expense.payType === 'cash') return
+
+  if (expense.payType === 'split') {
+    const bank = expense.bankAmount ?? 0
+    if (bank <= 0) return
+    if (expense.kind === 'add') {
+      items.push({
+        id: `add-${expense.id}`,
+        label: 'Added to bank',
+        amount: bank,
+        direction: 'in',
+        date: expense.createdAt,
+        name: expense.name,
+      })
+      return
+    }
+    items.push({
+      id: `expense-${expense.id}-bank`,
+      label: 'Bank expense',
+      amount: bank,
+      direction: 'out',
+      date: expense.createdAt,
+      name: expense.name,
+    })
+    return
+  }
 
   if (expense.kind === 'add') {
     items.push({
