@@ -519,17 +519,20 @@ export default function Counter() {
   const splitPaidActive =
     cashSplitAmount + bankSplitAmount + chequeSplitAmount
 
+  const splitChequeCounted =
+    splitChequeApprovedAmount > 0
+      ? splitChequeApprovedAmount
+      : Math.max(chequeSplitAmount, splitSiblingChequePending)
+
+  const splitCreditCounted = Math.max(creditSplitAmount, splitSiblingCreditPending)
+
   const splitPaidTotal =
-    collectingCreditId ||
-    (collectingChequeId && chequeCollectCreditMode) ||
-    (balanceOnlyMode && splitChequeApprovedAmount > 0) ||
-    isLoadedChequeSplitCollect
+    collectingCreditId || (collectingChequeId && chequeCollectCreditMode)
       ? splitPaidActive
-      : chequeSplitCountsCredit
-        ? splitPaidActive + creditSplitAmount
-        : splitPaidActive +
-          (splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : chequeSplitAmount) +
-          (splitSiblingCreditPending > 0 && !collectingCreditId ? 0 : creditSplitAmount)
+      : cashSplitAmount +
+        bankSplitAmount +
+        splitChequeCounted +
+        splitCreditCounted
 
   const splitPaidTotalDisplay = (() => {
     if (showFullSplitGrid) {
@@ -537,7 +540,7 @@ export default function Counter() {
         const total = splitPaidActive + creditSplitAmount
         return total > 0 ? total : 0
       }
-      if (splitPaidActive > 0) return splitPaidActive
+      if (splitPaidTotal > 0) return splitPaidTotal
       if (collectingCreditId) return creditCollectDueAmount
       if (balanceOnlyMode && payType === 'split') return 0
       return splitTotal > 0 ? splitTotal : 0
@@ -664,7 +667,15 @@ export default function Counter() {
 
   const showReturnLive =
     showFullSplitGrid
-      ? (splitTotal > 0 && splitPaidTotal > 0) || (showSplitCashGive && giveAmount > 0)
+      ? splitTotal > 0 &&
+        (splitPaidTotal > 0 ||
+          cashSplitAmount > 0 ||
+          bankSplitAmount > 0 ||
+          chequeSplitAmount > 0 ||
+          creditSplitAmount > 0 ||
+          splitSiblingChequePending > 0 ||
+          splitSiblingCreditPending > 0 ||
+          (showSplitCashGive && giveAmount > 0))
       : payType === 'cash' && giveAmount > 0 && paidForReturn > 0
 
   const returnDisplay = (() => {
@@ -1103,9 +1114,30 @@ export default function Counter() {
   }
 
   function applySplitCredit(nextCreditStr: string, totalOverride?: number) {
-    if (isLoadedChequeSplitCollect) return
-
     const total = totalOverride ?? splitTotal
+
+    if (isLoadedChequeSplitCollect) {
+      setCreditSplitStr(nextCreditStr)
+      if (nextCreditStr === '') {
+        pinSiblingCreditPending()
+        return
+      }
+      const credit = parseAmount(nextCreditStr)
+      let bank = parseAmount(bankSplitStr)
+      let cash = parseAmount(cashSplitStr)
+      const room = Math.max(0, total - credit)
+      if (cash > 0) {
+        cash = Math.min(cash, room)
+        setCashSplitStr(formatSplitPart(cash))
+        bank = Math.min(bank, Math.max(0, room - cash))
+        setBankSplitStr(formatSplitPart(bank))
+      } else if (bank > 0) {
+        bank = Math.min(bank, room)
+        setBankSplitStr(formatSplitPart(bank))
+      }
+      pinSiblingCreditPending()
+      return
+    }
 
     if (collectingCreditId) {
       setCreditSplitStr(nextCreditStr)
