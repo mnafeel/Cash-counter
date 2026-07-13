@@ -296,10 +296,7 @@ export default function Counter() {
     Boolean(collectingChequeId) && payType === 'split' && !chequeCollectCreditMode
 
   const showSplitCashGive =
-    showFullSplitGrid &&
-    cashSplitAmount > 0 &&
-    Boolean(collectingBalanceBillId) &&
-    !(collectingChequeId && chequeCollectCreditMode)
+    showFullSplitGrid && cashSplitAmount > 0 && Boolean(collectingCreditId)
 
   const creditCollectDueAmount =
     creditCollectDue > 0 ? creditCollectDue : balanceDueAmount ?? 0
@@ -681,8 +678,7 @@ export default function Counter() {
               (cashSplitAmount > 0 ||
                 bankSplitAmount > 0 ||
                 chequeSplitAmount > 0 ||
-                creditSplitAmount > 0) &&
-              (cashSplitAmount === 0 || giveAmount >= cashSplitAmount)
+                creditSplitAmount > 0)
           : payType === 'cash'
             ? paymentStep && paidAmount > 0 && giveAmount >= paidAmount
             : payType === 'bank' || payType === 'cheque'
@@ -1907,8 +1903,7 @@ export default function Counter() {
           billAmount: chequeCollectDueAmount,
           originalBillAmount: originalBillHint ?? billAmount,
           paidAmount: collected,
-          changeAmount:
-            cashSplitAmount > 0 ? Math.max(0, giveAmount - cashSplitAmount) : 0,
+          changeAmount: 0,
           payType:
             cashSplitAmount > 0 && (bankSplitAmount > 0 || chequeSplitAmount > 0)
               ? 'split'
@@ -2278,8 +2273,7 @@ export default function Counter() {
           billAmount: chequeCollectDueAmount,
           originalBillAmount: originalBillHint ?? billAmount,
           paidAmount: collected,
-          changeAmount:
-            cashSplitAmount > 0 ? Math.max(0, giveAmount - cashSplitAmount) : 0,
+          changeAmount: 0,
           payType:
             cashSplitAmount > 0 && (bankSplitAmount > 0 || chequeSplitAmount > 0)
               ? 'split'
