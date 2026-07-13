@@ -298,6 +298,8 @@ export default function Counter() {
   const showSplitCashGive =
     showFullSplitGrid && cashSplitAmount > 0 && Boolean(collectingCreditId)
 
+  const hideChequeSplitGive = showFullSplitGrid && chequeCollectLayout
+
   const creditCollectDueAmount =
     creditCollectDue > 0 ? creditCollectDue : balanceDueAmount ?? 0
 
@@ -2829,7 +2831,7 @@ export default function Counter() {
               shortcutHint="Alt+E"
             />
             )}
-            {payType === 'split' ? (
+            {hideChequeSplitGive ? null : payType === 'split' ? (
               showSplitCashGive ? (
               <AmountDisplay
                 label="Customer Give"
