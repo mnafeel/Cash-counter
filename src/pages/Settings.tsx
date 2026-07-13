@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { User } from 'firebase/auth'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
@@ -19,7 +19,8 @@ import {
 } from '../firebase/backup'
 import { backupNow, setBackupStatusListener } from '../firebase/sync'
 import type { AppData } from '../types'
-import { formatMoney, parseAmount } from '../utils/format'
+import { getApprovedChequeAmount, listApprovedCheques } from '../storage/database'
+import { formatMoney, formatDate, parseAmount } from '../utils/format'
 import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
@@ -56,6 +57,7 @@ export default function Settings() {
     saveTallyApiUrl,
     saveTallyDateScope,
     syncTallyBills,
+    cancelApprovedCheque,
   } = useCash()
   const [tab, setTab] = useState<SettingsTab>('general')
   const [openingStr, setOpeningStr] = useState(String(data.openingBalance))
@@ -82,6 +84,9 @@ export default function Settings() {
   const [tallyBusy, setTallyBusy] = useState(false)
   const [manualName, setManualName] = useState('')
   const [manualAmount, setManualAmount] = useState('')
+  const [chequeCancelStatus, setChequeCancelStatus] = useState('')
+
+  const approvedCheques = useMemo(() => listApprovedCheques(data), [data.sales])
 
   const firebaseBuilt = isFirebaseConfigured()
   const opening = parseAmount(openingStr)
@@ -139,6 +144,12 @@ export default function Settings() {
   const numpadHandlerRef = useRef(handleNumpad)
   numpadHandlerRef.current = handleNumpad
   useNumpadKeyboard((action) => numpadHandlerRef.current(action))
+
+  function handleCancelApprovedCheque(id: string) {
+    cancelApprovedCheque(id)
+    setChequeCancelStatus('Cheque approval cancelled — moved back to pending.')
+    setTimeout(() => setChequeCancelStatus(''), 2400)
+  }
 
   function handleSave() {
     setPinError('')
@@ -409,6 +420,51 @@ export default function Settings() {
                 <span className="settings-highlight">{formatMoney(bankBalance)}</span>
               </div>
             </div>
+
+            <section className="settings-cheque-cancel">
+              <div className="settings-cheque-cancel-head">
+                <h3>Approved cheques</h3>
+                <p>Cancel moves cheque back to pending and removes it from bank balance.</p>
+              </div>
+              {approvedCheques.length === 0 ? (
+                <p className="settings-cheque-cancel-empty">No approved cheques.</p>
+              ) : (
+                <ul className="settings-cheque-cancel-list">
+                  {approvedCheques.map((sale) => {
+                    const amount = getApprovedChequeAmount(sale)
+                    const when = sale.updatedAt ?? sale.createdAt
+                    const label =
+                      sale.payType === 'split'
+                        ? 'Split · cheque → bank'
+                        : sale.pendingPayType === 'credit'
+                          ? 'Credit bill · cheque → bank'
+                          : 'Cheque → bank'
+                    return (
+                      <li key={sale.id} className="settings-cheque-cancel-item">
+                        <div className="settings-cheque-cancel-meta">
+                          <strong>{sale.customerName?.trim() || '—'}</strong>
+                          <span>{formatMoney(amount)}</span>
+                          <span className="settings-cheque-cancel-sub">
+                            {label} · {formatDate(when)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-secondary settings-cheque-cancel-btn"
+                          onClick={() => handleCancelApprovedCheque(sale.id)}
+                        >
+                          Cancel
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              {chequeCancelStatus ? (
+                <p className="settings-cheque-cancel-status">{chequeCancelStatus}</p>
+              ) : null}
+            </section>
+
             {pinError && <p className="settings-pin-error">{pinError}</p>}
             <div className="settings-keyboard-wrap">
               <NumberKeyboard onPress={handleNumpad} showEnter={false} />

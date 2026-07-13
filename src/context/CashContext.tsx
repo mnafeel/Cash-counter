@@ -20,6 +20,7 @@ import {
   addExpense,
   addSale,
   addTransfer,
+  cancelApprovedCheque,
   collectPendingBill,
   deleteExpense,
   deleteSale,
@@ -119,6 +120,7 @@ interface CashContextValue {
   updateHomePin: (pin: string) => void
   removeSale: (id: string) => void
   removeExpense: (id: string) => void
+  cancelApprovedCheque: (id: string) => void
   updateHistoryName: (type: 'sale' | 'expense' | 'deposit' | 'transfer', id: string, name: string) => void
   replaceAllData: (data: AppData) => void
   resetAllData: () => void
@@ -348,6 +350,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => deleteExpense(prev, id))
   }, [])
 
+  const cancelApprovedChequeSale = useCallback((id: string) => {
+    setData((prev) => cancelApprovedCheque(prev, id))
+  }, [])
+
   const updateHistoryName = useCallback(
     (type: 'sale' | 'expense' | 'deposit' | 'transfer', id: string, name: string) => {
       setData((prev) =>
@@ -381,6 +387,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateHomePin,
       removeSale,
       removeExpense,
+      cancelApprovedCheque: cancelApprovedChequeSale,
       updateHistoryName,
       replaceAllData,
       resetAllData,
@@ -406,6 +413,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateHomePin,
       removeSale,
       removeExpense,
+      cancelApprovedChequeSale,
       updateHistoryName,
       replaceAllData,
       resetAllData,

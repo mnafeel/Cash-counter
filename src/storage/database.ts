@@ -327,6 +327,108 @@ export function updatePendingBill(
   return next
 }
 
+export function isApprovedChequeSale(sale: Sale): boolean {
+  if (sale.status !== 'paid') return false
+  if (sale.payType === 'cheque') return true
+  if (sale.payType === 'split' && sale.chequeApproved && (sale.chequeAmount ?? 0) > 0) {
+    return true
+  }
+  return false
+}
+
+export function getApprovedChequeAmount(sale: Sale): number {
+  if (sale.payType === 'split') return sale.chequeAmount ?? 0
+  return sale.chequeAmount ?? sale.billAmount
+}
+
+export function listApprovedCheques(data: AppData): Sale[] {
+  return data.sales
+    .filter(isApprovedChequeSale)
+    .sort(
+      (a, b) =>
+        new Date(b.updatedAt ?? b.createdAt).getTime() -
+        new Date(a.updatedAt ?? a.createdAt).getTime(),
+    )
+}
+
+function revertPendingPayTypes(sale: Sale): { payType: PayType; pendingPayType: PayType } {
+  if (sale.pendingPayType === 'credit') {
+    return { payType: 'credit', pendingPayType: 'credit' }
+  }
+  return { payType: 'cheque', pendingPayType: 'cheque' }
+}
+
+export function cancelApprovedCheque(data: AppData, id: string): AppData {
+  const sale = data.sales.find((s) => s.id === id)
+  if (!sale || !isApprovedChequeSale(sale)) return data
+
+  const now = new Date().toISOString()
+
+  if (sale.payType === 'split') {
+    const chequeAmt = sale.chequeAmount ?? 0
+    if (chequeAmt <= 0) return data
+
+    const bankOnly = Math.max(0, (sale.bankAmount ?? 0) - chequeAmt)
+    const pendingCheque: Sale = {
+      id: crypto.randomUUID(),
+      billAmount: chequeAmt,
+      originalBillAmount: sale.originalBillAmount ?? sale.billAmount,
+      paidAmount: 0,
+      changeAmount: 0,
+      payType: 'cheque',
+      pendingPayType: 'cheque',
+      parentSplitId: sale.id,
+      customerName: sale.customerName,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    const next = {
+      ...data,
+      sales: [
+        pendingCheque,
+        ...data.sales.map((s) =>
+          s.id === id
+            ? {
+                ...s,
+                bankAmount: bankOnly > 0 ? bankOnly : undefined,
+                chequeAmount: undefined,
+                chequeApproved: undefined,
+                updatedAt: now,
+              }
+            : s,
+        ),
+      ],
+    }
+    saveData(next)
+    return next
+  }
+
+  const revert = revertPendingPayTypes(sale)
+  const next = {
+    ...data,
+    sales: data.sales.map((s) =>
+      s.id === id
+        ? {
+            ...s,
+            status: 'pending' as const,
+            payType: revert.payType,
+            pendingPayType: revert.pendingPayType,
+            paidAmount: 0,
+            changeAmount: 0,
+            chequeApproved: undefined,
+            bankAmount: undefined,
+            chequeAmount: revert.payType === 'cheque' ? s.chequeAmount ?? s.billAmount : undefined,
+            updatedAt: now,
+          }
+        : s,
+    ),
+  }
+  saveData(next)
+  return next
+}
+
 export function collectPendingBill(
   data: AppData,
   id: string,
