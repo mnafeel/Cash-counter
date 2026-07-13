@@ -226,9 +226,13 @@ export default function Home() {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }, [data, deleteRecordFilter, deleteRecordSearch])
 
-  function handleDeleteRecord(type: HistoryItemType, id: string) {
+  function handleDeleteRecord(
+    type: HistoryItemType,
+    id: string,
+    groupSaleIds?: string[],
+  ) {
     if (!confirm('Delete this record? Balances will be updated.')) return
-    if (type === 'sale') removeSale(id)
+    if (type === 'sale') removeSale(id, groupSaleIds)
     else removeExpense(id)
   }
 
@@ -1039,7 +1043,7 @@ export default function Home() {
                     <button
                       type="button"
                       className="home-delete-btn"
-                      onClick={() => handleDeleteRecord(item.type, item.id)}
+                      onClick={() => handleDeleteRecord(item.type, item.id, item.groupSaleIds)}
                       aria-label="Delete record"
                     >
                       ✕

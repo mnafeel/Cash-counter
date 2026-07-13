@@ -262,8 +262,32 @@ export function setOpeningBalance(data: AppData, amount: number): AppData {
   return next
 }
 
-export function deleteSale(data: AppData, id: string): AppData {
-  const next = { ...data, sales: data.sales.filter((s) => s.id !== id) }
+export function deleteSale(
+  data: AppData,
+  id: string,
+  relatedSaleIds?: string[],
+): AppData {
+  const idsToRemove = new Set<string>()
+
+  function addSaleTree(saleId: string) {
+    if (!saleId || saleId.startsWith('split-group-')) return
+    const sale = data.sales.find((s) => s.id === saleId)
+    if (!sale || idsToRemove.has(saleId)) return
+    idsToRemove.add(saleId)
+    for (const child of data.sales) {
+      if (child.parentSplitId === saleId) addSaleTree(child.id)
+    }
+  }
+
+  if (relatedSaleIds?.length) {
+    for (const saleId of relatedSaleIds) addSaleTree(saleId)
+  } else {
+    addSaleTree(id)
+  }
+
+  if (idsToRemove.size === 0) return data
+
+  const next = { ...data, sales: data.sales.filter((s) => !idsToRemove.has(s.id)) }
   saveData(next)
   return next
 }

@@ -120,7 +120,7 @@ interface CashContextValue {
   updateOpeningBalance: (amount: number) => void
   updateOpeningBankBalance: (amount: number) => void
   updateHomePin: (pin: string) => void
-  removeSale: (id: string) => void
+  removeSale: (id: string, relatedSaleIds?: string[]) => void
   removeExpense: (id: string) => void
   cancelApprovedCheque: (id: string) => void
   updateHistoryName: (
@@ -353,8 +353,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => setOpeningBalance(prev, amount))
   }, [])
 
-  const removeSale = useCallback((id: string) => {
-    setData((prev) => deleteSale(prev, id))
+  const removeSale = useCallback((id: string, relatedSaleIds?: string[]) => {
+    setData((prev) => deleteSale(prev, id, relatedSaleIds))
   }, [])
 
   const removeExpense = useCallback((id: string) => {
