@@ -74,6 +74,26 @@ function getPaidSaleBreakdown(sale: Sale | undefined): {
   return { cash: 0, bank: 0, cheque: 0, total: sale.billAmount }
 }
 
+function getSplitParentSale(
+  sales: Sale[],
+  opts: {
+    collectingCreditId: string | null
+    collectingChequeId: string | null
+    loadedPendingId: string | null
+  },
+): Sale | undefined {
+  let parentId: string | undefined
+  if (opts.collectingCreditId) {
+    parentId = sales.find((sale) => sale.id === opts.collectingCreditId)?.parentSplitId
+  } else if (opts.collectingChequeId) {
+    parentId = sales.find((sale) => sale.id === opts.collectingChequeId)?.parentSplitId
+  } else if (opts.loadedPendingId) {
+    parentId = sales.find((sale) => sale.id === opts.loadedPendingId)?.parentSplitId
+  }
+  if (!parentId) return undefined
+  return sales.find((sale) => sale.id === parentId)
+}
+
 type SavedAction = 'collect' | 'pending' | null
 
 export default function Counter() {
@@ -286,9 +306,33 @@ export default function Counter() {
     !collectingCreditId &&
     !collectingChequeId
 
+  const splitParentSale = useMemo(
+    () =>
+      getSplitParentSale(data.sales, {
+        collectingCreditId,
+        collectingChequeId,
+        loadedPendingId,
+      }),
+    [data.sales, collectingCreditId, collectingChequeId, loadedPendingId],
+  )
+
+  const splitParentPriorBreakdown = useMemo(
+    () =>
+      getPaidSaleBreakdown(
+        splitParentSale?.status === 'paid' ? splitParentSale : undefined,
+      ),
+    [splitParentSale],
+  )
+
+  const splitParentPriorPaid = splitParentPriorBreakdown.total
+  const splitParentCashPrior = splitParentPriorBreakdown.cash
+
   const splitOriginCollect =
-    Boolean(originalBillHint && loadedPendingId) &&
-    (collectingCreditId || isLoadedChequeSplitCollect)
+    Boolean(originalBillHint) &&
+    (collectingCreditId ||
+      collectingChequeId ||
+      isLoadedChequeSplitCollect ||
+      (loadedPendingId != null && balanceOnlyMode))
 
   const showSplitPaidTotal = showFullSplitGrid
 
@@ -389,15 +433,23 @@ export default function Counter() {
   const splitPaidTotalDisplay = (() => {
     if (showFullSplitGrid) {
       if (splitPaidActive > 0) return splitPaidActive
-      if (collectingCreditId || collectingChequeId || (balanceOnlyMode && payType === 'split')) return 0
+      if (collectingCreditId) return creditCollectDueAmount
+      if (collectingChequeId) return chequeCollectDueAmount
+      if (balanceOnlyMode && payType === 'split') return 0
       return splitTotal > 0 ? splitTotal : 0
+    }
+    if (collectingCreditId) {
+      return paidAmount > 0 ? paidAmount : 0
+    }
+    if (collectingChequeId) {
+      return paidAmount > 0 ? paidAmount : 0
     }
     if (splitOriginCollect && (collectingCreditId || collectingChequeId)) {
       return paidAmount > 0 ? paidAmount : 0
     }
     if (isLoadedChequeSplitCollect) {
       if (splitPaidActive > 0) return splitPaidActive
-      return 0
+      return splitTotal > 0 ? splitTotal : 0
     }
     return 0
   })()
@@ -427,6 +479,13 @@ export default function Counter() {
       splitCreditPaidBank > 0 ||
       splitCreditPaidCheque > 0)
 
+  const showParentPriorPaidInPaidTotal =
+    splitParentPriorPaid > 0 &&
+    (collectingCreditId ||
+      collectingChequeId ||
+      isLoadedChequeSplitCollect ||
+      splitOriginCollect)
+
   const showSplitDueHint =
     showSplitPaidTotal &&
     (splitDueDenominator > 0 || (originalBillHint ?? 0) > 0) &&
@@ -437,12 +496,17 @@ export default function Counter() {
       showPriorChequeInPaidTotal ||
       showPendingChequeInPaidTotal ||
       showPendingCreditInPaidTotal ||
-      showPaidCreditInPaidTotal)
+      showPaidCreditInPaidTotal ||
+      showParentPriorPaidInPaidTotal)
 
   const splitPaidTotalBill = collectingCreditId
-    ? creditCollectDueAmount
+    ? showFullSplitGrid
+      ? originalBillHint ?? creditCollectDueAmount
+      : creditCollectDueAmount
     : collectingChequeId
-      ? chequeCollectDueAmount
+      ? showFullSplitGrid
+        ? originalBillHint ?? chequeCollectDueAmount
+        : chequeCollectDueAmount
       : originalBillHint && originalBillHint > splitDueDenominator
         ? originalBillHint
         : splitDueDenominator
@@ -1019,13 +1083,12 @@ export default function Counter() {
   function handlePayTypeChange(type: PayType) {
     if (collectingCreditId) {
       if (!creditCollectPayTypes.includes(type)) return
-      const due = balanceDueAmount ?? parseAmount(billStr)
-      setPaidStr(String(due))
       setPaymentStep(true)
 
       if (type === 'credit' || type === 'split') {
         setPayType('split')
         setGiveStr('')
+        setPaidStr('')
         setCashSplitStr('')
         setBankSplitStr('')
         setChequeSplitStr('')
@@ -1038,34 +1101,16 @@ export default function Counter() {
       setCashSplitStr('')
       setBankSplitStr('')
       setChequeSplitStr('')
-      setCreditSplitStr(formatSplitPart(creditCollectDueAmount))
+      setCreditSplitStr('')
 
       if (type === 'cash') {
         setGiveStr('')
-        setCashSplitStr('')
-        setBankSplitStr('')
-        setChequeSplitStr('')
-        setCreditSplitStr('')
-        setActiveField('give')
-        return
-      }
-
-      if (type === 'bank') {
-        setGiveStr('')
-        setCashSplitStr('')
-        setBankSplitStr('')
-        setChequeSplitStr('')
-        setCreditSplitStr('')
         setActiveField('paid')
         return
       }
 
-      if (type === 'cheque') {
+      if (type === 'bank' || type === 'cheque') {
         setGiveStr('')
-        setCashSplitStr('')
-        setBankSplitStr('')
-        setChequeSplitStr('')
-        setCreditSplitStr('')
         setActiveField('paid')
       }
       return
@@ -1073,14 +1118,13 @@ export default function Counter() {
 
     if (collectingChequeId) {
       if (!CHEQUE_COLLECT_PAY_TYPES.includes(type)) return
-      const due = balanceDueAmount ?? parseAmount(billStr)
-      setPaidStr(String(due))
       setPaymentStep(true)
 
       if (type === 'credit') {
         setChequeCollectCreditMode(true)
         setPayType('split')
         setGiveStr('')
+        setPaidStr('')
         setCashSplitStr('')
         setBankSplitStr('')
         setChequeSplitStr('')
@@ -1093,6 +1137,7 @@ export default function Counter() {
         setChequeCollectCreditMode(false)
         setPayType('split')
         setGiveStr('')
+        setPaidStr('')
         setCashSplitStr('')
         setBankSplitStr('')
         setChequeSplitStr('')
@@ -1110,7 +1155,7 @@ export default function Counter() {
 
       if (type === 'cash') {
         setGiveStr('')
-        setActiveField('give')
+        setActiveField('paid')
         return
       }
 
@@ -1371,7 +1416,7 @@ export default function Counter() {
     setOriginalBillHint(isBalanceBill && original !== due ? original : null)
     setBillStr(String(isBalanceBill ? due : original))
     setGiveStr('')
-    setPaidStr(String(due))
+    setPaidStr('')
     setRoundOffAmount(null)
     setCustomerName(bill.customerName ?? '')
     setPayType(type)
@@ -1416,7 +1461,7 @@ export default function Counter() {
 
       if (parent?.payType === 'split') {
         setBillStr(String(due))
-        setPaidStr(String(due))
+        setPaidStr('')
         setCashSplitStr('')
         setBankSplitStr('')
         setCreditSplitStr(formatSplitPart(due))
@@ -1448,7 +1493,7 @@ export default function Counter() {
         )
       } else {
         setPayType('cash')
-        setActiveField('give')
+        setActiveField('paid')
       }
 
       setCollectingCreditId(bill.id)
@@ -1473,7 +1518,7 @@ export default function Counter() {
         applySplitCreditPaidBreakdown(siblings.creditPaidSale)
         setSiblingChequePendingId(null)
         setBillStr(String(due))
-        setPaidStr(String(due))
+        setPaidStr('')
         setCashSplitStr('')
         setBankSplitStr('')
         setBalanceDueAmount(due)
@@ -1509,6 +1554,7 @@ export default function Counter() {
         setChequeCollectDue(due)
         setChequeCollectCreditMode(false)
         setBalanceDueAmount(due)
+        setPaidStr('')
         setPayType('cheque')
         setActiveField('paid')
         return
@@ -2546,19 +2592,9 @@ export default function Counter() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isSaving, isValid, canSavePending])
 
-  const creditCollectGridClass =
-    creditCollectCashMode || creditCollectBankMode
-      ? 'counter-amounts--split counter-amounts--split-4'
-      : creditCollectChequeMode
-        ? 'counter-amounts--split counter-amounts--split-5'
-        : ''
+  const creditCollectGridClass = ''
 
-  const chequeCollectGridClass =
-    chequeCollectCashMode || chequeCollectBankMode
-      ? 'counter-amounts--split counter-amounts--split-4'
-      : chequeCollectChequeMode
-        ? 'counter-amounts--split counter-amounts--split-5'
-        : ''
+  const chequeCollectGridClass = ''
 
   return (
     <div className="counter-page">
@@ -2631,6 +2667,11 @@ export default function Counter() {
                   }}
                   locked={splitFieldLocked.cash}
                   approved={cashShowsCreditPaid}
+                  priorApprovedAmount={
+                    splitParentCashPrior > 0 && cashSplitAmount <= 0 && !cashShowsCreditPaid
+                      ? splitParentCashPrior
+                      : undefined
+                  }
                   remainingAmount={creditCollectRemaining}
                   compact
                 />
@@ -2712,6 +2753,9 @@ export default function Counter() {
                   label="Credit"
                   value={formatSplitPart(creditCollectDisplayAmount)}
                   locked
+                  priorApprovedAmount={
+                    splitParentCashPrior > 0 ? splitParentCashPrior : undefined
+                  }
                   compact
                 />
                 ) : collectingChequeId && chequeCollectCreditMode ? (
@@ -2738,16 +2782,18 @@ export default function Counter() {
               </>
             ) : creditCollectCashMode ? (
               <AmountDisplay
-                label="Credit"
-                value={formatSplitPart(creditCollectDueAmount)}
-                locked
+                label="Customer Paid"
+                value={paidStr}
+                active={activeField === 'paid'}
+                onSelect={() => setActiveField('paid')}
                 compact
               />
             ) : chequeCollectCashMode ? (
               <AmountDisplay
-                label="Cheque"
-                value={formatSplitPart(chequeCollectDueAmount)}
-                locked
+                label="Customer Paid"
+                value={paidStr}
+                active={activeField === 'paid'}
+                onSelect={() => setActiveField('paid')}
                 compact
               />
             ) : creditCollectBankMode ? (
@@ -2759,21 +2805,13 @@ export default function Counter() {
                 compact
               />
             ) : creditCollectChequeMode ? (
-              <>
-                <AmountDisplay
-                  label="Cheque"
-                  value={paidStr}
-                  active={activeField === 'paid'}
-                  onSelect={() => setActiveField('paid')}
-                  compact
-                />
-                <div
-                  className={`counter-readonly ${billStr ? 'counter-readonly--mirror' : ''}`}
-                >
-                  <span className="counter-readonly-label">Customer Paid</span>
-                  <span className="counter-readonly-value">{customerPaidPreview}</span>
-                </div>
-              </>
+              <AmountDisplay
+                label="Cheque"
+                value={paidStr}
+                active={activeField === 'paid'}
+                onSelect={() => setActiveField('paid')}
+                compact
+              />
             ) : chequeCollectBankMode ? (
               <AmountDisplay
                 label="Bank"
@@ -2783,21 +2821,13 @@ export default function Counter() {
                 compact
               />
             ) : chequeCollectChequeMode ? (
-              <>
-                <AmountDisplay
-                  label="Cheque"
-                  value={paidStr}
-                  active={activeField === 'paid'}
-                  onSelect={() => setActiveField('paid')}
-                  compact
-                />
-                <div
-                  className={`counter-readonly ${billStr ? 'counter-readonly--mirror' : ''}`}
-                >
-                  <span className="counter-readonly-label">Customer Paid</span>
-                  <span className="counter-readonly-value">{customerPaidPreview}</span>
-                </div>
-              </>
+              <AmountDisplay
+                label="Cheque"
+                value={paidStr}
+                active={activeField === 'paid'}
+                onSelect={() => setActiveField('paid')}
+                compact
+              />
             ) : balanceOnlyMode && payType === 'cheque' && !collectingBalanceBillId ? (
               <div className="counter-readonly counter-readonly--balance">
                 <span className="counter-readonly-label">Cheque</span>
@@ -2839,10 +2869,17 @@ export default function Counter() {
                 showPriorChequeInPaidTotal ||
                 showPendingChequeInPaidTotal ||
                 showPendingCreditInPaidTotal ||
-                showPaidCreditInPaidTotal ? (
+                showPaidCreditInPaidTotal ||
+                showParentPriorPaidInPaidTotal ? (
                   showSplitDueHint ? (
                     <>
                       {formatMoney(splitPaidTotalDisplay)}
+                      {showParentPriorPaidInPaidTotal ? (
+                        <span className="counter-split-total-prior">
+                          {' '}
+                          + ✓{formatMoney(splitParentPriorPaid)}
+                        </span>
+                      ) : null}
                       {showPriorChequeInPaidTotal ? (
                         <span className="counter-split-total-prior">
                           {' '}
