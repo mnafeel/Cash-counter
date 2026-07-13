@@ -95,7 +95,17 @@ function getSplitParentSale(
 }
 
 function getPendingBillPayType(bill: Sale): PayType {
-  return bill.pendingPayType ?? bill.payType ?? 'cash'
+  if (bill.pendingPayType === 'credit' || bill.pendingPayType === 'cheque') {
+    return bill.pendingPayType
+  }
+  if (bill.payType === 'credit' || bill.payType === 'cheque') {
+    return bill.payType
+  }
+  if (bill.status === 'pending' && bill.parentSplitId) {
+    if ((bill.chequeAmount ?? 0) > 0 && !(bill.creditAmount ?? 0)) return 'cheque'
+    if ((bill.creditAmount ?? 0) > 0 && !(bill.chequeAmount ?? 0)) return 'credit'
+  }
+  return bill.payType ?? 'cash'
 }
 
 function isChequePendingBill(bill: Sale): boolean {
@@ -104,6 +114,14 @@ function isChequePendingBill(bill: Sale): boolean {
 
 function isCreditPendingBill(bill: Sale): boolean {
   return getPendingBillPayType(bill) === 'credit'
+}
+
+function resolveLoadedPendingBill(
+  sales: Sale[],
+  id: string | null,
+): Sale | undefined {
+  if (!id) return undefined
+  return sales.find((sale) => sale.id === id)
 }
 
 type SavedAction = 'collect' | 'pending' | null
@@ -219,6 +237,27 @@ export default function Counter() {
 
   const balanceOnlyMode = balanceDueAmount != null && balanceDueAmount > 0
 
+  const loadedPendingBill = useMemo(
+    () => resolveLoadedPendingBill(data.sales, loadedPendingId),
+    [data.sales, loadedPendingId],
+  )
+
+  const effectiveCollectingChequeId = useMemo((): string | null => {
+    if (collectingChequeId) return collectingChequeId
+    if (loadedPendingBill && isChequePendingBill(loadedPendingBill)) {
+      return loadedPendingBill.id
+    }
+    return null
+  }, [collectingChequeId, loadedPendingBill])
+
+  const effectiveCollectingCreditId = useMemo((): string | null => {
+    if (collectingCreditId) return collectingCreditId
+    if (loadedPendingBill && isCreditPendingBill(loadedPendingBill)) {
+      return loadedPendingBill.id
+    }
+    return null
+  }, [collectingCreditId, loadedPendingBill])
+
   const creditCollectPayTypes = useMemo(
     (): PayType[] => (collectingCreditId ? CREDIT_COLLECT_PAY_TYPES : COUNTER_PAY_TYPES),
     [collectingCreditId],
@@ -226,11 +265,11 @@ export default function Counter() {
 
   const balanceCollectPayTypes = useMemo((): PayType[] => {
     if (collectingCreditId) return CREDIT_COLLECT_PAY_TYPES
-    if (collectingChequeId) return CHEQUE_COLLECT_PAY_TYPES
+    if (effectiveCollectingChequeId) return CHEQUE_COLLECT_PAY_TYPES
     return COUNTER_PAY_TYPES
-  }, [collectingCreditId, collectingChequeId])
+  }, [collectingCreditId, effectiveCollectingChequeId])
 
-  const collectingBalanceBillId = collectingCreditId ?? collectingChequeId
+  const collectingBalanceBillId = collectingCreditId ?? effectiveCollectingChequeId
 
   const billAmount = parseAmount(billStr)
   const giveAmount = parseAmount(giveStr)
@@ -243,8 +282,8 @@ export default function Counter() {
     splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : chequeSplitAmount
   const dueAmount = roundOffAmount ?? billAmount
 
-  const creditCollectLayout = Boolean(collectingCreditId)
-  const chequeCollectLayout = Boolean(collectingChequeId)
+  const creditCollectLayout = Boolean(collectingCreditId || effectiveCollectingCreditId)
+  const chequeCollectLayout = Boolean(effectiveCollectingChequeId)
   const showFullSplitGrid = payType === 'split'
   const creditCollectCashMode = creditCollectLayout && payType === 'cash'
   const creditCollectBankMode = creditCollectLayout && payType === 'bank'
@@ -315,21 +354,18 @@ export default function Counter() {
   ])
 
   const loadedChequeChildOfSplit = useMemo(() => {
-    if (!loadedPendingId) return false
-    const bill = data.sales.find((sale) => sale.id === loadedPendingId)
-    if (!bill || !isChequePendingBill(bill)) return false
-    const parent = bill.parentSplitId
-      ? data.sales.find((sale) => sale.id === bill.parentSplitId)
-      : undefined
-    return parent?.payType === 'split'
-  }, [loadedPendingId, data.sales])
+    if (!loadedPendingBill || !isChequePendingBill(loadedPendingBill)) return false
+    if (!loadedPendingBill.parentSplitId) return false
+    const parent = data.sales.find((sale) => sale.id === loadedPendingBill.parentSplitId)
+    return Boolean(parent)
+  }, [loadedPendingBill, data.sales])
 
   const isLoadedChequeSplitCollect =
     payType === 'split' &&
     balanceOnlyMode &&
     loadedPendingId != null &&
     !collectingCreditId &&
-    Boolean(collectingChequeId) &&
+    Boolean(effectiveCollectingChequeId) &&
     loadedChequeChildOfSplit &&
     !chequeCollectCreditMode
 
@@ -1143,7 +1179,14 @@ export default function Counter() {
       return
     }
 
-    if (collectingChequeId) {
+    if (collectingChequeId || effectiveCollectingChequeId) {
+      if (!collectingChequeId && effectiveCollectingChequeId) {
+        setCollectingChequeId(effectiveCollectingChequeId)
+        if (loadedPendingBill) {
+          setChequeCollectDue(loadedPendingBill.billAmount)
+          setBalanceDueAmount(loadedPendingBill.billAmount)
+        }
+      }
       if (!CHEQUE_COLLECT_PAY_TYPES.includes(type)) return
       setPaymentStep(true)
 
@@ -1193,7 +1236,7 @@ export default function Counter() {
       return
     }
 
-    if (balanceOnlyMode) return
+    if (balanceOnlyMode && !collectingBalanceBillId) return
     setPayType(type)
     if (type !== 'cash') {
       setCollectingCreditId(null)
@@ -1425,26 +1468,31 @@ export default function Counter() {
   function loadPendingBill(bill: Sale) {
     const due = bill.billAmount
     const original = bill.originalBillAmount ?? bill.billAmount
+    const isCheque = isChequePendingBill(bill)
+    const isCredit = isCreditPendingBill(bill)
     const type = getPendingBillPayType(bill)
-    const isBalanceBill = type === 'cheque' || type === 'credit'
+    const isBalanceBill = isCheque || isCredit
 
     setChequeListOpen(false)
     setCreditListOpen(false)
     setHighlightedChequeIndex(-1)
     setHighlightedCreditIndex(-1)
 
-    if (type === 'cheque') {
+    if (isCheque) {
       setCollectingCreditId(null)
-    }
-    if (type === 'credit') {
-      setCollectingChequeId(null)
-    }
-    if (type !== 'cheque') {
+      setCollectingChequeId(bill.id)
+      setChequeCollectDue(due)
+      setChequeCollectCreditMode(false)
+    } else {
       setCollectingChequeId(null)
       setChequeCollectDue(0)
       setChequeCollectCreditMode(false)
     }
-    if (type !== 'credit') {
+    if (isCredit) {
+      setCollectingChequeId(null)
+      setChequeCollectDue(0)
+      setChequeCollectCreditMode(false)
+    } else {
       setCollectingCreditId(null)
       setCreditCollectDue(0)
     }
@@ -1461,43 +1509,23 @@ export default function Counter() {
     setPaymentStep(true)
     setSavedAction(null)
 
-    if (type === 'split') {
-      setSplitSiblingChequePending(0)
-      clearSplitCreditPaidBreakdown()
-      setCashSplitStr(bill.cashAmount ? formatSplitPart(bill.cashAmount) : '')
-      if (bill.chequeApproved && (bill.chequeAmount ?? 0) > 0) {
-        setSplitChequeApprovedAmount(bill.chequeAmount ?? 0)
-        setChequeSplitStr('')
-        const bankOnly = Math.max(0, (bill.bankAmount ?? 0) - (bill.chequeAmount ?? 0))
-        setBankSplitStr(bankOnly ? formatSplitPart(bankOnly) : '')
-      } else {
-        setSplitChequeApprovedAmount(0)
-        setBankSplitStr(bill.bankAmount ? formatSplitPart(bill.bankAmount) : '')
-        setChequeSplitStr(bill.chequeAmount ? formatSplitPart(bill.chequeAmount) : '')
-      }
-      setCreditSplitStr(bill.creditAmount ? formatSplitPart(bill.creditAmount) : '')
-      setSplitSiblingCreditPending(0)
-      setActiveField('cashSplit')
-      return
-    }
-
-    setCashSplitStr('')
-    setBankSplitStr('')
-    setChequeSplitStr('')
-    setCreditSplitStr('')
-    setSplitChequeApprovedAmount(0)
-    setSplitSiblingChequePending(0)
-    setSplitSiblingCreditPending(0)
-    clearSplitCreditPaidBreakdown()
-    setSiblingChequePendingId(null)
-
-    if (type === 'credit') {
+    if (isCredit) {
       const parent = bill.parentSplitId
         ? data.sales.find((sale) => sale.id === bill.parentSplitId)
         : undefined
       const siblings = findSiblingPending(bill)
 
-      if (parent?.payType === 'split') {
+      setCashSplitStr('')
+      setBankSplitStr('')
+      setChequeSplitStr('')
+      setCreditSplitStr('')
+      setSplitChequeApprovedAmount(0)
+      setSplitSiblingChequePending(0)
+      setSplitSiblingCreditPending(0)
+      clearSplitCreditPaidBreakdown()
+      setSiblingChequePendingId(null)
+
+      if (parent?.payType === 'split' || parent) {
         setBillStr(String(due))
         setPaidStr('')
         setCashSplitStr('')
@@ -1537,19 +1565,29 @@ export default function Counter() {
       setCollectingCreditId(bill.id)
       setCreditCollectDue(due)
       setBalanceDueAmount(due)
-      if (parent?.payType !== 'split') {
+      if (!parent) {
         setOriginalBillHint(original !== due ? original : null)
       }
       setPaymentStep(true)
       return
     }
 
-    if (type === 'cheque') {
+    if (isCheque) {
       const parent = bill.parentSplitId
         ? data.sales.find((sale) => sale.id === bill.parentSplitId)
         : undefined
 
-      if (parent?.payType === 'split') {
+      setCashSplitStr('')
+      setBankSplitStr('')
+      setChequeSplitStr('')
+      setCreditSplitStr('')
+      setSplitChequeApprovedAmount(0)
+      setSplitSiblingChequePending(0)
+      setSplitSiblingCreditPending(0)
+      clearSplitCreditPaidBreakdown()
+      setSiblingChequePendingId(null)
+
+      if (parent) {
         const siblings = findSiblingPending(bill)
         setSplitSiblingChequePending(0)
         setSplitSiblingCreditPending(siblings.credit)
@@ -1597,6 +1635,26 @@ export default function Counter() {
       setPaidStr('')
       setPayType('cheque')
       setActiveField('paid')
+      return
+    }
+
+    if (type === 'split') {
+      setSplitSiblingChequePending(0)
+      clearSplitCreditPaidBreakdown()
+      setCashSplitStr(bill.cashAmount ? formatSplitPart(bill.cashAmount) : '')
+      if (bill.chequeApproved && (bill.chequeAmount ?? 0) > 0) {
+        setSplitChequeApprovedAmount(bill.chequeAmount ?? 0)
+        setChequeSplitStr('')
+        const bankOnly = Math.max(0, (bill.bankAmount ?? 0) - (bill.chequeAmount ?? 0))
+        setBankSplitStr(bankOnly ? formatSplitPart(bankOnly) : '')
+      } else {
+        setSplitChequeApprovedAmount(0)
+        setBankSplitStr(bill.bankAmount ? formatSplitPart(bill.bankAmount) : '')
+        setChequeSplitStr(bill.chequeAmount ? formatSplitPart(bill.chequeAmount) : '')
+      }
+      setCreditSplitStr(bill.creditAmount ? formatSplitPart(bill.creditAmount) : '')
+      setSplitSiblingCreditPending(0)
+      setActiveField('cashSplit')
       return
     }
 
@@ -2633,6 +2691,13 @@ export default function Counter() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isSaving, isValid, canSavePending])
 
+  const payTypeChipValue: PayType =
+    effectiveCollectingChequeId && chequeCollectCreditMode && payType === 'split'
+      ? 'credit'
+      : collectingCreditId && payType === 'split'
+        ? 'credit'
+        : payType
+
   const creditCollectGridClass = ''
 
   const chequeCollectGridClass = ''
@@ -3034,7 +3099,7 @@ export default function Counter() {
 
           <div className="counter-pay">
             <PayTypeChips
-              value={payType}
+              value={payTypeChipValue}
               onChange={handlePayTypeChange}
               options={collectingBalanceBillId ? balanceCollectPayTypes : COUNTER_PAY_TYPES}
               shortcutHint="Alt+A"
