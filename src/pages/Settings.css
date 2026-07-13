@@ -471,6 +471,49 @@ html[data-screen='tablet'] .settings-info {
   background: var(--brown-dark);
 }
 
+.settings-history-report {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+}
+
+.settings-history-report-head h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--cream);
+}
+
+.settings-history-report-head p {
+  margin: 2px 0 0;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.settings-history-report-btn {
+  min-height: 32px;
+  padding: 5px 12px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.settings-history-report-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-history-report-status {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--cream-dim);
+}
+
 .settings-cheque-cancel-head h3 {
   margin: 0;
   font-size: 0.82rem;

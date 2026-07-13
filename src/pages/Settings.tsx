@@ -21,6 +21,8 @@ import { backupNow, setBackupStatusListener } from '../firebase/sync'
 import type { AppData } from '../types'
 import { getApprovedChequeAmount, listApprovedCheques } from '../storage/database'
 import { formatMoney, formatDate, parseAmount } from '../utils/format'
+import { buildHistoryItems } from '../utils/historyItems'
+import { downloadFullHistoryReport, printFullHistoryReportPdf } from '../utils/historyReport'
 import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
@@ -85,8 +87,10 @@ export default function Settings() {
   const [manualName, setManualName] = useState('')
   const [manualAmount, setManualAmount] = useState('')
   const [chequeCancelStatus, setChequeCancelStatus] = useState('')
+  const [historyReportStatus, setHistoryReportStatus] = useState('')
 
   const approvedCheques = useMemo(() => listApprovedCheques(data), [data.sales])
+  const historyRecordCount = useMemo(() => buildHistoryItems(data).length, [data])
 
   const firebaseBuilt = isFirebaseConfigured()
   const opening = parseAmount(openingStr)
@@ -144,6 +148,28 @@ export default function Settings() {
   const numpadHandlerRef = useRef(handleNumpad)
   numpadHandlerRef.current = handleNumpad
   useNumpadKeyboard((action) => numpadHandlerRef.current(action))
+
+  function historyReportMeta() {
+    return {
+      exportedAt: new Date().toISOString(),
+      openingCash: data.openingBalance,
+      openingBank: data.openingBankBalance ?? 0,
+      currentCash: balance,
+      currentBank: bankBalance,
+    }
+  }
+
+  function handleDownloadHistoryReport() {
+    downloadFullHistoryReport(data, historyReportMeta())
+    setHistoryReportStatus(`CSV downloaded · ${historyRecordCount} records`)
+    setTimeout(() => setHistoryReportStatus(''), 4000)
+  }
+
+  function handlePrintHistoryReportPdf() {
+    printFullHistoryReportPdf(data, historyReportMeta())
+    setHistoryReportStatus(`PDF ready · ${historyRecordCount} records · choose Save as PDF`)
+    setTimeout(() => setHistoryReportStatus(''), 5000)
+  }
 
   function handleCancelApprovedCheque(id: string) {
     cancelApprovedCheque(id)
@@ -420,6 +446,35 @@ export default function Settings() {
                 <span className="settings-highlight">{formatMoney(bankBalance)}</span>
               </div>
             </div>
+
+            <section className="settings-history-report">
+              <div className="settings-history-report-head">
+                <h3>Full history report</h3>
+                <p>
+                  Download all bills, expenses, deposits, and transfers ({historyRecordCount}{' '}
+                  records) as CSV or PDF.
+                </p>
+              </div>
+              <div className="settings-history-report-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary settings-history-report-btn"
+                  onClick={handleDownloadHistoryReport}
+                >
+                  Download CSV
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary settings-history-report-btn"
+                  onClick={handlePrintHistoryReportPdf}
+                >
+                  Download PDF
+                </button>
+              </div>
+              {historyReportStatus ? (
+                <p className="settings-history-report-status">{historyReportStatus}</p>
+              ) : null}
+            </section>
 
             <section className="settings-cheque-cancel">
               <div className="settings-cheque-cancel-head">

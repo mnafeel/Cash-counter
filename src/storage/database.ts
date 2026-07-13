@@ -65,6 +65,14 @@ export function clearAllLocalData(): AppData {
   return next
 }
 
+function splitSaleBankAmount(sale: Sale): number {
+  const bank = sale.bankAmount ?? 0
+  const cheque = sale.chequeAmount ?? 0
+  if (!sale.chequeApproved || cheque <= 0) return bank
+  const bankOnly = bank >= cheque ? bank - cheque : bank
+  return bankOnly + cheque
+}
+
 function saleCashToDrawer(sale: Sale): number {
   if (sale.status === 'pending') return 0
   if (sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque') return 0
@@ -99,7 +107,7 @@ function expenseCashToDrawer(expense: Expense): number {
 function saleBankToBalance(sale: Sale): number {
   if (sale.status === 'pending') return 0
   if (sale.payType === 'bank' || sale.payType === 'cheque') return sale.billAmount
-  if (sale.payType === 'split') return sale.bankAmount ?? 0
+  if (sale.payType === 'split') return splitSaleBankAmount(sale)
   return 0
 }
 
@@ -283,6 +291,16 @@ export function deleteSale(
     for (const saleId of relatedSaleIds) addSaleTree(saleId)
   } else {
     addSaleTree(id)
+  }
+
+  // Orphan split children share a parentSplitId with no parent sale — remove the whole group.
+  for (const saleId of [...idsToRemove]) {
+    const sale = data.sales.find((s) => s.id === saleId)
+    const parentId = sale?.parentSplitId
+    if (!parentId || data.sales.some((s) => s.id === parentId)) continue
+    for (const sibling of data.sales) {
+      if (sibling.parentSplitId === parentId) addSaleTree(sibling.id)
+    }
   }
 
   if (idsToRemove.size === 0) return data
