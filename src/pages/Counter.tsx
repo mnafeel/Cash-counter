@@ -8,6 +8,7 @@ import RoundTypeChips from '../components/RoundTypeChips'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import type { Sale } from '../types'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
+import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { getBillRoundOptions } from '../utils/roundSuggestions'
 import './Counter.css'
@@ -1547,7 +1548,7 @@ export default function Counter() {
     setGiveStr('')
     setPaidStr('')
     setRoundOffAmount(null)
-    setCustomerName(bill.customerName ?? '')
+    setCustomerName(getSaleCustomerName(bill, data.sales) ?? '')
     setPayType(type)
     setPaymentStep(true)
     setSavedAction(null)
@@ -3269,7 +3270,9 @@ export default function Counter() {
             </button>
             {chequeListOpen && chequePendingBills.length > 0 && (
               <ul ref={chequeListRef} className="counter-cheque-list" role="listbox">
-                {chequePendingBills.map((bill, index) => (
+                {chequePendingBills.map((bill, index) => {
+                  const billName = getSaleCustomerName(bill, data.sales)
+                  return (
                   <li key={bill.id}>
                     <button
                       type="button"
@@ -3281,15 +3284,16 @@ export default function Counter() {
                       <span className="counter-cheque-item-amount">
                         {formatMoney(bill.billAmount)}
                       </span>
-                      {bill.customerName ? (
-                        <span className="counter-cheque-item-name">{bill.customerName}</span>
+                      {billName ? (
+                        <span className="counter-cheque-item-name">{billName}</span>
                       ) : null}
                       <span className="counter-cheque-item-date">
                         {formatDate(bill.updatedAt ?? bill.createdAt)}
                       </span>
                     </button>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
           </div>
@@ -3310,7 +3314,9 @@ export default function Counter() {
             </button>
             {creditListOpen && creditPendingBills.length > 0 && (
               <ul ref={creditListRef} className="counter-credit-list" role="listbox">
-                {creditPendingBills.map((bill, index) => (
+                {creditPendingBills.map((bill, index) => {
+                  const billName = getSaleCustomerName(bill, data.sales)
+                  return (
                   <li key={bill.id}>
                     <button
                       type="button"
@@ -3322,15 +3328,16 @@ export default function Counter() {
                       <span className="counter-credit-item-amount">
                         {formatMoney(bill.billAmount)}
                       </span>
-                      {bill.customerName ? (
-                        <span className="counter-credit-item-name">{bill.customerName}</span>
+                      {billName ? (
+                        <span className="counter-credit-item-name">{billName}</span>
                       ) : null}
                       <span className="counter-credit-item-date">
                         {formatDate(bill.updatedAt ?? bill.createdAt)}
                       </span>
                     </button>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
           </div>
@@ -3492,6 +3499,7 @@ export default function Counter() {
 
         <PendingBillsPanel
           bills={billPendingBills}
+          allSales={data.sales}
           onSelect={selectPendingBill}
           focused={pendingSectionFocus}
           highlightedBillId={

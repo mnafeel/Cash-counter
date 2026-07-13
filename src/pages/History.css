@@ -304,6 +304,18 @@
   opacity: 0.75;
 }
 
+.history-item-name--add {
+  border: 1px dashed var(--border);
+  cursor: pointer;
+  font: inherit;
+}
+
+.history-item-name--add:hover {
+  opacity: 1;
+  color: var(--cream);
+  border-color: var(--cream-dim);
+}
+
 .history-name-row {
   display: inline-flex;
   align-items: center;

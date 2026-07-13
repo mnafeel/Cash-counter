@@ -1,10 +1,12 @@
 import type { RefObject } from 'react'
 import type { Sale } from '../types'
 import { formatDate, formatMoney } from '../utils/format'
+import { getSaleCustomerName } from '../utils/saleCustomerName'
 import './PendingBillsPanel.css'
 
 interface PendingBillsPanelProps {
   bills: Sale[]
+  allSales?: Sale[]
   onSelect: (bill: Sale) => void
   focused?: boolean
   highlightedBillId?: string | null
@@ -13,6 +15,7 @@ interface PendingBillsPanelProps {
 }
 export default function PendingBillsPanel({
   bills,
+  allSales,
   onSelect,
   focused,
   highlightedBillId,
@@ -60,9 +63,10 @@ export default function PendingBillsPanel({
                     <span className="pending-bills-tag">💳 Credit</span>
                   ) : null}
                 </span>
-                {bill.customerName ? (
-                  <span className="pending-bills-name">{bill.customerName}</span>
-                ) : null}
+                {(() => {
+                  const name = getSaleCustomerName(bill, allSales ?? bills)
+                  return name ? <span className="pending-bills-name">{name}</span> : null
+                })()}
                 <span className="pending-bills-time">Created {formatDate(bill.createdAt)}</span>
                 {bill.updatedAt ? (
                   <span className="pending-bills-time pending-bills-time--updated">

@@ -221,7 +221,7 @@ export default function History() {
   }
 
   function saveEdit(item: HistoryItem) {
-    updateHistoryName(item.type, item.id, editValue)
+    updateHistoryName(item.type, item.id, editValue, item.groupSaleIds)
     cancelEdit()
   }
 
@@ -431,7 +431,16 @@ export default function History() {
                         {item.name ? (
                           <span className="history-item-name">{item.name}</span>
                         ) : (
-                          <span className="history-item-name history-item-name--empty">No name</span>
+                          <button
+                            type="button"
+                            className="history-item-name history-item-name--empty history-item-name--add"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              startEdit(item)
+                            }}
+                          >
+                            Add name
+                          </button>
                         )}
                         <button
                           type="button"

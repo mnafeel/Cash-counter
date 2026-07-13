@@ -593,6 +593,12 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
     completedAt: paidAt,
     paymentMode: salePaymentMode(sale),
     paymentModes: [salePaymentMode(sale)],
+    groupSaleIds:
+      isCreditBill(sale) || isChequeBill(sale)
+        ? sale.parentSplitId
+          ? [sale.parentSplitId, sale.id]
+          : [sale.id]
+        : undefined,
   }
 }
 

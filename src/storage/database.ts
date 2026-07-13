@@ -1,5 +1,6 @@
 import type { AppData, AppTheme, Expense, PayType, Sale, TransferDirection } from '../types'
 import { STORAGE_KEY } from '../types'
+import { collectSplitNameTargets } from '../utils/saleCustomerName'
 import { notifyDataChanged } from '../firebase/sync'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
@@ -269,13 +270,32 @@ export function updateSaleCustomerName(
   data: AppData,
   id: string,
   customerName: string,
+  relatedSaleIds?: string[],
 ): AppData {
   const trimmed = customerName.trim()
   const now = new Date().toISOString()
+  const targets = new Set<string>()
+
+  if (data.sales.some((sale) => sale.id === id)) {
+    for (const saleId of collectSplitNameTargets(data, id)) targets.add(saleId)
+  }
+
+  if (relatedSaleIds) {
+    for (const saleId of relatedSaleIds) {
+      if (data.sales.some((sale) => sale.id === saleId)) {
+        for (const relatedId of collectSplitNameTargets(data, saleId)) {
+          targets.add(relatedId)
+        }
+      }
+    }
+  }
+
+  if (targets.size === 0) return data
+
   const next = {
     ...data,
     sales: data.sales.map((s) =>
-      s.id === id
+      targets.has(s.id)
         ? {
             ...s,
             customerName: trimmed || undefined,

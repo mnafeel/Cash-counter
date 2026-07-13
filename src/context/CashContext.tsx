@@ -121,7 +121,12 @@ interface CashContextValue {
   removeSale: (id: string) => void
   removeExpense: (id: string) => void
   cancelApprovedCheque: (id: string) => void
-  updateHistoryName: (type: 'sale' | 'expense' | 'deposit' | 'transfer', id: string, name: string) => void
+  updateHistoryName: (
+    type: 'sale' | 'expense' | 'deposit' | 'transfer',
+    id: string,
+    name: string,
+    relatedSaleIds?: string[],
+  ) => void
   replaceAllData: (data: AppData) => void
   resetAllData: () => void
   refresh: () => void
@@ -355,9 +360,16 @@ export function CashProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const updateHistoryName = useCallback(
-    (type: 'sale' | 'expense' | 'deposit' | 'transfer', id: string, name: string) => {
+    (
+      type: 'sale' | 'expense' | 'deposit' | 'transfer',
+      id: string,
+      name: string,
+      relatedSaleIds?: string[],
+    ) => {
       setData((prev) =>
-        type === 'sale' ? updateSaleCustomerName(prev, id, name) : updateExpenseName(prev, id, name),
+        type === 'sale'
+          ? updateSaleCustomerName(prev, id, name, relatedSaleIds)
+          : updateExpenseName(prev, id, name),
       )
     },
     [],
