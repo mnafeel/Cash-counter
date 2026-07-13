@@ -16,6 +16,8 @@ export interface Sale {
   chequeApproved?: boolean
   /** Pending credit/cheque bill created from a split sale. */
   parentSplitId?: string
+  /** Original bill kind when a credit/cheque pending bill is collected another way. */
+  pendingPayType?: PayType
   status?: SaleStatus
   customerName?: string
   /** Origin when imported from Tally Prime (deduped by sourceId). */
