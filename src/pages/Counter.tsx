@@ -327,7 +327,11 @@ export default function Counter() {
     if (!collectingChequeId || chequeCollectCreditMode) return 0
     return Math.max(
       0,
-      chequeCollectDueAmount - cashSplitAmount - bankSplitAmount - chequeSplitAmount,
+      chequeCollectDueAmount -
+        cashSplitAmount -
+        bankSplitAmount -
+        chequeSplitAmount -
+        creditSplitAmount,
     )
   }, [
     collectingChequeId,
@@ -336,6 +340,7 @@ export default function Counter() {
     cashSplitAmount,
     bankSplitAmount,
     chequeSplitAmount,
+    creditSplitAmount,
   ])
 
   const chequeCollectCreditRemainder = useMemo(() => {
@@ -641,7 +646,10 @@ export default function Counter() {
             ? chequeCollectCreditRemainder === 0 &&
               (cashSplitAmount > 0 || bankSplitAmount > 0 || chequeSplitAmount > 0)
             : chequeCollectDisplayAmount === 0 &&
-              (cashSplitAmount > 0 || bankSplitAmount > 0 || chequeSplitAmount > 0)
+              (cashSplitAmount > 0 ||
+                bankSplitAmount > 0 ||
+                chequeSplitAmount > 0 ||
+                creditSplitAmount > 0)
           : payType === 'cash'
             ? paymentStep && paidAmount > 0 && giveAmount >= paidAmount
             : payType === 'bank' || payType === 'cheque'
@@ -676,7 +684,9 @@ export default function Counter() {
   const splitHasCheque = splitHasNewChequePending || splitHasChequeApproved
   const splitHasBoth = splitHasCredit && splitHasNewChequePending
   const splitHasExtras =
-    (splitHasCredit || splitHasCheque) && !collectingBalanceBillId
+    (splitHasCredit || splitHasCheque) &&
+    (!collectingBalanceBillId ||
+      (Boolean(collectingChequeId) && payType === 'split' && !chequeCollectCreditMode))
   const isSplitComplete = payType === 'split' && isValid
 
   const canSendSplitCreditPending =
@@ -708,7 +718,9 @@ export default function Counter() {
       ? 'counter-actions--split'
       : 'counter-actions--3'
     : collectingChequeId
-      ? 'counter-actions--3'
+      ? splitHasExtras
+        ? 'counter-actions--split'
+        : 'counter-actions--3'
       : splitHasExtras
         ? 'counter-actions--split'
         : 'counter-actions--3'
@@ -1854,6 +1866,53 @@ export default function Counter() {
       return
     }
 
+    if (collectingChequeId && !chequeCollectCreditMode) {
+      const collected = cashSplitAmount + bankSplitAmount + chequeSplitAmount
+      const chequeBill = data.sales.find((sale) => sale.id === collectingChequeId)
+      if (collected > 0) {
+        collectPendingSale(collectingChequeId, {
+          billAmount: chequeCollectDueAmount,
+          originalBillAmount: originalBillHint ?? billAmount,
+          paidAmount: collected,
+          changeAmount: 0,
+          payType:
+            cashSplitAmount > 0 && (bankSplitAmount > 0 || chequeSplitAmount > 0)
+              ? 'split'
+              : chequeSplitAmount > 0
+                ? 'cheque'
+                : bankSplitAmount > 0
+                  ? 'bank'
+                  : 'cash',
+          cashAmount: cashSplitAmount > 0 ? cashSplitAmount : undefined,
+          bankAmount:
+            bankSplitAmount > 0
+              ? bankSplitAmount
+              : chequeSplitAmount > 0
+                ? chequeSplitAmount
+                : undefined,
+          chequeAmount: chequeSplitAmount > 0 ? chequeSplitAmount : undefined,
+          chequeApproved: chequeSplitAmount > 0 ? true : undefined,
+          customerName: name,
+        })
+      }
+      if (creditSplitAmount > 0) {
+        recordSale({
+          billAmount: creditSplitAmount,
+          originalBillAmount: originalBillHint ?? billAmount,
+          paidAmount: 0,
+          changeAmount: 0,
+          payType: 'credit',
+          pendingPayType: 'credit',
+          customerName: name,
+          parentSplitId: chequeBill?.parentSplitId,
+          status: 'pending',
+        })
+      }
+      setSavedAction('pending')
+      setTimeout(resetForm, 900)
+      return
+    }
+
     if (isSplitComplete) {
       saveSplitCollected(name, { createCreditPending: true })
     } else {
@@ -2871,7 +2930,7 @@ export default function Counter() {
                   locked
                   compact
                 />
-                ) : collectingChequeId ? null : (
+                ) : (
                 <AmountDisplay
                   label="Credit"
                   value={creditSplitStr}
@@ -3229,7 +3288,9 @@ export default function Counter() {
             <button type="button" className="btn btn-secondary" onClick={resetForm}>
               Clear
             </button>
-            {!collectingBalanceBillId && splitHasBoth ? (
+            {(!collectingBalanceBillId ||
+              (collectingChequeId && payType === 'split' && !chequeCollectCreditMode)) &&
+            (splitHasBoth && !collectingChequeId ? (
               <button
                 type="button"
                 className={`btn btn-pending btn-with-shortcut ${savedAction === 'pending' ? 'btn-saved' : ''}`}
@@ -3240,7 +3301,7 @@ export default function Counter() {
                   {savedAction === 'pending' ? '✓ Saved' : 'Credit·Cheque\nPending'}
                 </span>
               </button>
-            ) : !collectingBalanceBillId ? (
+            ) : (
               <>
                 {splitHasCredit ? (
                   <button
@@ -3254,7 +3315,7 @@ export default function Counter() {
                     </span>
                   </button>
                 ) : null}
-                {splitHasCheque ? (
+                {splitHasCheque && !collectingChequeId ? (
                   <button
                     type="button"
                     className={`btn btn-cheque btn-with-shortcut ${savedAction === 'pending' ? 'btn-saved' : ''}`}
@@ -3267,7 +3328,7 @@ export default function Counter() {
                   </button>
                 ) : null}
               </>
-            ) : null}
+            ))}
             {splitHasChequePending && (!collectingCreditId || payType === 'split') ? (
               <button
                 type="button"
