@@ -37,6 +37,7 @@ import {
   setOpeningBankBalance,
   updateExpenseName,
   updatePendingBill,
+  updateSaleBill,
   updateSaleCustomerName,
 } from '../storage/database'
 import { isFirebaseConfigured } from '../firebase/config'
@@ -127,6 +128,15 @@ interface CashContextValue {
     type: 'sale' | 'expense' | 'deposit' | 'transfer',
     id: string,
     name: string,
+    relatedSaleIds?: string[],
+  ) => void
+  updateSaleBill: (
+    id: string,
+    updates: {
+      customerName?: string
+      billAmount?: number
+      pendingPayType?: Extract<PayType, 'credit' | 'cheque'>
+    },
     relatedSaleIds?: string[],
   ) => void
   replaceAllData: (data: AppData) => void
@@ -381,6 +391,21 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const updateSaleBillHandler = useCallback(
+    (
+      id: string,
+      updates: {
+        customerName?: string
+        billAmount?: number
+        pendingPayType?: Extract<PayType, 'credit' | 'cheque'>
+      },
+      relatedSaleIds?: string[],
+    ) => {
+      setData((prev) => updateSaleBill(prev, id, updates, relatedSaleIds))
+    },
+    [],
+  )
+
   const replaceAllData = useCallback((next: AppData) => {
     setData(replaceData(next))
   }, [])
@@ -407,6 +432,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeExpense,
       cancelApprovedCheque: cancelApprovedChequeSale,
       updateHistoryName,
+      updateSaleBill: updateSaleBillHandler,
       replaceAllData,
       resetAllData,
       refresh,
@@ -433,6 +459,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeExpense,
       cancelApprovedChequeSale,
       updateHistoryName,
+      updateSaleBillHandler,
       replaceAllData,
       resetAllData,
       refresh,

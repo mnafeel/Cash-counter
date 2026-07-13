@@ -545,6 +545,97 @@ function defaultExpenseName(expense: Expense): string {
   return 'Expense'
 }
 
+export function updateSaleBill(
+  data: AppData,
+  id: string,
+  updates: {
+    customerName?: string
+    billAmount?: number
+    pendingPayType?: Extract<PayType, 'credit' | 'cheque'>
+  },
+  relatedSaleIds?: string[],
+): AppData {
+  const sale = data.sales.find((s) => s.id === id)
+  if (!sale) return data
+
+  const billAmount =
+    updates.billAmount != null && updates.billAmount > 0 ? updates.billAmount : sale.billAmount
+  const customerName =
+    updates.customerName !== undefined
+      ? updates.customerName.trim() || undefined
+      : sale.customerName
+
+  if (sale.status === 'pending') {
+    const pendingPayType = updates.pendingPayType ?? sale.pendingPayType ?? sale.payType
+    const payType = updates.pendingPayType ?? sale.payType
+    return updatePendingBill(data, id, {
+      billAmount,
+      originalBillAmount: sale.originalBillAmount ?? billAmount,
+      customerName,
+      payType:
+        payType === 'credit' || payType === 'cheque'
+          ? payType
+          : sale.payType === 'credit' || sale.payType === 'cheque'
+            ? sale.payType
+            : sale.payType,
+      pendingPayType:
+        pendingPayType === 'credit' || pendingPayType === 'cheque'
+          ? pendingPayType
+          : sale.pendingPayType,
+    })
+  }
+
+  const isSplitParent =
+    sale.payType === 'split' || data.sales.some((s) => s.parentSplitId === sale.id)
+
+  if (isSplitParent) {
+    if (updates.customerName === undefined) return data
+    return updateSaleCustomerName(data, id, updates.customerName, relatedSaleIds)
+  }
+
+  const now = new Date().toISOString()
+  const nameTargets = new Set<string>()
+  for (const saleId of collectSplitNameTargets(data, id)) nameTargets.add(saleId)
+  if (relatedSaleIds) {
+    for (const saleId of relatedSaleIds) {
+      if (data.sales.some((s) => s.id === saleId)) {
+        for (const relatedId of collectSplitNameTargets(data, saleId)) {
+          nameTargets.add(relatedId)
+        }
+      }
+    }
+  }
+  if (nameTargets.size === 0) nameTargets.add(id)
+
+  const next = {
+    ...data,
+    sales: data.sales.map((s) => {
+      if (!nameTargets.has(s.id) && s.id !== id) return s
+
+      let patched: Sale = { ...s }
+      if (nameTargets.has(s.id) && updates.customerName !== undefined) {
+        patched = { ...patched, customerName }
+      }
+      if (s.id === id && updates.billAmount != null && updates.billAmount > 0) {
+        patched = {
+          ...patched,
+          billAmount,
+          updatedAt: now,
+        }
+        if (s.payType === 'cash' || !s.payType) {
+          patched.changeAmount = Math.max(0, s.paidAmount - billAmount)
+        }
+        if (s.payType === 'cheque') {
+          patched.chequeAmount = billAmount
+        }
+      }
+      return patched
+    }),
+  }
+  saveData(next)
+  return next
+}
+
 export function updateExpenseName(data: AppData, id: string, name: string): AppData {
   const trimmed = name.trim()
   const next = {
