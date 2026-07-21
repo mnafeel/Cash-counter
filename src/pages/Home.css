@@ -14,19 +14,19 @@
 
 .home-pin {
   width: 100%;
-  max-width: 320px;
+  max-width: clamp(340px, 92vw, 420px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 16px;
+  gap: 14px;
+  padding: 20px 18px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
 
 .home-pin-label {
-  font-size: 0.75rem;
+  font-size: clamp(0.82rem, calc(var(--app-height, 800px) * 0.018), 0.95rem);
   font-weight: 800;
   color: var(--cream-dim);
   text-transform: uppercase;
@@ -35,12 +35,13 @@
 
 .home-pin-dots {
   display: flex;
-  gap: 12px;
+  gap: clamp(14px, calc(var(--app-height, 800px) * 0.022), 20px);
+  padding: 6px 0;
 }
 
 .home-pin-dot {
-  width: 14px;
-  height: 14px;
+  width: clamp(18px, calc(var(--app-height, 800px) * 0.028), 24px);
+  height: clamp(18px, calc(var(--app-height, 800px) * 0.028), 24px);
   border-radius: 50%;
   border: 2px solid var(--cream-dim);
   background: transparent;
@@ -62,15 +63,15 @@
 
 .home-pin-error {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: clamp(0.78rem, calc(var(--app-height, 800px) * 0.016), 0.88rem);
   font-weight: 700;
   color: var(--danger-text);
 }
 
 .home-pin-keyboard {
   width: 100%;
-  max-height: clamp(200px, 40vh, 320px);
-  min-height: 180px;
+  max-height: clamp(280px, calc(var(--app-height, 800px) * 0.52), 460px);
+  min-height: clamp(240px, calc(var(--app-height, 800px) * 0.38), 320px);
   display: flex;
   flex-direction: column;
 }
@@ -78,11 +79,31 @@
 .home-pin-keyboard .number-keyboard {
   flex: 1;
   min-height: 0;
+  padding: clamp(8px, calc(var(--app-height, 800px) * 0.012), 12px);
+}
+
+.home-pin-keyboard .numpad-grid {
+  gap: clamp(6px, calc(var(--app-height, 800px) * 0.01), 10px);
+}
+
+.home-pin-keyboard .numpad-key {
+  font-size: clamp(1rem, calc(var(--app-height, 800px) * 0.032), 1.85rem);
+  border-width: 2px;
+}
+
+.home-pin-keyboard .numpad-key--action,
+.home-pin-keyboard .numpad-key--wide,
+.home-pin-keyboard .numpad-key--half-wide {
+  font-size: clamp(0.82rem, calc(var(--app-height, 800px) * 0.024), 1.35rem);
+}
+
+.home-pin-keyboard .numpad-key--backspace {
+  font-size: clamp(0.95rem, calc(var(--app-height, 800px) * 0.028), 1.55rem);
 }
 
 .home-pin-hint {
   margin: 0;
-  font-size: 0.6rem;
+  font-size: clamp(0.62rem, calc(var(--app-height, 800px) * 0.013), 0.72rem);
   color: var(--text-muted);
   text-align: center;
 }
