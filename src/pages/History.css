@@ -147,6 +147,14 @@
   border-left-color: var(--transfer-border);
 }
 
+.history-summary-item--purchase {
+  border-left-color: #c98a4a;
+}
+
+.history-summary-item--purchase .history-summary-value {
+  color: #e8b07a;
+}
+
 .history-summary-label {
   font-size: 0.6rem;
   font-weight: 700;
@@ -243,9 +251,14 @@
 
 .history-item--sale,
 .history-item--expense,
+.history-item--purchase,
 .history-item--deposit,
 .history-item--transfer {
   border-left: 3px solid var(--cream);
+}
+
+.history-item--purchase {
+  border-left-color: #c98a4a;
 }
 
 .history-item--deposit {

@@ -1,4 +1,5 @@
 import type { AppData, Expense, Sale } from '../types'
+import { isPurchaseExpense } from './expenseBillLabels'
 import { saleCashCollected } from './salesReport'
 
 export type CashDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'date'
@@ -71,6 +72,10 @@ function pushSaleItems(items: CashActivityItem[], sale: Sale) {
   })
 }
 
+function expenseOutLabel(expense: Expense): string {
+  return isPurchaseExpense(expense) ? 'Purchase · cash' : 'Cash expense'
+}
+
 function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
   if (expense.kind === 'transfer') {
     if (expense.transferDirection === 'cash-to-bank') {
@@ -113,7 +118,7 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
     }
     items.push({
       id: `expense-${expense.id}-cash`,
-      label: 'Cash expense',
+      label: expenseOutLabel(expense),
       amount: cash,
       direction: 'out',
       date: expense.createdAt,
@@ -136,7 +141,7 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
 
   items.push({
     id: `expense-${expense.id}`,
-    label: 'Cash expense',
+    label: expenseOutLabel(expense),
     amount: expense.amount,
     direction: 'out',
     date: expense.createdAt,

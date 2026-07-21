@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import BigAmount from '../components/BigAmount'
@@ -46,6 +46,19 @@ import {
   type ReportSort,
   type SaleDateMode,
 } from '../utils/salesReport'
+import {
+  isPurchaseExpense,
+  NO1_BILL_LABEL,
+  NO2_BILL_LABEL,
+  NO1_EXPENSE_LABEL,
+  NO2_EXPENSE_LABEL,
+} from '../utils/expenseBillLabels'
+import {
+  buildPurchaseHistoryItems,
+  getTopPurchaseShop,
+  summarizePurchases,
+} from '../utils/purchaseHistory'
+import PurchaseHistoryPanel from '../components/PurchaseHistoryPanel'
 import './Home.css'
 
 const DEFAULT_PIN = '0000'
@@ -59,9 +72,9 @@ const BALANCE_DATE_OPTIONS: { id: CashDateFilter; label: string }[] = [
 ]
 
 export default function Home() {
-  const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense } =
+  const navigate = useNavigate()
+  const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense, homeUnlocked, unlockHome } =
     useCash()
-  const [unlocked, setUnlocked] = useState(false)
   const [pinStr, setPinStr] = useState('')
   const [pinError, setPinError] = useState(false)
   const [addTarget, setAddTarget] = useState<ExpensePayType | null>(null)
@@ -87,6 +100,7 @@ export default function Home() {
   const [showBankHistory, setShowBankHistory] = useState(false)
   const [bankDateFilter, setBankDateFilter] = useState<BankDateFilter>('today')
   const [bankSelectedDate, setBankSelectedDate] = useState('')
+  const [showPurchaseHistory, setShowPurchaseHistory] = useState(false)
   const noteInputRef = useRef<HTMLInputElement>(null)
 
   const homePin = normalizePin(data.homePin, DEFAULT_PIN)
@@ -110,22 +124,33 @@ export default function Home() {
     (transferDirection ? hasEnoughForTransfer : true)
 
   useEffect(() => {
-    return () => {
-      setUnlocked(false)
-      setPinStr('')
-    }
-  }, [])
-
-  useEffect(() => {
     if (addTarget || transferDirection) noteInputRef.current?.focus()
   }, [addTarget, transferDirection])
 
   const today = new Date().toDateString()
   const todaySalesSummary = useMemo(() => getTodaySalesSummary(data), [data])
-  const todayExpenses = data.expenses.filter(
-    (e) => new Date(e.createdAt).toDateString() === today && e.kind === 'expense',
+  const todayRegularExpenses = data.expenses.filter(
+    (e) =>
+      new Date(e.createdAt).toDateString() === today &&
+      e.kind === 'expense' &&
+      !isPurchaseExpense(e),
   )
-  const todayExpensesTotal = todayExpenses.reduce((sum, e) => sum + e.amount, 0)
+  const todayRegularExpensesTotal = todayRegularExpenses.reduce((sum, e) => sum + e.amount, 0)
+  const todayPurchases = data.expenses.filter(
+    (e) => new Date(e.createdAt).toDateString() === today && isPurchaseExpense(e),
+  )
+  const todayPurchaseItems = useMemo(
+    () =>
+      buildPurchaseHistoryItems(data).filter(
+        (item) => new Date(item.date).toDateString() === today,
+      ),
+    [data, today],
+  )
+  const todayPurchaseSummary = useMemo(
+    () => summarizePurchases(todayPurchaseItems),
+    [todayPurchaseItems],
+  )
+  const todayTopShop = useMemo(() => getTopPurchaseShop(todayPurchaseItems), [todayPurchaseItems])
 
   const cashActivityItems = useMemo(() => {
     return buildCashActivityItems(data).filter((item) =>
@@ -237,8 +262,8 @@ export default function Home() {
   }
 
   function tryUnlock(nextPin: string) {
-    if (nextPin === homePin) {
-      setUnlocked(true)
+    if (normalizePin(nextPin, '') === homePin) {
+      unlockHome()
       setPinStr('')
       setPinError(false)
       return
@@ -341,10 +366,10 @@ export default function Home() {
 
   useNumpadKeyboard(
     (action) => {
-      if (!unlocked) pinHandlerRef.current(action)
+      if (!homeUnlocked) pinHandlerRef.current(action)
       else if (panelOpen && !panelSaved) panelHandlerRef.current(action)
     },
-    !unlocked || (panelOpen && !panelSaved),
+    !homeUnlocked || (panelOpen && !panelSaved),
   )
 
   const panelTitle = transferDirection
@@ -376,9 +401,9 @@ export default function Home() {
     {
       to: '/expenses',
       title: 'Expenses',
-      desc: 'Record cash or bank expenses',
+      desc: 'Normal cash or bank expenses',
       icon: '📤',
-      color: 'orange',
+      color: 'blue',
     },
     {
       to: '/history',
@@ -396,7 +421,7 @@ export default function Home() {
     },
   ]
 
-  if (!unlocked) {
+  if (!homeUnlocked) {
     return (
       <div className="home home--locked">
         <section className="home-pin">
@@ -590,10 +615,64 @@ export default function Home() {
             {todaySalesSummary.billCount} bills · Report →
           </span>
         </button>
-        <div className="stat-card">
+        <button
+          type="button"
+          className="stat-card stat-card--action"
+          onClick={() => navigate('/expenses')}
+        >
           <span className="stat-label">Today Expenses</span>
-          <span className="stat-value stat-value--orange">{formatMoney(todayExpensesTotal)}</span>
-          <span className="stat-meta">{todayExpenses.length} items</span>
+          <span className="stat-value stat-value--orange">
+            {formatMoney(todayRegularExpensesTotal)}
+          </span>
+          <span className="stat-meta">{todayRegularExpenses.length} items · Expenses →</span>
+        </button>
+        <button
+          type="button"
+          className="stat-card stat-card--action"
+          onClick={() => navigate('/purchase')}
+        >
+          <span className="stat-label">Today Purchases</span>
+          <span className="stat-value stat-value--orange">
+            {formatMoney(todayPurchaseSummary.total)}
+          </span>
+          <span className="stat-meta stat-meta--breakdown">
+            {NO1_BILL_LABEL} {formatMoney(todayPurchaseSummary.gstTotal)} · {NO2_BILL_LABEL}{' '}
+            {formatMoney(todayPurchaseSummary.noGstTotal)}
+          </span>
+          {todayTopShop ? (
+            <span className="stat-meta">
+              Top: {todayTopShop.shopName} · {NO1_EXPENSE_LABEL}{' '}
+              {formatMoney(todayTopShop.gstTotal)} · {NO2_EXPENSE_LABEL}{' '}
+              {formatMoney(todayTopShop.noGstTotal)}
+            </span>
+          ) : (
+            <span className="stat-meta">
+              {todayPurchases.length} items · Purchase →
+            </span>
+          )}
+        </button>
+      </section>
+
+      <section className="home-purchases">
+        <div className="home-purchases-head">
+          <p className="home-purchases-label">Purchase Expense</p>
+          <span className="home-purchases-total">{formatMoney(todayPurchaseSummary.total)} today</span>
+        </div>
+        <div className="home-purchases-row">
+          <button
+            type="button"
+            className="home-purchase-btn home-purchase-btn--open"
+            onClick={() => navigate('/purchase')}
+          >
+            🛒 Open Purchase
+          </button>
+          <button
+            type="button"
+            className="home-purchase-btn home-purchase-btn--history"
+            onClick={() => setShowPurchaseHistory(true)}
+          >
+            📋 Purchase History
+          </button>
         </div>
       </section>
 
@@ -1009,6 +1088,7 @@ export default function Home() {
                   ['all', 'All'],
                   ['sale', 'Bills'],
                   ['expense', 'Expenses'],
+                  ['purchase', 'Purchases'],
                   ['deposit', 'Added'],
                   ['transfer', 'Transfer'],
                 ] as const
@@ -1126,6 +1206,13 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      <PurchaseHistoryPanel
+        open={showPurchaseHistory}
+        onClose={() => setShowPurchaseHistory(false)}
+        data={data}
+        variant="fullscreen"
+      />
     </div>
   )
 }

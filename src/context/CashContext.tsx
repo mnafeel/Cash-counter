@@ -18,7 +18,10 @@ import type {
 } from '../types'
 import {
   addExpense,
+  addExpenseBatch,
   addSale,
+  addSupplier as addSupplierToData,
+  addSupplierItem as addSupplierItemToData,
   addTransfer,
   cancelApprovedCheque,
   collectPendingBill,
@@ -58,6 +61,9 @@ interface CashContextValue {
   balance: number
   bankBalance: number
   pendingBills: Sale[]
+  homeUnlocked: boolean
+  unlockHome: () => void
+  lockHome: () => void
   recordSale: (sale: {
     id?: string
     billAmount: number
@@ -108,11 +114,32 @@ interface CashContextValue {
   recordExpense: (expense: {
     amount: number
     name: string
+    description?: string
     payType: ExpensePayType
     cashAmount?: number
     bankAmount?: number
+    chequeAmount?: number
+    chequeApproved?: boolean
+    giveAmount?: number
+    changeAmount?: number
     kind?: ExpenseKind
   }) => void
+  recordExpenses: (
+    expenses: {
+      amount: number
+      name: string
+      description?: string
+      payType: ExpensePayType
+      cashAmount?: number
+      bankAmount?: number
+      chequeAmount?: number
+      chequeApproved?: boolean
+      giveAmount?: number
+      changeAmount?: number
+      billNumber?: 1 | 2
+      kind?: ExpenseKind
+    }[],
+  ) => void
   recordTransfer: (transfer: {
     amount: number
     name: string
@@ -124,6 +151,8 @@ interface CashContextValue {
   removeSale: (id: string, relatedSaleIds?: string[]) => void
   removeExpense: (id: string) => void
   cancelApprovedCheque: (id: string) => void
+  addSupplier: (name: string) => void
+  addSupplierItem: (name: string, item: string) => void
   updateHistoryName: (
     type: 'sale' | 'expense' | 'deposit' | 'transfer',
     id: string,
@@ -174,6 +203,10 @@ function applyTallyImport(data: AppData, bills: Awaited<ReturnType<typeof fetchT
 
 export function CashProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => loadData())
+  const [homeUnlocked, setHomeUnlocked] = useState(false)
+
+  const unlockHome = useCallback(() => setHomeUnlocked(true), [])
+  const lockHome = useCallback(() => setHomeUnlocked(false), [])
 
   useEffect(() => {
     applyTheme()
@@ -322,6 +355,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       payType: ExpensePayType
       cashAmount?: number
       bankAmount?: number
+      chequeAmount?: number
+      chequeApproved?: boolean
+      giveAmount?: number
+      changeAmount?: number
       kind?: ExpenseKind
     }) => {
       setData((prev) =>
@@ -330,9 +367,66 @@ export function CashProvider({ children }: { children: ReactNode }) {
           name: expense.name.trim(),
           payType: expense.payType,
           cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
-          bankAmount: expense.payType === 'split' ? expense.bankAmount : undefined,
+          bankAmount:
+            expense.payType === 'split' || expense.payType === 'bank'
+              ? expense.bankAmount ?? (expense.payType === 'bank' ? expense.amount : undefined)
+              : undefined,
+          chequeAmount:
+            expense.payType === 'split' || expense.payType === 'cheque'
+              ? expense.chequeAmount ?? (expense.payType === 'cheque' ? expense.amount : undefined)
+              : undefined,
+          chequeApproved: expense.chequeApproved,
+          giveAmount: expense.giveAmount,
+          changeAmount: expense.changeAmount,
           kind: expense.kind ?? 'expense',
         }),
+      )
+    },
+    [],
+  )
+
+  const recordExpenses = useCallback(
+    (
+      expenses: {
+        amount: number
+        name: string
+        description?: string
+        payType: ExpensePayType
+        cashAmount?: number
+        bankAmount?: number
+        chequeAmount?: number
+        chequeApproved?: boolean
+        giveAmount?: number
+        changeAmount?: number
+        billNumber?: 1 | 2
+        kind?: ExpenseKind
+      }[],
+    ) => {
+      if (expenses.length === 0) return
+      setData((prev) =>
+        addExpenseBatch(
+          prev,
+          expenses.map((expense) => ({
+            amount: expense.amount,
+            name: expense.name.trim(),
+            description: expense.description?.trim() || undefined,
+            payType: expense.payType,
+            cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
+            bankAmount:
+              expense.payType === 'split' || expense.payType === 'bank'
+                ? expense.bankAmount ?? (expense.payType === 'bank' ? expense.amount : undefined)
+                : undefined,
+            chequeAmount:
+              expense.payType === 'split' || expense.payType === 'cheque'
+                ? expense.chequeAmount ?? (expense.payType === 'cheque' ? expense.amount : undefined)
+                : undefined,
+            chequeApproved: expense.chequeApproved,
+            giveAmount: expense.giveAmount,
+            changeAmount: expense.changeAmount,
+            billNumber: expense.billNumber,
+            kind: expense.kind ?? 'expense',
+          })),
+        ),
       )
     },
     [],
@@ -369,6 +463,14 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const removeExpense = useCallback((id: string) => {
     setData((prev) => deleteExpense(prev, id))
+  }, [])
+
+  const addSupplier = useCallback((name: string) => {
+    setData((prev) => addSupplierToData(prev, name))
+  }, [])
+
+  const addSupplierItem = useCallback((name: string, item: string) => {
+    setData((prev) => addSupplierItemToData(prev, name, item))
   }, [])
 
   const cancelApprovedChequeSale = useCallback((id: string) => {
@@ -412,6 +514,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const resetAllData = useCallback(() => {
     setData(clearAllLocalData())
+    setHomeUnlocked(false)
   }, [])
 
   const value = useMemo(
@@ -420,16 +523,22 @@ export function CashProvider({ children }: { children: ReactNode }) {
       balance,
       bankBalance,
       pendingBills,
+      homeUnlocked,
+      unlockHome,
+      lockHome,
       recordSale,
       updatePendingSale,
       collectPendingSale,
       recordExpense,
+      recordExpenses,
       recordTransfer,
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
       removeSale,
       removeExpense,
+      addSupplier,
+      addSupplierItem,
       cancelApprovedCheque: cancelApprovedChequeSale,
       updateHistoryName,
       updateSaleBill: updateSaleBillHandler,
@@ -447,16 +556,22 @@ export function CashProvider({ children }: { children: ReactNode }) {
       balance,
       bankBalance,
       pendingBills,
+      homeUnlocked,
+      unlockHome,
+      lockHome,
       recordSale,
       updatePendingSale,
       collectPendingSale,
       recordExpense,
+      recordExpenses,
       recordTransfer,
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
       removeSale,
       removeExpense,
+      addSupplier,
+      addSupplierItem,
       cancelApprovedChequeSale,
       updateHistoryName,
       updateSaleBillHandler,

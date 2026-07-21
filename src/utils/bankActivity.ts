@@ -1,4 +1,5 @@
 import type { AppData, Expense, Sale } from '../types'
+import { isPurchaseExpense } from './expenseBillLabels'
 import { saleBankCollected } from './salesReport'
 import {
   cashClosingLabel,
@@ -29,6 +30,13 @@ function pushSaleItems(items: CashActivityItem[], sale: Sale) {
   })
 }
 
+function bankOutLabel(expense: Expense, kind: 'expense' | 'cheque' | 'bank'): string {
+  const prefix = isPurchaseExpense(expense) ? 'Purchase' : 'Expense'
+  if (kind === 'cheque') return `${prefix} · cheque`
+  if (kind === 'bank') return `${prefix} · bank`
+  return `${prefix} · bank`
+}
+
 function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
   if (expense.kind === 'transfer') {
     if (expense.transferDirection === 'cash-to-bank') {
@@ -55,14 +63,31 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
 
   if (expense.payType === 'cash') return
 
+  if (expense.payType === 'cheque') {
+    if (!expense.chequeApproved) return
+    const cheque = expense.chequeAmount ?? expense.amount
+    items.push({
+      id: `expense-${expense.id}-cheque`,
+      label: bankOutLabel(expense, 'cheque'),
+      amount: cheque,
+      direction: expense.kind === 'add' ? 'in' : 'out',
+      date: expense.createdAt,
+      name: expense.name,
+    })
+    return
+  }
+
   if (expense.payType === 'split') {
     const bank = expense.bankAmount ?? 0
-    if (bank <= 0) return
+    const cheque =
+      expense.chequeApproved && (expense.chequeAmount ?? 0) > 0 ? (expense.chequeAmount ?? 0) : 0
+    const bankTotal = bank + cheque
+    if (bankTotal <= 0) return
     if (expense.kind === 'add') {
       items.push({
         id: `add-${expense.id}`,
         label: 'Added to bank',
-        amount: bank,
+        amount: bankTotal,
         direction: 'in',
         date: expense.createdAt,
         name: expense.name,
@@ -71,8 +96,8 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
     }
     items.push({
       id: `expense-${expense.id}-bank`,
-      label: 'Bank expense',
-      amount: bank,
+      label: bankOutLabel(expense, 'bank'),
+      amount: bankTotal,
       direction: 'out',
       date: expense.createdAt,
       name: expense.name,
@@ -94,7 +119,7 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
 
   items.push({
     id: `expense-${expense.id}`,
-    label: 'Bank expense',
+    label: bankOutLabel(expense, 'bank'),
     amount: expense.amount,
     direction: 'out',
     date: expense.createdAt,

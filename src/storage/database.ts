@@ -1,6 +1,7 @@
-import type { AppData, AppTheme, Expense, PayType, Sale, TransferDirection } from '../types'
+import type { AppData, AppTheme, Expense, PayType, Sale, SupplierEntry, TransferDirection } from '../types'
 import { STORAGE_KEY } from '../types'
 import { collectSplitNameTargets } from '../utils/saleCustomerName'
+import { stripExpenseBillSuffix } from '../utils/expenseBillLabels'
 import { notifyDataChanged } from '../firebase/sync'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
@@ -10,8 +11,89 @@ const defaultData: AppData = {
   openingBankBalance: 0,
   homePin: '0000',
   theme: 'premium',
+  suppliers: [],
   sales: [],
   expenses: [],
+}
+
+function normalizeItemList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Map<string, string>()
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const trimmed = item.trim()
+    if (!trimmed) continue
+    seen.set(trimmed.toLowerCase(), trimmed)
+  }
+  return Array.from(seen.values())
+}
+
+export function normalizeSuppliers(raw: unknown): SupplierEntry[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Map<string, SupplierEntry>()
+  for (const item of raw) {
+    if (typeof item === 'string') {
+      const trimmed = item.trim()
+      if (!trimmed) continue
+      const key = trimmed.toLowerCase()
+      if (!seen.has(key)) seen.set(key, { name: trimmed, items: [] })
+      continue
+    }
+    if (!item || typeof item !== 'object') continue
+    const record = item as Partial<SupplierEntry>
+    const name = typeof record.name === 'string' ? record.name.trim() : ''
+    if (!name) continue
+    const key = name.toLowerCase()
+    const prev = seen.get(key)
+    const items = normalizeItemList(record.items)
+    const mergedItems = new Map<string, string>()
+    for (const label of [...(prev?.items ?? []), ...items]) {
+      mergedItems.set(label.toLowerCase(), label)
+    }
+    seen.set(key, { name, items: Array.from(mergedItems.values()) })
+  }
+  return Array.from(seen.values())
+}
+
+export function ensureSupplierInData(data: AppData, rawName: string): AppData {
+  const name = stripExpenseBillSuffix(rawName.trim())
+  if (!name) return data
+  const key = name.toLowerCase()
+  const existing = normalizeSuppliers(data.suppliers)
+  if (existing.some((supplier) => supplier.name.toLowerCase() === key)) return data
+  return { ...data, suppliers: [{ name, items: [] }, ...existing] }
+}
+
+export function addSupplier(data: AppData, rawName: string): AppData {
+  const next = ensureSupplierInData(data, rawName)
+  if (next === data) return data
+  saveData(next)
+  return next
+}
+
+export function addSupplierItem(data: AppData, rawName: string, item: string): AppData {
+  const supplierName = stripExpenseBillSuffix(rawName.trim())
+  const itemLabel = item.trim()
+  if (!supplierName || !itemLabel) return data
+
+  const key = supplierName.toLowerCase()
+  const itemKey = itemLabel.toLowerCase()
+  let suppliers = normalizeSuppliers(data.suppliers)
+  const index = suppliers.findIndex((supplier) => supplier.name.toLowerCase() === key)
+
+  if (index < 0) {
+    suppliers = [{ name: supplierName, items: [itemLabel] }, ...suppliers]
+  } else {
+    const entry = suppliers[index]
+    const items = entry.items ?? []
+    if (items.some((label) => label.toLowerCase() === itemKey)) return data
+    suppliers = [...suppliers]
+    suppliers[index] = { ...entry, items: [itemLabel, ...items] }
+  }
+
+  const next = { ...data, suppliers }
+  saveData(next)
+  return next
 }
 
 export function normalizeData(parsed: Partial<AppData>): AppData {
@@ -20,6 +102,7 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
     openingBankBalance: parsed.openingBankBalance ?? 0,
     homePin: normalizePin(parsed.homePin, '0000'),
     theme: normalizeTheme(parsed.theme),
+    suppliers: normalizeSuppliers(parsed.suppliers),
     sales: parsed.sales ?? [],
     expenses: (parsed.expenses ?? []).map((e) => ({
       ...e,
@@ -90,13 +173,21 @@ export function getPendingBills(data: AppData): Sale[] {
     )
 }
 
+function splitExpenseBankAmount(expense: Expense): number {
+  const bank = expense.bankAmount ?? 0
+  const cheque = expense.chequeAmount ?? 0
+  if (!expense.chequeApproved || cheque <= 0) return bank
+  const bankOnly = bank >= cheque ? bank - cheque : bank
+  return bankOnly + cheque
+}
+
 function expenseCashToDrawer(expense: Expense): number {
   if (expense.kind === 'transfer') {
     if (expense.transferDirection === 'cash-to-bank') return expense.amount
     if (expense.transferDirection === 'bank-to-cash') return -expense.amount
     return 0
   }
-  if (expense.payType === 'bank') return 0
+  if (expense.payType === 'bank' || expense.payType === 'cheque') return 0
   if (expense.payType === 'split') {
     const cash = expense.cashAmount ?? 0
     return expense.kind === 'add' ? -cash : cash
@@ -118,8 +209,13 @@ function expenseBankToBalance(expense: Expense): number {
     return 0
   }
   if (expense.payType === 'cash') return 0
+  if (expense.payType === 'cheque') {
+    if (!expense.chequeApproved) return 0
+    const cheque = expense.chequeAmount ?? expense.amount
+    return expense.kind === 'add' ? -cheque : cheque
+  }
   if (expense.payType === 'split') {
-    const bank = expense.bankAmount ?? 0
+    const bank = splitExpenseBankAmount(expense)
     return expense.kind === 'add' ? -bank : bank
   }
   return expense.kind === 'add' ? -expense.amount : expense.amount
@@ -143,11 +239,13 @@ export function addSale(
 ): AppData {
   const presetId = sale.id
   const { id: _id, ...rest } = sale
+  const now = new Date().toISOString()
   const newSale: Sale = {
     ...rest,
     status: rest.status ?? 'paid',
     id: presetId ?? crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: (rest.status ?? 'paid') === 'paid' ? now : rest.updatedAt,
   }
   const next = { ...data, sales: [newSale, ...data.sales] }
   saveData(next)
@@ -246,6 +344,34 @@ export function addExpense(data: AppData, expense: Omit<Expense, 'id' | 'created
   return next
 }
 
+export function addExpenseBatch(
+  data: AppData,
+  expenses: Omit<Expense, 'id' | 'createdAt' | 'pairedExpenseId'>[],
+): AppData {
+  if (expenses.length === 0) return data
+  const now = new Date().toISOString()
+  const ids = expenses.map(() => crypto.randomUUID())
+  const newExpenses: Expense[] = expenses.map((expense, index) => ({
+    ...expense,
+    id: ids[index],
+    createdAt: now,
+    billNumber:
+      expense.billNumber ??
+      (expenses.length > 1 ? ((index === 0 ? 1 : 2) as 1 | 2) : undefined),
+    pairedExpenseId: expenses.length > 1 ? ids[1 - index] : undefined,
+  }))
+  const next = { ...data, expenses: [...newExpenses, ...data.expenses] }
+  const supplierName = stripExpenseBillSuffix(expenses[0]?.name?.trim() ?? '')
+  const withSupplier = supplierName ? ensureSupplierInData(next, supplierName) : next
+  const description = expenses[0]?.description?.trim()
+  const withItem =
+    supplierName && description
+      ? addSupplierItem(withSupplier, supplierName, description)
+      : withSupplier
+  saveData(withItem)
+  return withItem
+}
+
 export function setTheme(data: AppData, theme: AppTheme): AppData {
   const next = { ...data, theme }
   saveData(next)
@@ -259,7 +385,7 @@ export function setOpeningBankBalance(data: AppData, amount: number): AppData {
 }
 
 export function setHomePin(data: AppData, pin: string): AppData {
-  const next = { ...data, homePin: pin }
+  const next = { ...data, homePin: normalizePin(pin, '0000') }
   saveData(next)
   return next
 }

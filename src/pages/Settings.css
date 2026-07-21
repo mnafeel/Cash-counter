@@ -682,10 +682,11 @@ html[data-screen='tablet'] .settings-info {
 
 .settings-bill-edit-item {
   display: flex;
-  align-items: flex-start;
+  flex-wrap: wrap;
+  align-items: stretch;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 8px;
   border-radius: var(--radius-sm);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -694,9 +695,38 @@ html[data-screen='tablet'] .settings-info {
 .settings-bill-edit-meta {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 3px;
   min-width: 0;
   flex: 1;
+}
+
+.settings-bill-edit-amount-box {
+  flex-shrink: 0;
+  min-width: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 8px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.settings-bill-edit-amount-label {
+  font-size: 0.48rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cream-dim);
+  text-align: center;
+}
+
+.settings-bill-edit-amount-box strong {
+  font-size: 0.92rem;
+  color: var(--cream);
+  text-align: center;
+  line-height: 1.1;
 }
 
 .settings-bill-edit-meta strong {
@@ -717,10 +747,11 @@ html[data-screen='tablet'] .settings-info {
 }
 
 .settings-bill-edit-btn {
-  flex-shrink: 0;
-  min-height: 30px;
-  padding: 4px 10px;
-  font-size: 0.68rem;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
 .settings-bill-edit-form {

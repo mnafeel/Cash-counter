@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
+import ExpenseHistoryPanel from '../components/ExpenseHistoryPanel'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
 import type { ExpensePayType } from '../types'
+import { isPurchaseExpense } from '../utils/expenseBillLabels'
 import { formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
@@ -34,6 +36,7 @@ export default function Expenses() {
   const [payType, setPayType] = useState<ExpensePayType>('cash')
   const [activeField, setActiveField] = useState<ExpenseField>('name')
   const [saved, setSaved] = useState(false)
+  const [showExpenseHistory, setShowExpenseHistory] = useState(false)
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
   const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
   const nameInputRef = useRef<HTMLInputElement>(null)
@@ -48,6 +51,7 @@ export default function Expenses() {
     for (let i = data.expenses.length - 1; i >= 0; i--) {
       const item = data.expenses[i]
       if (item?.kind && item.kind !== 'expense') continue
+      if (isPurchaseExpense(item)) continue
       const raw = item?.name?.trim()
       if (!raw) continue
       const key = raw.toLowerCase()
@@ -232,6 +236,19 @@ export default function Expenses() {
 
   return (
     <div className="expenses-page">
+      <button
+        type="button"
+        className="expense-history-btn expense-history-btn--corner"
+        onClick={() => setShowExpenseHistory(true)}
+      >
+        History
+      </button>
+
+      <header className="expenses-page-head">
+        <h1 className="expenses-page-title">Expenses</h1>
+        <p className="expenses-page-sub">Normal cash or bank expenses only · not purchases</p>
+      </header>
+
       <div className={`expenses-top ${splitMode ? 'expenses-top--split' : ''}`}>
         <label className="expense-name">
           <span className="expense-name-label">Expense Name</span>
@@ -391,6 +408,12 @@ export default function Expenses() {
           {!saved ? <span className="btn-shortcut">Alt+S</span> : null}
         </button>
       </div>
+
+      <ExpenseHistoryPanel
+        open={showExpenseHistory}
+        onClose={() => setShowExpenseHistory(false)}
+        data={data}
+      />
     </div>
   )
 }

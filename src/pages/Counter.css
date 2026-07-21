@@ -912,16 +912,9 @@ html[data-screen='desktop'] .counter-actions .btn {
 .counter-keyboard-wrap .number-keyboard {
   flex: 1;
   min-height: 0;
+  height: 100%;
   max-height: 100%;
   padding: 3px;
-}
-
-.counter-keyboard-wrap .numpad--compact .numpad-key {
-  font-size: clamp(0.65rem, calc(var(--counter-height, 560px) * 0.026), 1rem);
-}
-
-.counter-keyboard-wrap .numpad--compact .numpad-key--enter {
-  font-size: clamp(0.5rem, calc(var(--counter-height, 560px) * 0.014), 0.68rem);
 }
 
 @media (max-width: 520px) {

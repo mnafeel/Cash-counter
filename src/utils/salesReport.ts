@@ -91,9 +91,29 @@ export function saleCashCollected(sale: Sale): number {
 
 export function saleBankCollected(sale: Sale): number {
   if (sale.status === 'pending') return 0
-  if (sale.payType === 'bank' || sale.payType === 'cheque') return sale.billAmount
-  if (sale.payType === 'split') return sale.bankAmount ?? 0
+  if (sale.payType === 'bank') return sale.billAmount
+  if (sale.payType === 'cheque') return sale.billAmount
+  if (sale.payType === 'split') {
+    const cheque = sale.chequeAmount ?? 0
+    let bank = sale.bankAmount ?? 0
+    if (sale.chequeApproved && cheque > 0) bank = Math.max(0, bank - cheque)
+    return bank
+  }
   return 0
+}
+
+export function saleChequeToBankCollected(sale: Sale): number {
+  if (sale.status === 'pending') return 0
+  if (sale.payType === 'split' && sale.chequeApproved) return sale.chequeAmount ?? 0
+  return 0
+}
+
+export function saleTotalCollected(sale: Sale): number {
+  return saleCashCollected(sale) + saleBankCollected(sale) + saleChequeToBankCollected(sale)
+}
+
+export function saleBillGroupId(sale: Sale): string {
+  return sale.parentSplitId ?? sale.id
 }
 
 function paidSales(data: AppData): Sale[] {
@@ -174,11 +194,20 @@ export function buildSalesReport(
       cashTotal: 0,
       bankTotal: 0,
     }
-    row.billCount += 1
-    row.totalBills += sale.billAmount
+    row.totalBills += saleTotalCollected(sale)
     row.cashTotal += saleCashCollected(sale)
-    row.bankTotal += saleBankCollected(sale)
+    row.bankTotal += saleBankCollected(sale) + saleChequeToBankCollected(sale)
     groups.set(key, row)
+  }
+
+  for (const [key, row] of groups) {
+    const groupIds = new Set<string>()
+    for (const sale of filteredPaidSales(data, filter)) {
+      const iso = saleReportDate(sale, filter?.dateMode ?? 'collected')
+      if (periodKey(iso, period) !== key) continue
+      groupIds.add(saleBillGroupId(sale))
+    }
+    row.billCount = groupIds.size
   }
 
   const rows: SalesPeriodRow[] = [...groups.entries()].map(([key, totals]) => ({
@@ -208,15 +237,19 @@ export function buildSalesBillList(
   const mode = filter?.dateMode ?? 'collected'
   const rows = filteredPaidSales(data, filter).map((sale) => {
     const date = saleReportDate(sale, mode)
+    const collected = saleTotalCollected(sale)
     return {
       id: sale.id,
       date,
       dateLabel: formatDate(date),
-      billAmount: sale.billAmount,
+      billAmount: sale.originalBillAmount ?? sale.billAmount,
       cashTotal: saleCashCollected(sale),
-      bankTotal: saleBankCollected(sale),
+      bankTotal: saleBankCollected(sale) + saleChequeToBankCollected(sale),
       customerName: sale.customerName,
-      payLabel: salePayLabel(sale),
+      payLabel:
+        collected > 0 && (sale.originalBillAmount ?? sale.billAmount) !== collected
+          ? `${salePayLabel(sale)} · Collected ${formatMoney(collected)}`
+          : salePayLabel(sale),
     }
   })
 
@@ -248,12 +281,16 @@ export function getTodaySalesSummary(data: AppData) {
   const today = toInputDate()
   const filter: SalesReportFilter = { fromDate: today, toDate: today, dateMode: 'collected' }
   const sales = filteredPaidSales(data, filter)
+  const groups = new Set(sales.map((sale) => saleBillGroupId(sale)))
 
   return {
-    billCount: sales.length,
-    totalBills: sales.reduce((sum, s) => sum + s.billAmount, 0),
-    cashTotal: sales.reduce((sum, s) => sum + saleCashCollected(s), 0),
-    bankTotal: sales.reduce((sum, s) => sum + saleBankCollected(s), 0),
+    billCount: groups.size,
+    totalBills: sales.reduce((sum, sale) => sum + saleTotalCollected(sale), 0),
+    cashTotal: sales.reduce((sum, sale) => sum + saleCashCollected(sale), 0),
+    bankTotal: sales.reduce(
+      (sum, sale) => sum + saleBankCollected(sale) + saleChequeToBankCollected(sale),
+      0,
+    ),
   }
 }
 

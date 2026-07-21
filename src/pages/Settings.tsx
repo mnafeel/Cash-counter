@@ -677,18 +677,21 @@ export default function Settings() {
                           <>
                             <div className="settings-bill-edit-meta">
                               <strong>{item.name?.trim() || '—'}</strong>
-                              <span>{formatMoney(item.originalBillAmount ?? item.amount)}</span>
                               <span className="settings-bill-edit-sub">
                                 {paymentLabel} · {statusLabel} · {formatDate(item.date)}
                               </span>
                             </div>
-                            <button
-                              type="button"
-                              className="btn btn-secondary settings-bill-edit-btn"
-                              onClick={() => startBillEdit(item)}
-                            >
-                              Edit
-                            </button>
+                            <div className="settings-bill-edit-amount-box">
+                              <span className="settings-bill-edit-amount-label">Bill amount</span>
+                              <strong>{formatMoney(item.originalBillAmount ?? item.amount)}</strong>
+                              <button
+                                type="button"
+                                className="btn btn-secondary settings-bill-edit-btn"
+                                onClick={() => startBillEdit(item)}
+                              >
+                                Edit Bill
+                              </button>
+                            </div>
                           </>
                         )}
                       </li>

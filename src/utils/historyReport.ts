@@ -60,6 +60,7 @@ function summarizeByType(items: HistoryItem[]) {
   const totals: Record<HistoryItemType, { count: number; sum: number }> = {
     sale: { count: 0, sum: 0 },
     expense: { count: 0, sum: 0 },
+    purchase: { count: 0, sum: 0 },
     deposit: { count: 0, sum: 0 },
     transfer: { count: 0, sum: 0 },
   }
@@ -93,7 +94,7 @@ export function buildFullHistoryReportHtml(
     )
     .join('')
 
-  const summaryRows = (['sale', 'expense', 'deposit', 'transfer'] as HistoryItemType[])
+  const summaryRows = (['sale', 'expense', 'purchase', 'deposit', 'transfer'] as HistoryItemType[])
     .map((type) => {
       const row = summary[type]
       if (row.count === 0) return ''
@@ -247,7 +248,7 @@ export function buildFullHistoryReportCsv(
   lines.push('')
   lines.push('Summary by Type')
   lines.push('Type,Count,Total Amount')
-  for (const type of ['sale', 'expense', 'deposit', 'transfer'] as HistoryItemType[]) {
+  for (const type of ['sale', 'expense', 'purchase', 'deposit', 'transfer'] as HistoryItemType[]) {
     const row = summary[type]
     if (row.count === 0) continue
     lines.push(

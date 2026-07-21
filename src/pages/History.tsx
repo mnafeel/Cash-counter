@@ -6,6 +6,7 @@ import {
   getHistoryPaymentLabel,
   getHistoryPaymentSortKey,
   getHistoryTypeLabel,
+  historyItemSaleAmount,
   matchesHistoryPaymentFilter,
   matchesHistorySearch,
   type HistoryFilter,
@@ -30,6 +31,7 @@ const FILTER_OPTIONS: { id: HistoryFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'sale', label: 'Bills' },
   { id: 'expense', label: 'Expenses' },
+  { id: 'purchase', label: 'Purchases' },
   { id: 'deposit', label: 'Added' },
   { id: 'transfer', label: 'Transfer' },
 ]
@@ -93,6 +95,7 @@ function matchesDateFilter(iso: string, dateFilter: DateFilter, selectedDate: st
 const TYPE_SUMMARY: { id: HistoryItemType; label: string; icon: string; sign: string }[] = [
   { id: 'sale', label: 'Bills', icon: '💵', sign: '+' },
   { id: 'expense', label: 'Expenses', icon: '📤', sign: '-' },
+  { id: 'purchase', label: 'Purchases', icon: '🛒', sign: '-' },
   { id: 'deposit', label: 'Added', icon: '📥', sign: '+' },
   { id: 'transfer', label: 'Transfer', icon: '🔄', sign: '' },
 ]
@@ -111,15 +114,20 @@ function historyIcon(type: HistoryItemType): string {
   if (type === 'sale') return '💵'
   if (type === 'deposit') return '📥'
   if (type === 'transfer') return '🔄'
+  if (type === 'purchase') return '🛒'
   return '📤'
 }
 
 function nameLabel(type: HistoryItemType): string {
-  return type === 'sale' ? 'Customer name' : 'Note / name'
+  if (type === 'sale') return 'Customer name'
+  if (type === 'purchase') return 'Supplier name'
+  return 'Note / name'
 }
 
 function namePlaceholder(type: HistoryItemType): string {
-  return type === 'sale' ? 'Customer name' : 'Note or name'
+  if (type === 'sale') return 'Customer name'
+  if (type === 'purchase') return 'Supplier name'
+  return 'Note or name'
 }
 
 function editKey(item: HistoryItem): string {
@@ -179,11 +187,13 @@ export default function History() {
     const totals: Record<HistoryItemType, { sum: number; count: number }> = {
       sale: { sum: 0, count: 0 },
       expense: { sum: 0, count: 0 },
+      purchase: { sum: 0, count: 0 },
       deposit: { sum: 0, count: 0 },
       transfer: { sum: 0, count: 0 },
     }
     for (const item of items) {
-      totals[item.type].sum += item.amount
+      totals[item.type].sum +=
+        item.type === 'sale' ? historyItemSaleAmount(item) : item.amount
       totals[item.type].count += 1
     }
     return totals
@@ -205,9 +215,11 @@ export default function History() {
   const searchHint =
     filter === 'sale'
       ? 'Search customer, payment mode, amount, date…'
+      : filter === 'purchase'
+        ? 'Search supplier, item, bill, amount, date…'
       : filter === 'expense' || filter === 'deposit' || filter === 'transfer'
         ? 'Search note, amount, date…'
-        : 'Search customer, expense note, amount…'
+        : 'Search customer, expense, purchase, amount…'
 
   function startEdit(item: HistoryItem) {
     setEditingKey(editKey(item))
@@ -221,7 +233,11 @@ export default function History() {
   }
 
   function saveEdit(item: HistoryItem) {
-    updateHistoryName(item.type, item.id, editValue, item.groupSaleIds)
+    const updateType =
+      item.type === 'purchase' || item.type === 'deposit' || item.type === 'transfer'
+        ? 'expense'
+        : item.type
+    updateHistoryName(updateType, item.id, editValue, item.groupSaleIds)
     cancelEdit()
   }
 
@@ -458,7 +474,9 @@ export default function History() {
                   </div>
                   <span className="history-item-sub">{item.sub}</span>
                   <span className="history-item-meta">
-                    {item.paymentMode ? (
+                    {item.paySummary ? (
+                      <span className="history-item-payment">{item.paySummary}</span>
+                    ) : item.paymentMode ? (
                       <span className="history-item-payment">
                         {getHistoryPaymentLabel(item.paymentMode)}
                       </span>
@@ -519,6 +537,23 @@ export default function History() {
                   <strong>{formatDate(receiptItem.billCreatedAt)}</strong>
                 </div>
               ) : null}
+              {receiptItem.isSplitGroup &&
+              receiptItem.originalBillAmount &&
+              receiptItem.receiptLines ? (
+                (() => {
+                  const collectTarget = receiptItem.receiptLines.reduce(
+                    (sum, line) => sum + line.amount,
+                    0,
+                  )
+                  return collectTarget > 0 &&
+                    collectTarget !== receiptItem.originalBillAmount ? (
+                    <div className="history-receipt-row">
+                      <span>Round / Collect</span>
+                      <strong>{formatMoney(collectTarget)}</strong>
+                    </div>
+                  ) : null
+                })()
+              ) : null}
               {receiptItem.completedAt ? (
                 <div className="history-receipt-row">
                   <span>Fully collected</span>
@@ -533,6 +568,18 @@ export default function History() {
                 <span>Bill Total</span>
                 <strong>{formatMoney(receiptItem.originalBillAmount ?? receiptItem.amount)}</strong>
               </div>
+              {receiptItem.isSplitGroup && receiptItem.receiptLines ? (
+                <div className="history-receipt-row">
+                  <span>Collected</span>
+                  <strong>
+                    {formatMoney(
+                      receiptItem.receiptLines
+                        .filter((line) => line.status === 'paid')
+                        .reduce((sum, line) => sum + line.amount, 0),
+                    )}
+                  </strong>
+                </div>
+              ) : null}
             </div>
 
             {receiptItem.receiptTimeline && receiptItem.receiptTimeline.length > 0 ? (

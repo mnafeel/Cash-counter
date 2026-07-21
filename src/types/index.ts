@@ -27,7 +27,7 @@ export interface Sale {
   updatedAt?: string
 }
 
-export type ExpensePayType = Extract<PayType, 'cash' | 'bank' | 'split'>
+export type ExpensePayType = Extract<PayType, 'cash' | 'bank' | 'split' | 'cheque'>
 export type ExpenseKind = 'expense' | 'add' | 'transfer'
 export type TransferDirection = 'cash-to-bank' | 'bank-to-cash'
 export type AppTheme = 'brown' | 'navy' | 'light' | 'premium'
@@ -36,9 +36,19 @@ export interface Expense {
   id: string
   amount: number
   name: string
+  /** Purchase item or expense description. */
+  description?: string
   payType: ExpensePayType
   cashAmount?: number
   bankAmount?: number
+  chequeAmount?: number
+  /** Split/cheque expense: cheque portion approved to bank. */
+  chequeApproved?: boolean
+  giveAmount?: number
+  changeAmount?: number
+  /** Dual purchase: 1 = GST bill, 2 = without GST. */
+  billNumber?: 1 | 2
+  pairedExpenseId?: string
   kind?: ExpenseKind
   transferDirection?: TransferDirection
   /** @deprecated legacy field — migrated to name */
@@ -46,11 +56,18 @@ export interface Expense {
   createdAt: string
 }
 
+export interface SupplierEntry {
+  name: string
+  items?: string[]
+}
+
 export interface AppData {
   openingBalance: number
   openingBankBalance?: number
   homePin?: string
   theme?: AppTheme
+  /** Saved purchase suppliers and their item descriptions. */
+  suppliers?: SupplierEntry[]
   sales: Sale[]
   expenses: Expense[]
 }

@@ -39,7 +39,8 @@ export function applyPinAction(current: string, action: NumpadAction): string {
   return current + action
 }
 
-export function normalizePin(pin: string | undefined, fallback = '0000'): string {
-  const digits = (pin ?? fallback).replace(/\D/g, '')
+export function normalizePin(pin: unknown, fallback = '0000'): string {
+  if (pin == null || pin === '') return fallback
+  const digits = String(pin).replace(/\D/g, '')
   return digits.length > 0 ? digits.slice(0, 4) : fallback
 }

@@ -135,3 +135,31 @@ html[data-short='true'] .pay-type-chip {
     font-size: clamp(0.44rem, calc(var(--app-height, 600px) * 0.011), 0.5rem);
   }
 }
+
+.pay-type-chips--focused .pay-type-chips-label {
+  color: var(--cream);
+}
+
+.pay-type-chip-sublabel {
+  font-size: clamp(0.4rem, calc(var(--app-height, 800px) * 0.009), 0.48rem);
+  font-weight: 700;
+  opacity: 0.8;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.pay-type-chip-hint {
+  font-size: clamp(0.42rem, calc(var(--app-height, 800px) * 0.01), 0.5rem);
+  font-weight: 700;
+  opacity: 0.85;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pay-type-chip--sub.pay-type-chip--active {
+  box-shadow: 0 0 0 2px var(--cream);
+}

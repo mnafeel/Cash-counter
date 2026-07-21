@@ -18,13 +18,12 @@ const KEYS: { action: NumpadAction; label: string }[] = [
 
 interface NumPadProps {
   onPress: (action: NumpadAction) => void
-  compact?: boolean
   showEnter?: boolean
 }
 
-export default function NumPad({ onPress, compact, showEnter = true }: NumPadProps) {
+export default function NumPad({ onPress, showEnter = true }: NumPadProps) {
   return (
-    <div className={`numpad ${compact ? 'numpad--compact' : ''}`}>
+    <div className="numpad">
       <div className="numpad-grid">
         {KEYS.map((key) => (
           <button

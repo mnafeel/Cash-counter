@@ -11,6 +11,25 @@
     <title>Shalimar Fashions · Cash Counter</title>
     <script>
       (function () {
+        var hash = location.hash ? location.hash.slice(1) : ''
+        if (hash) {
+          var path = hash
+          try {
+            if (path.indexOf('%') >= 0) path = decodeURIComponent(path)
+          } catch (e) {}
+          path = path.replace(/\/+/g, '/')
+          if (path !== hash) {
+            location.replace(location.pathname + '#' + path + location.search)
+            return
+          }
+        }
+        if (!location.hash && location.pathname && location.pathname !== '/') {
+          location.replace('/#' + location.pathname + location.search)
+        }
+      })()
+    </script>
+    <script>
+      (function () {
         var w = innerWidth
         var h = innerHeight
         var t = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useDeviceSize } from '../hooks/useDeviceSize'
+import { useHomePinLock } from '../hooks/useHomePinLock'
 import './Layout.css'
 
 const navItems = [
@@ -18,6 +19,7 @@ function getNavIndex(pathname: string): number {
 
 export default function Layout() {
   useDeviceSize()
+  useHomePinLock()
   const navigate = useNavigate()
   const location = useLocation()
 

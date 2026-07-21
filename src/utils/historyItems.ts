@@ -1,7 +1,9 @@
 import type { AppData, Sale } from '../types'
+import { expenseBillTag, isPurchaseExpense } from './expenseBillLabels'
 import { formatDate, formatMoney } from './format'
+import { buildPurchaseHistoryItems } from './purchaseHistory'
 
-export type HistoryItemType = 'sale' | 'expense' | 'deposit' | 'transfer'
+export type HistoryItemType = 'sale' | 'expense' | 'purchase' | 'deposit' | 'transfer'
 
 export type HistoryFilter = 'all' | HistoryItemType
 
@@ -49,12 +51,15 @@ export interface HistoryItem {
   completedAt?: string
   paymentMode?: HistoryPaymentMode
   paymentModes?: HistoryPaymentMode[]
+  /** Split bills — compact paid breakdown for list row */
+  paySummary?: string
 }
 
 export function getHistoryTypeLabel(type: HistoryItemType): string {
   if (type === 'sale') return 'Bill Collected'
   if (type === 'deposit') return 'Money Added'
   if (type === 'transfer') return 'Transfer'
+  if (type === 'purchase') return 'Purchase'
   return 'Expense'
 }
 
@@ -126,6 +131,23 @@ function isChequeBill(sale: Sale): boolean {
     sale.pendingPayType === 'cheque' ||
     (sale.status === 'pending' && sale.payType === 'cheque')
   )
+}
+
+function collectedPaymentAmount(sale: Sale): number {
+  if (sale.status === 'pending') return 0
+  const cash = sale.cashAmount ?? 0
+  const cheque = sale.chequeAmount ?? 0
+  let bank = sale.bankAmount ?? 0
+  if (sale.chequeApproved && cheque > 0) bank = Math.max(0, bank - cheque)
+  const componentTotal = cash + bank + cheque
+  if (componentTotal > 0) return componentTotal
+  if (sale.paidAmount > 0) return sale.paidAmount
+  return sale.billAmount
+}
+
+function latestPaidAt(lines: HistoryReceiptLine[]): string | undefined {
+  const paidAt = latestIso(lines.filter((line) => line.status === 'paid').map((line) => line.paidAt ?? line.date))
+  return paidAt || undefined
 }
 
 function childBillKind(sale: Sale): 'credit' | 'cheque' | null {
@@ -333,7 +355,7 @@ function buildSplitTimeline(parent: Sale, children: Sale[]): HistoryReceiptEvent
       events.push({
         label: 'Cash collected',
         date: parentPaidAt,
-        amount: parent.cashAmount,
+        amount: parent.cashAmount ?? 0,
         type: 'collected',
       })
     }
@@ -370,11 +392,16 @@ function buildSplitTimeline(parent: Sale, children: Sale[]): HistoryReceiptEvent
       type: child.status === 'pending' ? 'pending' : 'pending-created',
     })
     if (child.status !== 'pending') {
+      const paidAt = child.updatedAt ?? child.createdAt
       const method = collectionMethodLabel(child)
+      const collected = collectedPaymentAmount(child)
+      const detail = paidCollectionDetail(child)
       events.push({
-        label: kind ? `${part} paid · ${method}` : `${part} paid`,
-        date: child.updatedAt ?? child.createdAt,
-        amount: child.billAmount,
+        label: kind
+          ? `${part} paid · ${method}${detail ? ` · ${detail}` : ''}`
+          : `${part} paid${detail ? ` · ${detail}` : ''}`,
+        date: paidAt,
+        amount: collected,
         type: 'collected',
       })
     }
@@ -383,12 +410,64 @@ function buildSplitTimeline(parent: Sale, children: Sale[]): HistoryReceiptEvent
   return events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 }
 
-function formatSplitSub(lines: HistoryReceiptLine[], fullBill: number): string {
-  if (lines.length === 0) return `Split bill · ${formatMoney(fullBill)}`
-  const pending = lines.filter((l) => l.status === 'pending').length
-  const labels = [...new Set(lines.map((line) => line.label))]
-  const suffix = pending > 0 ? ` · ${pending} pending` : ' · collected'
-  return `Split bill · ${formatMoney(fullBill)} · ${labels.join(' + ')}${suffix}`
+function splitPartsTarget(parent: Sale, children: Sale[]): number {
+  const parentParts =
+    (parent.cashAmount ?? 0) +
+    (parent.bankAmount ?? 0) +
+    (parent.chequeAmount ?? 0) +
+    (parent.creditAmount ?? 0)
+  const childTotal = children.reduce((sum, child) => sum + child.billAmount, 0)
+  if (parentParts + childTotal > 0) return parentParts + childTotal
+  return parent.billAmount
+}
+
+function splitGroupMoneyCollected(parent: Sale, children: Sale[]): number {
+  let total = parent.status !== 'pending' ? collectedPaymentAmount(parent) : 0
+  for (const child of children) {
+    if (child.status !== 'pending') total += collectedPaymentAmount(child)
+  }
+  return total
+}
+
+function formatSplitPaymentBreakdown(lines: HistoryReceiptLine[]): string {
+  const parts: string[] = []
+  for (const line of lines) {
+    if (line.status !== 'paid') continue
+    if (line.label === 'Cash') parts.push(`💵 ${formatMoney(line.amount)}`)
+    else if (line.label === 'Bank') parts.push(`🏦 ${formatMoney(line.amount)}`)
+    else if (line.label === 'Cheque') parts.push(`🧾 ${formatMoney(line.amount)}`)
+    else if (line.label === 'Credit') parts.push(`💳 ${formatMoney(line.amount)}`)
+  }
+  return parts.join(' · ')
+}
+
+function formatSplitSub(
+  parent: Sale,
+  children: Sale[],
+  lines: HistoryReceiptLine[],
+  fullBill: number,
+): string {
+  const collectTarget = splitPartsTarget(parent, children)
+  const paidBreakdown = formatSplitPaymentBreakdown(lines)
+  const pendingLines = lines.filter((line) => line.status === 'pending')
+  const latestPaid = latestPaidAt(lines)
+  const moneyCollected = splitGroupMoneyCollected(parent, children)
+
+  let sub = `Split · Bill ${formatMoney(fullBill)}`
+  if (collectTarget > 0 && collectTarget !== fullBill) {
+    sub += ` · Round ${formatMoney(collectTarget)}`
+  }
+  if (paidBreakdown) {
+    sub += ` · Paid ${paidBreakdown}`
+  }
+  if (moneyCollected > 0) {
+    sub += ` · Collected ${formatMoney(moneyCollected)}`
+  }
+  if (pendingLines.length > 0) {
+    sub += ` · ${pendingLines.map((line) => `${line.label} ${formatMoney(line.amount)} pending`).join(' · ')}`
+  }
+  if (latestPaid) sub += ` · ${formatDate(latestPaid)}`
+  return sub
 }
 
 function buildSyntheticSplitParent(children: Sale[]): Sale {
@@ -467,6 +546,8 @@ function buildSplitGroupItem(parent: Sale, children: Sale[]): HistoryItem {
   const groupSaleIds = [parent.id, ...children.map((c) => c.id)]
   const allPaid =
     parent.status !== 'pending' && children.every((c) => c.status !== 'pending')
+  const moneyCollected = splitGroupMoneyCollected(parent, children)
+  const displayAmount = moneyCollected > 0 ? moneyCollected : fullBill
   const completedAt = allPaid
     ? latestIso([
         parent.updatedAt ?? parent.createdAt,
@@ -481,8 +562,8 @@ function buildSplitGroupItem(parent: Sale, children: Sale[]): HistoryItem {
   return {
     type: 'sale',
     id: parent.id,
-    amount: fullBill,
-    sub: formatSplitSub(receiptLines, fullBill),
+    amount: displayAmount,
+    sub: formatSplitSub(parent, children, receiptLines, fullBill),
     name: parent.customerName ?? children.find((c) => c.customerName)?.customerName,
     date: date || parent.createdAt,
     isSplitGroup: true,
@@ -494,6 +575,7 @@ function buildSplitGroupItem(parent: Sale, children: Sale[]): HistoryItem {
     completedAt,
     paymentMode: 'split',
     paymentModes: paymentModesFromReceiptLines(receiptLines),
+    paySummary: formatSplitPaymentBreakdown(receiptLines) || undefined,
   }
 }
 
@@ -549,7 +631,7 @@ function buildSaleTimeline(sale: Sale): HistoryReceiptEvent[] {
     events.push({
       label,
       date: sale.updatedAt ?? sale.createdAt,
-      amount: sale.billAmount,
+      amount: collectedPaymentAmount(sale),
       type: 'collected',
     })
   }
@@ -573,17 +655,24 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
         : `Cheque · ${amount} paid · ${collectionMethodLabel(sale)}${paidAt ? ` · ${formatDate(paidAt)}` : ''}`
   } else {
     const payLabel = salePayLabel(sale)
+    const paidDetail = paidCollectionDetail(sale)
     const orig =
       sale.originalBillAmount && sale.originalBillAmount !== sale.billAmount
-        ? `Bill ${formatMoney(sale.originalBillAmount)} → `
+        ? `Bill ${formatMoney(sale.originalBillAmount)} · Round ${formatMoney(sale.billAmount)} · `
         : ''
-    sub = `${orig}${sale.status === 'pending' ? 'Pending · ' : sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque' ? 'Paid ' : `Give ${formatMoney(sale.paidAmount)} · `}${payLabel}${sale.changeAmount > 0 ? ` · Change ${formatMoney(sale.changeAmount)}` : ''}${paidAt ? ` · Collected ${formatDate(paidAt)}` : ''}`
+    const paidPart =
+      sale.status === 'pending'
+        ? 'Pending · '
+        : sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque'
+          ? `Paid ${paidDetail ?? payLabel} · `
+          : `Give ${formatMoney(sale.paidAmount)} · ${paidDetail ?? payLabel} · `
+    sub = `${orig}${paidPart}${sale.changeAmount > 0 ? `Change ${formatMoney(sale.changeAmount)} · ` : ''}${paidAt ? formatDate(paidAt) : ''}`.replace(/ · $/, '')
   }
 
   return {
     type: 'sale',
     id: sale.id,
-    amount: sale.billAmount,
+    amount: collectedPaymentAmount(sale) || sale.billAmount,
     sub,
     name: sale.customerName,
     date: sale.createdAt,
@@ -632,7 +721,9 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
     saleItems.push(buildSaleHistoryItem(sale))
   }
 
-  const expenseItems = data.expenses.map((e) => {
+  const expenseItems = data.expenses
+    .filter((e) => !isPurchaseExpense(e))
+    .map((e) => {
     if (e.kind === 'transfer') {
       const toBank = e.transferDirection === 'cash-to-bank'
       return {
@@ -648,13 +739,26 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
     }
     const isAdd = e.kind === 'add'
     const payMode: HistoryPaymentMode =
-      e.payType === 'bank' ? 'bank' : e.payType === 'split' ? 'split' : 'cash'
+      e.payType === 'bank'
+        ? 'bank'
+        : e.payType === 'cheque'
+          ? 'cheque'
+          : e.payType === 'split'
+            ? 'split'
+            : 'cash'
+    const billTag = e.billNumber ? ` · ${expenseBillTag(e.billNumber)}` : ''
+    const giveTag =
+      e.giveAmount && e.giveAmount > 0
+        ? ` · Give ${formatMoney(e.giveAmount)}${e.changeAmount ? ` · Change ${formatMoney(e.changeAmount)}` : ''}`
+        : ''
     const expenseSub =
       e.payType === 'split'
-        ? `➗ Split · 💵 ${formatMoney(e.cashAmount ?? 0)} + 🏦 ${formatMoney(e.bankAmount ?? 0)}`
-        : e.payType === 'bank'
-          ? '🏦 Bank expense'
-          : '💵 Cash expense'
+        ? `➗ Split${billTag} · 💵 ${formatMoney(e.cashAmount ?? 0)} + 🏦 ${formatMoney(e.bankAmount ?? 0)}${(e.chequeAmount ?? 0) > 0 ? ` + 🧾 ${formatMoney(e.chequeAmount ?? 0)}${e.chequeApproved ? ' ✓' : ''}` : ''}${giveTag}`
+        : e.payType === 'cheque'
+          ? `🧾 Cheque expense${billTag}${e.chequeApproved ? ' ✓ Bank' : ' pending'}${giveTag}`
+          : e.payType === 'bank'
+            ? `🏦 Bank expense${billTag}${giveTag}`
+            : `💵 Cash expense${billTag}${giveTag}`
     const addSub =
       e.payType === 'split'
         ? `➗ Split add · 💵 ${formatMoney(e.cashAmount ?? 0)} + 🏦 ${formatMoney(e.bankAmount ?? 0)}`
@@ -670,11 +774,31 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
       date: e.createdAt,
       paymentMode: payMode,
       paymentModes:
-        e.payType === 'split' ? (['cash', 'bank', 'split'] as HistoryPaymentMode[]) : [payMode],
+        e.payType === 'split'
+          ? ((e.chequeAmount ?? 0) > 0
+              ? (['cash', 'bank', 'cheque', 'split'] as HistoryPaymentMode[])
+              : (['cash', 'bank', 'split'] as HistoryPaymentMode[]))
+          : [payMode],
     }
   })
 
-  return [...saleItems, ...expenseItems]
+  const purchaseItems: HistoryItem[] = buildPurchaseHistoryItems(data).map((item) => ({
+    type: 'purchase' as const,
+    id: item.id,
+    amount: item.amount,
+    sub: `${item.billLabel} · ${item.payLabel}${item.description ? ` · ${item.description}` : ''}`,
+    name: item.shopName,
+    date: item.date,
+  }))
+
+  return [...saleItems, ...expenseItems, ...purchaseItems]
+}
+
+/** Money actually collected for a history sale row (split-aware). */
+export function historyItemSaleAmount(item: HistoryItem): number {
+  if (item.type !== 'sale') return item.amount
+  if (item.isSplitGroup) return item.amount
+  return item.amount
 }
 
 export function matchesHistorySearch(item: HistoryItem, query: string): boolean {
