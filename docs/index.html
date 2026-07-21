@@ -4,7 +4,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <!-- build 2026-07-13T16:27:50.172Z -->
+    <!-- build 2026-07-21T10:58:00.042Z -->
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/Cash-counter/favicon.png" />
     <link rel="apple-touch-icon" href="/Cash-counter/logo.png" />
@@ -13,6 +13,25 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Shalimar Fashions · Cash Counter</title>
+    <script>
+      (function () {
+        var hash = location.hash ? location.hash.slice(1) : ''
+        if (hash) {
+          var path = hash
+          try {
+            if (path.indexOf('%') >= 0) path = decodeURIComponent(path)
+          } catch (e) {}
+          path = path.replace(/\/+/g, '/')
+          if (path !== hash) {
+            location.replace(location.pathname + '#' + path + location.search)
+            return
+          }
+        }
+        if (!location.hash && location.pathname && location.pathname !== '/') {
+          location.replace('/#' + location.pathname + location.search)
+        }
+      })()
+    </script>
     <script>
       (function () {
         var w = innerWidth
@@ -29,8 +48,8 @@
         d.style.setProperty('--counter-height', Math.max(320, h - hdr - uiPad * 2) + 'px')
       })()
     </script>
-    <script type="module" crossorigin src="/Cash-counter/assets/index-BkdjaII6.js"></script>
-    <link rel="stylesheet" crossorigin href="/Cash-counter/assets/index-BaWVqwAE.css">
+    <script type="module" crossorigin src="/Cash-counter/assets/index-Cln5mJnX.js"></script>
+    <link rel="stylesheet" crossorigin href="/Cash-counter/assets/index-Ag-QWNfL.css">
   </head>
   <body>
     <div id="root"></div>
