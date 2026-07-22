@@ -24,3 +24,29 @@ export function formatTime(iso: string): string {
     minute: '2-digit',
   }).format(new Date(iso))
 }
+
+/** YYYY-MM-DD for HTML date inputs from an ISO timestamp. */
+export function isoToDateInputValue(iso: string): string {
+  const date = new Date(iso)
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+/** Local calendar date from date input → ISO, keeping time from fallback when provided. */
+export function dateInputValueToIso(dateValue: string, fallbackIso?: string): string | null {
+  if (!dateValue) return null
+  const [y, m, d] = dateValue.split('-').map((part) => Number(part))
+  if (!y || !m || !d) return null
+  const fallback = fallbackIso ? new Date(fallbackIso) : new Date()
+  return new Date(
+    y,
+    m - 1,
+    d,
+    fallback.getHours(),
+    fallback.getMinutes(),
+    fallback.getSeconds(),
+    fallback.getMilliseconds(),
+  ).toISOString()
+}

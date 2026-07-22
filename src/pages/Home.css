@@ -7,69 +7,99 @@
   overflow: hidden;
 }
 
+.home.home--locked {
+  overflow: visible;
+}
+
 .home--locked {
-  flex: 1;
+  flex: 0 1 auto;
+  width: min(340px, calc(100% - 20px));
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 .home-pin {
+  position: relative;
+  --pin-space: 12px;
+  --pin-key-gap: 10px;
+  --pin-key-h: 54px;
+  --pin-digit: 44px;
+  --pin-digit-gap: 14px;
+
   width: 100%;
-  max-width: min(380px, 92vw);
+  max-width: 100%;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  padding: 22px 18px;
+  gap: var(--pin-space);
+  padding: 20px 18px 18px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+  box-sizing: border-box;
 }
 
 .home-pin-label {
-  font-size: 0.95rem;
+  width: 100%;
+  margin: 0;
+  font-size: 0.88rem;
   font-weight: 800;
   color: var(--cream-dim);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-align: center;
 }
 
-.home-pin-dots {
+.home-pin-digits {
   display: flex;
-  gap: 18px;
-  padding: 8px 0;
+  width: 100%;
   justify-content: center;
+  align-items: center;
+  gap: var(--pin-digit-gap);
+  padding: 2px 0;
 }
 
-.home-pin-dot {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 2.5px solid var(--cream-dim);
-  background: transparent;
+.home-pin-digit {
+  width: var(--pin-digit);
+  height: var(--pin-digit);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 2px solid var(--cream-dim);
+  background: var(--brown-dark);
+  color: transparent;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
-.home-pin-dot--filled {
-  background: var(--cream);
+.home-pin-digit--filled {
+  color: var(--cream);
   border-color: var(--cream);
+  background: var(--surface-2);
 }
 
-.home-pin-dots--error .home-pin-dot {
+.home-pin-digits--error .home-pin-digit {
   border-color: var(--danger);
 }
 
-.home-pin-dots--error .home-pin-dot--filled {
-  background: var(--danger);
-  border-color: var(--danger);
+.home-pin-digits--error .home-pin-digit--filled {
+  color: var(--danger-text);
+  background: rgba(139, 58, 58, 0.25);
 }
 
 .home-pin-error {
+  width: 100%;
   margin: 0;
   font-size: 0.85rem;
   font-weight: 700;
@@ -79,42 +109,93 @@
 
 .home-pin-keyboard {
   width: 100%;
-  max-height: min(340px, 50vh);
-  min-height: 260px;
+  min-height: calc(var(--pin-key-h) * 4 + var(--pin-key-gap) * 3);
   display: flex;
   flex-direction: column;
+  align-self: stretch;
+  flex-shrink: 0;
 }
 
 .home-pin-keyboard .number-keyboard {
-  flex: 1;
+  flex: 0 0 auto;
   min-height: 0;
-  padding: 8px;
+  width: 100%;
+  height: auto;
+  padding: 0;
+  gap: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
 }
 
 .home-pin-keyboard .number-keyboard-label {
   display: none;
 }
 
+.home-pin-keyboard .numpad,
 .home-pin-keyboard .numpad-grid {
-  gap: 8px;
+  width: 100%;
+  height: auto;
+  flex: 0 0 auto;
+}
+
+.home-pin-keyboard .numpad-grid {
+  gap: var(--pin-key-gap);
+  --key-gap: var(--pin-key-gap);
 }
 
 .home-pin-keyboard .numpad-key {
-  min-height: 52px;
-  font-size: clamp(1.15rem, 11cqh, 2.5rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--pin-key-h);
+  min-height: var(--pin-key-h);
+  max-height: var(--pin-key-h);
+  line-height: 1;
+  font-size: 1.35rem;
+  font-weight: 700;
 }
 
 .home-pin-keyboard .numpad-key--action,
 .home-pin-keyboard .numpad-key--backspace {
-  font-size: clamp(1rem, 9.5cqh, 2rem);
+  font-size: 1.2rem;
 }
 
 .home-pin-hint {
+  width: 100%;
   margin: 0;
-  font-size: 0.68rem;
+  padding-top: 2px;
+  font-size: 0.62rem;
   color: var(--text-muted);
   text-align: center;
   line-height: 1.35;
+}
+
+html[data-screen='tablet'] .home-pin,
+html[data-screen='desktop'] .home-pin {
+  --pin-space: 14px;
+  --pin-key-gap: 12px;
+  --pin-key-h: 62px;
+  --pin-digit: 52px;
+  --pin-digit-gap: 16px;
+  padding: 24px 22px 20px;
+}
+
+html[data-screen='tablet'] .home--locked,
+html[data-screen='desktop'] .home--locked {
+  width: min(380px, calc(100% - 32px));
+}
+
+html[data-screen='tablet'] .home-pin-keyboard .numpad-key,
+html[data-screen='desktop'] .home-pin-keyboard .numpad-key {
+  font-size: 1.55rem;
+}
+
+html[data-screen='tablet'] .home-pin-digit,
+html[data-screen='desktop'] .home-pin-digit {
+  font-size: 1.75rem;
 }
 
 .home-balances {

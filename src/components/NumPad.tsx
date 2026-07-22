@@ -19,9 +19,46 @@ const KEYS: { action: NumpadAction; label: string }[] = [
 interface NumPadProps {
   onPress: (action: NumpadAction) => void
   showEnter?: boolean
+  variant?: 'default' | 'pin'
 }
 
-export default function NumPad({ onPress, showEnter = true }: NumPadProps) {
+export default function NumPad({ onPress, showEnter = true, variant = 'default' }: NumPadProps) {
+  if (variant === 'pin') {
+    return (
+      <div className="numpad numpad--pin">
+        <div className="numpad-grid numpad-grid--pin">
+          {KEYS.slice(0, 9).map((key) => (
+            <button
+              key={key.label}
+              type="button"
+              className="numpad-key"
+              onClick={() => onPress(key.action)}
+            >
+              {key.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="numpad-key numpad-key--action"
+            onClick={() => onPress('clear')}
+          >
+            C
+          </button>
+          <button type="button" className="numpad-key" onClick={() => onPress('0')}>
+            0
+          </button>
+          <button
+            type="button"
+            className="numpad-key numpad-key--backspace"
+            onClick={() => onPress('backspace')}
+          >
+            ⌫
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="numpad">
       <div className="numpad-grid">

@@ -20,7 +20,7 @@ import {
 import { backupNow, setBackupStatusListener } from '../firebase/sync'
 import type { AppData } from '../types'
 import { getApprovedChequeAmount, listApprovedCheques } from '../storage/database'
-import { formatMoney, formatDate, parseAmount } from '../utils/format'
+import { formatMoney, formatDate, parseAmount, isoToDateInputValue, dateInputValueToIso } from '../utils/format'
 import { buildHistoryItems, getHistoryPaymentLabel, historyItemSortTime, matchesHistorySearch, type HistoryItem } from '../utils/historyItems'
 import { downloadFullHistoryReport, printFullHistoryReportPdf } from '../utils/historyReport'
 import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
@@ -121,6 +121,7 @@ export default function Settings() {
   const [editBillName, setEditBillName] = useState('')
   const [editBillAmount, setEditBillAmount] = useState('')
   const [editBillPayType, setEditBillPayType] = useState<'credit' | 'cheque'>('credit')
+  const [editBillDate, setEditBillDate] = useState('')
   const [billEditStatus, setBillEditStatus] = useState('')
   const [billEditOpen, setBillEditOpen] = useState(false)
 
@@ -160,6 +161,7 @@ export default function Settings() {
         setEditingBillId(null)
         setEditBillName('')
         setEditBillAmount('')
+        setEditBillDate('')
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -244,9 +246,11 @@ export default function Settings() {
 
   function startBillEdit(item: HistoryItem) {
     const sale = data.sales.find((s) => s.id === item.id)
+    const billCreatedIso = item.billCreatedAt ?? sale?.createdAt ?? item.date
     setEditingBillId(item.id)
     setEditBillName(item.name ?? '')
     setEditBillAmount(String(item.originalBillAmount ?? item.amount))
+    setEditBillDate(isoToDateInputValue(billCreatedIso))
     setEditBillPayType(
       sale?.pendingPayType === 'cheque' || sale?.payType === 'cheque' ? 'cheque' : 'credit',
     )
@@ -256,12 +260,21 @@ export default function Settings() {
     setEditingBillId(null)
     setEditBillName('')
     setEditBillAmount('')
+    setEditBillDate('')
   }
 
   function saveBillEdit(item: HistoryItem) {
+    const sale = data.sales.find((s) => s.id === item.id)
     const amount = parseAmount(editBillAmount)
     if (!item.isSplitGroup && !(amount > 0)) {
       setBillEditStatus('Enter a valid bill amount.')
+      setTimeout(() => setBillEditStatus(''), 3000)
+      return
+    }
+
+    const createdAt = dateInputValueToIso(editBillDate, sale?.createdAt ?? item.billCreatedAt)
+    if (editBillDate && !createdAt) {
+      setBillEditStatus('Enter a valid bill date.')
       setTimeout(() => setBillEditStatus(''), 3000)
       return
     }
@@ -270,6 +283,7 @@ export default function Settings() {
       customerName?: string
       billAmount?: number
       pendingPayType?: 'credit' | 'cheque'
+      createdAt?: string
     } = {
       customerName: editBillName,
     }
@@ -282,9 +296,17 @@ export default function Settings() {
       updates.pendingPayType = editBillPayType
     }
 
+    if (createdAt) {
+      updates.createdAt = createdAt
+    }
+
     updateSaleBill(item.id, updates, item.groupSaleIds)
     cancelBillEdit()
-    setBillEditStatus(`Bill updated · ${editBillName.trim() || '—'} · ${formatMoney(amount)}`)
+    const dateNote = createdAt ? ` · ${formatDate(createdAt)}` : ''
+    const amountLabel = item.isSplitGroup
+      ? formatMoney(item.originalBillAmount ?? item.amount)
+      : formatMoney(amount)
+    setBillEditStatus(`Bill updated · ${editBillName.trim() || '—'} · ${amountLabel}${dateNote}`)
     setTimeout(() => setBillEditStatus(''), 4000)
   }
 
@@ -591,8 +613,8 @@ export default function Settings() {
               <div className="settings-bill-edit-head">
                 <h3>Edit bills</h3>
                 <p>
-                  Search and fix customer name or bill amount. Pending bills can switch credit /
-                  cheque type.
+                  Search and fix customer name, bill amount, or bill date. Pending bills can switch
+                  credit / cheque type.
                 </p>
               </div>
               <button
@@ -874,7 +896,7 @@ export default function Settings() {
             <div className="settings-bill-edit-panel-head">
               <div>
                 <h3>Edit bills</h3>
-                <p>Recent first · tap Edit on any bill</p>
+                <p>Recent first · tap Edit on any bill · change date manually</p>
               </div>
               <button
                 type="button"
@@ -943,6 +965,14 @@ export default function Settings() {
                               onChange={(e) => setEditBillName(e.target.value)}
                               placeholder="Customer / party name"
                               autoComplete="off"
+                            />
+                          </label>
+                          <label className="settings-bill-edit-field">
+                            <span>Bill date</span>
+                            <input
+                              type="date"
+                              value={editBillDate}
+                              onChange={(e) => setEditBillDate(e.target.value)}
                             />
                           </label>
                           {!item.isSplitGroup ? (

@@ -25,6 +25,7 @@ export interface PurchaseHistoryItem {
   payLabel: string
   payDetail: string
   date: string
+  createdAt: string
   hasOpenCredit?: boolean
   openCreditAmount?: number
   openCreditExpenseId?: string
@@ -34,8 +35,14 @@ export interface PurchaseCreditItem {
   id: string
   shopName: string
   description?: string
+  /** Open credit balance remaining. */
   amount: number
+  /** Cash / bank / cheque already paid on this bill. */
+  paidAmount: number
+  /** Full purchase bill amount. */
+  billTotal: number
   date: string
+  createdAt: string
   payDetail: string
   payLabel: string
   billLabel: string
@@ -59,28 +66,190 @@ export interface TopPurchaseShop {
 }
 
 export function purchaseCreditAmount(expense: Expense): number {
-  if (expense.payType === 'credit') return expense.amount
+  if (expense.payType === 'credit') {
+    if (expense.creditAmount === 0) return 0
+    return expense.creditAmount ?? expense.amount
+  }
   if (expense.payType === 'split') return expense.creditAmount ?? 0
   return 0
 }
 
+/** Paid cash / bank / approved cheque components — excludes open credit. */
+export function purchasePaidComponents(expense: Expense): {
+  cash: number
+  bank: number
+  cheque: number
+} {
+  if (expense.payType === 'cash') {
+    return { cash: expense.amount, bank: 0, cheque: 0 }
+  }
+  if (expense.payType === 'bank') {
+    return { cash: 0, bank: expense.amount, cheque: 0 }
+  }
+  if (expense.payType === 'cheque') {
+    const cheque =
+      expense.chequeApproved && (expense.chequeAmount ?? 0) > 0
+        ? expense.chequeAmount ?? expense.amount
+        : 0
+    return { cash: 0, bank: 0, cheque }
+  }
+
+  const cash = expense.cashAmount ?? 0
+  const bank = expense.bankAmount ?? 0
+  const cheque =
+    expense.chequeApproved && (expense.chequeAmount ?? 0) > 0
+      ? expense.chequeAmount ?? 0
+      : 0
+
+  if (expense.payType === 'credit') {
+    const fromComponents = cash + bank + cheque
+    if (fromComponents > 0) return { cash, bank, cheque }
+    if (expense.creditAmount != null && expense.creditAmount < expense.amount) {
+      return { cash: expense.amount - expense.creditAmount, bank: 0, cheque: 0 }
+    }
+  }
+
+  return { cash, bank, cheque }
+}
+
 /** Cash / bank / approved cheque paid at purchase time — excludes credit portion. */
 export function purchasePaidAmount(expense: Expense): number {
-  if (expense.payType === 'credit') return 0
-  if (expense.payType === 'split') {
-    let paid = expense.cashAmount ?? 0
-    if ((expense.bankAmount ?? 0) > 0) paid += expense.bankAmount ?? 0
-    if (expense.chequeApproved && (expense.chequeAmount ?? 0) > 0) {
-      paid += expense.chequeAmount ?? 0
-    }
-    return paid
-  }
+  const { cash, bank, cheque } = purchasePaidComponents(expense)
+  const total = cash + bank + cheque
+  if (expense.payType === 'credit' || expense.payType === 'split') return total
   return expense.amount
+}
+
+/** Last activity time — credit payments bump updatedAt. */
+export function purchaseExpenseActivityTime(expense: Expense): string {
+  return expense.updatedAt ?? expense.createdAt
+}
+
+function latestPurchaseActivityTime(...expenses: Expense[]): string {
+  return expenses.reduce((latest, expense) => {
+    const next = purchaseExpenseActivityTime(expense)
+    return new Date(next).getTime() > new Date(latest).getTime() ? next : latest
+  }, purchaseExpenseActivityTime(expenses[0]))
 }
 
 export function isPurchaseCreditExpense(expense: Expense): boolean {
   if (!isPurchaseExpense(expense)) return false
   return purchaseCreditAmount(expense) > 0
+}
+
+export interface CreditPaymentInput {
+  payType: Expense['payType']
+  payAmount: number
+  cashAmount?: number
+  bankAmount?: number
+  chequeAmount?: number
+  chequeApproved?: boolean
+}
+
+/** Pay-down uses cash/bank/cheque/split — never credit again. */
+export function normalizeCreditPaymentPayType(payType: Expense['payType']): Expense['payType'] {
+  if (payType === 'credit') return 'cash'
+  return payType
+}
+
+/** Apply a partial or full payment against open supplier credit on a purchase expense. */
+export function buildCreditPaymentUpdate(
+  expense: Expense,
+  payment: CreditPaymentInput,
+): Partial<Expense> {
+  const payType = normalizeCreditPaymentPayType(payment.payType)
+  const openCredit = purchaseCreditAmount(expense)
+  const payNow = Math.min(Math.max(0, payment.payAmount), openCredit)
+  const remaining = openCredit - payNow
+  const purchaseTotal = expense.amount
+
+  const prevPaid = purchasePaidComponents(expense)
+  const prevCash = prevPaid.cash
+  const prevBank = prevPaid.bank
+  const prevCheque = prevPaid.cheque
+
+  let addCash = 0
+  let addBank = 0
+  let addCheque = 0
+  let chequeApproved = expense.chequeApproved
+
+  if (payType === 'cash') addCash = payNow
+  else if (payType === 'bank') addBank = payNow
+  else if (payType === 'cheque') {
+    addCheque = payNow
+    chequeApproved = payment.chequeApproved ?? false
+  } else if (payType === 'split') {
+    addCash = payment.cashAmount ?? 0
+    addBank = payment.bankAmount ?? 0
+    addCheque = payment.chequeApproved ? (payment.chequeAmount ?? 0) : 0
+  }
+
+  const totalCash = prevCash + addCash
+  const totalBank = prevBank + addBank
+  const totalCheque = prevCheque + addCheque
+
+  if (remaining === 0) {
+    const hasCash = totalCash > 0
+    const hasBank = totalBank > 0
+    const hasCheque = totalCheque > 0
+    const modeCount = [hasCash, hasBank, hasCheque].filter(Boolean).length
+
+    if (modeCount === 1) {
+      if (hasCash) {
+        return {
+          payType: 'cash',
+          amount: purchaseTotal,
+          cashAmount: undefined,
+          bankAmount: undefined,
+          creditAmount: undefined,
+          chequeAmount: undefined,
+          chequeApproved: undefined,
+        }
+      }
+      if (hasBank) {
+        return {
+          payType: 'bank',
+          amount: purchaseTotal,
+          bankAmount: purchaseTotal,
+          cashAmount: undefined,
+          creditAmount: undefined,
+          chequeAmount: undefined,
+          chequeApproved: undefined,
+        }
+      }
+      if (hasCheque) {
+        return {
+          payType: 'cheque',
+          amount: purchaseTotal,
+          chequeAmount: purchaseTotal,
+          chequeApproved: true,
+          cashAmount: undefined,
+          bankAmount: undefined,
+          creditAmount: undefined,
+        }
+      }
+    }
+
+    return {
+      payType: 'split',
+      amount: purchaseTotal,
+      cashAmount: totalCash || undefined,
+      bankAmount: totalBank || undefined,
+      creditAmount: undefined,
+      chequeAmount: totalCheque || undefined,
+      chequeApproved: totalCheque > 0 ? chequeApproved : undefined,
+    }
+  }
+
+  return {
+    payType: 'split',
+    amount: purchaseTotal,
+    cashAmount: totalCash || undefined,
+    bankAmount: totalBank || undefined,
+    creditAmount: remaining,
+    chequeAmount: totalCheque || undefined,
+    chequeApproved: totalCheque > 0 ? chequeApproved : expense.chequeApproved,
+  }
 }
 
 function purchaseCreditInfo(expense: Expense): { open: boolean; amount: number; expenseId: string } {
@@ -127,7 +296,10 @@ export function buildPurchaseCreditItems(data: AppData): PurchaseCreditItem[] {
       shopName: stripExpenseBillSuffix(expense.name),
       description: expense.description,
       amount,
-      date: expense.createdAt,
+      paidAmount: purchasePaidAmount(expense),
+      billTotal: expense.amount,
+      date: purchaseExpenseActivityTime(expense),
+      createdAt: expense.createdAt,
       payDetail: purchasePayDetail(expense),
       payLabel: purchasePayLabel(expense),
       billLabel: expense.billNumber === 2 ? purchaseBillLabel(2) : purchaseBillLabel(1),
@@ -183,7 +355,8 @@ export function buildPurchaseHistoryItems(data: AppData): PurchaseHistoryItem[] 
         billLabel: `${purchaseBillLabel(1)} + ${purchaseBillLabel(2)}`,
         payLabel: 'Both bills',
         payDetail: `No 1: ${purchasePayDetail(no1)} · No 2: ${purchasePayDetail(no2)}`,
-        date: expense.createdAt,
+        date: latestPurchaseActivityTime(no1, no2),
+        createdAt: no1.createdAt,
         hasOpenCredit: no1Credit.open || no2Credit.open,
         openCreditAmount: openCreditAmount > 0 ? openCreditAmount : undefined,
         openCreditExpenseId: no1Credit.open ? no1.id : no2Credit.open ? no2.id : undefined,
@@ -208,7 +381,8 @@ export function buildPurchaseHistoryItems(data: AppData): PurchaseHistoryItem[] 
       billLabel: gst ? purchaseBillLabel(1) : purchaseBillLabel(2),
       payLabel: purchasePayLabel(expense),
       payDetail: purchasePayDetail(expense),
-      date: expense.createdAt,
+      date: purchaseExpenseActivityTime(expense),
+      createdAt: expense.createdAt,
       hasOpenCredit: credit.open,
       openCreditAmount: credit.open ? credit.amount : undefined,
       openCreditExpenseId: credit.open ? credit.expenseId : undefined,

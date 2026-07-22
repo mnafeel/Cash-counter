@@ -23,7 +23,10 @@ import {
   addSupplier as addSupplierToData,
   addSupplierItem as addSupplierItemToData,
   addTransfer,
+  applyPartialCreditSaleCollection,
+  applyPurchaseCreditPayment,
   cancelApprovedCheque,
+  cancelPurchaseCredit,
   collectPendingBill,
   deleteExpense,
   deleteSale,
@@ -152,6 +155,32 @@ interface CashContextValue {
   removeSale: (id: string, relatedSaleIds?: string[]) => void
   removeExpense: (id: string) => void
   cancelApprovedCheque: (id: string) => void
+  cancelPurchaseCredit: (id: string) => void
+  applyPurchaseCreditPayment: (
+    id: string,
+    payment: {
+      payType: ExpensePayType
+      payAmount: number
+      cashAmount?: number
+      bankAmount?: number
+      chequeAmount?: number
+      chequeApproved?: boolean
+    },
+  ) => void
+  collectCreditPayment: (
+    id: string,
+    payment: {
+      dueAmount: number
+      collected: number
+      payType: PayType
+      cashAmount?: number
+      bankAmount?: number
+      chequeAmount?: number
+      chequeApproved?: boolean
+      customerName?: string
+      changeAmount?: number
+    },
+  ) => void
   addSupplier: (name: string) => void
   addSupplierItem: (name: string, item: string) => void
   updateHistoryName: (
@@ -184,6 +213,7 @@ interface CashContextValue {
       customerName?: string
       billAmount?: number
       pendingPayType?: Extract<PayType, 'credit' | 'cheque'>
+      createdAt?: string
     },
     relatedSaleIds?: string[],
   ) => void
@@ -501,6 +531,60 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => cancelApprovedCheque(prev, id))
   }, [])
 
+  const cancelPurchaseCreditBalance = useCallback((id: string) => {
+    setData((prev) => cancelPurchaseCredit(prev, id))
+  }, [])
+
+  const applyPurchaseCreditPaymentHandler = useCallback(
+    (
+      id: string,
+      payment: {
+        payType: ExpensePayType
+        payAmount: number
+        cashAmount?: number
+        bankAmount?: number
+        chequeAmount?: number
+        chequeApproved?: boolean
+      },
+    ) => {
+      setData((prev) => applyPurchaseCreditPayment(prev, id, payment))
+    },
+    [],
+  )
+
+  const collectCreditPaymentHandler = useCallback(
+    (
+      id: string,
+      payment: {
+        dueAmount: number
+        collected: number
+        payType: PayType
+        cashAmount?: number
+        bankAmount?: number
+        chequeAmount?: number
+        chequeApproved?: boolean
+        customerName?: string
+        changeAmount?: number
+      },
+    ) => {
+      setData((prev) => {
+        if (payment.collected <= 0) return prev
+
+        return applyPartialCreditSaleCollection(prev, id, {
+          collected: payment.collected,
+          payType: payment.payType,
+          cashAmount: payment.cashAmount,
+          bankAmount: payment.bankAmount,
+          chequeAmount: payment.chequeAmount,
+          chequeApproved: payment.chequeApproved,
+          customerName: payment.customerName,
+          changeAmount: payment.changeAmount,
+        })
+      })
+    },
+    [],
+  )
+
   const updateHistoryName = useCallback(
     (
       type: 'sale' | 'expense' | 'deposit' | 'transfer',
@@ -573,6 +657,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         customerName?: string
         billAmount?: number
         pendingPayType?: Extract<PayType, 'credit' | 'cheque'>
+        createdAt?: string
       },
       relatedSaleIds?: string[],
     ) => {
@@ -613,6 +698,9 @@ export function CashProvider({ children }: { children: ReactNode }) {
       addSupplier,
       addSupplierItem,
       cancelApprovedCheque: cancelApprovedChequeSale,
+      cancelPurchaseCredit: cancelPurchaseCreditBalance,
+      applyPurchaseCreditPayment: applyPurchaseCreditPaymentHandler,
+      collectCreditPayment: collectCreditPaymentHandler,
       updateHistoryName,
       updateExpense: updateExpenseHandler,
       updateSaleBill: updateSaleBillHandler,
@@ -647,6 +735,9 @@ export function CashProvider({ children }: { children: ReactNode }) {
       addSupplier,
       addSupplierItem,
       cancelApprovedChequeSale,
+      cancelPurchaseCreditBalance,
+      applyPurchaseCreditPaymentHandler,
+      collectCreditPaymentHandler,
       updateHistoryName,
       updateExpenseHandler,
       updateSaleBillHandler,

@@ -376,19 +376,25 @@ export default function Home() {
       <div className="home home--locked">
         <section className="home-pin">
           <p className="home-pin-label">Enter 4-digit PIN</p>
-          <div className={`home-pin-dots ${pinError ? 'home-pin-dots--error' : ''}`}>
+          <div className={`home-pin-digits ${pinError ? 'home-pin-digits--error' : ''}`}>
             {[0, 1, 2, 3].map((i) => (
               <span
                 key={i}
-                className={`home-pin-dot ${pinStr.length > i ? 'home-pin-dot--filled' : ''}`}
-              />
+                className={`home-pin-digit ${pinStr.length > i ? 'home-pin-digit--filled' : ''}`}
+              >
+                {pinStr[i] ?? ''}
+              </span>
             ))}
           </div>
           {pinError && <p className="home-pin-error">Wrong PIN. Try again.</p>}
-          <div className="home-pin-keyboard">
-            <NumberKeyboard onPress={handlePinNumpad} showEnter={false} />
+          <div
+            className="home-pin-keyboard"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <NumberKeyboard onPress={handlePinNumpad} showEnter={false} variant="pin" />
           </div>
-          <p className="home-pin-hint">Default PIN: 0000 — change in Settings</p>
+          <p className="home-pin-hint">Tap numbers on screen · Default PIN: 0000</p>
         </section>
       </div>
     )

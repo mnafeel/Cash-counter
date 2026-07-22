@@ -1,7 +1,12 @@
 import type { AppData, AppTheme, Expense, PayType, Sale, SupplierEntry, TransferDirection } from '../types'
 import { STORAGE_KEY } from '../types'
 import { collectSplitNameTargets } from '../utils/saleCustomerName'
-import { stripExpenseBillSuffix } from '../utils/expenseBillLabels'
+import { stripExpenseBillSuffix, isPurchaseExpense } from '../utils/expenseBillLabels'
+import {
+  buildCreditPaymentUpdate,
+  isPurchaseCreditExpense,
+  type CreditPaymentInput,
+} from '../utils/purchaseHistory'
 import { notifyDataChanged } from '../firebase/sync'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
@@ -506,18 +511,49 @@ export function updatePendingBill(
         ? {
             ...s,
             billAmount: updates.billAmount,
-            originalBillAmount: updates.originalBillAmount,
-            customerName: updates.customerName,
-            payType: updates.payType,
+            originalBillAmount: updates.originalBillAmount ?? s.originalBillAmount,
+            customerName: updates.customerName ?? s.customerName,
+            payType: updates.payType ?? s.payType,
             pendingPayType: updates.pendingPayType ?? s.pendingPayType,
-            cashAmount: updates.payType === 'split' ? updates.cashAmount : undefined,
-            bankAmount: updates.payType === 'split' ? updates.bankAmount : undefined,
-            chequeAmount: updates.payType === 'split' ? updates.chequeAmount : undefined,
-            creditAmount: updates.payType === 'split' ? updates.creditAmount : undefined,
+            cashAmount:
+              updates.payType === 'split'
+                ? updates.cashAmount
+                : updates.payType === 'credit'
+                  ? s.cashAmount
+                  : undefined,
+            bankAmount:
+              updates.payType === 'split'
+                ? updates.bankAmount
+                : updates.payType === 'credit'
+                  ? s.bankAmount
+                  : undefined,
+            chequeAmount:
+              updates.payType === 'split'
+                ? updates.chequeAmount
+                : updates.payType === 'credit'
+                  ? s.chequeAmount
+                  : undefined,
+            creditAmount:
+              updates.payType === 'split'
+                ? updates.creditAmount
+                : updates.payType === 'credit'
+                  ? updates.billAmount
+                  : undefined,
+            paidAmount: s.paidAmount,
             updatedAt: new Date().toISOString(),
           }
         : s,
     ),
+  }
+  const updated = next.sales.find((s) => s.id === id)
+  if (
+    updated &&
+    updated.parentSplitId &&
+    isCreditPendingSale(updated)
+  ) {
+    const synced = syncParentSplitCreditAmount(next, updated, updates.billAmount)
+    saveData(synced)
+    return synced
   }
   saveData(next)
   return next
@@ -625,6 +661,215 @@ export function cancelApprovedCheque(data: AppData, id: string): AppData {
   return next
 }
 
+/** Record a partial collection against a pending credit sale — keeps balance open. */
+function payTypeFromCollectedTotals(
+  cash: number,
+  bank: number,
+  cheque: number,
+  fallback: PayType,
+): PayType {
+  const modes = [cash > 0, bank > 0, cheque > 0].filter(Boolean).length
+  if (modes > 1) return 'split'
+  if (cash > 0) return 'cash'
+  if (bank > 0) return 'bank'
+  if (cheque > 0) return 'cheque'
+  return fallback
+}
+
+function syncParentSplitCreditAmount(
+  data: AppData,
+  creditSale: Sale,
+  remainingCredit: number,
+): AppData {
+  if (!creditSale.parentSplitId) return data
+
+  const now = new Date().toISOString()
+  return {
+    ...data,
+    sales: data.sales.map((s) =>
+      s.id === creditSale.parentSplitId
+        ? {
+            ...s,
+            creditAmount: remainingCredit > 0 ? remainingCredit : undefined,
+            updatedAt: now,
+          }
+        : s,
+    ),
+  }
+}
+
+function isCreditPendingSale(sale: Sale): boolean {
+  return (
+    sale.status === 'pending' &&
+    (sale.pendingPayType === 'credit' || sale.payType === 'credit')
+  )
+}
+
+export function applyPartialCreditSaleCollection(
+  data: AppData,
+  id: string,
+  payment: {
+    collected: number
+    payType: PayType
+    cashAmount?: number
+    bankAmount?: number
+    chequeAmount?: number
+    chequeApproved?: boolean
+    customerName?: string
+    changeAmount?: number
+  },
+): AppData {
+  const sale = data.sales.find((s) => s.id === id && s.status === 'pending')
+  if (!sale) return data
+
+  const due = sale.billAmount
+  const collected = Math.min(Math.max(0, payment.collected), due)
+  if (collected <= 0) return data
+
+  const remaining = due - collected
+  const now = new Date().toISOString()
+  const prevCash = sale.cashAmount ?? 0
+  const prevBank = sale.bankAmount ?? 0
+  const prevCheque =
+    sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
+
+  const addCash = payment.cashAmount ?? (payment.payType === 'cash' ? collected : 0)
+  const addBank = payment.bankAmount ?? (payment.payType === 'bank' ? collected : 0)
+  const addCheque =
+    payment.payType === 'cheque' && payment.chequeApproved
+      ? payment.chequeAmount ?? collected
+      : payment.chequeApproved
+        ? payment.chequeAmount ?? 0
+        : 0
+
+  const totalCash = prevCash + addCash
+  const totalBank = prevBank + addBank
+  const totalCheque = prevCheque + addCheque
+  const totalPaid = totalCash + totalBank + totalCheque
+
+  if (remaining <= 0) {
+    const originalBillAmount = sale.originalBillAmount ?? due + (totalPaid - collected)
+    const settledPayType = payTypeFromCollectedTotals(
+      totalCash,
+      totalBank,
+      totalCheque,
+      payment.payType,
+    )
+    return collectPendingBill(data, id, {
+      billAmount: originalBillAmount,
+      originalBillAmount,
+      paidAmount: totalPaid,
+      changeAmount: payment.changeAmount ?? 0,
+      payType: settledPayType,
+      cashAmount: totalCash || undefined,
+      bankAmount: totalBank || undefined,
+      chequeAmount: totalCheque || undefined,
+      chequeApproved: totalCheque > 0 ? true : undefined,
+      customerName: payment.customerName,
+    })
+  }
+
+  const patched: Sale = {
+    ...sale,
+    billAmount: remaining,
+    originalBillAmount: sale.originalBillAmount ?? due,
+    paidAmount: totalPaid,
+    payType: 'credit',
+    pendingPayType: 'credit',
+    cashAmount: totalCash || undefined,
+    bankAmount: totalBank || undefined,
+    chequeAmount: totalCheque || undefined,
+    chequeApproved: totalCheque > 0 ? payment.chequeApproved : undefined,
+    creditAmount: remaining,
+    customerName: payment.customerName ?? sale.customerName,
+    status: 'pending',
+    updatedAt: now,
+  }
+
+  let next: AppData = {
+    ...data,
+    sales: data.sales.map((s) => (s.id === id ? patched : s)),
+  }
+  next = syncParentSplitCreditAmount(next, patched, remaining)
+  saveData(next)
+  return next
+}
+
+function applyCreditPaymentFields(expense: Expense, updates: Partial<Expense>): Expense {
+  const payType = updates.payType ?? expense.payType
+  const patched: Expense = {
+    ...expense,
+    ...updates,
+    payType,
+    updatedAt: new Date().toISOString(),
+  }
+
+  if (payType === 'cash') {
+    patched.cashAmount = undefined
+    patched.bankAmount = undefined
+    patched.creditAmount = undefined
+    patched.chequeAmount = undefined
+    patched.chequeApproved = undefined
+    return patched
+  }
+
+  if (payType === 'bank') {
+    patched.bankAmount = updates.bankAmount ?? expense.amount
+    patched.cashAmount = undefined
+    patched.creditAmount = undefined
+    patched.chequeAmount = undefined
+    patched.chequeApproved = undefined
+    return patched
+  }
+
+  if (payType === 'cheque') {
+    patched.chequeAmount = updates.chequeAmount ?? expense.amount
+    patched.chequeApproved = updates.chequeApproved ?? true
+    patched.cashAmount = undefined
+    patched.bankAmount = undefined
+    patched.creditAmount = undefined
+    return patched
+  }
+
+  if (payType === 'split') {
+    patched.cashAmount = updates.cashAmount
+    patched.bankAmount = updates.bankAmount
+    patched.creditAmount = updates.creditAmount
+    patched.chequeAmount = updates.chequeAmount
+    patched.chequeApproved = updates.chequeApproved
+  }
+
+  return patched
+}
+
+/** Apply supplier credit pay-down — merges paid cash/bank/cheque correctly. */
+export function applyPurchaseCreditPayment(
+  data: AppData,
+  id: string,
+  payment: CreditPaymentInput,
+): AppData {
+  const expense = data.expenses.find((e) => e.id === id)
+  if (!expense || !isPurchaseExpense(expense) || !isPurchaseCreditExpense(expense)) {
+    return data
+  }
+
+  const updates = buildCreditPaymentUpdate(expense, payment)
+  const patched = applyCreditPaymentFields(expense, { ...updates, amount: expense.amount })
+
+  let next: AppData = {
+    ...data,
+    expenses: data.expenses.map((e) => (e.id === id ? patched : e)),
+  }
+
+  const supplierName = stripExpenseBillSuffix(patched.name?.trim() ?? '')
+  if (supplierName) next = ensureSupplierInData(next, supplierName)
+  const item = patched.description?.trim()
+  if (supplierName && item) next = addSupplierItem(next, supplierName, item)
+
+  saveData(next)
+  return next
+}
+
 export function collectPendingBill(
   data: AppData,
   id: string,
@@ -642,6 +887,7 @@ export function collectPendingBill(
     customerName?: string
   },
 ): AppData {
+  const original = data.sales.find((s) => s.id === id && s.status === 'pending')
   const now = new Date().toISOString()
   const next = {
     ...data,
@@ -661,14 +907,51 @@ export function collectPendingBill(
         : s,
     ),
   }
-  saveData(next)
-  return next
+  const settled = next.sales.find((s) => s.id === id)
+  const synced =
+    original?.parentSplitId && isCreditPendingSale(original) && settled
+      ? syncParentSplitCreditAmount(next, settled, 0)
+      : next
+  saveData(synced)
+  return synced
 }
 
 function defaultExpenseName(expense: Expense): string {
   if (expense.kind === 'add') return 'Added'
   if (expense.kind === 'transfer') return 'Transfer'
   return 'Expense'
+}
+
+function collectBillDateTargets(
+  data: AppData,
+  id: string,
+  relatedSaleIds?: string[],
+): Set<string> {
+  const targets = new Set<string>([id])
+  if (relatedSaleIds) {
+    for (const saleId of relatedSaleIds) {
+      if (data.sales.some((s) => s.id === saleId)) targets.add(saleId)
+    }
+  }
+  const sale = data.sales.find((s) => s.id === id)
+  if (sale?.parentSplitId) targets.add(sale.parentSplitId)
+  for (const child of data.sales) {
+    if (child.parentSplitId === id) targets.add(child.id)
+  }
+  return targets
+}
+
+function applyBillCreatedAt(
+  data: AppData,
+  id: string,
+  createdAt: string,
+  relatedSaleIds?: string[],
+): AppData {
+  const targets = collectBillDateTargets(data, id, relatedSaleIds)
+  return {
+    ...data,
+    sales: data.sales.map((s) => (targets.has(s.id) ? { ...s, createdAt } : s)),
+  }
 }
 
 export function updateSaleBill(
@@ -678,11 +961,16 @@ export function updateSaleBill(
     customerName?: string
     billAmount?: number
     pendingPayType?: Extract<PayType, 'credit' | 'cheque'>
+    createdAt?: string
   },
   relatedSaleIds?: string[],
 ): AppData {
   const sale = data.sales.find((s) => s.id === id)
   if (!sale) return data
+
+  let working = updates.createdAt
+    ? applyBillCreatedAt(data, id, updates.createdAt, relatedSaleIds)
+    : data
 
   const billAmount =
     updates.billAmount != null && updates.billAmount > 0 ? updates.billAmount : sale.billAmount
@@ -694,7 +982,7 @@ export function updateSaleBill(
   if (sale.status === 'pending') {
     const pendingPayType = updates.pendingPayType ?? sale.pendingPayType ?? sale.payType
     const payType = updates.pendingPayType ?? sale.payType
-    return updatePendingBill(data, id, {
+    return updatePendingBill(working, id, {
       billAmount,
       originalBillAmount: sale.originalBillAmount ?? billAmount,
       customerName,
@@ -712,20 +1000,26 @@ export function updateSaleBill(
   }
 
   const isSplitParent =
-    sale.payType === 'split' || data.sales.some((s) => s.parentSplitId === sale.id)
+    sale.payType === 'split' || working.sales.some((s) => s.parentSplitId === sale.id)
 
   if (isSplitParent) {
-    if (updates.customerName === undefined) return data
-    return updateSaleCustomerName(data, id, updates.customerName, relatedSaleIds)
+    if (updates.customerName !== undefined) {
+      return updateSaleCustomerName(working, id, updates.customerName, relatedSaleIds)
+    }
+    if (updates.createdAt) {
+      saveData(working)
+      return working
+    }
+    return data
   }
 
   const now = new Date().toISOString()
   const nameTargets = new Set<string>()
-  for (const saleId of collectSplitNameTargets(data, id)) nameTargets.add(saleId)
+  for (const saleId of collectSplitNameTargets(working, id)) nameTargets.add(saleId)
   if (relatedSaleIds) {
     for (const saleId of relatedSaleIds) {
-      if (data.sales.some((s) => s.id === saleId)) {
-        for (const relatedId of collectSplitNameTargets(data, saleId)) {
+      if (working.sales.some((s) => s.id === saleId)) {
+        for (const relatedId of collectSplitNameTargets(working, saleId)) {
           nameTargets.add(relatedId)
         }
       }
@@ -734,8 +1028,8 @@ export function updateSaleBill(
   if (nameTargets.size === 0) nameTargets.add(id)
 
   const next = {
-    ...data,
-    sales: data.sales.map((s) => {
+    ...working,
+    sales: working.sales.map((s) => {
       if (!nameTargets.has(s.id) && s.id !== id) return s
 
       let patched: Sale = { ...s }
@@ -790,6 +1084,7 @@ export function updateExpense(
   const patched: Expense = {
     ...existing,
     ...updates,
+    updatedAt: new Date().toISOString(),
     name: updates.name !== undefined ? updates.name.trim() || defaultExpenseName(existing) : existing.name,
     description:
       updates.description !== undefined
@@ -809,4 +1104,17 @@ export function updateExpense(
 
   saveData(next)
   return next
+}
+
+/** Clear open supplier credit on a purchase — keeps the bill, removes credit balance. */
+export function cancelPurchaseCredit(data: AppData, id: string): AppData {
+  const expense = data.expenses.find((e) => e.id === id)
+  if (!expense || !isPurchaseExpense(expense)) return data
+  if (expense.payType === 'credit') {
+    return updateExpense(data, id, { creditAmount: 0 })
+  }
+  if (expense.payType === 'split' && (expense.creditAmount ?? 0) > 0) {
+    return updateExpense(data, id, { creditAmount: 0 })
+  }
+  return data
 }

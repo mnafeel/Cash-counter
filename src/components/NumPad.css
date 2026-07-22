@@ -19,6 +19,17 @@
   flex: 1;
 }
 
+.numpad-grid--pin {
+  grid-template-rows: repeat(4, auto);
+  height: auto;
+  flex: 0 0 auto;
+}
+
+.numpad--pin {
+  height: auto;
+  flex: 0 0 auto;
+}
+
 .numpad-key {
   min-height: 0;
   max-height: 100%;

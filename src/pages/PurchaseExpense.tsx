@@ -10,7 +10,12 @@ import type { Expense, ExpensePayType } from '../types'
 import { formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { expenseBillSuffix, GST_BILL_LABEL, isGstExpense, isPurchaseExpense, NO_GST_BILL_LABEL, parseExpenseBillMode, purchaseBillLabel, stripExpenseBillSuffix } from '../utils/expenseBillLabels'
-import { isPurchaseCreditExpense, purchaseCreditAmount } from '../utils/purchaseHistory'
+import {
+  isPurchaseCreditExpense,
+  normalizeCreditPaymentPayType,
+  purchaseCreditAmount,
+  purchasePaidAmount,
+} from '../utils/purchaseHistory'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import './PurchaseExpense.css'
 
@@ -45,11 +50,37 @@ const EMPTY_BILL: BillFormState = {
 }
 
 const BILL_PAY_TYPES: ExpensePayType[] = ['cash', 'bank', 'credit', 'cheque', 'split']
+const CREDIT_UPDATE_PAY_TYPES: ExpensePayType[] = ['cash', 'bank', 'cheque', 'split']
 
-function creditUpdatePayOptions(expense: Expense): ExpensePayType[] {
-  if (expense.payType === 'split') return ['split']
-  if (expense.payType === 'credit') return ['credit']
-  return [expense.payType]
+function creditUpdatePayOptions(_expense: Expense): ExpensePayType[] {
+  return CREDIT_UPDATE_PAY_TYPES
+}
+
+function creditPaymentFromBill(bill: BillFormState): number {
+  if (bill.payType === 'split') {
+    const cash = parseAmount(bill.cashSplitStr)
+    const cheque = bill.chequeApproved ? parseAmount(bill.chequeSplitStr) : 0
+    const fromSplits = cash + cheque
+    if (fromSplits > 0) return fromSplits
+    return parseAmount(bill.amountStr)
+  }
+  if (bill.payType === 'cheque' && !bill.chequeApproved) return 0
+  return parseAmount(bill.amountStr)
+}
+
+function validateCreditPaymentBill(bill: BillFormState, openingBalance: number): boolean {
+  if (bill.payType === 'credit') return false
+  const paying = creditPaymentFromBill(bill)
+  if (paying <= 0 || paying > openingBalance) return false
+  if (bill.payType === 'cheque' && !bill.chequeApproved) return false
+  if (bill.payType === 'split') {
+    const cash = parseAmount(bill.cashSplitStr)
+    const cheque = bill.chequeApproved ? parseAmount(bill.chequeSplitStr) : 0
+    if (cash <= 0 && cheque <= 0) return false
+    const total = parseAmount(bill.amountStr)
+    if (total > 0 && cash + cheque !== total) return false
+  }
+  return true
 }
 
 function formatSplitPart(amount: number): string {
@@ -58,15 +89,20 @@ function formatSplitPart(amount: number): string {
 }
 
 
-function billFieldSteps(bill: BillFormState): ExpenseField[] {
+function billFieldSteps(bill: BillFormState, creditUpdate = false): ExpenseField[] {
   if (bill.payType === 'split') {
+    if (creditUpdate) return ['amount', 'cashSplit', 'chequeSplit']
     return ['amount', 'cashSplit', 'creditSplit', 'chequeSplit']
   }
   return ['amount']
 }
 
-function nextExpenseField(current: ExpenseField, bill: BillFormState): ExpenseField {
-  const order: ExpenseField[] = ['name', 'description', ...billFieldSteps(bill), 'pay']
+function nextExpenseField(
+  current: ExpenseField,
+  bill: BillFormState,
+  creditUpdate = false,
+): ExpenseField {
+  const order: ExpenseField[] = ['name', 'description', ...billFieldSteps(bill, creditUpdate), 'pay']
   const idx = order.indexOf(current)
   if (idx < 0) return order[0]
   return order[(idx + 1) % order.length]
@@ -246,8 +282,26 @@ function expenseToBillState(expense: Expense): BillFormState {
   }
 }
 
+function expenseToCreditPayState(): BillFormState {
+  return {
+    amountStr: '',
+    payType: 'cash',
+    cashSplitStr: '',
+    creditSplitStr: '',
+    chequeSplitStr: '',
+    chequeApproved: false,
+  }
+}
+
+function billStateForLoad(expense: Expense, mode: 'open' | 'update'): BillFormState {
+  if (mode === 'update' && isPurchaseCreditExpense(expense)) {
+    return expenseToCreditPayState()
+  }
+  return expenseToBillState(expense)
+}
+
 export default function PurchaseExpense() {
-  const { recordExpenses, updateExpense, addSupplier, data } = useCash()
+  const { recordExpenses, updateExpense, addSupplier, cancelPurchaseCredit, applyPurchaseCreditPayment, data } = useCash()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [name, setName] = useState('')
@@ -374,46 +428,127 @@ export default function PurchaseExpense() {
   const creditSplitAmount = parseAmount(bill.creditSplitStr)
   const chequeSplitAmount = parseAmount(bill.chequeSplitStr)
 
-  const splitPaidTotal = cashSplitAmount + creditSplitAmount + chequeSplitAmount
+  const isEditing = editingExpenseIds.length > 0
+
+  const isCreditUpdateMode = useMemo(() => {
+    if (!isEditing) return false
+    return editingExpenseIds.some((id) => {
+      const expense = data.expenses.find((entry) => entry.id === id)
+      return expense && isPurchaseCreditExpense(expense)
+    })
+  }, [isEditing, editingExpenseIds, data.expenses])
+
+  const activeCreditExpense = useMemo(() => {
+    if (!isCreditUpdateMode || editingExpenseIds.length === 0) return null
+    const idx = editingBill === 1 ? 0 : editingExpenseIds.length > 1 ? 1 : 0
+    const id = editingExpenseIds[idx]
+    const expense = data.expenses.find((entry) => entry.id === id)
+    return expense && isPurchaseCreditExpense(expense) ? expense : null
+  }, [isCreditUpdateMode, editingExpenseIds, editingBill, data.expenses])
+
+  const creditUpdateActiveSlot = Boolean(activeCreditExpense)
+  const creditOpeningBalance = activeCreditExpense ? purchaseCreditAmount(activeCreditExpense) : 0
+  const creditAlreadyPaid = activeCreditExpense ? purchasePaidAmount(activeCreditExpense) : 0
+  const creditBillTotal = activeCreditExpense?.amount ?? 0
+  const creditPayingNow = creditUpdateActiveSlot ? creditPaymentFromBill(bill) : 0
+  const creditTotalPaid = creditAlreadyPaid + creditPayingNow
+  const creditRemaining = Math.max(0, creditOpeningBalance - creditPayingNow)
+
+  const splitPaidTotal =
+    creditUpdateActiveSlot && splitMode
+      ? cashSplitAmount + chequeSplitAmount
+      : cashSplitAmount + creditSplitAmount + chequeSplitAmount
   const splitShortfall = splitMode && amount > 0 ? Math.max(0, amount - splitPaidTotal) : 0
   const splitExcess = splitMode && amount > 0 ? Math.max(0, splitPaidTotal - amount) : 0
 
-  const bill1Valid = validateBill(bill1, false, name)
-  const bill2Valid = validateBill(bill2, false, name)
-  const hasBill1 = bill1Amount > 0
-  const hasBill2 = bill2Amount > 0
+  const bill1Valid = creditUpdateActiveSlot && editingBill === 1
+    ? validateCreditPaymentBill(bill1, creditOpeningBalance)
+    : validateBill(bill1, false, name)
+  const bill2Valid = creditUpdateActiveSlot && editingBill === 2
+    ? validateCreditPaymentBill(bill2, creditOpeningBalance)
+    : validateBill(bill2, false, name)
+  const hasBill1 = creditUpdateActiveSlot && editingBill === 1
+    ? creditPayingNow > 0
+    : bill1Amount > 0
+  const hasBill2 = creditUpdateActiveSlot && editingBill === 2
+    ? creditPayingNow > 0
+    : bill2Amount > 0
 
   const isValid = (() => {
+    if (isCreditUpdateMode) {
+      if (name.trim().length === 0) return false
+      return creditUpdateActiveSlot && validateCreditPaymentBill(bill, creditOpeningBalance)
+    }
     if (name.trim().length === 0) return false
     if (!hasBill1 && !hasBill2) return false
     return (!hasBill1 || bill1Valid) && (!hasBill2 || bill2Valid)
   })()
 
-  const canChequeApprove = !saved && canChequeApproveBill(bill)
+  const canChequeApprove = !saved && (
+    creditUpdateActiveSlot
+      ? (bill.payType === 'cheque' && creditPayingNow > 0 && !bill.chequeApproved) ||
+        (splitMode && chequeSplitAmount > 0 && !bill.chequeApproved)
+      : canChequeApproveBill(bill)
+  )
 
-  const payDetailText = amount > 0 ? describeBillPay(bill) : ''
-  const isEditing = editingExpenseIds.length > 0
-  const canSave = isValid && !saved && (isEditing || !formNote)
+  const payDetailText = creditUpdateActiveSlot
+    ? creditPayingNow > 0
+      ? `Paid ${formatMoney(creditTotalPaid)} · Credit ${formatMoney(creditRemaining)}`
+      : creditAlreadyPaid > 0
+        ? `Paid ${formatMoney(creditAlreadyPaid)} · Credit ${formatMoney(creditOpeningBalance)}`
+        : ''
+    : amount > 0
+      ? describeBillPay(bill)
+      : ''
+  const canSave = isValid && !saved && (isCreditUpdateMode || isEditing || !formNote)
 
   const creditUpdateInfo = useMemo(() => {
-    if (!isEditing || editingExpenseIds.length === 0) return null
-    const loaded = editingExpenseIds
-      .map((id) => data.expenses.find((entry) => entry.id === id))
-      .filter((entry): entry is Expense => Boolean(entry && isPurchaseCreditExpense(entry)))
-    if (loaded.length === 0) return null
-    const balance = loaded.reduce((sum, entry) => sum + purchaseCreditAmount(entry), 0)
-    const activeExpense =
-      loaded.find((entry) => entry.id === editingExpenseIds[editingBill === 1 ? 0 : 1]) ??
-      loaded.find((entry) => entry.id === editingExpenseIds[0]) ??
-      loaded[0]
-    return {
-      balance,
-      payLabel: activeExpense.payType === 'split' ? 'Split' : 'Credit',
-      billLabel:
-        activeExpense.billNumber === 2 ? purchaseBillLabel(2) : purchaseBillLabel(1),
-      payOptions: creditUpdatePayOptions(activeExpense),
+    if (!isCreditUpdateMode) return null
+    if (!activeCreditExpense) {
+      const anyCredit = editingExpenseIds
+        .map((id) => data.expenses.find((entry) => entry.id === id))
+        .find((entry) => entry && isPurchaseCreditExpense(entry))
+      if (!anyCredit) return null
+      return {
+        balance: 0,
+        openingBalance: 0,
+        alreadyPaid: 0,
+        totalPaid: 0,
+        payingNow: 0,
+        remaining: 0,
+        billTotal: 0,
+        payLabel: 'Credit',
+        billLabel: 'Switch bill',
+        payOptions: CREDIT_UPDATE_PAY_TYPES,
+        activeSlot: false,
+      }
     }
-  }, [isEditing, editingExpenseIds, data.expenses, editingBill])
+    return {
+      balance: creditOpeningBalance,
+      openingBalance: creditOpeningBalance,
+      alreadyPaid: creditAlreadyPaid,
+      totalPaid: creditTotalPaid,
+      payingNow: creditPayingNow,
+      remaining: creditRemaining,
+      billTotal: creditBillTotal,
+      payLabel: activeCreditExpense.payType === 'split' ? 'Split' : 'Credit',
+      billLabel:
+        activeCreditExpense.billNumber === 2 ? purchaseBillLabel(2) : purchaseBillLabel(1),
+      payOptions: creditUpdatePayOptions(activeCreditExpense),
+      activeSlot: true,
+    }
+  }, [
+    isCreditUpdateMode,
+    editingExpenseIds,
+    data.expenses,
+    activeCreditExpense,
+    creditOpeningBalance,
+    creditAlreadyPaid,
+    creditTotalPaid,
+    creditPayingNow,
+    creditRemaining,
+    creditBillTotal,
+  ])
 
   const visiblePayTypes = creditUpdateInfo?.payOptions ?? BILL_PAY_TYPES
 
@@ -430,14 +565,29 @@ export default function PurchaseExpense() {
     patchBillFor(editingBill, patch)
   }
 
+  function slotHasOpenCredit(slot: BillSlot): boolean {
+    if (!isCreditUpdateMode || editingExpenseIds.length === 0) return false
+    const idx = slot === 1 ? 0 : editingExpenseIds.length > 1 ? 1 : 0
+    const id = editingExpenseIds[idx]
+    const expense = data.expenses.find((entry) => entry.id === id)
+    return Boolean(expense && isPurchaseCreditExpense(expense))
+  }
+
   function applySplitCashFor(slot: BillSlot, nextCashStr: string) {
     const b = billState(slot)
     const total = parseAmount(b.amountStr)
+    const creditUpdateSlot = slotHasOpenCredit(slot)
     patchBillFor(slot, { cashSplitStr: nextCashStr, chequeApproved: false })
     if (total <= 0) return
     const cash = parseAmount(nextCashStr)
     const cheque = parseAmount(b.chequeSplitStr)
     const room = Math.max(0, total - cheque)
+    if (creditUpdateSlot) {
+      if (cash + cheque > total) {
+        patchBillFor(slot, { chequeSplitStr: formatSplitPart(Math.max(0, total - cash)) })
+      }
+      return
+    }
     if (nextCashStr === '') {
       patchBillFor(slot, { creditSplitStr: formatSplitPart(Math.max(0, room)) })
       return
@@ -473,11 +623,20 @@ export default function PurchaseExpense() {
   function applySplitChequeFor(slot: BillSlot, nextChequeStr: string) {
     const b = billState(slot)
     const total = parseAmount(b.amountStr)
+    const creditUpdateSlot = slotHasOpenCredit(slot)
     patchBillFor(slot, { chequeSplitStr: nextChequeStr, chequeApproved: false })
     if (total <= 0) return
     const cheque = parseAmount(nextChequeStr)
     const room = Math.max(0, total - cheque)
     const cash = Math.min(parseAmount(b.cashSplitStr), room)
+    if (creditUpdateSlot) {
+      patchBillFor(slot, {
+        chequeSplitStr: nextChequeStr,
+        cashSplitStr: formatSplitPart(cash),
+        chequeApproved: false,
+      })
+      return
+    }
     const credit = Math.max(0, room - cash)
     patchBillFor(slot, {
       chequeSplitStr: nextChequeStr,
@@ -501,9 +660,15 @@ export default function PurchaseExpense() {
 
   function syncSplitFromTotalFor(slot: BillSlot, nextAmountStr: string) {
     const b = billState(slot)
+    const creditUpdateSlot = slotHasOpenCredit(slot)
     patchBillFor(slot, { amountStr: nextAmountStr, chequeApproved: false })
     const total = parseAmount(nextAmountStr)
     if (total <= 0 || b.payType !== 'split') return
+    if (creditUpdateSlot) {
+      if (b.cashSplitStr) applySplitCashFor(slot, b.cashSplitStr)
+      else if (b.chequeSplitStr) applySplitChequeFor(slot, b.chequeSplitStr)
+      return
+    }
     if (b.cashSplitStr) applySplitCashFor(slot, b.cashSplitStr)
     else if (b.creditSplitStr) applySplitCreditFor(slot, b.creditSplitStr)
     else if (b.chequeSplitStr) applySplitChequeFor(slot, b.chequeSplitStr)
@@ -518,8 +683,55 @@ export default function PurchaseExpense() {
     setActiveField('amount')
   }
 
+  function resetPurchaseForm() {
+    setBill1({ ...EMPTY_BILL })
+    setBill2({ ...EMPTY_BILL, payType: 'cash' })
+    setName('')
+    setDescription('')
+    setBillMode('no1')
+    setActiveField('name')
+    setSaved(false)
+    setFormNote(null)
+    setEditingExpenseIds([])
+    setLoadedExpenseIds([])
+  }
+
+  function handleCancelCredit() {
+    const creditIds = editingExpenseIds.filter((id) => {
+      const expense = data.expenses.find((entry) => entry.id === id)
+      return expense && isPurchaseCreditExpense(expense)
+    })
+    if (creditIds.length === 0) return
+    for (const id of creditIds) cancelPurchaseCredit(id)
+    resetPurchaseForm()
+    setFormNote('Credit cancelled · balance cleared')
+    window.setTimeout(() => setFormNote(null), 3000)
+  }
+
   function handleSave() {
     if (!isValid || saved) return
+
+    if (isCreditUpdateMode && creditUpdateActiveSlot) {
+      const expenseId = editingExpenseIds[editingBill === 1 ? 0 : editingExpenseIds.length > 1 ? 1 : 0]
+      const expense = data.expenses.find((entry) => entry.id === expenseId)
+      if (!expense || !isPurchaseCreditExpense(expense)) return
+      const payAmount = creditPaymentFromBill(bill)
+      const payType = normalizeCreditPaymentPayType(bill.payType)
+      applyPurchaseCreditPayment(expenseId, {
+        payType,
+        payAmount,
+        cashAmount: parseAmount(bill.cashSplitStr),
+        bankAmount: payType === 'bank' ? payAmount : undefined,
+        chequeAmount: parseAmount(bill.chequeSplitStr),
+        chequeApproved: bill.chequeApproved,
+      })
+      setSaved(true)
+      setTimeout(() => {
+        resetPurchaseForm()
+      }, 900)
+      return
+    }
+
     const payloads = []
     if (hasBill1 && bill1Valid) {
       payloads.push(buildExpensePayload(bill1, 1, name, description, true))
@@ -544,16 +756,7 @@ export default function PurchaseExpense() {
 
     setSaved(true)
     setTimeout(() => {
-      setBill1({ ...EMPTY_BILL })
-      setBill2({ ...EMPTY_BILL, payType: 'cash' })
-      setName('')
-      setDescription('')
-      setBillMode('no1')
-      setActiveField('name')
-      setSaved(false)
-      setFormNote(null)
-      setEditingExpenseIds([])
-      setLoadedExpenseIds([])
+      resetPurchaseForm()
     }, 900)
   }
 
@@ -571,9 +774,15 @@ export default function PurchaseExpense() {
     if (paired) {
       const no1 = isGstExpense(expense.name, expense.billNumber) ? expense : paired
       const no2 = no1.id === expense.id ? paired : expense
-      setBill1(expenseToBillState(no1))
-      setBill2(expenseToBillState(no2))
-      setBillMode('no1')
+      const open1 = isPurchaseCreditExpense(no1) ? purchaseCreditAmount(no1) : 0
+      const open2 = isPurchaseCreditExpense(no2) ? purchaseCreditAmount(no2) : 0
+      setBill1(billStateForLoad(no1, mode))
+      setBill2(billStateForLoad(no2, mode))
+      if (mode === 'update' && (open1 > 0 || open2 > 0)) {
+        setBillMode(open1 > 0 ? 'no1' : 'no2')
+      } else {
+        setBillMode('no1')
+      }
       const ids = [no1.id, no2.id]
       setLoadedExpenseIds(ids)
       setEditingExpenseIds(mode === 'update' ? ids : [])
@@ -591,7 +800,7 @@ export default function PurchaseExpense() {
     } else {
       const slot = expense.billNumber === 2 ? 2 : 1
       setBillMode(slot === 2 ? 'no2' : 'no1')
-      const state = expenseToBillState(expense)
+      const state = billStateForLoad(expense, mode)
       if (slot === 1) {
         setBill1(state)
         setBill2({ ...EMPTY_BILL })
@@ -650,6 +859,13 @@ export default function PurchaseExpense() {
   }
 
   function handleClear() {
+    if (isCreditUpdateMode) {
+      if (slotHasOpenCredit(1)) setBill1(expenseToCreditPayState())
+      if (slotHasOpenCredit(2)) setBill2(expenseToCreditPayState())
+      setActiveField('amount')
+      setSaved(false)
+      return
+    }
     setBill1({ ...EMPTY_BILL })
     setBill2({ ...EMPTY_BILL, payType: 'cash' })
     setName('')
@@ -662,8 +878,23 @@ export default function PurchaseExpense() {
     setLoadedExpenseIds([])
   }
 
+  useEffect(() => {
+    if (!isCreditUpdateMode || !creditUpdateActiveSlot) return
+    if (bill.payType === 'credit') {
+      patchBill({ payType: 'cash', amountStr: bill.amountStr, chequeApproved: false })
+    }
+  }, [isCreditUpdateMode, creditUpdateActiveSlot, bill.payType])
+
   function enableBillUpdate() {
     if (loadedExpenseIds.length === 0) return
+    const hasCredit = loadedExpenseIds.some((id) => {
+      const expense = data.expenses.find((entry) => entry.id === id)
+      return expense && isPurchaseCreditExpense(expense)
+    })
+    if (hasCredit) {
+      loadPurchaseBill(loadedExpenseIds[0], 'update')
+      return
+    }
     setEditingExpenseIds(loadedExpenseIds)
     setFormNote(`Updating purchase · ${name.trim() || 'supplier'}`)
     setActiveField('amount')
@@ -675,7 +906,7 @@ export default function PurchaseExpense() {
   }
 
   function handleEnter() {
-    focusField(nextExpenseField(activeField, bill))
+    focusField(nextExpenseField(activeField, bill, creditUpdateActiveSlot))
   }
 
   function handleNumpad(action: NumpadAction) {
@@ -779,7 +1010,11 @@ export default function PurchaseExpense() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [saved, isValid])
 
-  const topGridClass = splitMode ? 'expenses-top--split' : ''
+  const topGridClass = splitMode
+    ? creditUpdateActiveSlot
+      ? 'expenses-top--split-pay'
+      : 'expenses-top--split'
+    : ''
 
   function resolveSupplierForItem(item: string): string {
     const itemKey = item.trim().toLowerCase()
@@ -1074,20 +1309,49 @@ export default function PurchaseExpense() {
         ) : null}
         {creditUpdateInfo ? (
           <div className="purchase-credit-update-banner">
-            <div className="purchase-credit-update-balance">
-              <span>Credit Balance</span>
-              <strong>{formatMoney(creditUpdateInfo.balance)}</strong>
+            <div className="purchase-credit-update-main">
+              <div className="purchase-credit-update-stats">
+                <div className="purchase-credit-update-stat purchase-credit-update-stat--paid">
+                  <span>Paid</span>
+                  <strong className={creditUpdateInfo.payingNow > 0 ? 'purchase-credit-stat-live' : ''}>
+                    {formatMoney(creditUpdateInfo.totalPaid ?? creditUpdateInfo.alreadyPaid)}
+                  </strong>
+                </div>
+                {creditUpdateInfo.activeSlot && creditUpdateInfo.payingNow > 0 ? (
+                  <div className="purchase-credit-update-stat purchase-credit-update-stat--paying">
+                    <span>Paying Now</span>
+                    <strong className="purchase-credit-stat-live">
+                      {formatMoney(creditUpdateInfo.payingNow)}
+                    </strong>
+                  </div>
+                ) : null}
+                <div className="purchase-credit-update-stat purchase-credit-update-stat--remaining">
+                  <span>Credit Balance</span>
+                  <strong className={creditUpdateInfo.payingNow > 0 ? 'purchase-credit-stat-live' : ''}>
+                    {formatMoney(creditUpdateInfo.remaining)}
+                  </strong>
+                </div>
+              </div>
+              <div className="purchase-credit-update-types">
+                <span className="purchase-credit-update-type">
+                  <span className="purchase-credit-update-type-label">Bill</span>
+                  <strong>{creditUpdateInfo.billLabel}</strong>
+                </span>
+                {!creditUpdateInfo.activeSlot ? (
+                  <span className="purchase-credit-update-type">
+                    <span className="purchase-credit-update-type-label">Tip</span>
+                    <strong>Switch bill</strong>
+                  </span>
+                ) : null}
+              </div>
             </div>
-            <div className="purchase-credit-update-types">
-              <span className="purchase-credit-update-type">
-                <span className="purchase-credit-update-type-label">Bill</span>
-                <strong>{creditUpdateInfo.billLabel}</strong>
-              </span>
-              <span className="purchase-credit-update-type">
-                <span className="purchase-credit-update-type-label">Pay</span>
-                <strong>{creditUpdateInfo.payLabel}</strong>
-              </span>
-            </div>
+            <button
+              type="button"
+              className="btn btn-secondary purchase-credit-cancel-btn"
+              onClick={handleCancelCredit}
+            >
+              Cancel Credit
+            </button>
           </div>
         ) : null}
         <p className="purchase-page-active-bill">
@@ -1130,18 +1394,42 @@ export default function PurchaseExpense() {
               />
             </div>
             <AmountDisplay
-              label={splitMode ? 'Bill Amount' : 'Expense Amount'}
+              label={
+                creditUpdateActiveSlot
+                  ? splitMode
+                    ? 'Pay Amount'
+                    : 'Pay Amount'
+                  : splitMode
+                    ? 'Bill Amount'
+                    : 'Expense Amount'
+              }
               value={bill.amountStr}
               active={activeField === 'amount'}
               onSelect={() => focusField('amount')}
               compact
             />
+            {creditUpdateActiveSlot ? (
+              <div className="purchase-credit-pay-live" aria-live="polite">
+                <span className="purchase-credit-pay-live-item">
+                  Paid{' '}
+                  <strong className={creditPayingNow > 0 ? 'purchase-credit-stat-live' : ''}>
+                    {formatMoney(creditTotalPaid)}
+                  </strong>
+                </span>
+                <span className="purchase-credit-pay-live-item">
+                  Credit{' '}
+                  <strong className={creditPayingNow > 0 ? 'purchase-credit-stat-live' : ''}>
+                    {formatMoney(creditRemaining)}
+                  </strong>
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
 
       {splitMode ? (
-        <div className={`expenses-top purchase-split-row ${topGridClass}`}>
+        <div className={`expenses-top purchase-split-row ${topGridClass}${creditUpdateActiveSlot ? ' purchase-split-row--credit-pay' : ''}`}>
           <AmountDisplay
             label="Cash"
             value={bill.cashSplitStr}
@@ -1149,13 +1437,15 @@ export default function PurchaseExpense() {
             onSelect={() => focusField('cashSplit')}
             compact
           />
-          <AmountDisplay
-            label="Credit"
-            value={bill.creditSplitStr}
-            active={activeField === 'creditSplit'}
-            onSelect={() => focusField('creditSplit')}
-            compact
-          />
+          {!creditUpdateActiveSlot ? (
+            <AmountDisplay
+              label="Credit"
+              value={bill.creditSplitStr}
+              active={activeField === 'creditSplit'}
+              onSelect={() => focusField('creditSplit')}
+              compact
+            />
+          ) : null}
           <AmountDisplay
             label="Cheque"
             value={bill.chequeSplitStr}
@@ -1189,24 +1479,37 @@ export default function PurchaseExpense() {
         </div>
       </div>
 
-      {hasBill1 || hasBill2 ? (
-        <div className="purchase-bill-total purchase-bill-total--static">
-          <span>
-            No 1 {formatMoney(bill1Amount)} + No 2 {formatMoney(bill2Amount)}
-          </span>
-          <strong>Total {formatMoney(purchaseTotal)}</strong>
-        </div>
+      {hasBill1 || hasBill2 || creditUpdateActiveSlot ? (
+        creditUpdateActiveSlot ? (
+          <div className="purchase-bill-total purchase-bill-total--credit-pay">
+            <span>
+              Paid {formatMoney(creditTotalPaid)}
+              {creditPayingNow > 0 ? ` · Now ${formatMoney(creditPayingNow)}` : ''}
+            </span>
+            <strong>Credit {formatMoney(creditRemaining)}</strong>
+          </div>
+        ) : (
+          <div className="purchase-bill-total purchase-bill-total--static">
+            <span>
+              No 1 {formatMoney(bill1Amount)} + No 2 {formatMoney(bill2Amount)}
+            </span>
+            <strong>Total {formatMoney(purchaseTotal)}</strong>
+          </div>
+        )
       ) : null}
 
       {splitMode && amount > 0 ? (
         <div
           className={`expenses-split-total ${splitShortfall > 0 || splitExcess > 0 ? 'expenses-split-total--warn' : ''}`}
         >
-          <span>Paid Total</span>
+          <span>{creditUpdateActiveSlot ? 'Pay Split' : 'Paid Total'}</span>
           <strong>
             {formatMoney(splitPaidTotal)} / {formatMoney(amount)}
-            {splitShortfall > 0 ? ` · need ${formatMoney(splitShortfall)}` : null}
-            {splitExcess > 0 ? ` · over ${formatMoney(splitExcess)}` : null}
+            {creditUpdateActiveSlot && creditPayingNow > 0
+              ? ` · Credit ${formatMoney(creditRemaining)}`
+              : null}
+            {!creditUpdateActiveSlot && splitShortfall > 0 ? ` · need ${formatMoney(splitShortfall)}` : null}
+            {!creditUpdateActiveSlot && splitExcess > 0 ? ` · over ${formatMoney(splitExcess)}` : null}
           </strong>
         </div>
       ) : null}
@@ -1245,11 +1548,13 @@ export default function PurchaseExpense() {
           <span className="btn-text">
             {saved
               ? '✓ Saved'
-              : isEditing
-                ? `Update · ${formatMoney(purchaseTotal)}`
-                : hasBill1 && hasBill2
-                  ? `Both · ${formatMoney(purchaseTotal)}`
-                  : 'Record'}
+              : isCreditUpdateMode && creditUpdateActiveSlot
+                ? `Pay · ${formatMoney(creditPayingNow)}`
+                : isEditing
+                  ? `Update · ${formatMoney(purchaseTotal)}`
+                  : hasBill1 && hasBill2
+                    ? `Both · ${formatMoney(purchaseTotal)}`
+                    : 'Record'}
           </span>
           {!saved ? <span className="btn-shortcut">Alt+S</span> : null}
         </button>

@@ -111,6 +111,10 @@
   white-space: nowrap;
 }
 
+.counter-balance-hint--paid {
+  color: rgba(120, 210, 140, 0.95);
+}
+
 .counter-readonly--warn {
   border-color: var(--danger);
   background: rgba(139, 58, 58, 0.25);

@@ -182,6 +182,14 @@
   flex-direction: column;
 }
 
+.main--fit:has(.home--locked) {
+  justify-content: center;
+  align-items: center;
+  overflow-y: auto;
+  padding-left: max(var(--ui-pad), env(safe-area-inset-left));
+  padding-right: max(var(--ui-pad), env(safe-area-inset-right));
+}
+
 @media (min-width: 768px) {
   html[data-screen='desktop'] .layout--fit .header--compact {
     padding: 8px 16px 0;

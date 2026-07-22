@@ -877,6 +877,10 @@ html[data-screen='tablet'] .settings-info {
   border-color: var(--cream-dim);
 }
 
+.settings-bill-edit-field input[type='date'] {
+  color-scheme: dark;
+}
+
 .settings-bill-edit-note {
   margin: 0;
   font-size: 0.65rem;

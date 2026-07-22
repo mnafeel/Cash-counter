@@ -55,6 +55,8 @@ export interface Expense {
   /** @deprecated legacy field — migrated to name */
   note?: string
   createdAt: string
+  /** Set when bill or credit balance is updated (e.g. partial credit payment). */
+  updatedAt?: string
 }
 
 export interface SupplierEntry {

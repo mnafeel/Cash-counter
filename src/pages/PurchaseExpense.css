@@ -131,14 +131,114 @@
 
 .purchase-credit-update-banner {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   margin-top: 6px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
   background: rgba(180, 120, 40, 0.14);
   border: 1px solid rgba(200, 150, 80, 0.35);
+}
+
+.purchase-credit-update-main {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.purchase-credit-cancel-btn {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.purchase-credit-update-stats {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.purchase-credit-update-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 56px;
+}
+
+.purchase-credit-update-stat span {
+  font-size: 0.48rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cream-dim);
+}
+
+.purchase-credit-update-stat strong {
+  font-size: 0.72rem;
+  color: var(--cream);
+}
+
+.purchase-credit-pay-live {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: rgba(80, 140, 80, 0.12);
+  border: 1px solid rgba(120, 180, 100, 0.3);
+}
+
+.purchase-credit-pay-live-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 0.48rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cream-dim);
+}
+
+.purchase-credit-pay-live-item strong {
+  font-size: 0.78rem;
+  color: var(--cream);
+}
+
+.purchase-credit-update-stat--paid strong {
+  color: #a8e6a0;
+}
+
+.purchase-credit-update-stat--paying strong,
+.purchase-credit-update-stat--remaining strong {
+  color: #e8c080;
+}
+
+.purchase-credit-stat-live {
+  color: #f0d090 !important;
+}
+
+.purchase-bill-total--credit-pay {
+  border-color: rgba(200, 150, 80, 0.35);
+  background: rgba(180, 120, 40, 0.1);
+}
+
+.purchase-split-row--credit-pay {
+  grid-template-columns: 1fr 1fr;
+}
+
+.expenses-top--split-pay {
+  grid-template-columns: 1fr 1fr;
 }
 
 .purchase-credit-update-balance {

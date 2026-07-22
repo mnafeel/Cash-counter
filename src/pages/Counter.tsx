@@ -9,6 +9,7 @@ import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import type { Sale } from '../types'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
+import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { getBillRoundOptions } from '../utils/roundSuggestions'
 import './Counter.css'
@@ -150,7 +151,7 @@ function resolveLoadedPendingBill(
 type SavedAction = 'collect' | 'pending' | null
 
 export default function Counter() {
-  const { recordSale, updatePendingSale, collectPendingSale, pendingBills, data } = useCash()
+  const { recordSale, updatePendingSale, collectPendingSale, collectCreditPayment, pendingBills, data } = useCash()
   const [billStr, setBillStr] = useState('')
   const [giveStr, setGiveStr] = useState('')
   const [paidStr, setPaidStr] = useState('')
@@ -234,6 +235,17 @@ export default function Counter() {
     () => pendingBills.filter(isChequePendingBill),
     [pendingBills],
   )
+
+  const collectingCreditBill = useMemo(
+    () =>
+      collectingCreditId
+        ? data.sales.find((sale) => sale.id === collectingCreditId)
+        : undefined,
+    [collectingCreditId, data.sales],
+  )
+  const creditPriorCollected = collectingCreditBill
+    ? saleCollectedAmount(collectingCreditBill)
+    : 0
 
   const creditPendingBills = useMemo(
     () => pendingBills.filter(isCreditPendingBill),
@@ -1548,6 +1560,14 @@ export default function Counter() {
     }
   }
 
+  function applyPendingCreditPaidBreakdown(bill: Sale) {
+    const breakdown = salePendingCreditPaidBreakdown(bill)
+    setSplitCreditPaidCash(breakdown.cash)
+    setSplitCreditPaidBank(breakdown.bank)
+    setSplitCreditPaidCheque(breakdown.cheque)
+    setSplitSiblingCreditPaid(0)
+  }
+
   function applySplitCreditPaidBreakdown(sale: Sale | undefined) {
     const breakdown = getPaidSaleBreakdown(sale)
     setSplitSiblingCreditPaid(breakdown.total)
@@ -1656,6 +1676,7 @@ export default function Counter() {
             (original !== due ? original : null),
         )
       } else {
+        applyPendingCreditPaidBreakdown(bill)
         setPayType('cash')
         setActiveField('paid')
       }
@@ -1920,6 +1941,23 @@ export default function Counter() {
     if (options.credit && creditSplitAmount > 0) {
       if (updateCreditId) {
         updateCreditPendingBill(updateCreditId, name)
+      } else if (splitSaleId) {
+        const splitBill = data.sales.find((sale) => sale.id === splitSaleId)
+        if (splitBill && isCreditPendingBill(splitBill)) {
+          updateCreditPendingBill(splitSaleId, name)
+        } else {
+          recordSale({
+            billAmount: creditSplitAmount,
+            originalBillAmount: billAmount,
+            paidAmount: 0,
+            changeAmount: 0,
+            payType: 'credit',
+            pendingPayType: 'credit',
+            customerName: name,
+            parentSplitId: splitSaleId ?? undefined,
+            status: 'pending',
+          })
+        }
       } else {
         recordSale({
           billAmount: creditSplitAmount,
@@ -2015,9 +2053,15 @@ export default function Counter() {
   function handleSplitCreditPending() {
     if (!canSendSplitCreditPending) return
     const name = customerName.trim() || undefined
+    const activeCreditCollectId = collectingCreditId ?? effectiveCollectingCreditId
 
-    if (collectingCreditId) {
-      updateCreditPendingBill(collectingCreditId, name)
+    if (activeCreditCollectId) {
+      if (recordCreditCollection(name, activeCreditCollectId)) {
+        setSavedAction('collect')
+        setTimeout(resetForm, 900)
+        return
+      }
+      updateCreditPendingBill(activeCreditCollectId, name)
       setSavedAction('pending')
       setTimeout(resetForm, 900)
       return
@@ -2246,13 +2290,80 @@ export default function Counter() {
     setTimeout(resetForm, 900)
   }
 
+  function recordCreditCollection(name?: string, creditId?: string | null): boolean {
+    const targetId = creditId ?? collectingCreditId ?? effectiveCollectingCreditId
+    if (!targetId) return false
+
+    const collected =
+      payType === 'split'
+        ? cashSplitAmount + bankSplitAmount + chequeSplitAmount
+        : payType === 'cash' || payType === 'bank' || payType === 'cheque'
+          ? paidAmount
+          : 0
+
+    if (collected <= 0) return false
+
+    if (payType === 'split') {
+      collectCreditPayment(targetId, {
+        dueAmount: creditCollectDueAmount,
+        collected,
+        changeAmount:
+          cashSplitAmount > 0 ? Math.max(0, giveAmount - cashSplitAmount) : 0,
+        payType:
+          cashSplitAmount > 0 && (bankSplitAmount > 0 || chequeSplitAmount > 0)
+            ? 'split'
+            : bankSplitAmount > 0 && chequeSplitAmount > 0
+              ? 'split'
+              : chequeSplitAmount > 0
+                ? 'cheque'
+                : bankSplitAmount > 0
+                  ? 'bank'
+                  : 'cash',
+        cashAmount: cashSplitAmount > 0 ? cashSplitAmount : undefined,
+        bankAmount:
+          bankSplitAmount > 0
+            ? bankSplitAmount
+            : chequeSplitAmount > 0
+              ? chequeSplitAmount
+              : undefined,
+        chequeAmount: chequeSplitAmount > 0 ? chequeSplitAmount : undefined,
+        chequeApproved: chequeSplitAmount > 0 ? true : undefined,
+        customerName: name,
+      })
+      return true
+    }
+
+    const cashAmount = payType === 'cash' ? paidAmount : 0
+    const bankAmount = payType === 'bank' ? paidAmount : 0
+    const chequeAmount = payType === 'cheque' ? paidAmount : 0
+
+    collectCreditPayment(targetId, {
+      dueAmount: creditCollectDueAmount,
+      collected,
+      changeAmount: payType === 'cash' ? changeAmount : 0,
+      payType: payType === 'credit' ? 'cash' : payType,
+      cashAmount: cashAmount > 0 ? cashAmount : undefined,
+      bankAmount: bankAmount > 0 ? bankAmount : undefined,
+      chequeAmount: chequeAmount > 0 ? chequeAmount : undefined,
+      chequeApproved: payType === 'cheque' ? true : undefined,
+      customerName: name,
+    })
+    return true
+  }
+
   function handleSavePending() {
     if (!canSavePending) return
 
     const name = customerName.trim() || undefined
+    const activeCreditCollectId = collectingCreditId ?? effectiveCollectingCreditId
 
-    if (collectingCreditId) {
-      updateCreditPendingBill(collectingCreditId, name)
+    if (activeCreditCollectId) {
+      if (recordCreditCollection(name, activeCreditCollectId)) {
+        setSavedAction('collect')
+        setTimeout(resetForm, 900)
+        return
+      }
+      updateCreditPendingBill(activeCreditCollectId, name)
       setSavedAction('pending')
       setTimeout(resetForm, 900)
       return
@@ -2288,14 +2399,13 @@ export default function Counter() {
       return
     }
 
-    if (loadedBill?.status === 'pending' && loadedBill.payType === 'credit' && payType !== 'split') {
-      updatePendingSale(loadedPendingId!, {
-        billAmount: dueAmount,
-        originalBillAmount: originalBillHint ?? billAmount,
-        customerName: name,
-        payType: 'credit',
-        pendingPayType: 'credit',
-      })
+    if (loadedBill?.status === 'pending' && isCreditPendingBill(loadedBill)) {
+      if (recordCreditCollection(name, loadedBill.id)) {
+        setSavedAction('collect')
+        setTimeout(resetForm, 900)
+        return
+      }
+      updateCreditPendingBill(loadedBill.id, name)
       setSavedAction('pending')
       setTimeout(resetForm, 900)
       return
@@ -2307,7 +2417,8 @@ export default function Counter() {
       updatePendingSale(loadedPendingId, pendingPayload)
       if (
         payType === 'split' &&
-        (creditSplitAmount > 0 || chequeSplitAmount > 0)
+        (creditSplitAmount > 0 || chequeSplitAmount > 0) &&
+        !(loadedBill && isCreditPendingBill(loadedBill))
       ) {
         recordSplitPendingBills(name, { splitSaleId: loadedPendingId })
       }
@@ -2340,60 +2451,13 @@ export default function Counter() {
     if (!isValid) return
 
     const name = customerName.trim() || undefined
+    const activeCreditCollectId = collectingCreditId ?? effectiveCollectingCreditId
 
-    if (collectingCreditId) {
-      if (payType === 'split') {
-        const collected = cashSplitAmount + bankSplitAmount + chequeSplitAmount
-        collectPendingSale(collectingCreditId, {
-          billAmount: creditCollectDueAmount,
-          originalBillAmount: originalBillHint ?? billAmount,
-          paidAmount: collected,
-          changeAmount:
-            cashSplitAmount > 0 ? Math.max(0, giveAmount - cashSplitAmount) : 0,
-          payType:
-            cashSplitAmount > 0 && (bankSplitAmount > 0 || chequeSplitAmount > 0)
-              ? 'split'
-              : bankSplitAmount > 0 && chequeSplitAmount > 0
-                ? 'split'
-                : chequeSplitAmount > 0
-                  ? 'cheque'
-                  : bankSplitAmount > 0
-                    ? 'bank'
-                    : 'cash',
-          cashAmount: cashSplitAmount > 0 ? cashSplitAmount : undefined,
-          bankAmount:
-            bankSplitAmount > 0
-              ? bankSplitAmount
-              : chequeSplitAmount > 0
-                ? chequeSplitAmount
-                : undefined,
-          chequeAmount: chequeSplitAmount > 0 ? chequeSplitAmount : undefined,
-          chequeApproved: chequeSplitAmount > 0 ? true : undefined,
-          customerName: name,
-        })
+    if (activeCreditCollectId) {
+      if (recordCreditCollection(name, activeCreditCollectId)) {
         setSavedAction('collect')
         setTimeout(resetForm, 900)
-        return
       }
-
-      const cashAmount = payType === 'cash' ? paidAmount : 0
-      const bankAmount = payType === 'bank' ? paidAmount : 0
-      const chequeAmount = payType === 'cheque' ? paidAmount : 0
-
-      collectPendingSale(collectingCreditId, {
-        billAmount: creditCollectDueAmount,
-        originalBillAmount: originalBillHint ?? billAmount,
-        paidAmount: payType === 'cash' ? giveAmount : paidAmount,
-        changeAmount: payType === 'cash' ? changeAmount : 0,
-        payType,
-        cashAmount: cashAmount > 0 ? cashAmount : undefined,
-        bankAmount: bankAmount > 0 ? bankAmount : undefined,
-        chequeAmount: chequeAmount > 0 ? chequeAmount : undefined,
-        chequeApproved: payType === 'cheque' ? true : undefined,
-        customerName: name,
-      })
-      setSavedAction('collect')
-      setTimeout(resetForm, 900)
       return
     }
 
@@ -2945,6 +3009,11 @@ export default function Counter() {
                     Bill {formatMoney(originalBillHint)}
                   </span>
                 ) : null}
+                {collectingCreditId && creditPriorCollected > 0 ? (
+                  <span className="counter-balance-hint counter-balance-hint--paid">
+                    Paid {formatMoney(creditPriorCollected)}
+                  </span>
+                ) : null}
               </div>
             ) : (
             <AmountDisplay
@@ -3444,6 +3513,7 @@ export default function Counter() {
               <ul ref={creditListRef} className="counter-credit-list" role="listbox">
                 {creditPendingBills.map((bill, index) => {
                   const billName = getSaleCustomerName(bill, data.sales)
+                  const collected = saleCollectedAmount(bill)
                   return (
                   <li key={bill.id}>
                     <button
@@ -3454,7 +3524,13 @@ export default function Counter() {
                       onClick={() => selectPendingBill(bill)}
                     >
                       <span className="counter-credit-item-amount">
-                        {formatMoney(bill.billAmount)}
+                        {collected > 0 ? (
+                          <>
+                            Paid {formatMoney(collected)} · Credit {formatMoney(bill.billAmount)}
+                          </>
+                        ) : (
+                          formatMoney(bill.billAmount)
+                        )}
                       </span>
                       {billName ? (
                         <span className="counter-credit-item-name">{billName}</span>

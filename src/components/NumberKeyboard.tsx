@@ -8,14 +8,21 @@ interface NumberKeyboardProps {
   footer?: ReactNode
   showEnter?: boolean
   hint?: string
+  variant?: 'default' | 'pin'
 }
 
-export default function NumberKeyboard({ onPress, footer, showEnter = true, hint }: NumberKeyboardProps) {
+export default function NumberKeyboard({
+  onPress,
+  footer,
+  showEnter = true,
+  hint,
+  variant = 'default',
+}: NumberKeyboardProps) {
   return (
-    <div className="number-keyboard">
+    <div className={`number-keyboard ${variant === 'pin' ? 'number-keyboard--pin' : ''}`}>
       {hint ? <span className="number-keyboard-hint">{hint}</span> : null}
       <span className="number-keyboard-label">Number keyboard</span>
-      <NumPad onPress={onPress} showEnter={showEnter} />
+      <NumPad onPress={onPress} showEnter={showEnter} variant={variant} />
       {footer ? <div className="number-keyboard-footer">{footer}</div> : null}
     </div>
   )

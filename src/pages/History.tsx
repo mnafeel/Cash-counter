@@ -11,6 +11,7 @@ import {
   historyItemDisplayAmount,
   historyItemCreatedTime,
   historyItemSortTime,
+  historyItemActivityLabel,
   matchesHistoryPaymentFilter,
   matchesHistorySearch,
   type HistoryFilter,
@@ -141,7 +142,7 @@ function editKey(item: HistoryItem): string {
 }
 
 export default function History() {
-  const { data, updateHistoryName } = useCash()
+  const { data, updateHistoryName, cancelPurchaseCredit } = useCash()
   const navigate = useNavigate()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [paymentFilter, setPaymentFilter] = useState<HistoryPaymentFilter>('all')
@@ -305,6 +306,12 @@ export default function History() {
     navigate(`/purchase?edit=${encodeURIComponent(expenseId)}`)
   }
 
+  function handleCancelPurchaseCredit(expenseId: string) {
+    cancelPurchaseCredit(expenseId)
+    setPurchaseCreditListOpen(false)
+    setHighlightedPurchaseCreditIndex(-1)
+  }
+
   function togglePurchaseCreditList() {
     setPurchaseCreditListOpen((open) => {
       const next = !open
@@ -427,10 +434,7 @@ export default function History() {
                       </div>
                     )}
                   </div>
-                  <span className="history-item-sub">
-                    {item.sub}
-                    {purchasePaidRows && item.type === 'purchase' ? ' · Paid' : null}
-                  </span>
+                  <span className="history-item-sub">{item.sub}</span>
                   <span className="history-item-meta">
                     {item.paySummary ? (
                       <span className="history-item-payment">{item.paySummary}</span>
@@ -439,7 +443,7 @@ export default function History() {
                         {getHistoryPaymentLabel(item.paymentMode)}
                       </span>
                     ) : null}
-                    <span className="history-item-date">{formatDate(item.date)}</span>
+                    <span className="history-item-date">{historyItemActivityLabel(item)}</span>
                   </span>
                 </div>
                 <span
@@ -635,7 +639,7 @@ export default function History() {
               {purchaseCreditListOpen ? (
                 <ul className="history-purchase-credit-list" role="listbox">
                   {purchaseCreditItems.map((credit, index) => (
-                    <li key={credit.id}>
+                    <li key={credit.id} className="history-purchase-credit-row">
                       <button
                         type="button"
                         className={`history-purchase-credit-item ${index === highlightedPurchaseCreditIndex ? 'history-purchase-credit-item--active' : ''}`}
@@ -649,6 +653,7 @@ export default function History() {
                             <span className="history-purchase-credit-item-name">Supplier</span>
                           )}
                           <span className="history-purchase-credit-item-amount">
+                            Paid {formatMoney(credit.paidAmount)} · Credit{' '}
                             {formatMoney(credit.amount)}
                           </span>
                         </span>
@@ -662,8 +667,15 @@ export default function History() {
                           <span className="history-purchase-credit-item-desc">{credit.description}</span>
                         ) : null}
                         <span className="history-purchase-credit-item-date">
-                          Balance · {formatDate(credit.date)}
+                          Updated · {formatDate(credit.date)}
                         </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="history-purchase-credit-cancel"
+                        onClick={() => handleCancelPurchaseCredit(credit.id)}
+                      >
+                        Cancel
                       </button>
                     </li>
                   ))}
@@ -711,7 +723,13 @@ export default function History() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="history-receipt-head">
-              <h3>{receiptItem.isSplitGroup ? 'Split Bill Receipt' : 'Bill Receipt'}</h3>
+              <h3>
+                {receiptItem.type === 'purchase'
+                  ? 'Purchase Receipt'
+                  : receiptItem.isSplitGroup
+                    ? 'Split Bill Receipt'
+                    : 'Bill Receipt'}
+              </h3>
               <button
                 type="button"
                 className="history-receipt-close"
@@ -724,7 +742,7 @@ export default function History() {
 
             <div className="history-receipt-meta">
               <div className="history-receipt-row">
-                <span>Customer</span>
+                <span>{receiptItem.type === 'purchase' ? 'Supplier' : 'Customer'}</span>
                 <strong>{receiptItem.name || '—'}</strong>
               </div>
               {receiptItem.billCreatedAt ? (
@@ -752,13 +770,31 @@ export default function History() {
               ) : null}
               {receiptItem.completedAt ? (
                 <div className="history-receipt-row">
-                  <span>Fully collected</span>
+                  <span>
+                    {receiptItem.type === 'purchase'
+                      ? receiptItem.hasOpenCredit
+                        ? 'Last payment'
+                        : 'Fully paid'
+                      : 'Fully collected'}
+                  </span>
                   <strong>{formatDate(receiptItem.completedAt)}</strong>
+                </div>
+              ) : null}
+              {receiptItem.type === 'purchase' && (receiptItem.paidAmount ?? 0) > 0 ? (
+                <div className="history-receipt-row">
+                  <span>Paid</span>
+                  <strong>{formatMoney(receiptItem.paidAmount ?? 0)}</strong>
+                </div>
+              ) : null}
+              {receiptItem.type === 'purchase' && receiptItem.hasOpenCredit ? (
+                <div className="history-receipt-row">
+                  <span>Credit balance</span>
+                  <strong>{formatMoney(receiptItem.openCreditAmount ?? 0)}</strong>
                 </div>
               ) : null}
               <div className="history-receipt-row">
                 <span>Last activity</span>
-                <strong>{formatDate(receiptItem.date)}</strong>
+                <strong>{historyItemActivityLabel(receiptItem)}</strong>
               </div>
               <div className="history-receipt-row history-receipt-row--total">
                 <span>Bill Total</span>
@@ -858,8 +894,12 @@ export default function History() {
             <div className="history-receipt-foot">
               <span>{getHistoryTypeLabel(receiptItem.type)}</span>
               <strong>
-                {receiptItem.type === 'expense' ? '-' : '+'}
-                {formatMoney(receiptItem.amount)}
+                {receiptItem.type === 'expense' || receiptItem.type === 'purchase' ? '-' : '+'}
+                {formatMoney(
+                  receiptItem.type === 'purchase' && (receiptItem.paidAmount ?? 0) > 0
+                    ? receiptItem.paidAmount ?? 0
+                    : receiptItem.amount,
+                )}
               </strong>
             </div>
           </div>

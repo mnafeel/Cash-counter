@@ -1,7 +1,7 @@
 import type { AppData, Sale } from '../types'
 import { expenseBillTag, isPurchaseExpense } from './expenseBillLabels'
 import { formatDate, formatMoney } from './format'
-import { buildPurchaseHistoryItems, purchaseExpensePaymentModes } from './purchaseHistory'
+import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, type PurchaseHistoryItem } from './purchaseHistory'
 
 export type HistoryItemType = 'sale' | 'expense' | 'purchase' | 'deposit' | 'transfer'
 
@@ -139,16 +139,10 @@ function isChequeBill(sale: Sale): boolean {
   )
 }
 
+import { saleCollectedAmount } from './salePayment'
+
 function collectedPaymentAmount(sale: Sale): number {
-  if (sale.status === 'pending') return 0
-  const cash = sale.cashAmount ?? 0
-  const cheque = sale.chequeAmount ?? 0
-  let bank = sale.bankAmount ?? 0
-  if (sale.chequeApproved && cheque > 0) bank = Math.max(0, bank - cheque)
-  const componentTotal = cash + bank + cheque
-  if (componentTotal > 0) return componentTotal
-  if (sale.paidAmount > 0) return sale.paidAmount
-  return sale.billAmount
+  return saleCollectedAmount(sale)
 }
 
 function latestPaidAt(lines: HistoryReceiptLine[]): string | undefined {
@@ -581,7 +575,10 @@ function buildSplitGroupItem(parent: Sale, children: Sale[]): HistoryItem {
     completedAt,
     paymentMode: 'split',
     paymentModes: paymentModesFromReceiptLines(receiptLines),
-    paySummary: formatSplitPaymentBreakdown(receiptLines) || undefined,
+    paySummary:
+      moneyCollected > 0
+        ? `Paid ${formatMoney(moneyCollected)}${completedAt ? ' · Updated' : ''}`
+        : formatSplitPaymentBreakdown(receiptLines) || undefined,
   }
 }
 
@@ -618,25 +615,48 @@ function buildSaleTimeline(sale: Sale): HistoryReceiptEvent[] {
     },
   ]
   if (sale.status === 'pending') {
+    const partialCollected = collectedPaymentAmount(sale)
+    const hasPartialPayment =
+      partialCollected > 0 &&
+      sale.updatedAt != null &&
+      sale.updatedAt !== sale.createdAt &&
+      (isCreditBill(sale) || isChequeBill(sale))
+
+    if (hasPartialPayment) {
+      events.push({
+        label: isCreditBill(sale)
+          ? `Credit payment · ${collectionMethodLabel(sale) || 'Partial'}`
+          : `Cheque payment · ${collectionMethodLabel(sale) || 'Partial'}`,
+        date: sale.updatedAt ?? sale.createdAt,
+        amount: partialCollected,
+        type: 'collected',
+      })
+    }
+
     events.push({
       label: isCreditBill(sale)
         ? 'Credit pending'
         : isChequeBill(sale)
           ? 'Cheque pending'
           : `${saleReceiptLabel(sale)} pending`,
-      date: sale.createdAt,
+      date: hasPartialPayment ? sale.updatedAt ?? sale.createdAt : sale.createdAt,
       amount: sale.billAmount,
       type: 'pending',
     })
   } else {
     const method = collectionMethodLabel(sale)
+    const collectedAt = sale.updatedAt ?? sale.createdAt
+    const wasUpdated = Boolean(sale.updatedAt && sale.updatedAt !== sale.createdAt)
     let label = `${saleReceiptLabel(sale)} collected`
-    if (isCreditBill(sale)) label = `Credit paid · ${method}`
-    else if (isChequeBill(sale)) label = `Cheque paid · ${method}`
+    if (isCreditBill(sale)) {
+      label = wasUpdated ? `Credit payment · ${method}` : `Credit paid · ${method}`
+    } else if (isChequeBill(sale)) {
+      label = wasUpdated ? `Cheque payment · ${method}` : `Cheque paid · ${method}`
+    }
 
     events.push({
       label,
-      date: sale.updatedAt ?? sale.createdAt,
+      date: collectedAt,
       amount: collectedPaymentAmount(sale),
       type: 'collected',
     })
@@ -645,20 +665,42 @@ function buildSaleTimeline(sale: Sale): HistoryReceiptEvent[] {
 }
 
 function buildSaleHistoryItem(sale: Sale): HistoryItem {
-  const paidAt = sale.status !== 'pending' ? sale.updatedAt ?? sale.createdAt : undefined
+  const collected = collectedPaymentAmount(sale)
+  const paidAt =
+    sale.status !== 'pending'
+      ? sale.updatedAt ?? sale.createdAt
+      : collected > 0 && sale.updatedAt && sale.updatedAt !== sale.createdAt
+        ? sale.updatedAt
+        : undefined
   const amount = formatMoney(sale.billAmount)
   let sub: string
 
   if (isCreditBill(sale)) {
+    const paidTime =
+      paidAt && sale.updatedAt && sale.updatedAt !== sale.createdAt
+        ? `Updated ${formatDate(paidAt)}`
+        : paidAt
+          ? formatDate(paidAt)
+          : ''
     sub =
       sale.status === 'pending'
-        ? `Credit · ${amount} pending`
-        : `Credit · ${amount} paid · ${collectionMethodLabel(sale)}${paidAt ? ` · ${formatDate(paidAt)}` : ''}`
+        ? collected > 0
+          ? `Credit · Paid ${formatMoney(collected)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
+          : `Credit · ${amount} pending`
+        : `Credit · Paid ${formatMoney(collected)} · ${collectionMethodLabel(sale)}${paidTime ? ` · ${paidTime}` : ''}`
   } else if (isChequeBill(sale)) {
+    const paidTime =
+      paidAt && sale.updatedAt && sale.updatedAt !== sale.createdAt
+        ? `Updated ${formatDate(paidAt)}`
+        : paidAt
+          ? formatDate(paidAt)
+          : ''
     sub =
       sale.status === 'pending'
-        ? `Cheque · ${amount} pending`
-        : `Cheque · ${amount} paid · ${collectionMethodLabel(sale)}${paidAt ? ` · ${formatDate(paidAt)}` : ''}`
+        ? collected > 0
+          ? `Cheque · Paid ${formatMoney(collected)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
+          : `Cheque · ${amount} pending`
+        : `Cheque · Paid ${formatMoney(collected)} · ${collectionMethodLabel(sale)}${paidTime ? ` · ${paidTime}` : ''}`
   } else {
     const payLabel = salePayLabel(sale)
     const paidDetail = paidCollectionDetail(sale)
@@ -672,13 +714,29 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
         : sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque'
           ? `Paid ${paidDetail ?? payLabel} · `
           : `Give ${formatMoney(sale.paidAmount)} · ${paidDetail ?? payLabel} · `
-    sub = `${orig}${paidPart}${sale.changeAmount > 0 ? `Change ${formatMoney(sale.changeAmount)} · ` : ''}${paidAt ? formatDate(paidAt) : ''}`.replace(/ · $/, '')
+    const paidTime =
+      paidAt && sale.updatedAt && sale.updatedAt !== sale.createdAt
+        ? `Updated ${formatDate(paidAt)}`
+        : paidAt
+          ? formatDate(paidAt)
+          : ''
+    sub = `${orig}${paidPart}${sale.changeAmount > 0 ? `Change ${formatMoney(sale.changeAmount)} · ` : ''}${paidTime}`.replace(/ · $/, '')
   }
+
+  const wasUpdated = Boolean(sale.updatedAt && sale.updatedAt !== sale.createdAt)
+  const paySummary =
+    sale.status !== 'pending' && collected > 0
+      ? `Paid ${formatMoney(collected)}${wasUpdated ? ' · Updated' : ''}`
+      : sale.status === 'pending' && (isCreditBill(sale) || isChequeBill(sale))
+        ? collected > 0
+          ? `Paid ${formatMoney(collected)} · Pending ${formatMoney(sale.billAmount)}${wasUpdated ? ' · Updated' : ''}`
+          : `Pending ${formatMoney(sale.billAmount)}`
+        : undefined
 
   return {
     type: 'sale',
     id: sale.id,
-    amount: collectedPaymentAmount(sale) || sale.billAmount,
+    amount: collected || sale.billAmount,
     sub,
     name: sale.customerName,
     date: sale.updatedAt ?? sale.createdAt,
@@ -688,6 +746,7 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
     completedAt: paidAt,
     paymentMode: salePaymentMode(sale),
     paymentModes: [salePaymentMode(sale)],
+    paySummary,
     groupSaleIds:
       isCreditBill(sale) || isChequeBill(sale)
         ? sale.parentSplitId
@@ -695,6 +754,105 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
           : [sale.id]
         : undefined,
   }
+}
+
+function purchaseWasUpdated(item: PurchaseHistoryItem): boolean {
+  return item.date !== item.createdAt
+}
+
+function formatPurchasePaySummary(item: PurchaseHistoryItem): string | undefined {
+  const parts: string[] = []
+  if (item.paidAmount > 0) parts.push(`Paid ${formatMoney(item.paidAmount)}`)
+  if (item.hasOpenCredit && item.openCreditAmount) {
+    parts.push(`Credit ${formatMoney(item.openCreditAmount)}`)
+  }
+  return parts.length > 0 ? parts.join(' · ') : undefined
+}
+
+function formatPurchaseHistorySub(item: PurchaseHistoryItem): string {
+  let sub = `${item.billLabel} · ${item.payLabel}${item.description ? ` · ${item.description}` : ''}`
+  if (item.paidAmount > 0) sub += ` · Paid ${formatMoney(item.paidAmount)}`
+  if (item.hasOpenCredit && item.openCreditAmount) {
+    sub += ` · Credit ${formatMoney(item.openCreditAmount)}`
+  }
+  if (purchaseWasUpdated(item)) sub += ` · Updated ${formatDate(item.date)}`
+  return sub
+}
+
+function buildPurchaseReceiptLines(item: PurchaseHistoryItem): HistoryReceiptLine[] {
+  const lines: HistoryReceiptLine[] = [
+    {
+      label: 'Bill total',
+      amount: item.amount,
+      status: 'pending',
+      detail: item.payDetail,
+      createdAt: item.createdAt,
+      date: item.createdAt,
+    },
+  ]
+
+  if (item.paidAmount > 0) {
+    lines.push({
+      label: 'Paid',
+      amount: item.paidAmount,
+      status: 'paid',
+      detail: item.payDetail,
+      createdAt: item.createdAt,
+      paidAt: purchaseWasUpdated(item) ? item.date : item.createdAt,
+      date: purchaseWasUpdated(item) ? item.date : item.createdAt,
+    })
+  }
+
+  if (item.hasOpenCredit && item.openCreditAmount) {
+    lines.push({
+      label: 'Credit balance',
+      amount: item.openCreditAmount,
+      status: 'pending',
+      detail: 'Supplier credit remaining',
+      createdAt: item.createdAt,
+      date: item.createdAt,
+    })
+  }
+
+  return lines
+}
+
+function buildPurchaseTimeline(item: PurchaseHistoryItem): HistoryReceiptEvent[] {
+  const events: HistoryReceiptEvent[] = [
+    {
+      label: 'Purchase',
+      date: item.createdAt,
+      amount: item.amount,
+      type: 'bill-created',
+    },
+  ]
+
+  if (item.paidAmount > 0) {
+    events.push({
+      label: purchaseWasUpdated(item) ? 'Credit payment' : 'Paid at purchase',
+      date: purchaseWasUpdated(item) ? item.date : item.createdAt,
+      amount: item.paidAmount,
+      type: 'collected',
+    })
+  }
+
+  if (item.hasOpenCredit && item.openCreditAmount) {
+    events.push({
+      label: 'Credit pending',
+      date: item.createdAt,
+      amount: item.openCreditAmount,
+      type: 'pending',
+    })
+  }
+
+  return events
+}
+
+export function historyItemActivityLabel(item: HistoryItem): string {
+  if (item.billCreatedAt && item.date !== item.billCreatedAt) {
+    return `Updated ${formatDate(item.date)}`
+  }
+  return formatDate(item.date)
 }
 
 export function buildHistoryItems(data: AppData): HistoryItem[] {
@@ -738,7 +896,7 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
         amount: e.amount,
         sub: toBank ? '💵 → 🏦 Cash to bank' : '🏦 → 💵 Bank to cash',
         name: e.name,
-        date: e.createdAt,
+        date: e.updatedAt ?? e.createdAt,
         paymentMode: 'cash' as const,
         paymentModes: ['cash', 'bank'] as HistoryPaymentMode[],
       }
@@ -777,7 +935,7 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
       amount: e.amount,
       sub: isAdd ? addSub : expenseSub,
       name: e.name,
-      date: e.createdAt,
+      date: e.updatedAt ?? e.createdAt,
       paymentMode: payMode,
       paymentModes:
         e.payType === 'split'
@@ -815,11 +973,17 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
       id: item.id,
       amount: item.amount,
       paidAmount: item.paidAmount,
-      sub: `${item.billLabel} · ${item.payLabel}${item.description ? ` · ${item.description}` : ''}`,
+      sub: formatPurchaseHistorySub(item),
       name: item.shopName,
       date: item.date,
+      billCreatedAt: item.createdAt,
+      completedAt: item.paidAmount > 0 ? item.date : item.createdAt,
+      originalBillAmount: item.amount,
+      receiptLines: buildPurchaseReceiptLines(item),
+      receiptTimeline: buildPurchaseTimeline(item),
       paymentMode,
       paymentModes,
+      paySummary: formatPurchasePaySummary(item),
       hasOpenCredit: item.hasOpenCredit,
       openCreditAmount: item.openCreditAmount,
       openCreditExpenseId: item.openCreditExpenseId,
