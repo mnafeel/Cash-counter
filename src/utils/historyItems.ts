@@ -1,7 +1,7 @@
 import type { AppData, Sale } from '../types'
 import { expenseBillTag, isPurchaseExpense } from './expenseBillLabels'
 import { formatDate, formatMoney } from './format'
-import { buildPurchaseHistoryItems } from './purchaseHistory'
+import { buildPurchaseHistoryItems, purchaseExpensePaymentModes } from './purchaseHistory'
 
 export type HistoryItemType = 'sale' | 'expense' | 'purchase' | 'deposit' | 'transfer'
 
@@ -53,6 +53,12 @@ export interface HistoryItem {
   paymentModes?: HistoryPaymentMode[]
   /** Split bills — compact paid breakdown for list row */
   paySummary?: string
+  /** Purchase on credit — open in Purchase to pay supplier */
+  hasOpenCredit?: boolean
+  openCreditAmount?: number
+  openCreditExpenseId?: string
+  /** Purchase cash / bank / approved cheque paid (excludes credit). */
+  paidAmount?: number
 }
 
 export function getHistoryTypeLabel(type: HistoryItemType): string {
@@ -675,7 +681,7 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
     amount: collectedPaymentAmount(sale) || sale.billAmount,
     sub,
     name: sale.customerName,
-    date: sale.createdAt,
+    date: sale.updatedAt ?? sale.createdAt,
     receiptLines: buildSaleReceiptLines(sale),
     receiptTimeline: buildSaleTimeline(sale),
     billCreatedAt: sale.createdAt,
@@ -782,16 +788,62 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
     }
   })
 
-  const purchaseItems: HistoryItem[] = buildPurchaseHistoryItems(data).map((item) => ({
-    type: 'purchase' as const,
-    id: item.id,
-    amount: item.amount,
-    sub: `${item.billLabel} · ${item.payLabel}${item.description ? ` · ${item.description}` : ''}`,
-    name: item.shopName,
-    date: item.date,
-  }))
+  const purchaseItems: HistoryItem[] = buildPurchaseHistoryItems(data).map((item) => {
+    const expense = data.expenses.find((e) => e.id === item.id)
+    const paired = expense?.pairedExpenseId
+      ? data.expenses.find((e) => e.id === expense.pairedExpenseId)
+      : undefined
+    const modeSet = new Set<HistoryPaymentMode>()
+    if (expense) {
+      for (const mode of purchaseExpensePaymentModes(expense)) modeSet.add(mode)
+    }
+    if (paired) {
+      for (const mode of purchaseExpensePaymentModes(paired)) modeSet.add(mode)
+    }
+    const paymentModes =
+      modeSet.size > 0
+        ? Array.from(modeSet)
+        : item.hasOpenCredit
+          ? (['credit'] as HistoryPaymentMode[])
+          : undefined
+    const paymentMode = paymentModes?.includes('credit')
+      ? 'credit'
+      : paymentModes?.[0]
+
+    return {
+      type: 'purchase' as const,
+      id: item.id,
+      amount: item.amount,
+      paidAmount: item.paidAmount,
+      sub: `${item.billLabel} · ${item.payLabel}${item.description ? ` · ${item.description}` : ''}`,
+      name: item.shopName,
+      date: item.date,
+      paymentMode,
+      paymentModes,
+      hasOpenCredit: item.hasOpenCredit,
+      openCreditAmount: item.openCreditAmount,
+      openCreditExpenseId: item.openCreditExpenseId,
+    }
+  })
 
   return [...saleItems, ...expenseItems, ...purchaseItems]
+}
+
+/** Timestamp for sorting — last update / collection when available. */
+export function historyItemSortTime(item: HistoryItem): number {
+  return new Date(item.completedAt ?? item.date).getTime()
+}
+
+/** Timestamp for sorting by when the record was first created. */
+export function historyItemCreatedTime(item: HistoryItem): number {
+  return new Date(item.billCreatedAt ?? item.date).getTime()
+}
+
+/** Amount shown for a history row — purchase paid-only mode uses paidAmount. */
+export function historyItemDisplayAmount(item: HistoryItem, purchasePaidOnly = false): number {
+  if (item.type === 'sale') return historyItemSaleAmount(item)
+  if (item.type === 'purchase' && purchasePaidOnly) return item.paidAmount ?? 0
+  return item.amount
 }
 
 /** Money actually collected for a history sale row (split-aware). */
@@ -839,6 +891,13 @@ export function matchesHistoryPaymentFilter(
   paymentFilter: HistoryPaymentFilter,
 ): boolean {
   if (paymentFilter === 'all') return true
+  if (paymentFilter === 'pending') {
+    if (item.type === 'sale') {
+      return item.receiptLines?.some((line) => line.status === 'pending') ?? false
+    }
+    if (item.type === 'purchase') return Boolean(item.hasOpenCredit)
+    return false
+  }
   const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
   return modes.includes(paymentFilter)
 }

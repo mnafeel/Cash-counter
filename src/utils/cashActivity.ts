@@ -2,7 +2,7 @@ import type { AppData, Expense, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import { saleCashCollected } from './salesReport'
 
-export type CashDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'date'
+export type CashDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'date'
 
 export interface CashActivityItem {
   id: string
@@ -43,6 +43,10 @@ export function matchesCashDateFilter(
     start.setDate(now.getDate() - 6)
     start.setHours(0, 0, 0, 0)
     return d.getTime() >= start.getTime()
+  }
+
+  if (dateFilter === 'month') {
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
   }
 
   if (dateFilter === 'date') {
@@ -101,6 +105,7 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
   }
 
   if (expense.payType === 'bank') return
+  if (expense.payType === 'credit') return
 
   if (expense.payType === 'split') {
     const cash = expense.cashAmount ?? 0

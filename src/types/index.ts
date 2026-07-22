@@ -27,7 +27,7 @@ export interface Sale {
   updatedAt?: string
 }
 
-export type ExpensePayType = Extract<PayType, 'cash' | 'bank' | 'split' | 'cheque'>
+export type ExpensePayType = Extract<PayType, 'cash' | 'bank' | 'credit' | 'split' | 'cheque'>
 export type ExpenseKind = 'expense' | 'add' | 'transfer'
 export type TransferDirection = 'cash-to-bank' | 'bank-to-cash'
 export type AppTheme = 'brown' | 'navy' | 'light' | 'premium'
@@ -41,6 +41,7 @@ export interface Expense {
   payType: ExpensePayType
   cashAmount?: number
   bankAmount?: number
+  creditAmount?: number
   chequeAmount?: number
   /** Split/cheque expense: cheque portion approved to bank. */
   chequeApproved?: boolean

@@ -21,7 +21,7 @@ import { backupNow, setBackupStatusListener } from '../firebase/sync'
 import type { AppData } from '../types'
 import { getApprovedChequeAmount, listApprovedCheques } from '../storage/database'
 import { formatMoney, formatDate, parseAmount } from '../utils/format'
-import { buildHistoryItems, getHistoryPaymentLabel, matchesHistorySearch, type HistoryItem } from '../utils/historyItems'
+import { buildHistoryItems, getHistoryPaymentLabel, historyItemSortTime, matchesHistorySearch, type HistoryItem } from '../utils/historyItems'
 import { downloadFullHistoryReport, printFullHistoryReportPdf } from '../utils/historyReport'
 import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
@@ -122,6 +122,7 @@ export default function Settings() {
   const [editBillAmount, setEditBillAmount] = useState('')
   const [editBillPayType, setEditBillPayType] = useState<'credit' | 'cheque'>('credit')
   const [billEditStatus, setBillEditStatus] = useState('')
+  const [billEditOpen, setBillEditOpen] = useState(false)
 
   const approvedCheques = useMemo(() => listApprovedCheques(data), [data.sales])
   const historyRecordCount = useMemo(() => buildHistoryItems(data).length, [data])
@@ -134,8 +135,13 @@ export default function Settings() {
         return billEditFilter === 'pending' ? pending : !pending
       })
       .filter((item) => matchesHistorySearch(item, billEditSearch))
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .sort((a, b) => historyItemSortTime(b) - historyItemSortTime(a))
   }, [data, billEditFilter, billEditSearch])
+
+  const billEditCount = useMemo(
+    () => buildHistoryItems(data).filter((item) => item.type === 'sale').length,
+    [data],
+  )
 
   const firebaseBuilt = isFirebaseConfigured()
   const opening = parseAmount(openingStr)
@@ -145,6 +151,20 @@ export default function Settings() {
     setOpeningStr(String(data.openingBalance))
     setOpeningBankStr(String(data.openingBankBalance ?? 0))
   }, [data.openingBalance, data.openingBankBalance])
+
+  useEffect(() => {
+    if (!billEditOpen) return
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setBillEditOpen(false)
+        setEditingBillId(null)
+        setEditBillName('')
+        setEditBillAmount('')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [billEditOpen])
 
   useEffect(() => {
     if (!firebaseBuilt) return
@@ -567,7 +587,7 @@ export default function Settings() {
               ) : null}
             </section>
 
-            <section className="settings-bill-edit">
+            <section className="settings-bill-edit-launch">
               <div className="settings-bill-edit-head">
                 <h3>Edit bills</h3>
                 <p>
@@ -575,131 +595,14 @@ export default function Settings() {
                   cheque type.
                 </p>
               </div>
-              <div className="settings-bill-edit-toolbar">
-                <input
-                  type="search"
-                  className="settings-bill-edit-search"
-                  value={billEditSearch}
-                  onChange={(e) => setBillEditSearch(e.target.value)}
-                  placeholder="Search customer, amount, date…"
-                  autoComplete="off"
-                />
-                <div className="settings-bill-edit-filters" role="group" aria-label="Bill status">
-                  {BILL_EDIT_FILTER_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      className={`settings-bill-edit-filter ${billEditFilter === opt.id ? 'settings-bill-edit-filter--active' : ''}`}
-                      onClick={() => setBillEditFilter(opt.id)}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {billEditItems.length === 0 ? (
-                <p className="settings-bill-edit-empty">No bills match your search.</p>
-              ) : (
-                <ul className="settings-bill-edit-list">
-                  {billEditItems.map((item) => {
-                    const isEditing = editingBillId === item.id
-                    const pending = billIsPending(item, data.sales)
-                    const showPayType = billAllowsPayTypeEdit(data.sales, item.id)
-                    const statusLabel = pending ? 'Pending' : 'Paid'
-                    const paymentLabel = item.paymentMode
-                      ? getHistoryPaymentLabel(item.paymentMode)
-                      : statusLabel
-
-                    return (
-                      <li key={item.id} className="settings-bill-edit-item">
-                        {isEditing ? (
-                          <form
-                            className="settings-bill-edit-form"
-                            onSubmit={(e) => {
-                              e.preventDefault()
-                              saveBillEdit(item)
-                            }}
-                          >
-                            <label className="settings-bill-edit-field">
-                              <span>Customer name</span>
-                              <input
-                                type="text"
-                                value={editBillName}
-                                onChange={(e) => setEditBillName(e.target.value)}
-                                placeholder="Customer / party name"
-                                autoComplete="off"
-                              />
-                            </label>
-                            {!item.isSplitGroup ? (
-                              <label className="settings-bill-edit-field">
-                                <span>Bill amount</span>
-                                <input
-                                  type="text"
-                                  inputMode="decimal"
-                                  value={editBillAmount}
-                                  onChange={(e) => setEditBillAmount(e.target.value)}
-                                  placeholder="Amount"
-                                />
-                              </label>
-                            ) : (
-                              <p className="settings-bill-edit-note">
-                                Split bill — name only. Edit amounts on Cash Counter.
-                              </p>
-                            )}
-                            {showPayType ? (
-                              <label className="settings-bill-edit-field">
-                                <span>Pending type</span>
-                                <select
-                                  value={editBillPayType}
-                                  onChange={(e) =>
-                                    setEditBillPayType(e.target.value as 'credit' | 'cheque')
-                                  }
-                                >
-                                  <option value="credit">Credit</option>
-                                  <option value="cheque">Cheque</option>
-                                </select>
-                              </label>
-                            ) : null}
-                            <div className="settings-bill-edit-form-actions">
-                              <button type="submit" className="btn btn-primary settings-bill-edit-save">
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                className="btn btn-secondary settings-bill-edit-cancel"
-                                onClick={cancelBillEdit}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </form>
-                        ) : (
-                          <>
-                            <div className="settings-bill-edit-meta">
-                              <strong>{item.name?.trim() || '—'}</strong>
-                              <span className="settings-bill-edit-sub">
-                                {paymentLabel} · {statusLabel} · {formatDate(item.date)}
-                              </span>
-                            </div>
-                            <div className="settings-bill-edit-amount-box">
-                              <span className="settings-bill-edit-amount-label">Bill amount</span>
-                              <strong>{formatMoney(item.originalBillAmount ?? item.amount)}</strong>
-                              <button
-                                type="button"
-                                className="btn btn-secondary settings-bill-edit-btn"
-                                onClick={() => startBillEdit(item)}
-                              >
-                                Edit Bill
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-              {billEditStatus ? (
+              <button
+                type="button"
+                className="btn btn-primary settings-bill-edit-open-btn"
+                onClick={() => setBillEditOpen(true)}
+              >
+                Open bill editor ({billEditCount})
+              </button>
+              {billEditStatus && !billEditOpen ? (
                 <p className="settings-bill-edit-status">{billEditStatus}</p>
               ) : null}
             </section>
@@ -955,6 +858,169 @@ export default function Settings() {
           </div>
         )}
       </div>
+
+      {billEditOpen ? (
+        <div
+          className="settings-bill-edit-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Edit bills"
+          onClick={() => {
+            setBillEditOpen(false)
+            cancelBillEdit()
+          }}
+        >
+          <div className="settings-bill-edit-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="settings-bill-edit-panel-head">
+              <div>
+                <h3>Edit bills</h3>
+                <p>Recent first · tap Edit on any bill</p>
+              </div>
+              <button
+                type="button"
+                className="settings-bill-edit-close"
+                onClick={() => {
+                  setBillEditOpen(false)
+                  cancelBillEdit()
+                }}
+                aria-label="Close bill editor"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="settings-bill-edit-toolbar">
+              <input
+                type="search"
+                className="settings-bill-edit-search"
+                value={billEditSearch}
+                onChange={(e) => setBillEditSearch(e.target.value)}
+                placeholder="Search customer, amount, date…"
+                autoComplete="off"
+              />
+              <div className="settings-bill-edit-filters" role="group" aria-label="Bill status">
+                {BILL_EDIT_FILTER_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`settings-bill-edit-filter ${billEditFilter === opt.id ? 'settings-bill-edit-filter--active' : ''}`}
+                    onClick={() => setBillEditFilter(opt.id)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {billEditItems.length === 0 ? (
+              <p className="settings-bill-edit-empty">No bills match your search.</p>
+            ) : (
+              <ul className="settings-bill-edit-list settings-bill-edit-list--panel">
+                {billEditItems.map((item) => {
+                  const isEditing = editingBillId === item.id
+                  const pending = billIsPending(item, data.sales)
+                  const showPayType = billAllowsPayTypeEdit(data.sales, item.id)
+                  const statusLabel = pending ? 'Pending' : 'Paid'
+                  const paymentLabel = item.paymentMode
+                    ? getHistoryPaymentLabel(item.paymentMode)
+                    : statusLabel
+
+                  return (
+                    <li key={item.id} className="settings-bill-edit-item">
+                      {isEditing ? (
+                        <form
+                          className="settings-bill-edit-form"
+                          onSubmit={(e) => {
+                            e.preventDefault()
+                            saveBillEdit(item)
+                          }}
+                        >
+                          <label className="settings-bill-edit-field">
+                            <span>Customer name</span>
+                            <input
+                              type="text"
+                              value={editBillName}
+                              onChange={(e) => setEditBillName(e.target.value)}
+                              placeholder="Customer / party name"
+                              autoComplete="off"
+                            />
+                          </label>
+                          {!item.isSplitGroup ? (
+                            <label className="settings-bill-edit-field">
+                              <span>Bill amount</span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={editBillAmount}
+                                onChange={(e) => setEditBillAmount(e.target.value)}
+                                placeholder="Amount"
+                              />
+                            </label>
+                          ) : (
+                            <p className="settings-bill-edit-note">
+                              Split bill — name only. Edit amounts on Cash Counter.
+                            </p>
+                          )}
+                          {showPayType ? (
+                            <label className="settings-bill-edit-field">
+                              <span>Pending type</span>
+                              <select
+                                value={editBillPayType}
+                                onChange={(e) =>
+                                  setEditBillPayType(e.target.value as 'credit' | 'cheque')
+                                }
+                              >
+                                <option value="credit">Credit</option>
+                                <option value="cheque">Cheque</option>
+                              </select>
+                            </label>
+                          ) : null}
+                          <div className="settings-bill-edit-form-actions">
+                            <button type="submit" className="btn btn-primary settings-bill-edit-save">
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary settings-bill-edit-cancel"
+                              onClick={cancelBillEdit}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="settings-bill-edit-meta">
+                            <strong>{item.name?.trim() || '—'}</strong>
+                            <span className="settings-bill-edit-sub">
+                              {paymentLabel} · {statusLabel} · {formatDate(item.date)}
+                            </span>
+                          </div>
+                          <div className="settings-bill-edit-amount-box">
+                            <span className="settings-bill-edit-amount-label">Bill amount</span>
+                            <strong>{formatMoney(item.originalBillAmount ?? item.amount)}</strong>
+                            <button
+                              type="button"
+                              className="btn btn-secondary settings-bill-edit-btn"
+                              onClick={() => startBillEdit(item)}
+                            >
+                              Edit Bill
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+
+            {billEditStatus ? (
+              <p className="settings-bill-edit-status">{billEditStatus}</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

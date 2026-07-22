@@ -7,6 +7,7 @@ import Counter from './pages/Counter'
 import PurchaseExpense from './pages/PurchaseExpense'
 import Expenses from './pages/Expenses'
 import History from './pages/History'
+import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
             <Route path="purchase" element={<PurchaseExpense />} />
             <Route path="expenses" element={<Expenses />} />
             <Route path="history" element={<History />} />
+            <Route path="reports" element={<Reports />} />
             <Route path="settings" element={<Settings />} />
             </Route>
           </Route>

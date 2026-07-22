@@ -62,6 +62,7 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
   }
 
   if (expense.payType === 'cash') return
+  if (expense.payType === 'credit') return
 
   if (expense.payType === 'cheque') {
     if (!expense.chequeApproved) return

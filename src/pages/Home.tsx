@@ -36,15 +36,8 @@ import {
   type CashDateFilter,
 } from '../utils/cashActivity'
 import {
-  buildSalesBillList,
-  buildSalesReport,
   formatSalesBreakdown,
   getTodaySalesSummary,
-  summarizeSales,
-  toInputDate,
-  type ReportPeriod,
-  type ReportSort,
-  type SaleDateMode,
 } from '../utils/salesReport'
 import {
   isPurchaseExpense,
@@ -59,6 +52,8 @@ import {
   summarizePurchases,
 } from '../utils/purchaseHistory'
 import PurchaseHistoryPanel from '../components/PurchaseHistoryPanel'
+import ReportsPanel, { type ReportSection } from '../components/ReportsPanel'
+import type { ReportDatePreset } from '../utils/reportsHub'
 import './Home.css'
 
 const DEFAULT_PIN = '0000'
@@ -85,13 +80,6 @@ export default function Home() {
   const [panelSaved, setPanelSaved] = useState(false)
   const [panelError, setPanelError] = useState('')
   const [showDeleteRecords, setShowDeleteRecords] = useState(false)
-  const [showSalesReport, setShowSalesReport] = useState(false)
-  const [reportPeriod, setReportPeriod] = useState<ReportPeriod>('day')
-  const [reportSort, setReportSort] = useState<ReportSort>('date-desc')
-  const [reportDateMode, setReportDateMode] = useState<SaleDateMode>('collected')
-  const [reportFromDate, setReportFromDate] = useState('')
-  const [reportToDate, setReportToDate] = useState('')
-  const [reportView, setReportView] = useState<'summary' | 'bills'>('summary')
   const [deleteRecordSearch, setDeleteRecordSearch] = useState('')
   const [deleteRecordFilter, setDeleteRecordFilter] = useState<HistoryFilter>('all')
   const [showCashHistory, setShowCashHistory] = useState(false)
@@ -101,7 +89,16 @@ export default function Home() {
   const [bankDateFilter, setBankDateFilter] = useState<BankDateFilter>('today')
   const [bankSelectedDate, setBankSelectedDate] = useState('')
   const [showPurchaseHistory, setShowPurchaseHistory] = useState(false)
+  const [showReports, setShowReports] = useState(false)
+  const [reportPreset, setReportPreset] = useState<ReportDatePreset>('today')
+  const [reportSection, setReportSection] = useState<ReportSection | undefined>()
   const noteInputRef = useRef<HTMLInputElement>(null)
+
+  function openReports(preset: ReportDatePreset = 'today', section?: ReportSection) {
+    setReportPreset(preset)
+    setReportSection(section)
+    setShowReports(true)
+  }
 
   const homePin = normalizePin(data.homePin, DEFAULT_PIN)
   const panelAmount = parseAmount(panelAmountStr)
@@ -196,53 +193,6 @@ export default function Home() {
   const bankPeriodStart = bankOpeningToday
   const cashPeriodClose = cashClosingPeriod
   const bankPeriodClose = bankClosingPeriod
-
-  const reportFilter = useMemo(
-    () => ({
-      fromDate: reportFromDate || undefined,
-      toDate: reportToDate || undefined,
-      dateMode: reportDateMode,
-    }),
-    [reportFromDate, reportToDate, reportDateMode],
-  )
-
-  const salesReportRows = useMemo(
-    () => buildSalesReport(data, reportPeriod, reportSort, reportFilter),
-    [data, reportPeriod, reportSort, reportFilter],
-  )
-
-  const salesBillRows = useMemo(
-    () => buildSalesBillList(data, reportSort, reportFilter),
-    [data, reportSort, reportFilter],
-  )
-
-  const reportTotals = useMemo(() => {
-    if (reportView === 'bills') {
-      return {
-        billCount: salesBillRows.length,
-        totalBills: salesBillRows.reduce((sum, row) => sum + row.billAmount, 0),
-        cashTotal: salesBillRows.reduce((sum, row) => sum + row.cashTotal, 0),
-        bankTotal: salesBillRows.reduce((sum, row) => sum + row.bankTotal, 0),
-      }
-    }
-    return summarizeSales(salesReportRows)
-  }, [reportView, salesBillRows, salesReportRows])
-
-  function openSalesReport() {
-    const today = toInputDate()
-    setReportFromDate(today)
-    setReportToDate(today)
-    setReportDateMode('collected')
-    setReportView('summary')
-    setReportPeriod('day')
-    setReportSort('date-desc')
-    setShowSalesReport(true)
-  }
-
-  function setReportRange(from: string, to: string) {
-    setReportFromDate(from)
-    setReportToDate(to)
-  }
 
   const recordsForDelete = useMemo(() => {
     return buildHistoryItems(data)
@@ -602,7 +552,7 @@ export default function Home() {
         <button
           type="button"
           className="stat-card stat-card--action"
-          onClick={openSalesReport}
+          onClick={() => openReports('today', 'sales')}
         >
           <span className="stat-label">Today Sales</span>
           <span className="stat-value stat-value--green">
@@ -612,24 +562,24 @@ export default function Home() {
             {formatSalesBreakdown(todaySalesSummary.cashTotal, todaySalesSummary.bankTotal)}
           </span>
           <span className="stat-meta">
-            {todaySalesSummary.billCount} bills · Report →
+            {todaySalesSummary.billCount} bills · Tap for details →
           </span>
         </button>
         <button
           type="button"
           className="stat-card stat-card--action"
-          onClick={() => navigate('/expenses')}
+          onClick={() => openReports('today', 'expense')}
         >
           <span className="stat-label">Today Expenses</span>
           <span className="stat-value stat-value--orange">
             {formatMoney(todayRegularExpensesTotal)}
           </span>
-          <span className="stat-meta">{todayRegularExpenses.length} items · Expenses →</span>
+          <span className="stat-meta">{todayRegularExpenses.length} items · Tap for details →</span>
         </button>
         <button
           type="button"
           className="stat-card stat-card--action"
-          onClick={() => navigate('/purchase')}
+          onClick={() => openReports('today', 'purchase')}
         >
           <span className="stat-label">Today Purchases</span>
           <span className="stat-value stat-value--orange">
@@ -647,33 +597,34 @@ export default function Home() {
             </span>
           ) : (
             <span className="stat-meta">
-              {todayPurchases.length} items · Purchase →
+              {todayPurchases.length} items · Tap for details →
             </span>
           )}
         </button>
       </section>
 
-      <section className="home-purchases">
-        <div className="home-purchases-head">
-          <p className="home-purchases-label">Purchase Expense</p>
-          <span className="home-purchases-total">{formatMoney(todayPurchaseSummary.total)} today</span>
-        </div>
-        <div className="home-purchases-row">
-          <button
-            type="button"
-            className="home-purchase-btn home-purchase-btn--open"
-            onClick={() => navigate('/purchase')}
-          >
-            🛒 Open Purchase
-          </button>
-          <button
-            type="button"
-            className="home-purchase-btn home-purchase-btn--history"
-            onClick={() => setShowPurchaseHistory(true)}
-          >
-            📋 Purchase History
-          </button>
-        </div>
+      <section className="home-quick-actions">
+        <button
+          type="button"
+          className="home-report-open-btn"
+          onClick={() => openReports('today')}
+        >
+          📊 Reports — Sales · Purchase · Expense · Credit · Cheque
+        </button>
+        <button
+          type="button"
+          className="home-purchase-btn home-purchase-btn--open"
+          onClick={() => navigate('/purchase')}
+        >
+          🛒 Open Purchase
+        </button>
+        <button
+          type="button"
+          className="home-purchase-btn home-purchase-btn--history"
+          onClick={() => setShowPurchaseHistory(true)}
+        >
+          📋 Purchase History
+        </button>
       </section>
 
       <section className="home-grid">
@@ -853,211 +804,6 @@ export default function Home() {
         </div>
       )}
 
-      {showSalesReport && (
-        <div className="home-add-overlay" role="dialog" aria-modal="true">
-          <div className="home-add-panel home-report-panel">
-            <div className="home-add-panel-head">
-              <h3>Sales Report</h3>
-              <button
-                type="button"
-                className="home-add-close"
-                onClick={() => setShowSalesReport(false)}
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="home-report-summary">
-              <div className="home-report-summary-item">
-                <span>Total Bills</span>
-                <strong>{formatMoney(reportTotals.totalBills)}</strong>
-              </div>
-              <div className="home-report-summary-item">
-                <span>💵 Cash</span>
-                <strong>{formatMoney(reportTotals.cashTotal)}</strong>
-              </div>
-              <div className="home-report-summary-item">
-                <span>🏦 Bank</span>
-                <strong>{formatMoney(reportTotals.bankTotal)}</strong>
-              </div>
-              <div className="home-report-summary-item">
-                <span>Bills</span>
-                <strong>{reportTotals.billCount}</strong>
-              </div>
-            </div>
-
-            <div className="home-report-dates">
-              <label className="home-report-date-field">
-                <span>From</span>
-                <input
-                  type="date"
-                  value={reportFromDate}
-                  onChange={(e) => setReportFromDate(e.target.value)}
-                />
-              </label>
-              <label className="home-report-date-field">
-                <span>To</span>
-                <input
-                  type="date"
-                  value={reportToDate}
-                  min={reportFromDate || undefined}
-                  onChange={(e) => setReportToDate(e.target.value)}
-                />
-              </label>
-            </div>
-
-            <div className="home-delete-filters">
-              {(
-                [
-                  ['today', 'Today'],
-                  ['week', '7 Days'],
-                  ['month', 'This Month'],
-                  ['all', 'All'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className="home-delete-chip"
-                  onClick={() => {
-                    const today = toInputDate()
-                    if (id === 'today') setReportRange(today, today)
-                    else if (id === 'week') {
-                      const start = new Date()
-                      start.setDate(start.getDate() - 6)
-                      setReportRange(toInputDate(start), today)
-                    } else if (id === 'month') {
-                      const start = new Date()
-                      start.setDate(1)
-                      setReportRange(toInputDate(start), today)
-                    } else setReportRange('', '')
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="home-delete-filters">
-              {(
-                [
-                  ['collected', 'Sale Take'],
-                  ['created', 'Bill Created'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`home-delete-chip ${reportDateMode === id ? 'home-delete-chip--active' : ''}`}
-                  onClick={() => setReportDateMode(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="home-delete-filters">
-              {(
-                [
-                  ['summary', 'By Period'],
-                  ['bills', 'Each Bill'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`home-delete-chip ${reportView === id ? 'home-delete-chip--active' : ''}`}
-                  onClick={() => setReportView(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="home-delete-filters">
-              {(
-                [
-                  ['day', 'Day'],
-                  ['week', 'Week'],
-                  ['month', 'Month'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`home-delete-chip ${reportPeriod === id ? 'home-delete-chip--active' : ''}`}
-                  onClick={() => setReportPeriod(id)}
-                  disabled={reportView === 'bills'}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="home-delete-filters">
-              {(
-                [
-                  ['date-desc', 'By Date ↓'],
-                  ['date-asc', 'By Date ↑'],
-                  ['amount-desc', 'Amount ↓'],
-                  ['amount-asc', 'Amount ↑'],
-                ] as const
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className={`home-delete-chip ${reportSort === id ? 'home-delete-chip--active' : ''}`}
-                  onClick={() => setReportSort(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {reportView === 'summary' ? (
-              salesReportRows.length === 0 ? (
-                <p className="home-delete-empty">No sales in this date range.</p>
-              ) : (
-                <ul className="home-report-list">
-                  {salesReportRows.map((row) => (
-                    <li key={row.key} className="home-report-item">
-                      <div className="home-report-item-head">
-                        <span className="home-report-period">{row.label}</span>
-                        <span className="home-report-total">{formatMoney(row.totalBills)}</span>
-                      </div>
-                      <div className="home-report-item-meta">
-                        <span>{formatSalesBreakdown(row.cashTotal, row.bankTotal)}</span>
-                        <span>{row.billCount} bills</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )
-            ) : salesBillRows.length === 0 ? (
-              <p className="home-delete-empty">No sales in this date range.</p>
-            ) : (
-              <ul className="home-report-list">
-                {salesBillRows.map((row) => (
-                  <li key={row.id} className="home-report-item">
-                    <div className="home-report-item-head">
-                      <span className="home-report-period">
-                        {row.customerName || 'Bill'} · {row.dateLabel}
-                      </span>
-                      <span className="home-report-total">{formatMoney(row.billAmount)}</span>
-                    </div>
-                    <div className="home-report-item-meta">
-                      <span>{formatSalesBreakdown(row.cashTotal, row.bankTotal)}</span>
-                      <span>{row.payLabel}</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </div>
-      )}
-
       {showDeleteRecords && (
         <div className="home-add-overlay" role="dialog" aria-modal="true">
           <div className="home-add-panel home-delete-panel">
@@ -1212,6 +958,14 @@ export default function Home() {
         onClose={() => setShowPurchaseHistory(false)}
         data={data}
         variant="fullscreen"
+      />
+
+      <ReportsPanel
+        open={showReports}
+        onClose={() => setShowReports(false)}
+        data={data}
+        initialPreset={reportPreset}
+        initialSection={reportSection}
       />
     </div>
   )

@@ -475,7 +475,7 @@ export function updateSaleCustomerName(
         ? {
             ...s,
             customerName: trimmed || undefined,
-            ...(s.status === 'pending' ? { updatedAt: now } : {}),
+            updatedAt: now,
           }
         : s,
     ),
@@ -739,8 +739,10 @@ export function updateSaleBill(
       if (!nameTargets.has(s.id) && s.id !== id) return s
 
       let patched: Sale = { ...s }
+      let touched = false
       if (nameTargets.has(s.id) && updates.customerName !== undefined) {
         patched = { ...patched, customerName }
+        touched = true
       }
       if (s.id === id && updates.billAmount != null && updates.billAmount > 0) {
         patched = {
@@ -748,12 +750,15 @@ export function updateSaleBill(
           billAmount,
           updatedAt: now,
         }
+        touched = true
         if (s.payType === 'cash' || !s.payType) {
           patched.changeAmount = Math.max(0, s.paidAmount - billAmount)
         }
         if (s.payType === 'cheque') {
           patched.chequeAmount = billAmount
         }
+      } else if (touched) {
+        patched = { ...patched, updatedAt: now }
       }
       return patched
     }),
@@ -770,6 +775,38 @@ export function updateExpenseName(data: AppData, id: string, name: string): AppD
       e.id === id ? { ...e, name: trimmed || defaultExpenseName(e) } : e,
     ),
   }
+  saveData(next)
+  return next
+}
+
+export function updateExpense(
+  data: AppData,
+  id: string,
+  updates: Partial<Omit<Expense, 'id' | 'createdAt'>>,
+): AppData {
+  const existing = data.expenses.find((e) => e.id === id)
+  if (!existing) return data
+
+  const patched: Expense = {
+    ...existing,
+    ...updates,
+    name: updates.name !== undefined ? updates.name.trim() || defaultExpenseName(existing) : existing.name,
+    description:
+      updates.description !== undefined
+        ? updates.description.trim() || undefined
+        : existing.description,
+  }
+
+  let next: AppData = {
+    ...data,
+    expenses: data.expenses.map((e) => (e.id === id ? patched : e)),
+  }
+
+  const supplierName = stripExpenseBillSuffix(patched.name?.trim() ?? '')
+  if (supplierName) next = ensureSupplierInData(next, supplierName)
+  const item = patched.description?.trim()
+  if (supplierName && item) next = addSupplierItem(next, supplierName, item)
+
   saveData(next)
   return next
 }

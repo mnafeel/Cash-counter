@@ -28,6 +28,8 @@ interface PurchaseHistoryPanelProps {
   onClose: () => void
   data: AppData
   variant?: 'modal' | 'fullscreen'
+  onOpenBill?: (expenseId: string) => void
+  onUpdateBill?: (expenseId: string) => void
 }
 
 function billTagClass(billType: PurchaseHistoryItem['billType']): string {
@@ -41,6 +43,8 @@ export default function PurchaseHistoryPanel({
   onClose,
   data,
   variant = 'modal',
+  onOpenBill,
+  onUpdateBill,
 }: PurchaseHistoryPanelProps) {
   const navigate = useNavigate()
   const fullscreen = variant === 'fullscreen'
@@ -78,6 +82,8 @@ export default function PurchaseHistoryPanel({
         gstTotal: 0,
         noGstTotal: 0,
         count: 0,
+        creditTotal: 0,
+        creditCount: 0,
         items: [],
       }
     }
@@ -88,6 +94,8 @@ export default function PurchaseHistoryPanel({
       gstTotal: shopItems.reduce((sum, item) => sum + item.no1Amount, 0),
       noGstTotal: shopItems.reduce((sum, item) => sum + item.no2Amount, 0),
       count: shopItems.length,
+      creditTotal: 0,
+      creditCount: 0,
       items: shopItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     }
   }, [selectedSupplierKey, supplierGroups, items, dateFilteredItems])
@@ -113,6 +121,41 @@ export default function PurchaseHistoryPanel({
       return
     }
     handleClose()
+  }
+
+  function handleOpenBill(expenseId: string) {
+    handleClose()
+    if (onOpenBill) {
+      onOpenBill(expenseId)
+      return
+    }
+    navigate(`/purchase?open=${encodeURIComponent(expenseId)}`)
+  }
+
+  function handleUpdateBill(expenseId: string) {
+    handleClose()
+    if (onUpdateBill) {
+      onUpdateBill(expenseId)
+      return
+    }
+    navigate(`/purchase?edit=${encodeURIComponent(expenseId)}`)
+  }
+
+  function renderBillActions(billId: string) {
+    return (
+      <div className="purchase-hist-item-actions purchase-hist-item-actions--bill">
+        <button type="button" className="purchase-hist-action-btn" onClick={() => handleOpenBill(billId)}>
+          Open Bill
+        </button>
+        <button
+          type="button"
+          className="purchase-hist-action-btn purchase-hist-action-btn--update"
+          onClick={() => handleUpdateBill(billId)}
+        >
+          Update
+        </button>
+      </div>
+    )
   }
 
   function renderPurchaseItem(item: PurchaseHistoryItem) {
@@ -163,7 +206,14 @@ export default function PurchaseHistoryPanel({
               <span>Total</span>
               <strong>{formatMoney(item.amount)}</strong>
             </div>
+            {item.amount !== item.paidAmount ? (
+              <div className="purchase-hist-item-detail-row">
+                <span>Paid</span>
+                <strong>{formatMoney(item.paidAmount)}</strong>
+              </div>
+            ) : null}
             <p className="purchase-hist-item-detail-pay">{item.payDetail}</p>
+            {renderBillActions(item.id)}
           </div>
         ) : null}
       </li>

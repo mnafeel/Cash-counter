@@ -1,12 +1,16 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import { formatDate, formatMoney } from '../utils/format'
+import { buildPurchaseCreditItems } from '../utils/purchaseHistory'
 import {
   buildHistoryItems,
   getHistoryPaymentLabel,
   getHistoryPaymentSortKey,
   getHistoryTypeLabel,
-  historyItemSaleAmount,
+  historyItemDisplayAmount,
+  historyItemCreatedTime,
+  historyItemSortTime,
   matchesHistoryPaymentFilter,
   matchesHistorySearch,
   type HistoryFilter,
@@ -18,6 +22,7 @@ import './History.css'
 
 type HistorySort =
   | 'date-desc'
+  | 'created-desc'
   | 'date-asc'
   | 'amount-desc'
   | 'amount-asc'
@@ -37,7 +42,8 @@ const FILTER_OPTIONS: { id: HistoryFilter; label: string }[] = [
 ]
 
 const SORT_OPTIONS: { id: HistorySort; label: string }[] = [
-  { id: 'date-desc', label: 'Newest first' },
+  { id: 'date-desc', label: 'Recent first' },
+  { id: 'created-desc', label: 'Newest first' },
   { id: 'date-asc', label: 'Oldest first' },
   { id: 'amount-desc', label: 'Highest amount' },
   { id: 'amount-asc', label: 'Lowest amount' },
@@ -136,6 +142,7 @@ function editKey(item: HistoryItem): string {
 
 export default function History() {
   const { data, updateHistoryName } = useCash()
+  const navigate = useNavigate()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [paymentFilter, setPaymentFilter] = useState<HistoryPaymentFilter>('all')
   const [sort, setSort] = useState<HistorySort>('date-desc')
@@ -145,23 +152,43 @@ export default function History() {
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [receiptItem, setReceiptItem] = useState<HistoryItem | null>(null)
+  const [purchaseCreditListOpen, setPurchaseCreditListOpen] = useState(false)
+  const [highlightedPurchaseCreditIndex, setHighlightedPurchaseCreditIndex] = useState(-1)
+  const [showPurchaseHistory, setShowPurchaseHistory] = useState(false)
   const editInputRef = useRef<HTMLInputElement>(null)
+  const purchaseCreditBarRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!purchaseCreditListOpen) return
+    function handlePointerDown(event: PointerEvent) {
+      if (purchaseCreditBarRef.current?.contains(event.target as Node)) return
+      setPurchaseCreditListOpen(false)
+      setHighlightedPurchaseCreditIndex(-1)
+    }
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => document.removeEventListener('pointerdown', handlePointerDown)
+  }, [purchaseCreditListOpen])
 
   const allItems = useMemo(() => buildHistoryItems(data), [data])
+  const purchaseCreditItems = useMemo(() => buildPurchaseCreditItems(data), [data])
+  const purchaseCreditTotal = useMemo(
+    () => purchaseCreditItems.reduce((sum, item) => sum + item.amount, 0),
+    [purchaseCreditItems],
+  )
 
-  const items = useMemo(() => {
-    let next = allItems.filter((item) => filter === 'all' || item.type === filter)
-    next = next.filter((item) => matchesDateFilter(item.date, dateFilter, selectedDate))
-    next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter))
-    next = next.filter((item) => matchesHistorySearch(item, search))
-
-    next.sort((a, b) => {
-      const aTime = new Date(a.date).getTime()
-      const bTime = new Date(b.date).getTime()
-      if (sort === 'date-desc') return bTime - aTime
-      if (sort === 'date-asc') return aTime - bTime
-      if (sort === 'amount-desc') return b.amount - a.amount || bTime - aTime
-      if (sort === 'amount-asc') return a.amount - b.amount || aTime - bTime
+  function sortItems(list: HistoryItem[], purchasePaidDisplay: boolean): HistoryItem[] {
+    return [...list].sort((a, b) => {
+      const aUpdated = historyItemSortTime(a)
+      const bUpdated = historyItemSortTime(b)
+      const aCreated = historyItemCreatedTime(a)
+      const bCreated = historyItemCreatedTime(b)
+      const aAmount = historyItemDisplayAmount(a, purchasePaidDisplay)
+      const bAmount = historyItemDisplayAmount(b, purchasePaidDisplay)
+      if (sort === 'date-desc') return bUpdated - aUpdated
+      if (sort === 'created-desc') return bCreated - aCreated
+      if (sort === 'date-asc') return aCreated - bCreated
+      if (sort === 'amount-desc') return bAmount - aAmount || bUpdated - aUpdated
+      if (sort === 'amount-asc') return aAmount - bAmount || aUpdated - bUpdated
       if (sort === 'payment-asc' || sort === 'payment-desc') {
         const aKey = getHistoryPaymentSortKey(a)
         const bKey = getHistoryPaymentSortKey(b)
@@ -171,17 +198,46 @@ export default function History() {
           return sort === 'payment-asc' ? aKey - bKey : bKey - aKey
         }
         return sort === 'payment-asc'
-          ? aLabel.localeCompare(bLabel) || bTime - aTime
-          : bLabel.localeCompare(aLabel) || bTime - aTime
+          ? aLabel.localeCompare(bLabel) || bUpdated - aUpdated
+          : bLabel.localeCompare(aLabel) || bUpdated - aUpdated
       }
       const aName = (a.name ?? '').toLowerCase()
       const bName = (b.name ?? '').toLowerCase()
-      if (sort === 'name-asc') return aName.localeCompare(bName) || bTime - aTime
-      return bName.localeCompare(aName) || bTime - aTime
+      if (sort === 'name-asc') return aName.localeCompare(bName) || bUpdated - aUpdated
+      return bName.localeCompare(aName) || bUpdated - aUpdated
     })
+  }
 
-    return next
+  const normalItems = useMemo(() => {
+    let next = allItems.filter((item) => item.type !== 'purchase')
+    next = next.filter((item) => filter === 'all' || item.type === filter)
+    next = next.filter((item) => matchesDateFilter(item.date, dateFilter, selectedDate))
+    next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter))
+    next = next.filter((item) => matchesHistorySearch(item, search))
+    return sortItems(next, false)
   }, [allItems, filter, paymentFilter, sort, dateFilter, selectedDate, search])
+
+  const purchaseItems = useMemo(() => {
+    if (!showPurchaseHistory) return []
+    if (filter !== 'all' && filter !== 'purchase') return []
+    let next = allItems.filter(
+      (item) => item.type === 'purchase' && (item.paidAmount ?? 0) > 0,
+    )
+    next = next.filter((item) => matchesDateFilter(item.date, dateFilter, selectedDate))
+    next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter))
+    next = next.filter((item) => matchesHistorySearch(item, search))
+    return sortItems(next, true)
+  }, [allItems, showPurchaseHistory, filter, paymentFilter, sort, dateFilter, selectedDate, search])
+
+  const combinedItems = useMemo(() => {
+    if (!showPurchaseHistory) return normalItems
+    return sortItems([...normalItems, ...purchaseItems], true)
+  }, [showPurchaseHistory, normalItems, purchaseItems, sort])
+
+  const purchasePaidTotal = useMemo(
+    () => purchaseItems.reduce((sum, item) => sum + (item.paidAmount ?? 0), 0),
+    [purchaseItems],
+  )
 
   const typeTotals = useMemo(() => {
     const totals: Record<HistoryItemType, { sum: number; count: number }> = {
@@ -191,17 +247,16 @@ export default function History() {
       deposit: { sum: 0, count: 0 },
       transfer: { sum: 0, count: 0 },
     }
-    for (const item of items) {
-      totals[item.type].sum +=
-        item.type === 'sale' ? historyItemSaleAmount(item) : item.amount
+    for (const item of normalItems) {
+      totals[item.type].sum += historyItemDisplayAmount(item, false)
       totals[item.type].count += 1
     }
     return totals
-  }, [items])
+  }, [normalItems])
 
   const summaryTypes =
     filter === 'all'
-      ? TYPE_SUMMARY.filter((t) => typeTotals[t.id].count > 0)
+      ? TYPE_SUMMARY.filter((t) => t.id !== 'purchase' && typeTotals[t.id].count > 0)
       : TYPE_SUMMARY.filter((t) => t.id === filter)
 
   const showPaymentFilters = filter !== 'transfer'
@@ -212,14 +267,17 @@ export default function History() {
           (opt) => opt.id === 'all' || opt.id === 'cash' || opt.id === 'bank',
         )
 
+  const normalFilterOptions = useMemo(
+    () => FILTER_OPTIONS.filter((opt) => opt.id !== 'purchase'),
+    [],
+  )
+
   const searchHint =
     filter === 'sale'
       ? 'Search customer, payment mode, amount, date…'
-      : filter === 'purchase'
-        ? 'Search supplier, item, bill, amount, date…'
       : filter === 'expense' || filter === 'deposit' || filter === 'transfer'
         ? 'Search note, amount, date…'
-        : 'Search customer, expense, purchase, amount…'
+        : 'Search customer, expense, amount, date…'
 
   function startEdit(item: HistoryItem) {
     setEditingKey(editKey(item))
@@ -241,152 +299,49 @@ export default function History() {
     cancelEdit()
   }
 
-  return (
-    <div className="history-page">
-      <div className="history-header">
-        <h2>History</h2>
-        <p>
-          {items.length} of {allItems.length} records · tap a bill for receipt · ✎ to edit name
-        </p>
-      </div>
+  function openPurchaseCreditUpdate(expenseId: string) {
+    setPurchaseCreditListOpen(false)
+    setReceiptItem(null)
+    navigate(`/purchase?edit=${encodeURIComponent(expenseId)}`)
+  }
 
-      <div className="history-toolbar">
-        <input
-          type="search"
-          className="history-search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={searchHint}
-          autoComplete="off"
-        />
+  function togglePurchaseCreditList() {
+    setPurchaseCreditListOpen((open) => {
+      const next = !open
+      if (next && purchaseCreditItems.length > 0) setHighlightedPurchaseCreditIndex(0)
+      else setHighlightedPurchaseCreditIndex(-1)
+      return next
+    })
+  }
 
-        <div className="history-toolbar-filters">
-          <label className="history-filter-field">
-            <span className="history-filter-label">Type</span>
-            <select
-              className="history-select"
-              value={filter}
-              onChange={(e) => {
-                const next = e.target.value as HistoryFilter
-                setFilter(next)
-                if (next === 'transfer') {
-                  setPaymentFilter('all')
-                } else if (next !== 'all' && next !== 'sale') {
-                  const allowed: HistoryPaymentFilter[] = ['all', 'cash', 'bank']
-                  if (!allowed.includes(paymentFilter)) setPaymentFilter('all')
-                }
-              }}
-              aria-label="Filter by record type"
-            >
-              {FILTER_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {showPaymentFilters ? (
-            <label className="history-filter-field">
-              <span className="history-filter-label">Payment</span>
-              <select
-                className="history-select"
-                value={paymentFilter}
-                onChange={(e) => setPaymentFilter(e.target.value as HistoryPaymentFilter)}
-                aria-label="Filter by payment mode"
-              >
-                {paymentOptions.map((opt) => (
-                  <option key={opt.id} value={opt.id}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-
-          <label className="history-filter-field">
-            <span className="history-filter-label">Sort</span>
-            <select
-              className="history-select"
-              value={sort}
-              onChange={(e) => setSort(e.target.value as HistorySort)}
-              aria-label="Sort records"
-            >
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="history-filter-field">
-            <span className="history-filter-label">Date</span>
-            <select
-              className="history-select"
-              value={dateFilter}
-              onChange={(e) => {
-                const next = e.target.value as DateFilter
-                setDateFilter(next)
-                if (next !== 'date') setSelectedDate('')
-              }}
-              aria-label="Filter by date"
-            >
-              {DATE_FILTER_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
+  function renderHistoryList(
+    listItems: HistoryItem[],
+    purchasePaidRows: boolean,
+    emptyIcon: string,
+    emptyMessage: string,
+  ) {
+    if (listItems.length === 0) {
+      return (
+        <div className="history-empty history-empty--section">
+          <span>{emptyIcon}</span>
+          <p>{emptyMessage}</p>
         </div>
+      )
+    }
 
-        {dateFilter === 'date' ? (
-          <input
-            type="date"
-            className="history-date-input history-date-input--active"
-            value={selectedDate}
-            max={new Date().toISOString().slice(0, 10)}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            aria-label="Pick a date"
-          />
-        ) : null}
-      </div>
+    return (
+      <ul className="history-list">
+        {listItems.map((item) => {
+          const key = editKey(item)
+          const isEditing = editingKey === key
+          const displayAmount = historyItemDisplayAmount(
+            item,
+            purchasePaidRows && item.type === 'purchase',
+          )
 
-      {summaryTypes.length > 0 && items.length > 0 ? (
-        <div className="history-summary">
-          {summaryTypes.map((t) => (
-            <div key={t.id} className={`history-summary-item history-summary-item--${t.id}`}>
-              <span className="history-summary-label">
-                {t.icon} {t.label} ({typeTotals[t.id].count})
-              </span>
-              <span className="history-summary-value">
-                {t.sign}
-                {formatMoney(typeTotals[t.id].sum)}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {items.length === 0 ? (
-        <div className="history-empty">
-          <span>📋</span>
-          <p>
-            {allItems.length === 0
-              ? 'No records yet. Use Cash Counter to save bills.'
-              : 'No records match your filter or search.'}
-          </p>
-        </div>
-      ) : (
-        <ul className="history-list">
-          {items.map((item) => {
-            const key = editKey(item)
-            const isEditing = editingKey === key
-
-            return (
+          return (
             <li
-              key={item.id}
+              key={key}
               className={`history-item history-item--${item.type} ${item.isSplitGroup ? 'history-item--split' : ''}`}
             >
               <div
@@ -430,7 +385,7 @@ export default function History() {
                             if (e.key === 'Escape') cancelEdit()
                           }}
                         />
-                        <button type="submit" className="history-name-save" aria-label="Save name">
+                        <button type="button" className="history-name-save" aria-label="Save name">
                           ✓
                         </button>
                         <button
@@ -472,7 +427,10 @@ export default function History() {
                       </div>
                     )}
                   </div>
-                  <span className="history-item-sub">{item.sub}</span>
+                  <span className="history-item-sub">
+                    {item.sub}
+                    {purchasePaidRows && item.type === 'purchase' ? ' · Paid' : null}
+                  </span>
                   <span className="history-item-meta">
                     {item.paySummary ? (
                       <span className="history-item-payment">{item.paySummary}</span>
@@ -486,22 +444,260 @@ export default function History() {
                 </div>
                 <span
                   className={`history-item-amount ${
-                    item.type === 'expense'
+                    item.type === 'expense' || item.type === 'purchase'
                       ? 'negative'
                       : item.type === 'transfer'
                         ? 'neutral'
                         : 'positive'
                   }`}
                 >
-                  {item.type === 'expense' ? '-' : item.type === 'transfer' ? '' : '+'}
-                  {formatMoney(item.amount)}
+                  {item.type === 'expense' || item.type === 'purchase'
+                    ? '-'
+                    : item.type === 'transfer'
+                      ? ''
+                      : '+'}
+                  {formatMoney(displayAmount)}
                 </span>
               </div>
             </li>
-            )
-          })}
-        </ul>
-      )}
+          )
+        })}
+      </ul>
+    )
+  }
+
+  return (
+    <div className="history-page">
+      <div className="history-header">
+        <h2>History</h2>
+        <p>
+          {showPurchaseHistory
+            ? `${combinedItems.length} records · time order · ${purchaseItems.length} paid purchases (${formatMoney(purchasePaidTotal)})`
+            : `${normalItems.length} records`}
+          {' · '}tap for receipt · ✎ to edit name
+        </p>
+      </div>
+
+      <div className="history-toolbar">
+        <input
+          type="search"
+          className="history-search"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value)
+            setPurchaseCreditListOpen(false)
+          }}
+          onFocus={() => setPurchaseCreditListOpen(false)}
+          placeholder={searchHint}
+          autoComplete="off"
+        />
+
+        <div className="history-toolbar-filters">
+          <label className="history-filter-field">
+            <span className="history-filter-label">Type</span>
+            <select
+              className="history-select"
+              value={filter}
+              onChange={(e) => {
+                const next = e.target.value as HistoryFilter
+                setFilter(next)
+                setPurchaseCreditListOpen(false)
+                if (next === 'transfer') {
+                  setPaymentFilter('all')
+                } else if (next !== 'all' && next !== 'sale') {
+                  const allowed: HistoryPaymentFilter[] = ['all', 'cash', 'bank']
+                  if (!allowed.includes(paymentFilter)) setPaymentFilter('all')
+                }
+              }}
+              aria-label="Filter by record type"
+            >
+              {normalFilterOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {showPaymentFilters ? (
+            <label className="history-filter-field">
+              <span className="history-filter-label">Payment</span>
+              <select
+                className="history-select"
+                value={paymentFilter}
+                onChange={(e) => {
+                  setPaymentFilter(e.target.value as HistoryPaymentFilter)
+                  setPurchaseCreditListOpen(false)
+                }}
+                aria-label="Filter by payment mode"
+              >
+                {paymentOptions.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <label className="history-filter-field">
+            <span className="history-filter-label">Sort</span>
+            <select
+              className="history-select"
+              value={sort}
+              onChange={(e) => {
+                setSort(e.target.value as HistorySort)
+                setPurchaseCreditListOpen(false)
+              }}
+              aria-label="Sort records"
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="history-filter-field">
+            <span className="history-filter-label">Date</span>
+            <select
+              className="history-select"
+              value={dateFilter}
+              onChange={(e) => {
+                const next = e.target.value as DateFilter
+                setDateFilter(next)
+                setPurchaseCreditListOpen(false)
+                if (next !== 'date') setSelectedDate('')
+              }}
+              aria-label="Filter by date"
+            >
+              {DATE_FILTER_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {dateFilter === 'date' ? (
+          <input
+            type="date"
+            className="history-date-input history-date-input--active"
+            value={selectedDate}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => {
+              setSelectedDate(e.target.value)
+              setPurchaseCreditListOpen(false)
+            }}
+            aria-label="Pick a date"
+          />
+        ) : null}
+      </div>
+
+      <label className="history-paid-toggle">
+        <span className="history-paid-toggle-label">Show purchase history (time order)</span>
+        <input
+          type="checkbox"
+          checked={showPurchaseHistory}
+          onChange={(e) => {
+            setShowPurchaseHistory(e.target.checked)
+            setPurchaseCreditListOpen(false)
+          }}
+          aria-label="Show purchase history below"
+        />
+      </label>
+
+      <div className="history-scroll">
+        <section className="history-section">
+          <h3 className="history-section-title">
+            {showPurchaseHistory ? '📋 History + Purchases · time order' : '📋 History'}
+          </h3>
+
+          {purchaseCreditItems.length > 0 ? (
+            <div className="history-purchase-credit-bar" ref={purchaseCreditBarRef}>
+              <button
+                type="button"
+                className="history-purchase-credit-open"
+                onClick={togglePurchaseCreditList}
+              >
+                <span>💳 Purchase Credits ({purchaseCreditItems.length})</span>
+                <span className="history-purchase-credit-open-meta">
+                  <span className="history-purchase-credit-open-total">
+                    {formatMoney(purchaseCreditTotal)}
+                  </span>
+                  <span className="history-purchase-credit-open-caret">
+                    {purchaseCreditListOpen ? '▲' : '▼'}
+                  </span>
+                </span>
+              </button>
+              {purchaseCreditListOpen ? (
+                <ul className="history-purchase-credit-list" role="listbox">
+                  {purchaseCreditItems.map((credit, index) => (
+                    <li key={credit.id}>
+                      <button
+                        type="button"
+                        className={`history-purchase-credit-item ${index === highlightedPurchaseCreditIndex ? 'history-purchase-credit-item--active' : ''}`}
+                        onMouseEnter={() => setHighlightedPurchaseCreditIndex(index)}
+                        onClick={() => openPurchaseCreditUpdate(credit.id)}
+                      >
+                        <span className="history-purchase-credit-item-top">
+                          {credit.shopName ? (
+                            <span className="history-purchase-credit-item-name">{credit.shopName}</span>
+                          ) : (
+                            <span className="history-purchase-credit-item-name">Supplier</span>
+                          )}
+                          <span className="history-purchase-credit-item-amount">
+                            {formatMoney(credit.amount)}
+                          </span>
+                        </span>
+                        <span className="history-purchase-credit-item-types">
+                          <span className="history-purchase-credit-type-chip">{credit.billLabel}</span>
+                          <span className="history-purchase-credit-type-chip history-purchase-credit-type-chip--pay">
+                            {credit.payLabel}
+                          </span>
+                        </span>
+                        {credit.description ? (
+                          <span className="history-purchase-credit-item-desc">{credit.description}</span>
+                        ) : null}
+                        <span className="history-purchase-credit-item-date">
+                          Balance · {formatDate(credit.date)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+
+          {summaryTypes.length > 0 && normalItems.length > 0 && !showPurchaseHistory ? (
+            <div className="history-summary">
+              {summaryTypes.map((t) => (
+                <div key={t.id} className={`history-summary-item history-summary-item--${t.id}`}>
+                  <span className="history-summary-label">
+                    {t.icon} {t.label} ({typeTotals[t.id].count})
+                  </span>
+                  <span className="history-summary-value">
+                    {t.sign}
+                    {formatMoney(typeTotals[t.id].sum)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {renderHistoryList(
+            combinedItems,
+            showPurchaseHistory,
+            '📋',
+            allItems.length === 0
+              ? 'No records yet. Use Cash Counter to save bills.'
+              : 'No records match your filter or search.',
+          )}
+        </section>
+      </div>
 
       {receiptItem ? (
         <div

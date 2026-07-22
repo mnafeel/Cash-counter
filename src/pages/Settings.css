@@ -593,6 +593,84 @@ html[data-screen='tablet'] .settings-info {
   color: var(--cream-dim);
 }
 
+.settings-bill-edit-launch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+}
+
+.settings-bill-edit-open-btn {
+  width: 100%;
+  min-height: 44px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.settings-bill-edit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.settings-bill-edit-panel {
+  width: min(100%, 520px);
+  max-height: min(92vh, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.settings-bill-edit-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.settings-bill-edit-panel-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--cream);
+}
+
+.settings-bill-edit-panel-head p {
+  margin: 4px 0 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.settings-bill-edit-close {
+  flex-shrink: 0;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--cream-dim);
+  border-radius: 8px;
+}
+
+.settings-bill-edit-close:hover {
+  color: var(--cream);
+  background: var(--brown-dark);
+}
+
 .settings-bill-edit {
   flex-shrink: 1;
   min-height: 0;
@@ -666,6 +744,14 @@ html[data-screen='tablet'] .settings-info {
   margin: 0;
   font-size: 0.7rem;
   color: var(--text-muted);
+}
+
+.settings-bill-edit-list--panel {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .settings-bill-edit-list {

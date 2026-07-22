@@ -1,49 +1,57 @@
 .home {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-  gap: var(--page-gap);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   overflow: hidden;
 }
 
 .home--locked {
-  grid-template-rows: 1fr;
-  place-items: center;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
 }
 
 .home-pin {
   width: 100%;
-  max-width: clamp(340px, 92vw, 420px);
+  max-width: min(380px, 92vw);
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 14px;
-  padding: 20px 18px;
+  padding: 22px 18px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 
 .home-pin-label {
-  font-size: clamp(0.82rem, calc(var(--app-height, 800px) * 0.018), 0.95rem);
+  font-size: 0.95rem;
   font-weight: 800;
   color: var(--cream-dim);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  text-align: center;
 }
 
 .home-pin-dots {
   display: flex;
-  gap: clamp(14px, calc(var(--app-height, 800px) * 0.022), 20px);
-  padding: 6px 0;
+  gap: 18px;
+  padding: 8px 0;
+  justify-content: center;
 }
 
 .home-pin-dot {
-  width: clamp(18px, calc(var(--app-height, 800px) * 0.028), 24px);
-  height: clamp(18px, calc(var(--app-height, 800px) * 0.028), 24px);
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  border: 2px solid var(--cream-dim);
+  border: 2.5px solid var(--cream-dim);
   background: transparent;
 }
 
@@ -63,15 +71,16 @@
 
 .home-pin-error {
   margin: 0;
-  font-size: clamp(0.78rem, calc(var(--app-height, 800px) * 0.016), 0.88rem);
+  font-size: 0.85rem;
   font-weight: 700;
   color: var(--danger-text);
+  text-align: center;
 }
 
 .home-pin-keyboard {
   width: 100%;
-  max-height: clamp(280px, calc(var(--app-height, 800px) * 0.52), 460px);
-  min-height: clamp(240px, calc(var(--app-height, 800px) * 0.38), 320px);
+  max-height: min(340px, 50vh);
+  min-height: 260px;
   display: flex;
   flex-direction: column;
 }
@@ -79,36 +88,37 @@
 .home-pin-keyboard .number-keyboard {
   flex: 1;
   min-height: 0;
-  padding: clamp(8px, calc(var(--app-height, 800px) * 0.012), 12px);
+  padding: 8px;
+}
+
+.home-pin-keyboard .number-keyboard-label {
+  display: none;
 }
 
 .home-pin-keyboard .numpad-grid {
-  gap: clamp(6px, calc(var(--app-height, 800px) * 0.01), 10px);
+  gap: 8px;
 }
 
 .home-pin-keyboard .numpad-key {
-  font-size: clamp(1rem, calc(var(--app-height, 800px) * 0.032), 1.85rem);
-  border-width: 2px;
+  min-height: 52px;
+  font-size: clamp(1.15rem, 11cqh, 2.5rem);
 }
 
 .home-pin-keyboard .numpad-key--action,
-.home-pin-keyboard .numpad-key--wide,
-.home-pin-keyboard .numpad-key--half-wide {
-  font-size: clamp(0.82rem, calc(var(--app-height, 800px) * 0.024), 1.35rem);
-}
-
 .home-pin-keyboard .numpad-key--backspace {
-  font-size: clamp(0.95rem, calc(var(--app-height, 800px) * 0.028), 1.55rem);
+  font-size: clamp(1rem, 9.5cqh, 2rem);
 }
 
 .home-pin-hint {
   margin: 0;
-  font-size: clamp(0.62rem, calc(var(--app-height, 800px) * 0.013), 0.72rem);
+  font-size: 0.68rem;
   color: var(--text-muted);
   text-align: center;
+  line-height: 1.35;
 }
 
 .home-balances {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -148,7 +158,7 @@
 .home-purchases {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
 }
 
@@ -171,7 +181,32 @@
 .home-purchases-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
+}
+
+.home-quick-actions {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.home-report-open-btn {
+  grid-column: 1 / -1;
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--cream-dim);
+  background: var(--surface);
+  color: var(--cream);
+  font-size: clamp(0.58rem, calc(var(--app-height, 800px) * 0.013), 0.68rem);
+  font-weight: 800;
+  text-align: center;
+  cursor: pointer;
+}
+
+.home-report-open-btn:active {
+  transform: scale(0.98);
 }
 
 .home-purchase-btn {
@@ -728,9 +763,15 @@
 }
 
 .home-stats {
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 4px;
+}
+
+.home-quick-actions,
+.home-purchases {
+  flex-shrink: 0;
 }
 
 .home-purchase-top-shop {
@@ -1003,10 +1044,11 @@
 }
 
 .home-grid {
+  flex: 1;
   min-height: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 4px;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   align-content: start;
@@ -1015,8 +1057,9 @@
 .home-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
+  min-height: 52px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);

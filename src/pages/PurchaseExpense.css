@@ -93,6 +93,99 @@
   color: var(--cream-dim);
 }
 
+.purchase-page-credit-note {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--cream);
+  background: rgba(180, 120, 40, 0.18);
+  border: 1px solid rgba(200, 150, 80, 0.35);
+}
+
+.purchase-page-form-note-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.purchase-page-form-note-row .purchase-page-credit-note {
+  flex: 1;
+  margin: 0;
+}
+
+.purchase-page-update-btn {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px solid rgba(64, 145, 108, 0.45);
+  border-radius: var(--radius-sm);
+  background: rgba(64, 145, 108, 0.2);
+  color: var(--cream);
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.purchase-credit-update-banner {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(180, 120, 40, 0.14);
+  border: 1px solid rgba(200, 150, 80, 0.35);
+}
+
+.purchase-credit-update-balance {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.purchase-credit-update-balance span {
+  font-size: 0.48rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cream-dim);
+}
+
+.purchase-credit-update-balance strong {
+  font-size: 1rem;
+  color: #e8c080;
+}
+
+.purchase-credit-update-types {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.purchase-credit-update-type {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.purchase-credit-update-type-label {
+  font-size: 0.48rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cream-dim);
+}
+
+.purchase-credit-update-type strong {
+  font-size: 0.72rem;
+  color: var(--cream);
+}
+
 .purchase-page-active-bill {
   margin: 4px 0 0;
   display: inline-block;

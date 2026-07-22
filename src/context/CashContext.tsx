@@ -39,6 +39,7 @@ import {
   setOpeningBalance,
   setOpeningBankBalance,
   updateExpenseName,
+  updateExpense,
   updatePendingBill,
   updateSaleBill,
   updateSaleCustomerName,
@@ -158,6 +159,24 @@ interface CashContextValue {
     id: string,
     name: string,
     relatedSaleIds?: string[],
+  ) => void
+  updateExpense: (
+    id: string,
+    expense: {
+      amount: number
+      name: string
+      description?: string
+      payType: ExpensePayType
+      cashAmount?: number
+      bankAmount?: number
+      creditAmount?: number
+      chequeAmount?: number
+      chequeApproved?: boolean
+      giveAmount?: number
+      changeAmount?: number
+      billNumber?: 1 | 2
+      kind?: ExpenseKind
+    },
   ) => void
   updateSaleBill: (
     id: string,
@@ -394,6 +413,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         payType: ExpensePayType
         cashAmount?: number
         bankAmount?: number
+        creditAmount?: number
         chequeAmount?: number
         chequeApproved?: boolean
         giveAmount?: number
@@ -415,6 +435,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
             bankAmount:
               expense.payType === 'split' || expense.payType === 'bank'
                 ? expense.bankAmount ?? (expense.payType === 'bank' ? expense.amount : undefined)
+                : undefined,
+            creditAmount:
+              expense.payType === 'split' || expense.payType === 'credit'
+                ? expense.creditAmount ?? (expense.payType === 'credit' ? expense.amount : undefined)
                 : undefined,
             chequeAmount:
               expense.payType === 'split' || expense.payType === 'cheque'
@@ -493,6 +517,55 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const updateExpenseHandler = useCallback(
+    (
+      id: string,
+      expense: {
+        amount: number
+        name: string
+        description?: string
+        payType: ExpensePayType
+        cashAmount?: number
+        bankAmount?: number
+        creditAmount?: number
+        chequeAmount?: number
+        chequeApproved?: boolean
+        giveAmount?: number
+        changeAmount?: number
+        billNumber?: 1 | 2
+        kind?: ExpenseKind
+      },
+    ) => {
+      setData((prev) =>
+        updateExpense(prev, id, {
+          amount: expense.amount,
+          name: expense.name.trim(),
+          description: expense.description?.trim() || undefined,
+          payType: expense.payType,
+          cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
+          bankAmount:
+            expense.payType === 'split' || expense.payType === 'bank'
+              ? expense.bankAmount ?? (expense.payType === 'bank' ? expense.amount : undefined)
+              : undefined,
+          creditAmount:
+            expense.payType === 'split' || expense.payType === 'credit'
+              ? expense.creditAmount ?? (expense.payType === 'credit' ? expense.amount : undefined)
+              : undefined,
+          chequeAmount:
+            expense.payType === 'split' || expense.payType === 'cheque'
+              ? expense.chequeAmount ?? (expense.payType === 'cheque' ? expense.amount : undefined)
+              : undefined,
+          chequeApproved: expense.chequeApproved,
+          giveAmount: expense.giveAmount,
+          changeAmount: expense.changeAmount,
+          billNumber: expense.billNumber,
+          kind: expense.kind ?? 'expense',
+        }),
+      )
+    },
+    [],
+  )
+
   const updateSaleBillHandler = useCallback(
     (
       id: string,
@@ -541,6 +614,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       addSupplierItem,
       cancelApprovedCheque: cancelApprovedChequeSale,
       updateHistoryName,
+      updateExpense: updateExpenseHandler,
       updateSaleBill: updateSaleBillHandler,
       replaceAllData,
       resetAllData,
@@ -574,6 +648,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       addSupplierItem,
       cancelApprovedChequeSale,
       updateHistoryName,
+      updateExpenseHandler,
       updateSaleBillHandler,
       replaceAllData,
       resetAllData,
