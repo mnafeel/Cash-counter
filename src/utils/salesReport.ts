@@ -1,5 +1,6 @@
 import type { AppData, Sale } from '../types'
 import { formatDate, formatMoney } from './format'
+import { saleCollectedAmount, salePendingCreditPaidBreakdown } from './salePayment'
 
 export type ReportPeriod = 'day' | 'week' | 'month'
 export type ReportSort = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
@@ -39,9 +40,26 @@ export function toInputDate(d: Date = new Date()): string {
   return `${y}-${m}-${day}`
 }
 
+function isPendingBalanceBill(sale: Sale): boolean {
+  return (
+    sale.status === 'pending' &&
+    (sale.pendingPayType === 'credit' ||
+      sale.payType === 'credit' ||
+      sale.pendingPayType === 'cheque' ||
+      sale.payType === 'cheque')
+  )
+}
+
+function saleHasPartialCollection(sale: Sale): boolean {
+  return isPendingBalanceBill(sale) && saleCollectedAmount(sale) > 0
+}
+
 export function saleReportDate(sale: Sale, mode: SaleDateMode = 'collected'): string {
   if (mode === 'created') return sale.createdAt
-  if (sale.status === 'pending') return sale.createdAt
+  if (sale.status === 'pending') {
+    if (saleHasPartialCollection(sale) && sale.updatedAt) return sale.updatedAt
+    return sale.createdAt
+  }
   return sale.updatedAt ?? sale.createdAt
 }
 
@@ -63,7 +81,18 @@ function isInDateRange(iso: string, filter?: SalesReportFilter): boolean {
   return true
 }
 
-function filteredPaidSales(data: AppData, filter?: SalesReportFilter): Sale[] {
+function salesForReport(data: AppData): Sale[] {
+  return data.sales.filter((s) => s.status !== 'pending' || saleHasPartialCollection(s))
+}
+
+function filteredReportSales(data: AppData, filter?: SalesReportFilter): Sale[] {
+  const mode = filter?.dateMode ?? 'collected'
+  return salesForReport(data).filter((sale) =>
+    isInDateRange(saleReportDate(sale, mode), filter),
+  )
+}
+
+function filteredFullyPaidSales(data: AppData, filter?: SalesReportFilter): Sale[] {
   const mode = filter?.dateMode ?? 'collected'
   return paidSales(data).filter((sale) => isInDateRange(saleReportDate(sale, mode), filter))
 }
@@ -83,14 +112,14 @@ function salePayLabel(sale: Sale): string {
 }
 
 export function saleCashCollected(sale: Sale): number {
-  if (sale.status === 'pending') return 0
+  if (sale.status === 'pending') return salePendingCreditPaidBreakdown(sale).cash
   if (sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque') return 0
   if (sale.payType === 'split') return sale.cashAmount ?? 0
   return sale.billAmount
 }
 
 export function saleBankCollected(sale: Sale): number {
-  if (sale.status === 'pending') return 0
+  if (sale.status === 'pending') return salePendingCreditPaidBreakdown(sale).bank
   if (sale.payType === 'bank') return sale.billAmount
   if (sale.payType === 'cheque') return sale.billAmount
   if (sale.payType === 'split') {
@@ -103,7 +132,7 @@ export function saleBankCollected(sale: Sale): number {
 }
 
 export function saleChequeToBankCollected(sale: Sale): number {
-  if (sale.status === 'pending') return 0
+  if (sale.status === 'pending') return salePendingCreditPaidBreakdown(sale).cheque
   if (sale.payType === 'split' && sale.chequeApproved) return sale.chequeAmount ?? 0
   return 0
 }
@@ -185,7 +214,7 @@ export function buildSalesReport(
     { billCount: number; totalBills: number; cashTotal: number; bankTotal: number }
   >()
 
-  for (const sale of filteredPaidSales(data, filter)) {
+  for (const sale of filteredReportSales(data, filter)) {
     const iso = saleReportDate(sale, filter?.dateMode ?? 'collected')
     const key = periodKey(iso, period)
     const row = groups.get(key) ?? {
@@ -202,7 +231,7 @@ export function buildSalesReport(
 
   for (const [key, row] of groups) {
     const groupIds = new Set<string>()
-    for (const sale of filteredPaidSales(data, filter)) {
+    for (const sale of filteredFullyPaidSales(data, filter)) {
       const iso = saleReportDate(sale, filter?.dateMode ?? 'collected')
       if (periodKey(iso, period) !== key) continue
       groupIds.add(saleBillGroupId(sale))
@@ -235,7 +264,7 @@ export function buildSalesBillList(
   filter?: SalesReportFilter,
 ): SalesBillRow[] {
   const mode = filter?.dateMode ?? 'collected'
-  const rows = filteredPaidSales(data, filter).map((sale) => {
+  const rows = filteredReportSales(data, filter).map((sale) => {
     const date = saleReportDate(sale, mode)
     const collected = saleTotalCollected(sale)
     return {
@@ -280,11 +309,13 @@ export function summarizeSales(rows: Pick<SalesPeriodRow, 'billCount' | 'totalBi
 export function getTodaySalesSummary(data: AppData) {
   const today = toInputDate()
   const filter: SalesReportFilter = { fromDate: today, toDate: today, dateMode: 'collected' }
-  const sales = filteredPaidSales(data, filter)
-  const groups = new Set(sales.map((sale) => saleBillGroupId(sale)))
+  const sales = filteredReportSales(data, filter)
+  const paidGroups = new Set(
+    filteredFullyPaidSales(data, filter).map((sale) => saleBillGroupId(sale)),
+  )
 
   return {
-    billCount: groups.size,
+    billCount: paidGroups.size,
     totalBills: sales.reduce((sum, sale) => sum + saleTotalCollected(sale), 0),
     cashTotal: sales.reduce((sum, sale) => sum + saleCashCollected(sale), 0),
     bankTotal: sales.reduce(

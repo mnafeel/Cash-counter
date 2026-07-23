@@ -1,6 +1,6 @@
 import type { AppData, Expense, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
-import { saleCashCollected } from './salesReport'
+import { saleCashCollected, saleBankCollected, saleChequeToBankCollected } from './salesReport'
 
 export type CashDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'date'
 
@@ -59,21 +59,39 @@ export function matchesCashDateFilter(
 }
 
 function saleActivityDate(sale: Sale): string {
-  if (sale.status === 'pending') return sale.createdAt
+  if (sale.status === 'pending') {
+    const collected =
+      saleCashCollected(sale) + saleBankCollected(sale) + saleChequeToBankCollected(sale)
+    if (collected > 0 && sale.updatedAt) return sale.updatedAt
+    return sale.createdAt
+  }
   return sale.updatedAt ?? sale.createdAt
 }
 
 function pushSaleItems(items: CashActivityItem[], sale: Sale) {
+  const date = saleActivityDate(sale)
   const cash = saleCashCollected(sale)
-  if (!(cash > 0)) return
-  items.push({
-    id: `sale-${sale.id}`,
-    label: 'Bill · cash collected',
-    amount: cash,
-    direction: 'in',
-    date: saleActivityDate(sale),
-    name: sale.customerName,
-  })
+  if (cash > 0) {
+    items.push({
+      id: `sale-${sale.id}-cash`,
+      label: 'Bill · cash collected',
+      amount: cash,
+      direction: 'in',
+      date,
+      name: sale.customerName,
+    })
+  }
+  const bank = saleBankCollected(sale) + saleChequeToBankCollected(sale)
+  if (bank > 0) {
+    items.push({
+      id: `sale-${sale.id}-bank`,
+      label: 'Bill · bank collected',
+      amount: bank,
+      direction: 'in',
+      date,
+      name: sale.customerName,
+    })
+  }
 }
 
 function expenseOutLabel(expense: Expense): string {

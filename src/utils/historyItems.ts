@@ -139,7 +139,16 @@ function isChequeBill(sale: Sale): boolean {
   )
 }
 
-import { saleCollectedAmount } from './salePayment'
+import { saleCollectedAmount, salePendingCreditPaidBreakdown } from './salePayment'
+
+function partialCollectionMethodLabel(sale: Sale): string {
+  const { cash, bank, cheque } = salePendingCreditPaidBreakdown(sale)
+  const parts: string[] = []
+  if (cash > 0) parts.push('Cash')
+  if (bank > 0) parts.push('Bank')
+  if (cheque > 0) parts.push('Cheque → Bank')
+  return parts.join(' + ')
+}
 
 function collectedPaymentAmount(sale: Sale): number {
   return saleCollectedAmount(sale)
@@ -319,7 +328,26 @@ function buildSplitReceiptLines(parent: Sale, children: Sale[]): HistoryReceiptL
   for (const child of children) {
     const kind = childBillKind(child)
     const label = kind === 'credit' ? 'Credit' : kind === 'cheque' ? 'Cheque' : 'Bill'
+    const childCollected = collectedPaymentAmount(child)
+    const hasPartial =
+      child.status === 'pending' &&
+      childCollected > 0 &&
+      child.updatedAt != null &&
+      child.updatedAt !== child.createdAt
     const paidAt = child.status !== 'pending' ? child.updatedAt ?? child.createdAt : undefined
+
+    if (hasPartial) {
+      lines.push({
+        label: 'Paid',
+        amount: childCollected,
+        status: 'paid',
+        detail: partialCollectionMethodLabel(child) || 'Partial payment',
+        createdAt: child.createdAt,
+        paidAt: child.updatedAt,
+        date: child.updatedAt,
+      })
+    }
+
     lines.push({
       label,
       amount: child.billAmount,
@@ -391,7 +419,22 @@ function buildSplitTimeline(parent: Sale, children: Sale[]): HistoryReceiptEvent
       amount: child.billAmount,
       type: child.status === 'pending' ? 'pending' : 'pending-created',
     })
-    if (child.status !== 'pending') {
+    if (child.status === 'pending') {
+      const partial = collectedPaymentAmount(child)
+      if (
+        partial > 0 &&
+        child.updatedAt != null &&
+        child.updatedAt !== child.createdAt &&
+        (isCreditBill(child) || isChequeBill(child))
+      ) {
+        events.push({
+          label: `${part} payment · ${partialCollectionMethodLabel(child) || 'Partial'}`,
+          date: child.updatedAt,
+          amount: partial,
+          type: 'collected',
+        })
+      }
+    } else {
       const paidAt = child.updatedAt ?? child.createdAt
       const method = collectionMethodLabel(child)
       const collected = collectedPaymentAmount(child)
@@ -424,7 +467,7 @@ function splitPartsTarget(parent: Sale, children: Sale[]): number {
 function splitGroupMoneyCollected(parent: Sale, children: Sale[]): number {
   let total = parent.status !== 'pending' ? collectedPaymentAmount(parent) : 0
   for (const child of children) {
-    if (child.status !== 'pending') total += collectedPaymentAmount(child)
+    total += collectedPaymentAmount(child)
   }
   return total
 }
@@ -591,18 +634,39 @@ function saleReceiptLabel(sale: Sale): string {
 }
 
 function buildSaleReceiptLines(sale: Sale): HistoryReceiptLine[] {
+  const collected = collectedPaymentAmount(sale)
+  const hasPartial =
+    sale.status === 'pending' &&
+    collected > 0 &&
+    sale.updatedAt != null &&
+    sale.updatedAt !== sale.createdAt &&
+    (isCreditBill(sale) || isChequeBill(sale))
   const paidAt = sale.status !== 'pending' ? sale.updatedAt ?? sale.createdAt : undefined
-  return [
-    {
-      label: saleReceiptLabel(sale),
-      amount: sale.billAmount,
-      status: sale.status === 'pending' ? 'pending' : 'paid',
-      detail: balanceBillCollectionDetail(sale) ?? salePayLabel(sale),
+  const lines: HistoryReceiptLine[] = []
+
+  if (hasPartial) {
+    lines.push({
+      label: 'Paid',
+      amount: collected,
+      status: 'paid',
+      detail: partialCollectionMethodLabel(sale) || 'Partial payment',
       createdAt: sale.createdAt,
-      paidAt,
-      date: paidAt,
-    },
-  ]
+      paidAt: sale.updatedAt,
+      date: sale.updatedAt,
+    })
+  }
+
+  lines.push({
+    label: saleReceiptLabel(sale),
+    amount: sale.billAmount,
+    status: sale.status === 'pending' ? 'pending' : 'paid',
+    detail: balanceBillCollectionDetail(sale) ?? salePayLabel(sale),
+    createdAt: sale.createdAt,
+    paidAt,
+    date: paidAt,
+  })
+
+  return lines
 }
 
 function buildSaleTimeline(sale: Sale): HistoryReceiptEvent[] {
