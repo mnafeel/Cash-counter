@@ -400,7 +400,7 @@ export default function Home() {
                 key={i}
                 className={`home-pin-digit ${pinStr.length > i ? 'home-pin-digit--filled' : ''}`}
               >
-                {pinStr[i] ?? ''}
+                {pinStr.length > i ? '•' : ''}
               </span>
             ))}
           </div>
