@@ -21,7 +21,14 @@ import {
 import { backupNow, setBackupStatusListener } from '../firebase/sync'
 import type { AppData } from '../types'
 import { getApprovedChequeAmount, listApprovedCheques, listPendingCreditSales, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
-import { formatMoney, formatDate, parseAmount } from '../utils/format'
+import {
+  dateTimeInputValuesToIso,
+  formatMoney,
+  formatDate,
+  isoToDateInputValue,
+  isoToTimeInputValue,
+  parseAmount,
+} from '../utils/format'
 import { buildHistoryItems, getHistoryPaymentLabel, historyItemSortTime, matchesHistorySearch, type HistoryItem } from '../utils/historyItems'
 import { saleCollectedAmount } from '../utils/salePayment'
 import { counterBillPath, resolveHistoryItemBillId } from '../utils/counterBillRoute'
@@ -104,6 +111,7 @@ export default function Settings() {
     syncTallyBills,
     cancelApprovedCheque,
     cancelSaleCredit,
+    updateSaleBill,
   } = useCash()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -138,6 +146,10 @@ export default function Settings() {
   const [billEditSearch, setBillEditSearch] = useState('')
   const [billEditFilter, setBillEditFilter] = useState<BillEditFilter>('all')
   const [billEditOpen, setBillEditOpen] = useState(false)
+  const [editingBillDateId, setEditingBillDateId] = useState<string | null>(null)
+  const [editBillDate, setEditBillDate] = useState('')
+  const [editBillTime, setEditBillTime] = useState('')
+  const [billEditStatus, setBillEditStatus] = useState('')
 
   const approvedCheques = useMemo(() => listApprovedCheques(data), [data.sales])
   const pendingCreditSales = useMemo(() => listPendingCreditSales(data), [data.sales])
@@ -266,6 +278,7 @@ export default function Settings() {
     const sale = data.sales.find((s) => s.id === id)
     const hadPayment = sale ? saleCollectedAmount(sale) > 0 : false
     cancelSaleCredit(id, relatedSaleIds)
+    if (editingBillDateId === id) cancelBillDateEdit()
     setCreditCancelStatus(
       hadPayment
         ? 'Credit cancelled — partial payment kept as collected.'
@@ -279,6 +292,39 @@ export default function Settings() {
     if (!billId) return
     setBillEditOpen(false)
     navigate(counterBillPath(billId))
+  }
+
+  function startBillDateEdit(item: HistoryItem) {
+    const sale = data.sales.find((s) => s.id === item.id)
+    const billCreatedIso = item.billCreatedAt ?? sale?.createdAt ?? item.date
+    setEditingBillDateId(item.id)
+    setEditBillDate(isoToDateInputValue(billCreatedIso))
+    setEditBillTime(isoToTimeInputValue(billCreatedIso))
+  }
+
+  function cancelBillDateEdit() {
+    setEditingBillDateId(null)
+    setEditBillDate('')
+    setEditBillTime('')
+  }
+
+  function saveBillDateEdit(item: HistoryItem) {
+    const sale = data.sales.find((s) => s.id === item.id)
+    const fallbackIso = sale?.createdAt ?? item.billCreatedAt ?? item.date
+    const createdAt = dateTimeInputValuesToIso(editBillDate, editBillTime, fallbackIso)
+
+    if (!editBillDate || !createdAt) {
+      setBillEditStatus('Enter a valid bill date and time.')
+      setTimeout(() => setBillEditStatus(''), 3000)
+      return
+    }
+
+    updateSaleBill(item.id, { createdAt }, item.groupSaleIds)
+    cancelBillDateEdit()
+    setBillEditStatus(
+      `Bill date updated · ${item.name?.trim() || '—'} · ${formatDate(createdAt)}`,
+    )
+    setTimeout(() => setBillEditStatus(''), 4000)
   }
 
   function handleSave() {
@@ -584,8 +630,8 @@ export default function Settings() {
               <div className="settings-bill-edit-head">
                 <h3>Edit bills</h3>
                 <p>
-                  Pick a bill and open it on Cash Counter — same screen as normal bill create with
-                  amount, paid, and payment type.
+                  Pick a bill and open it on Cash Counter for amount, paid, and payment type — or
+                  edit the bill date here.
                 </p>
               </div>
               <button
@@ -595,6 +641,9 @@ export default function Settings() {
               >
                 Open bill list ({billEditCount})
               </button>
+              {billEditStatus && !billEditOpen ? (
+                <p className="settings-bill-edit-status">{billEditStatus}</p>
+              ) : null}
             </section>
 
             <section className="settings-cheque-cancel settings-credit-cancel">
@@ -910,7 +959,7 @@ export default function Settings() {
             <div className="settings-bill-edit-panel-head">
               <div>
                 <h3>Open bills</h3>
-                <p>Recent first · opens on Cash Counter with bill amount, paid &amp; pay type</p>
+                <p>Recent first · open on Counter for amounts · edit date here</p>
               </div>
               <button
                 type="button"
@@ -950,6 +999,7 @@ export default function Settings() {
             ) : (
               <ul className="settings-bill-edit-list settings-bill-edit-list--panel">
                 {billEditItems.map((item) => {
+                  const isEditingDate = editingBillDateId === item.id
                   const pending = billIsPending(item, data.sales)
                   const isCredit = billIsPendingCredit(data.sales, item.id)
                   const isBalance = billIsPendingBalance(data.sales, item.id)
@@ -972,6 +1022,48 @@ export default function Settings() {
 
                   return (
                     <li key={item.id} className="settings-bill-edit-item">
+                      {isEditingDate ? (
+                        <form
+                          className="settings-bill-edit-form"
+                          onSubmit={(e) => {
+                            e.preventDefault()
+                            saveBillDateEdit(item)
+                          }}
+                        >
+                          <label className="settings-bill-edit-field">
+                            <span>Bill date</span>
+                            <div className="settings-bill-edit-datetime">
+                              <input
+                                type="date"
+                                value={editBillDate}
+                                onChange={(e) => setEditBillDate(e.target.value)}
+                              />
+                              <input
+                                type="time"
+                                value={editBillTime}
+                                onChange={(e) => setEditBillTime(e.target.value)}
+                              />
+                            </div>
+                          </label>
+                          <p className="settings-bill-edit-note">
+                            Updates when this bill appears in History and Today Sales. Split bills
+                            update the whole group.
+                          </p>
+                          <div className="settings-bill-edit-form-actions">
+                            <button type="submit" className="btn btn-primary settings-bill-edit-save">
+                              Save date
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary settings-bill-edit-cancel"
+                              onClick={cancelBillDateEdit}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <>
                       <div className="settings-bill-edit-meta">
                         <strong>{item.name?.trim() || '—'}</strong>
                         <span className="settings-bill-edit-sub">
@@ -997,6 +1089,13 @@ export default function Settings() {
                         >
                           Open bill
                         </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary settings-bill-edit-btn"
+                          onClick={() => startBillDateEdit(item)}
+                        >
+                          Edit date
+                        </button>
                         {isCredit ? (
                           <button
                             type="button"
@@ -1007,13 +1106,17 @@ export default function Settings() {
                           </button>
                         ) : null}
                       </div>
+                        </>
+                      )}
                     </li>
                   )
                 })}
               </ul>
             )}
 
-
+            {billEditStatus && billEditOpen ? (
+              <p className="settings-bill-edit-status">{billEditStatus}</p>
+            ) : null}
           </div>
         </div>
       ) : null}

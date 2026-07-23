@@ -13,6 +13,7 @@ import {
   historyItemCreatedTime,
   historyItemSortTime,
   historyItemActivityLabel,
+  historyItemListDateLabel,
   matchesHistoryPaymentFilter,
   matchesHistorySearch,
   type HistoryFilter,
@@ -467,7 +468,7 @@ export default function History() {
                         {getHistoryPaymentLabel(item.paymentMode)}
                       </span>
                     ) : null}
-                    <span className="history-item-date">{historyItemActivityLabel(item)}</span>
+                    <span className="history-item-date">{historyItemListDateLabel(item)}</span>
                   </span>
                 </div>
                 <span

@@ -924,6 +924,18 @@ export function historyItemActivityLabel(item: HistoryItem): string {
   return formatDate(item.date)
 }
 
+/** Date line on History list rows — always shows bill created date for sales/purchases. */
+export function historyItemListDateLabel(item: HistoryItem): string {
+  if (item.billCreatedAt && (item.type === 'sale' || item.type === 'purchase')) {
+    const created = formatDate(item.billCreatedAt)
+    if (item.date !== item.billCreatedAt) {
+      return `Created ${created} · Updated ${formatDate(item.date)}`
+    }
+    return `Created ${created}`
+  }
+  return formatDate(item.date)
+}
+
 export function buildHistoryItems(data: AppData): HistoryItem[] {
   const childrenByParent = buildChildrenMap(data.sales)
   const consumedChildIds = new Set<string>()
