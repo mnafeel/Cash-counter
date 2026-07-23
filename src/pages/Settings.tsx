@@ -40,6 +40,7 @@ import BillReminderControl from '../components/BillReminderControl'
 import BillReminderAlertsSettings from '../components/BillReminderAlertsSettings'
 import { UNNAMED_CREDIT_CUSTOMER } from '../utils/customerLedger'
 import { getReminderAlertSettings, getSaleReminderKind } from '../utils/billReminders'
+import { getEffectiveSaleReminderAt, getEffectiveSaleReminderNote } from '../utils/customerReminders'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import './Settings.css'
@@ -119,6 +120,7 @@ export default function Settings() {
     cancelSaleCredit,
     cancelSaleCheque,
     setBillReminder,
+    setCustomerReminder,
     updateReminderAlertSettings,
     updateSaleBill,
     pendingBills,
@@ -748,7 +750,12 @@ export default function Settings() {
                 <p className="settings-cheque-cancel-empty">No pending bills.</p>
               ) : (
                 <ul className="settings-cheque-cancel-list">
-                  {pendingBills.map((sale) => {
+                  {pendingBills
+                    .filter((sale) => {
+                      const reminderKind = getSaleReminderKind(sale)
+                      return reminderKind !== 'credit' && reminderKind !== 'cheque'
+                    })
+                    .map((sale) => {
                     const billName = getSaleCustomerName(sale, data.sales) || UNNAMED_CREDIT_CUSTOMER
                     const kind =
                       sale.payType === 'credit' || sale.pendingPayType === 'credit'
@@ -774,6 +781,7 @@ export default function Settings() {
                           billLabel={billName}
                           data={data}
                           onSet={setBillReminder}
+                          onSetCustomer={setCustomerReminder}
                           onSaveAlertSettings={updateReminderAlertSettings}
                           compact
                         />
@@ -788,8 +796,8 @@ export default function Settings() {
               <div className="settings-cheque-cancel-head">
                 <h3>Pending credit bills</h3>
                 <p>
-                  Set reminder date &amp; time for collection. Cancel removes open credit. Unpaid bills are
-                  deleted; partial payments are kept as collected.
+                  Cancel removes open credit. Unpaid bills are deleted; partial payments are kept as
+                  collected. Set credit reminders from Home → Credit Dashboard.
                 </p>
               </div>
               {pendingCreditSales.length === 0 ? (
@@ -806,6 +814,8 @@ export default function Settings() {
                       ? [sale.parentSplitId, sale.id]
                       : [sale.id]
                     const billName = getSaleCustomerName(sale, data.sales)
+                    const creditReminderAt = getEffectiveSaleReminderAt(data, sale)
+                    const creditReminderNote = getEffectiveSaleReminderNote(data, sale)
                     return (
                       <li key={sale.id} className="settings-cheque-cancel-item settings-cheque-cancel-item--stack">
                         <div className="settings-cheque-cancel-meta">
@@ -818,18 +828,15 @@ export default function Settings() {
                           <span className="settings-cheque-cancel-sub">
                             Bill {formatMoney(total)} · {formatDate(when)}
                           </span>
+                          {creditReminderAt ? (
+                            <span className="settings-cheque-cancel-sub">
+                              🔔 Reminder {formatDate(creditReminderAt)}
+                            </span>
+                          ) : null}
+                          {creditReminderNote ? (
+                            <span className="settings-cheque-cancel-sub">📝 {creditReminderNote}</span>
+                          ) : null}
                         </div>
-                        <BillReminderControl
-                          saleId={sale.id}
-                          reminderAt={sale.reminderAt}
-                          reminderNote={sale.reminderNote}
-                          billKind="credit"
-                          billLabel={billName || 'Credit bill'}
-                          data={data}
-                          onSet={setBillReminder}
-                          onSaveAlertSettings={updateReminderAlertSettings}
-                          compact
-                        />
                         <button
                           type="button"
                           className="btn btn-secondary settings-cheque-cancel-btn"
@@ -851,8 +858,8 @@ export default function Settings() {
               <div className="settings-cheque-cancel-head">
                 <h3>Pending cheque bills</h3>
                 <p>
-                  Set reminder date &amp; time for collection. Cancel removes open cheque bills; partial
-                  payments are kept as collected.
+                  Cancel removes open cheque bills; partial payments are kept as collected. Set cheque
+                  reminders from Home → Cheque Dashboard.
                 </p>
               </div>
               {pendingChequeSales.length === 0 ? (
@@ -869,6 +876,8 @@ export default function Settings() {
                       ? [sale.parentSplitId, sale.id]
                       : [sale.id]
                     const billName = getSaleCustomerName(sale, data.sales)
+                    const chequeReminderAt = getEffectiveSaleReminderAt(data, sale)
+                    const chequeReminderNote = getEffectiveSaleReminderNote(data, sale)
                     return (
                       <li key={sale.id} className="settings-cheque-cancel-item settings-cheque-cancel-item--stack">
                         <div className="settings-cheque-cancel-meta">
@@ -883,18 +892,15 @@ export default function Settings() {
                           <span className="settings-cheque-cancel-sub">
                             Bill {formatMoney(total)} · {formatDate(when)}
                           </span>
+                          {chequeReminderAt ? (
+                            <span className="settings-cheque-cancel-sub">
+                              🔔 Reminder {formatDate(chequeReminderAt)}
+                            </span>
+                          ) : null}
+                          {chequeReminderNote ? (
+                            <span className="settings-cheque-cancel-sub">📝 {chequeReminderNote}</span>
+                          ) : null}
                         </div>
-                        <BillReminderControl
-                          saleId={sale.id}
-                          reminderAt={sale.reminderAt}
-                          reminderNote={sale.reminderNote}
-                          billKind="cheque"
-                          billLabel={billName || 'Cheque bill'}
-                          data={data}
-                          onSet={setBillReminder}
-                          onSaveAlertSettings={updateReminderAlertSettings}
-                          compact
-                        />
                         <button
                           type="button"
                           className="btn btn-secondary settings-cheque-cancel-btn"

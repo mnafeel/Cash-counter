@@ -1,7 +1,8 @@
 import type { AppData, ReminderAlertSettings, Sale } from '../types'
 import { DEFAULT_REMINDER_ALERTS } from '../types'
-import { formatDate } from './format'
+import { formatDate, isoToDateInputValue, isoToTimeInputValue } from './format'
 import { getSaleCustomerName } from './saleCustomerName'
+import { getEffectiveSaleReminderAt, getEffectiveSaleReminderNote } from './customerReminders'
 import { UNNAMED_CREDIT_CUSTOMER } from './customerLedger'
 
 export type BillReminderKind = 'credit' | 'cheque' | 'other'
@@ -25,6 +26,92 @@ export interface BillReminderItem {
 }
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000
+const DEFAULT_REMINDER_HOUR = 10
+const DEFAULT_REMINDER_MINUTE = 0
+
+function roundUpToMinutes(date: Date, intervalMinutes: number): Date {
+  const result = new Date(date)
+  result.setSeconds(0, 0)
+  const remainder = result.getMinutes() % intervalMinutes
+  if (remainder !== 0) {
+    result.setMinutes(result.getMinutes() + (intervalMinutes - remainder))
+  } else if (result.getTime() < date.getTime()) {
+    result.setMinutes(result.getMinutes() + intervalMinutes)
+  }
+  return result
+}
+
+function buildLocalReminderIso(year: number, month: number, day: number, hours: number, minutes: number): string {
+  return new Date(year, month, day, hours, minutes, 0, 0).toISOString()
+}
+
+function dateTimePartsFromIso(iso: string): { dateValue: string; timeValue: string } {
+  return {
+    dateValue: isoToDateInputValue(iso),
+    timeValue: isoToTimeInputValue(iso),
+  }
+}
+
+/** Default follow-up date/time when opening Set reminder (no existing reminder). */
+export function getSuggestedReminderDateTime(
+  kind: BillReminderKind = 'other',
+  now = new Date(),
+): { dateValue: string; timeValue: string; iso: string; label: string } {
+  const dayOffset = kind === 'cheque' ? 7 : kind === 'credit' ? 7 : 3
+  const suggested = new Date(now)
+  suggested.setDate(suggested.getDate() + dayOffset)
+  suggested.setHours(DEFAULT_REMINDER_HOUR, DEFAULT_REMINDER_MINUTE, 0, 0)
+  const iso = suggested.toISOString()
+  return {
+    ...dateTimePartsFromIso(iso),
+    iso,
+    label: formatDate(iso),
+  }
+}
+
+export interface ReminderDateTimeQuickOption {
+  label: string
+  dateValue: string
+  timeValue: string
+}
+
+/** One-tap date/time suggestions shown in the reminder popup. */
+export function getReminderDateTimeQuickOptions(now = new Date()): ReminderDateTimeQuickOption[] {
+  const options: ReminderDateTimeQuickOption[] = []
+  const today = new Date(now)
+  const roundedToday = roundUpToMinutes(now, 15)
+  if (roundedToday.getHours() < 9) {
+    roundedToday.setHours(DEFAULT_REMINDER_HOUR, DEFAULT_REMINDER_MINUTE, 0, 0)
+  }
+
+  const todayIso = buildLocalReminderIso(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+    roundedToday.getHours(),
+    roundedToday.getMinutes(),
+  )
+  options.push({ label: 'Today', ...dateTimePartsFromIso(todayIso) })
+
+  for (const { label, days } of [
+    { label: 'Tomorrow', days: 1 },
+    { label: '3 days', days: 3 },
+    { label: '7 days', days: 7 },
+  ]) {
+    const date = new Date(now)
+    date.setDate(date.getDate() + days)
+    const iso = buildLocalReminderIso(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+      DEFAULT_REMINDER_HOUR,
+      DEFAULT_REMINDER_MINUTE,
+    )
+    options.push({ label, ...dateTimePartsFromIso(iso) })
+  }
+
+  return options
+}
 
 export function getReminderAlertSettings(data: AppData): ReminderAlertSettings {
   return {
@@ -129,10 +216,11 @@ export function evaluateBillReminderAlert(
 function buildReminderItem(
   sale: Sale,
   allSales: Sale[],
+  data: AppData,
   settings: ReminderAlertSettings,
   now = new Date(),
 ): BillReminderItem {
-  const reminderAt = sale.reminderAt!
+  const reminderAt = getEffectiveSaleReminderAt(data, sale)!
   const kind = reminderKind(sale)
   const alert = evaluateBillReminderAlert(reminderAt, kind, settings, now)
   const due = isReminderDue(reminderAt, now)
@@ -143,7 +231,7 @@ function buildReminderItem(
     amount: sale.billAmount,
     kind,
     reminderAt,
-    reminderNote: sale.reminderNote?.trim() || undefined,
+    reminderNote: getEffectiveSaleReminderNote(data, sale),
     reminderDateLabel: formatDate(reminderAt),
     isDue: due,
     isOverdue: alert.phase === 'overdue',
@@ -158,8 +246,8 @@ export function buildBillReminders(data: AppData, now = new Date()): BillReminde
   const settings = getReminderAlertSettings(data)
 
   return data.sales
-    .filter((sale) => sale.status === 'pending' && sale.reminderAt)
-    .map((sale) => buildReminderItem(sale, data.sales, settings, now))
+    .filter((sale) => sale.status === 'pending' && getEffectiveSaleReminderAt(data, sale))
+    .map((sale) => buildReminderItem(sale, data.sales, data, settings, now))
     .sort((a, b) => new Date(a.reminderAt).getTime() - new Date(b.reminderAt).getTime())
 }
 

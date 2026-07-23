@@ -119,10 +119,40 @@
   font-size: 0.72rem;
 }
 
-.bill-reminder-modal-current {
+.bill-reminder-modal-current,
+.bill-reminder-modal-suggested {
   margin: 0;
   font-size: 0.58rem;
   color: var(--cream-dim);
+}
+
+.bill-reminder-modal-suggested {
+  color: var(--warning, #f5c542);
+  font-weight: 600;
+}
+
+.bill-reminder-modal-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bill-reminder-modal-quick-chip {
+  min-height: 26px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  font-size: 0.58rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bill-reminder-modal-quick-chip--active {
+  border-color: var(--warning, #f5c542);
+  color: var(--cream);
+  background: var(--surface);
 }
 
 .bill-reminder-modal-note {

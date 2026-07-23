@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AppData, ReminderAlertSettings } from '../types'
-import { formatMoney } from '../utils/format'
+import { formatMoney, formatDate } from '../utils/format'
 import {
   buildChequeCustomerSummaries,
   buildChequeOverview,
@@ -128,7 +128,7 @@ export default function ChequeDashboard({
                       key={summary.name}
                       summary={summary}
                       data={data}
-                      showInlineReminder={listFilter === 'cheque'}
+                      showInlineReminder={summary.totalChequePending > 0}
                       onSelect={() => setSelectedName(summary.name)}
                       onSetCustomerReminder={onSetCustomerReminder}
                       onSaveAlertSettings={onSaveAlertSettings}
@@ -187,7 +187,11 @@ function ChequeListItem({
             ? ` · Cheque ${formatMoney(summary.totalChequePending)}`
             : ''}{' '}
           · Last {summary.lastPurchaseLabel}
-          {alertInfo?.isAlertActive ? ' · 🔔 Alert' : reminderAt ? ' · 🔔 Reminder set' : ''}
+          {alertInfo?.isAlertActive
+            ? ` · 🔔 Alert`
+            : reminderAt
+              ? ` · 🔔 ${formatDate(reminderAt)}`
+              : ''}
         </small>
       </button>
       {canSetReminder ? (
@@ -278,6 +282,7 @@ function ChequeCustomerDetail({
           <>
             <h3 className="customer-section-title customer-section-title--alert">
               Open cheque · {formatMoney(summary.totalChequePending)}
+              {chequeReminderAt ? ` · 🔔 ${formatDate(chequeReminderAt)}` : ''}
             </h3>
             {summary.chequeBills.map((purchase) => (
               <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit">

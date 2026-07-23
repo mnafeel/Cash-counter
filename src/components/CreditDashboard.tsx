@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AppData, ReminderAlertSettings } from '../types'
-import { formatMoney } from '../utils/format'
+import { formatMoney, formatDate } from '../utils/format'
 import {
   buildCreditOverview,
   buildCustomerSummaries,
@@ -129,7 +129,7 @@ export default function CreditDashboard({
                       key={summary.name}
                       summary={summary}
                       data={data}
-                      showInlineReminder={listFilter === 'credit'}
+                      showInlineReminder={summary.totalCreditPending > 0}
                       onSelect={() => setSelectedName(summary.name)}
                       onSetCustomerReminder={onSetCustomerReminder}
                       onSaveAlertSettings={onSaveAlertSettings}
@@ -188,7 +188,11 @@ function CreditListItem({
             ? ` · Credit ${formatMoney(summary.totalCreditPending)}`
             : ''}{' '}
           · Last {summary.lastPurchaseLabel}
-          {alertInfo?.isAlertActive ? ' · 🔔 Alert' : reminderAt ? ' · 🔔 Reminder set' : ''}
+          {alertInfo?.isAlertActive
+            ? ` · 🔔 Alert`
+            : reminderAt
+              ? ` · 🔔 ${formatDate(reminderAt)}`
+              : ''}
         </small>
       </button>
       {canSetReminder ? (
@@ -279,6 +283,7 @@ function CreditCustomerDetail({
           <>
             <h3 className="customer-section-title customer-section-title--alert">
               Open credit · {formatMoney(summary.totalCreditPending)}
+              {creditReminderAt ? ` · 🔔 ${formatDate(creditReminderAt)}` : ''}
             </h3>
             {summary.creditBills.map((purchase) => (
               <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit">

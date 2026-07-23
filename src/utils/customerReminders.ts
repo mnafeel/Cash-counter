@@ -72,6 +72,26 @@ export function listOpenBillIdsForCustomer(
     .map((sale) => sale.id)
 }
 
+export function getEffectiveSaleReminderAt(data: AppData, sale: Sale): string | undefined {
+  if (sale.reminderAt) return sale.reminderAt
+  if (sale.status !== 'pending') return undefined
+  const label = resolveSaleCustomerLabel(sale, data.sales)
+  if (!label) return undefined
+  const kind = getSaleReminderKind(sale)
+  if (kind !== 'credit' && kind !== 'cheque') return undefined
+  return getCustomerReminderAt(data, label, kind)
+}
+
+export function getEffectiveSaleReminderNote(data: AppData, sale: Sale): string | undefined {
+  if (sale.reminderNote?.trim()) return sale.reminderNote.trim()
+  if (sale.status !== 'pending') return undefined
+  const label = resolveSaleCustomerLabel(sale, data.sales)
+  if (!label) return undefined
+  const kind = getSaleReminderKind(sale)
+  if (kind !== 'credit' && kind !== 'cheque') return undefined
+  return getCustomerReminderNote(data, label, kind)
+}
+
 export function applyStoredCustomerReminderToSale(
   data: AppData,
   sale: Sale,

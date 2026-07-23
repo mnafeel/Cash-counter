@@ -11,6 +11,8 @@ import {
   daysBeforeForKind,
   evaluateBillReminderAlert,
   formatNotificationShowLabel,
+  getReminderDateTimeQuickOptions,
+  getSuggestedReminderDateTime,
   type BillReminderKind,
 } from '../utils/billReminders'
 import './BillReminderAlertsSettings.css'
@@ -53,17 +55,30 @@ export default function BillReminderModal({
   const [notificationShowSeconds, setNotificationShowSeconds] = useState(alertSettings.notificationShowSeconds)
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(alertSettings.notificationSoundEnabled)
 
+  const suggestedDefault = useMemo(
+    () => (reminderAt ? null : getSuggestedReminderDateTime(billKind)),
+    [reminderAt, billKind, open],
+  )
+
+  const quickOptions = useMemo(() => getReminderDateTimeQuickOptions(), [open])
+
   useEffect(() => {
     if (!open) return
-    setDateValue(reminderAt ? isoToDateInputValue(reminderAt) : '')
-    setTimeValue(reminderAt ? isoToTimeInputValue(reminderAt) : '09:00')
+    if (reminderAt) {
+      setDateValue(isoToDateInputValue(reminderAt))
+      setTimeValue(isoToTimeInputValue(reminderAt))
+    } else {
+      const suggested = getSuggestedReminderDateTime(billKind)
+      setDateValue(suggested.dateValue)
+      setTimeValue(suggested.timeValue)
+    }
     setNoteValue(reminderNote?.trim() ?? '')
     setCreditDaysBefore(alertSettings.creditDaysBefore)
     setChequeDaysBefore(alertSettings.chequeDaysBefore)
     setAlertIntervalDays(alertSettings.alertIntervalDays)
     setNotificationShowSeconds(alertSettings.notificationShowSeconds)
     setNotificationSoundEnabled(alertSettings.notificationSoundEnabled)
-  }, [open, reminderAt, reminderNote, alertSettings])
+  }, [open, reminderAt, reminderNote, alertSettings, billKind])
 
   const draftSettings = useMemo(
     (): ReminderAlertSettings => ({
@@ -139,6 +154,30 @@ export default function BillReminderModal({
                 />
               </label>
             </div>
+            {!reminderAt && suggestedDefault ? (
+              <p className="bill-reminder-modal-suggested">Suggested: {suggestedDefault.label}</p>
+            ) : null}
+            {!reminderAt ? (
+              <div className="bill-reminder-modal-quick">
+                {quickOptions.map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    className={`bill-reminder-modal-quick-chip ${
+                      dateValue === option.dateValue && timeValue === option.timeValue
+                        ? 'bill-reminder-modal-quick-chip--active'
+                        : ''
+                    }`}
+                    onClick={() => {
+                      setDateValue(option.dateValue)
+                      setTimeValue(option.timeValue)
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             {reminderAt ? (
               <p className="bill-reminder-modal-current">Current: {formatDate(reminderAt)}</p>
             ) : null}

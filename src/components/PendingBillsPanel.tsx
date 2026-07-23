@@ -8,6 +8,11 @@ import {
   getSaleReminderKind,
   isReminderDue,
 } from '../utils/billReminders'
+import {
+  getEffectiveSaleReminderAt,
+  getEffectiveSaleReminderNote,
+  resolveSaleCustomerLabel,
+} from '../utils/customerReminders'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
 import BillReminderModal from './BillReminderModal'
 import './PendingBillsPanel.css'
@@ -18,6 +23,12 @@ interface PendingBillsPanelProps {
   data?: AppData
   onSelect: (bill: Sale) => void
   onSetReminder?: (saleId: string, reminderAt: string | null, reminderNote?: string | null) => void
+  onSetCustomerReminder?: (
+    customerName: string,
+    kind: 'credit' | 'cheque',
+    reminderAt: string | null,
+    reminderNote?: string | null,
+  ) => void
   onSaveAlertSettings?: (settings: ReminderAlertSettings) => void
   focused?: boolean
   highlightedBillId?: string | null
@@ -31,6 +42,7 @@ export default function PendingBillsPanel({
   data,
   onSelect,
   onSetReminder,
+  onSetCustomerReminder,
   onSaveAlertSettings,
   focused,
   highlightedBillId,
@@ -51,21 +63,41 @@ export default function PendingBillsPanel({
     setModalBill(null)
   }
 
+  function saveReminderForBill(
+    bill: Sale,
+    reminderAt: string | null,
+    reminderNote?: string | null,
+  ) {
+    if (!data) return
+    const kind = getSaleReminderKind(bill)
+    if ((kind === 'credit' || kind === 'cheque') && onSetCustomerReminder) {
+      const customerName = resolveSaleCustomerLabel(bill, data.sales)
+      if (customerName) {
+        onSetCustomerReminder(customerName, kind, reminderAt, reminderNote)
+        return
+      }
+    }
+    onSetReminder?.(bill.id, reminderAt, reminderNote)
+  }
+
   function handleSaveReminder(iso: string, settings: ReminderAlertSettings, reminderNote?: string | null) {
-    if (!modalBill || !onSetReminder) return
-    onSetReminder(modalBill.id, iso, reminderNote)
+    if (!modalBill) return
+    saveReminderForBill(modalBill, iso, reminderNote)
     onSaveAlertSettings?.(settings)
   }
 
   function handleClearReminder() {
-    if (!modalBill || !onSetReminder) return
-    onSetReminder(modalBill.id, null)
+    if (!modalBill) return
+    saveReminderForBill(modalBill, null)
   }
 
   const modalKind = modalBill ? getSaleReminderKind(modalBill) : 'other'
   const modalName = modalBill
     ? getSaleCustomerName(modalBill, allSales ?? bills) || 'Bill'
     : ''
+  const modalReminderAt = modalBill && data ? getEffectiveSaleReminderAt(data, modalBill) : modalBill?.reminderAt
+  const modalReminderNote =
+    modalBill && data ? getEffectiveSaleReminderNote(data, modalBill) : modalBill?.reminderNote
 
   return (
     <>
@@ -89,9 +121,11 @@ export default function PendingBillsPanel({
             {bills.map((bill) => {
               const name = getSaleCustomerName(bill, allSales ?? bills)
               const kind = getSaleReminderKind(bill)
+              const billReminderAt = data ? getEffectiveSaleReminderAt(data, bill) : bill.reminderAt
+              const billReminderNote = data ? getEffectiveSaleReminderNote(data, bill) : bill.reminderNote
               const alertInfo =
-                bill.reminderAt && alertSettings
-                  ? evaluateBillReminderAlert(bill.reminderAt, kind, alertSettings)
+                billReminderAt && alertSettings
+                  ? evaluateBillReminderAlert(billReminderAt, kind, alertSettings)
                   : null
 
               return (
@@ -122,27 +156,27 @@ export default function PendingBillsPanel({
                         Updated {formatDate(bill.updatedAt)}
                       </span>
                     ) : null}
-                    {bill.reminderAt ? (
+                    {billReminderAt ? (
                       <span
                         className={`pending-bills-reminder ${
-                          isReminderDue(bill.reminderAt) ? '' : 'pending-bills-reminder--upcoming'
+                          isReminderDue(billReminderAt) ? '' : 'pending-bills-reminder--upcoming'
                         } ${alertInfo?.isAlertActive ? 'pending-bills-reminder--active' : ''}`}
                       >
-                        🔔 Reminder {formatDate(bill.reminderAt)}
+                        🔔 Reminder {formatDate(billReminderAt)}
                       </span>
                     ) : null}
-                    {bill.reminderNote ? (
-                      <span className="pending-bills-reminder-note">📝 {bill.reminderNote}</span>
+                    {billReminderNote ? (
+                      <span className="pending-bills-reminder-note">📝 {billReminderNote}</span>
                     ) : null}
                   </button>
-                  {onSetReminder && data ? (
+                  {onSetReminder && data && kind !== 'credit' && kind !== 'cheque' ? (
                     <button
                       type="button"
                       className="pending-bills-reminder-btn"
                       onClick={(event) => openReminderModal(bill, event)}
                       aria-label={`Set reminder for ${name || 'bill'}`}
                     >
-                      🔔 {bill.reminderAt ? 'Edit' : 'Reminder'}
+                      🔔 {billReminderAt ? 'Edit' : 'Reminder'}
                     </button>
                   ) : null}
                 </li>
@@ -159,8 +193,8 @@ export default function PendingBillsPanel({
           title={`${modalKind === 'credit' ? 'Credit' : modalKind === 'cheque' ? 'Cheque' : 'Bill'} reminder · ${modalName}`}
           subtitle={`${formatMoney(modalBill.billAmount)} · Pick date, time, note, and alert options.`}
           billKind={modalKind}
-          reminderAt={modalBill.reminderAt}
-          reminderNote={modalBill.reminderNote}
+          reminderAt={modalReminderAt}
+          reminderNote={modalReminderNote}
           alertSettings={alertSettings}
           onSave={handleSaveReminder}
           onClear={handleClearReminder}

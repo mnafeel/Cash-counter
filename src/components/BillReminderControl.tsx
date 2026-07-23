@@ -1,7 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { AppData, ReminderAlertSettings } from '../types'
 import { formatDate } from '../utils/format'
 import { evaluateBillReminderAlert, getReminderAlertSettings, type BillReminderKind } from '../utils/billReminders'
+import {
+  getEffectiveSaleReminderAt,
+  getEffectiveSaleReminderNote,
+  resolveSaleCustomerLabel,
+} from '../utils/customerReminders'
 import BillReminderModal from './BillReminderModal'
 import './BillReminderControl.css'
 
@@ -13,23 +18,42 @@ interface BillReminderControlProps {
   billLabel?: string
   data: AppData
   onSet: (saleId: string, reminderAt: string | null, reminderNote?: string | null) => void
+  onSetCustomer?: (
+    customerName: string,
+    kind: Extract<BillReminderKind, 'credit' | 'cheque'>,
+    reminderAt: string | null,
+    reminderNote?: string | null,
+  ) => void
   onSaveAlertSettings?: (settings: ReminderAlertSettings) => void
   compact?: boolean
 }
 
 export default function BillReminderControl({
   saleId,
-  reminderAt,
-  reminderNote,
+  reminderAt: reminderAtProp,
+  reminderNote: reminderNoteProp,
   billKind = 'other',
   billLabel,
   data,
   onSet,
+  onSetCustomer,
   onSaveAlertSettings,
   compact = false,
 }: BillReminderControlProps) {
   const [modalOpen, setModalOpen] = useState(false)
   const alertSettings = getReminderAlertSettings(data)
+
+  const sale = useMemo(() => data.sales.find((entry) => entry.id === saleId), [data.sales, saleId])
+
+  const reminderAt = useMemo(() => {
+    if (sale) return getEffectiveSaleReminderAt(data, sale) ?? reminderAtProp
+    return reminderAtProp
+  }, [data, sale, reminderAtProp])
+
+  const reminderNote = useMemo(() => {
+    if (sale) return getEffectiveSaleReminderNote(data, sale) ?? reminderNoteProp
+    return reminderNoteProp
+  }, [data, sale, reminderNoteProp])
 
   const kindLabel =
     billKind === 'credit' ? 'Credit reminder' : billKind === 'cheque' ? 'Cheque reminder' : 'Reminder'
@@ -38,13 +62,28 @@ export default function BillReminderControl({
     ? evaluateBillReminderAlert(reminderAt, billKind, alertSettings)
     : null
 
+  function saveReminder(reminderAtValue: string | null, note?: string | null) {
+    if (
+      sale &&
+      (billKind === 'credit' || billKind === 'cheque') &&
+      onSetCustomer
+    ) {
+      const customerName = resolveSaleCustomerLabel(sale, data.sales)
+      if (customerName) {
+        onSetCustomer(customerName, billKind, reminderAtValue, note)
+        return
+      }
+    }
+    onSet(saleId, reminderAtValue, note)
+  }
+
   function handleSave(iso: string, settings: ReminderAlertSettings, note?: string | null) {
-    onSet(saleId, iso, note)
+    saveReminder(iso, note)
     onSaveAlertSettings?.(settings)
   }
 
   function handleClear() {
-    onSet(saleId, null)
+    saveReminder(null)
   }
 
   return (
