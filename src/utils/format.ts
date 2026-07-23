@@ -1,5 +1,6 @@
+/** Indian lakh grouping: 1,00,000 not 100,000 */
 export function formatMoney(amount: number): string {
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat('en-IN', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount)
