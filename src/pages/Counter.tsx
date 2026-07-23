@@ -5,10 +5,17 @@ import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips, { type PayType } from '../components/PayTypeChips'
 import PendingBillsPanel from '../components/PendingBillsPanel'
+import BillReminderModal from '../components/BillReminderModal'
 import RoundTypeChips from '../components/RoundTypeChips'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import type { Sale } from '../types'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
+import {
+  evaluateBillReminderAlert,
+  getReminderAlertSettings,
+  getSaleReminderKind,
+  isReminderDue,
+} from '../utils/billReminders'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
@@ -152,7 +159,7 @@ function resolveLoadedPendingBill(
 type SavedAction = 'collect' | 'pending' | null
 
 export default function Counter() {
-  const { recordSale, updatePendingSale, collectPendingSale, collectCreditPayment, pendingBills, data } = useCash()
+  const { recordSale, updatePendingSale, collectPendingSale, collectCreditPayment, pendingBills, data, setBillReminder, updateReminderAlertSettings } = useCash()
   const [searchParams, setSearchParams] = useSearchParams()
   const [billStr, setBillStr] = useState('')
   const [giveStr, setGiveStr] = useState('')
@@ -176,6 +183,8 @@ export default function Counter() {
   const [creditListOpen, setCreditListOpen] = useState(false)
   const [highlightedCreditIndex, setHighlightedCreditIndex] = useState(-1)
   const [collectingCreditId, setCollectingCreditId] = useState<string | null>(null)
+  const [reminderModalOpen, setReminderModalOpen] = useState(false)
+  const [reminderEnabled, setReminderEnabled] = useState(false)
   const [collectingChequeId, setCollectingChequeId] = useState<string | null>(null)
   const [creditCollectDue, setCreditCollectDue] = useState(0)
   const [chequeCollectDue, setChequeCollectDue] = useState(0)
@@ -297,6 +306,27 @@ export default function Counter() {
     }
     return null
   }, [collectingCreditId, loadedPendingBill])
+
+  const reminderTargetBill = useMemo(() => {
+    if (!loadedPendingBill) return null
+    if (isCreditPendingBill(loadedPendingBill) || isChequePendingBill(loadedPendingBill)) {
+      return loadedPendingBill
+    }
+    return null
+  }, [loadedPendingBill])
+
+  const reminderAlertSettings = useMemo(() => getReminderAlertSettings(data), [data])
+
+  const reminderKind = reminderTargetBill ? getSaleReminderKind(reminderTargetBill) : 'other'
+
+  const reminderAlertInfo = useMemo(() => {
+    if (!reminderTargetBill?.reminderAt) return null
+    return evaluateBillReminderAlert(reminderTargetBill.reminderAt, reminderKind, reminderAlertSettings)
+  }, [reminderTargetBill, reminderKind, reminderAlertSettings])
+
+  useEffect(() => {
+    setReminderEnabled(Boolean(reminderTargetBill?.reminderAt))
+  }, [reminderTargetBill?.id, reminderTargetBill?.reminderAt])
 
   const creditCollectPayTypes = useMemo(
     (): PayType[] => (collectingCreditId ? CREDIT_COLLECT_PAY_TYPES : COUNTER_PAY_TYPES),
@@ -3128,12 +3158,19 @@ export default function Counter() {
       if (e.code === 'KeyE') {
         e.preventDefault()
         focusAmountRef.current()
+        return
+      }
+
+      if (e.code === 'KeyR') {
+        if (!reminderTargetBill) return
+        e.preventDefault()
+        setReminderModalOpen(true)
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isSaving, isValid, canSavePending])
+  }, [isSaving, isValid, canSavePending, reminderTargetBill])
 
   const payTypeChipValue: PayType =
     effectiveCollectingChequeId && chequeCollectCreditMode && payType === 'split'
@@ -3143,6 +3180,42 @@ export default function Counter() {
   const creditCollectGridClass = ''
 
   const chequeCollectGridClass = ''
+
+  function openReminderModal() {
+    if (!reminderTargetBill) return
+    setReminderModalOpen(true)
+  }
+
+  function handleReminderToggle(enabled: boolean) {
+    if (!reminderTargetBill) return
+    setReminderEnabled(enabled)
+    if (enabled) {
+      if (!reminderTargetBill.reminderAt) setReminderModalOpen(true)
+    } else {
+      setBillReminder(reminderTargetBill.id, null)
+    }
+  }
+
+  function handleReminderSave(
+    iso: string,
+    settings: Parameters<typeof updateReminderAlertSettings>[0],
+    reminderNote?: string | null,
+  ) {
+    if (!reminderTargetBill) return
+    setBillReminder(reminderTargetBill.id, iso, reminderNote)
+    updateReminderAlertSettings(settings)
+    setReminderEnabled(true)
+  }
+
+  function handleReminderClear() {
+    if (!reminderTargetBill) return
+    setBillReminder(reminderTargetBill.id, null)
+    setReminderEnabled(false)
+  }
+
+  const reminderTargetLabel = reminderTargetBill
+    ? getSaleCustomerName(reminderTargetBill, data.sales) || formatMoney(reminderTargetBill.billAmount)
+    : ''
 
   return (
     <div className="counter-page">
@@ -3611,6 +3684,47 @@ export default function Counter() {
             )}
             </div>
 
+          {reminderTargetBill ? (
+            <div className="counter-reminder-bar">
+              <div className="counter-reminder-head">
+                <span className="counter-reminder-title">
+                  {reminderKind === 'credit' ? '💳 Credit reminder' : '🧾 Cheque reminder'}
+                </span>
+                <label className="counter-reminder-toggle">
+                  <span>On</span>
+                  <input
+                    type="checkbox"
+                    checked={reminderEnabled}
+                    onChange={(e) => handleReminderToggle(e.target.checked)}
+                    aria-label="Reminder on"
+                  />
+                  <span className="counter-reminder-toggle-track" aria-hidden="true" />
+                </label>
+              </div>
+              <div className="counter-reminder-actions">
+                <button type="button" className="counter-reminder-set-btn" onClick={openReminderModal}>
+                  {reminderTargetBill.reminderAt ? 'Edit reminder' : 'Set reminder'}
+                  <span className="counter-reminder-shortcut">Alt+R</span>
+                </button>
+                {reminderTargetBill.reminderAt ? (
+                  <span
+                    className={`counter-reminder-status ${
+                      reminderAlertInfo?.isAlertActive ? 'counter-reminder-status--active' : ''
+                    }`}
+                  >
+                    🔔 {formatDate(reminderTargetBill.reminderAt)}
+                    {reminderAlertInfo
+                      ? ` · ${reminderAlertInfo.isAlertActive ? reminderAlertInfo.alertLabel : `Alert ${reminderAlertInfo.alertLabel.toLowerCase()}`}`
+                      : ''}
+                  </span>
+                ) : null}
+                {reminderTargetBill.reminderNote ? (
+                  <span className="counter-reminder-note">📝 {reminderTargetBill.reminderNote}</span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
           <div className="counter-cheque-bar" ref={chequeBarRef}>
             <button
               type="button"
@@ -3643,6 +3757,18 @@ export default function Counter() {
                       </span>
                       {billName ? (
                         <span className="counter-cheque-item-name">{billName}</span>
+                      ) : null}
+                      {bill.reminderAt ? (
+                        <span
+                          className={`counter-cheque-item-reminder ${
+                            isReminderDue(bill.reminderAt) ? '' : 'counter-cheque-item-reminder--upcoming'
+                          }`}
+                        >
+                          🔔 {formatDate(bill.reminderAt)}
+                        </span>
+                      ) : null}
+                      {bill.reminderNote ? (
+                        <span className="counter-cheque-item-reminder-note">📝 {bill.reminderNote}</span>
                       ) : null}
                       <span className="counter-cheque-item-date">
                         {formatDate(bill.updatedAt ?? bill.createdAt)}
@@ -3687,6 +3813,18 @@ export default function Counter() {
                       </span>
                       {billName ? (
                         <span className="counter-credit-item-name">{billName}</span>
+                      ) : null}
+                      {bill.reminderAt ? (
+                        <span
+                          className={`counter-credit-item-reminder ${
+                            isReminderDue(bill.reminderAt) ? '' : 'counter-credit-item-reminder--upcoming'
+                          }`}
+                        >
+                          🔔 {formatDate(bill.reminderAt)}
+                        </span>
+                      ) : null}
+                      {bill.reminderNote ? (
+                        <span className="counter-credit-item-reminder-note">📝 {bill.reminderNote}</span>
                       ) : null}
                       <span className="counter-credit-item-date">
                         {formatDate(bill.updatedAt ?? bill.createdAt)}
@@ -3857,7 +3995,10 @@ export default function Counter() {
         <PendingBillsPanel
           bills={billPendingBills}
           allSales={data.sales}
+          data={data}
           onSelect={selectPendingBill}
+          onSetReminder={setBillReminder}
+          onSaveAlertSettings={updateReminderAlertSettings}
           focused={pendingSectionFocus}
           highlightedBillId={
             highlightedPendingIndex != null
@@ -3868,6 +4009,21 @@ export default function Counter() {
           shortcutHint="Alt+W"
         />
       </div>
+
+      {reminderTargetBill ? (
+        <BillReminderModal
+          open={reminderModalOpen}
+          onClose={() => setReminderModalOpen(false)}
+          title={`${reminderKind === 'credit' ? 'Credit' : 'Cheque'} reminder · ${reminderTargetLabel}`}
+          subtitle={`${formatMoney(reminderTargetBill.billAmount)} · Pick date, time, note, and alert options.`}
+          billKind={reminderKind}
+          reminderAt={reminderTargetBill.reminderAt}
+          reminderNote={reminderTargetBill.reminderNote}
+          alertSettings={reminderAlertSettings}
+          onSave={handleReminderSave}
+          onClear={handleReminderClear}
+        />
+      ) : null}
     </div>
   )
 }

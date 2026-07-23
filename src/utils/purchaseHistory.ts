@@ -468,8 +468,9 @@ export function filterPurchaseHistoryItems(
   items: PurchaseHistoryItem[],
   dateFilter: PurchaseDateFilter,
   selectedDate: string,
+  rangeTo?: string,
 ): PurchaseHistoryItem[] {
-  return items.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate))
+  return items.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate, rangeTo))
 }
 
 export function matchesPurchaseHistorySearch(item: PurchaseHistoryItem, query: string): boolean {

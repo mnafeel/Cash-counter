@@ -32,6 +32,7 @@ export interface HistoryReceiptEvent {
   label: string
   date: string
   amount?: number
+  detail?: string
   type: 'bill-created' | 'pending-created' | 'collected' | 'pending'
 }
 
@@ -148,6 +149,33 @@ function partialCollectionMethodLabel(sale: Sale): string {
   if (bank > 0) parts.push('Bank')
   if (cheque > 0) parts.push('Cheque → Bank')
   return parts.join(' + ')
+}
+
+function partialCollectionAmountBreakdown(sale: Sale): string {
+  const { cash, bank, cheque } = salePendingCreditPaidBreakdown(sale)
+  const parts: string[] = []
+  if (cash > 0) parts.push(`💵 ${formatMoney(cash)}`)
+  if (bank > 0) parts.push(`🏦 ${formatMoney(bank)}`)
+  if (cheque > 0) parts.push(`🧾 ${formatMoney(cheque)} → bank`)
+  return parts.join(' · ')
+}
+
+function partialCollectionDetailLabel(sale: Sale): string {
+  const method = partialCollectionMethodLabel(sale)
+  const amounts = partialCollectionAmountBreakdown(sale)
+  if (method && amounts) return `${method} · ${amounts}`
+  if (amounts) return amounts
+  return method || 'Partial'
+}
+
+function balancePaymentEventLabel(sale: Sale): { label: string; detail?: string } {
+  const kind = isCreditBill(sale) ? 'Credit' : isChequeBill(sale) ? 'Cheque' : 'Bill'
+  const method = partialCollectionMethodLabel(sale)
+  const amounts = partialCollectionAmountBreakdown(sale)
+  return {
+    label: method ? `${kind} payment · ${method}` : `${kind} payment`,
+    detail: amounts || undefined,
+  }
 }
 
 function collectedPaymentAmount(sale: Sale): number {
@@ -341,7 +369,7 @@ function buildSplitReceiptLines(parent: Sale, children: Sale[]): HistoryReceiptL
         label: 'Paid',
         amount: childCollected,
         status: 'paid',
-        detail: partialCollectionMethodLabel(child) || 'Partial payment',
+        detail: partialCollectionDetailLabel(child),
         createdAt: child.createdAt,
         paidAt: child.updatedAt,
         date: child.updatedAt,
@@ -429,6 +457,7 @@ function buildSplitTimeline(parent: Sale, children: Sale[]): HistoryReceiptEvent
       ) {
         events.push({
           label: `${part} payment · ${partialCollectionMethodLabel(child) || 'Partial'}`,
+          detail: partialCollectionAmountBreakdown(child) || undefined,
           date: child.updatedAt,
           amount: partial,
           type: 'collected',
@@ -653,7 +682,7 @@ function buildSaleReceiptLines(sale: Sale): HistoryReceiptLine[] {
       label: 'Paid',
       amount: collected,
       status: 'paid',
-      detail: partialCollectionMethodLabel(sale) || 'Partial payment',
+      detail: partialCollectionDetailLabel(sale),
       createdAt: sale.createdAt,
       paidAt: sale.updatedAt,
       date: sale.updatedAt,
@@ -691,10 +720,10 @@ function buildSaleTimeline(sale: Sale): HistoryReceiptEvent[] {
       (isCreditBill(sale) || isChequeBill(sale))
 
     if (hasPartialPayment) {
+      const paymentEvent = balancePaymentEventLabel(sale)
       events.push({
-        label: isCreditBill(sale)
-          ? `Credit payment · ${collectionMethodLabel(sale) || 'Partial'}`
-          : `Cheque payment · ${collectionMethodLabel(sale) || 'Partial'}`,
+        label: paymentEvent.label,
+        detail: paymentEvent.detail,
         date: sale.updatedAt ?? sale.createdAt,
         amount: partialCollected,
         type: 'collected',
@@ -753,7 +782,7 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
     sub =
       sale.status === 'pending'
         ? collected > 0
-          ? `Credit · Paid ${formatMoney(collected)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
+          ? `Credit · Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
           : `Credit · ${amount} pending`
         : `Credit · Paid ${formatMoney(collected)} · ${collectionMethodLabel(sale)}${paidTime ? ` · ${paidTime}` : ''}`
   } else if (isChequeBill(sale)) {
@@ -766,7 +795,7 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
     sub =
       sale.status === 'pending'
         ? collected > 0
-          ? `Cheque · Paid ${formatMoney(collected)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
+          ? `Cheque · Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
           : `Cheque · ${amount} pending`
         : `Cheque · Paid ${formatMoney(collected)} · ${collectionMethodLabel(sale)}${paidTime ? ` · ${paidTime}` : ''}`
   } else {
@@ -801,7 +830,7 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
       ? `Paid ${formatMoney(collected)}${updatedLabel}`
       : sale.status === 'pending' && (isCreditBill(sale) || isChequeBill(sale))
         ? collected > 0
-          ? `Paid ${formatMoney(collected)} · Pending ${formatMoney(sale.billAmount)}${updatedLabel}`
+          ? `Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · Pending ${formatMoney(sale.billAmount)}${updatedLabel}`
           : `Pending ${formatMoney(sale.billAmount)}`
         : undefined
 

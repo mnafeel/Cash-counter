@@ -670,6 +670,126 @@
   width: 100%;
 }
 
+.counter-reminder-bar {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(180, 120, 40, 0.12);
+}
+
+.counter-reminder-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.counter-reminder-title {
+  font-size: 0.64rem;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.counter-reminder-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  cursor: pointer;
+}
+
+.counter-reminder-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.counter-reminder-toggle-track {
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  position: relative;
+}
+
+.counter-reminder-toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--cream-dim);
+  transition: transform 0.15s ease;
+}
+
+.counter-reminder-toggle input:checked + .counter-reminder-toggle-track {
+  background: rgba(64, 145, 108, 0.35);
+  border-color: rgba(64, 145, 108, 0.55);
+}
+
+.counter-reminder-toggle input:checked + .counter-reminder-toggle-track::after {
+  transform: translateX(16px);
+  background: var(--cream);
+}
+
+.counter-reminder-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.counter-reminder-set-btn {
+  width: 100%;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream);
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.counter-reminder-shortcut {
+  font-size: 0.52rem;
+  opacity: 0.7;
+}
+
+.counter-reminder-status {
+  font-size: 0.54rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+}
+
+.counter-reminder-status--active {
+  color: var(--warning, #f5c542);
+}
+
+.counter-reminder-note {
+  display: block;
+  width: 100%;
+  font-size: 0.52rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
 .counter-cheque-open,
 .counter-credit-open {
   width: 100%;
@@ -789,6 +909,29 @@
   font-size: 0.52rem;
   color: var(--cream-dim);
   font-weight: 600;
+}
+
+.counter-cheque-item-reminder,
+.counter-credit-item-reminder {
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: var(--warning, #f0c040);
+  line-height: 1.1;
+}
+
+.counter-cheque-item-reminder--upcoming,
+.counter-credit-item-reminder--upcoming {
+  color: var(--cream-dim);
+  font-weight: 600;
+}
+
+.counter-cheque-item-reminder-note,
+.counter-credit-item-reminder-note {
+  font-size: 0.5rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+  line-height: 1.2;
+  word-break: break-word;
 }
 
 .counter-actions .btn-cheque:not(:disabled) {

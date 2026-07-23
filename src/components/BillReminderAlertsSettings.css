@@ -1,0 +1,76 @@
+.bill-alert-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bill-alert-settings-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bill-alert-settings-label {
+  font-size: 0.58rem;
+  font-weight: 800;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bill-alert-settings-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.bill-alert-settings-chip {
+  min-height: 26px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  font-size: 0.54rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bill-alert-settings-chip--active {
+  background: var(--surface);
+  color: var(--cream);
+  border-color: var(--cream-dim);
+}
+
+.bill-alert-settings-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.bill-alert-settings-save,
+.bill-alert-settings-reset {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-size: 0.58rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bill-alert-settings-save {
+  background: var(--surface);
+  color: var(--cream);
+}
+
+.bill-alert-settings-reset {
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+}
+
+.bill-alert-settings-note {
+  margin: 0;
+  font-size: 0.52rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}

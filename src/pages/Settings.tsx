@@ -20,7 +20,7 @@ import {
 } from '../firebase/backup'
 import { backupNow, setBackupStatusListener } from '../firebase/sync'
 import type { AppData } from '../types'
-import { getApprovedChequeAmount, listApprovedCheques, listPendingCreditSales, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
+import { getApprovedChequeAmount, listApprovedCheques, listPendingChequeSales, listPendingCreditSales, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
 import {
   dateTimeInputValuesToIso,
   formatMoney,
@@ -30,11 +30,16 @@ import {
   parseAmount,
 } from '../utils/format'
 import { buildHistoryItems, getHistoryPaymentLabel, historyItemSortTime, matchesHistorySearch, type HistoryItem } from '../utils/historyItems'
+import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount } from '../utils/salePayment'
 import { counterBillPath, resolveHistoryItemBillId } from '../utils/counterBillRoute'
 import { readBillEditMode, writeBillEditMode } from '../utils/billEditMode'
 import { downloadFullHistoryReport, printFullHistoryReportPdf } from '../utils/historyReport'
 import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
+import BillReminderControl from '../components/BillReminderControl'
+import BillReminderAlertsSettings from '../components/BillReminderAlertsSettings'
+import { UNNAMED_CREDIT_CUSTOMER } from '../utils/customerLedger'
+import { getReminderAlertSettings, getSaleReminderKind } from '../utils/billReminders'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import './Settings.css'
@@ -112,7 +117,11 @@ export default function Settings() {
     syncTallyBills,
     cancelApprovedCheque,
     cancelSaleCredit,
+    cancelSaleCheque,
+    setBillReminder,
+    updateReminderAlertSettings,
     updateSaleBill,
+    pendingBills,
   } = useCash()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -142,6 +151,7 @@ export default function Settings() {
   const [manualName, setManualName] = useState('')
   const [manualAmount, setManualAmount] = useState('')
   const [chequeCancelStatus, setChequeCancelStatus] = useState('')
+  const [pendingChequeCancelStatus, setPendingChequeCancelStatus] = useState('')
   const [creditCancelStatus, setCreditCancelStatus] = useState('')
   const [historyReportStatus, setHistoryReportStatus] = useState('')
   const [billEditSearch, setBillEditSearch] = useState('')
@@ -153,8 +163,30 @@ export default function Settings() {
   const [editBillTime, setEditBillTime] = useState('')
   const [billEditStatus, setBillEditStatus] = useState('')
 
-  const approvedCheques = useMemo(() => listApprovedCheques(data), [data.sales])
+  const generalScrollRef = useRef<HTMLDivElement>(null)
+  const tallyScrollRef = useRef<HTMLDivElement>(null)
+  const cloudScrollRef = useRef<HTMLDivElement>(null)
+  const billEditListRef = useRef<HTMLUListElement>(null)
+
+  useEffect(() => {
+    const scrollEl =
+      tab === 'general'
+        ? generalScrollRef.current
+        : tab === 'tally'
+          ? tallyScrollRef.current
+          : cloudScrollRef.current
+    scrollEl?.scrollTo(0, 0)
+  }, [tab])
+
+  useEffect(() => {
+    billEditListRef.current?.scrollTo(0, 0)
+  }, [billEditFilter, billEditSearch, billEditOpen])
+
+  const approvedCheques = useMemo(() => listApprovedCheques(data), [data])
   const pendingCreditSales = useMemo(() => listPendingCreditSales(data), [data.sales])
+  const pendingChequeSales = useMemo(() => listPendingChequeSales(data), [data.sales])
+  const reminderAlertSettings = useMemo(() => getReminderAlertSettings(data), [data])
+  const [alertSettingsStatus, setAlertSettingsStatus] = useState('')
   const historyRecordCount = useMemo(() => buildHistoryItems(data).length, [data])
   const billEditItems = useMemo(() => {
     return buildHistoryItems(data)
@@ -280,9 +312,13 @@ export default function Settings() {
   }
 
   function handleCancelApprovedCheque(id: string) {
-    cancelApprovedCheque(id)
-    setChequeCancelStatus('Cheque approval cancelled — moved back to pending.')
-    setTimeout(() => setChequeCancelStatus(''), 2400)
+    const ok = cancelApprovedCheque(id)
+    setChequeCancelStatus(
+      ok
+        ? 'Cheque cancelled — removed from bank and moved back to pending.'
+        : 'Could not cancel this cheque. Refresh and try again.',
+    )
+    setTimeout(() => setChequeCancelStatus(''), 4000)
   }
 
   function handleCancelSaleCredit(id: string, relatedSaleIds?: string[]) {
@@ -296,6 +332,19 @@ export default function Settings() {
         : 'Credit bill removed — balance cleared.',
     )
     setTimeout(() => setCreditCancelStatus(''), 4000)
+  }
+
+  function handleCancelSaleCheque(id: string, relatedSaleIds?: string[]) {
+    const sale = data.sales.find((s) => s.id === id)
+    const hadPayment = sale ? saleCollectedAmount(sale) > 0 : false
+    cancelSaleCheque(id, relatedSaleIds)
+    if (editingBillDateId === id) cancelBillDateEdit()
+    setPendingChequeCancelStatus(
+      hadPayment
+        ? 'Cheque cancelled — partial payment kept as collected.'
+        : 'Cheque bill removed — balance cleared.',
+    )
+    setTimeout(() => setPendingChequeCancelStatus(''), 4000)
   }
 
   function toggleBillEditMode() {
@@ -567,9 +616,10 @@ export default function Settings() {
         ))}
       </div>
 
-      <div className={`settings-body ${tab === 'general' ? 'settings-body--general' : ''}`}>
+      <div className="settings-body">
         {tab === 'general' && (
           <div className="settings-general">
+            <div className="settings-scroll" ref={generalScrollRef}>
             <div className="settings-header">
               <h2>General</h2>
               <p>Opening balances & home PIN</p>
@@ -676,12 +726,70 @@ export default function Settings() {
               ) : null}
             </section>
 
+            <section className="settings-cheque-cancel settings-bill-reminders">
+              <div className="settings-cheque-cancel-head">
+                <h3>Bill reminders &amp; alerts</h3>
+                <p>
+                  Set reminder date &amp; time for credit and cheque bills. Alerts start before the due
+                  date based on the options below.
+                </p>
+              </div>
+              <BillReminderAlertsSettings
+                settings={reminderAlertSettings}
+                onSave={(settings) => {
+                  updateReminderAlertSettings(settings)
+                  setAlertSettingsStatus('Alert options saved.')
+                }}
+              />
+              {alertSettingsStatus ? (
+                <p className="settings-cheque-cancel-status">{alertSettingsStatus}</p>
+              ) : null}
+              {pendingBills.length === 0 ? (
+                <p className="settings-cheque-cancel-empty">No pending bills.</p>
+              ) : (
+                <ul className="settings-cheque-cancel-list">
+                  {pendingBills.map((sale) => {
+                    const billName = getSaleCustomerName(sale, data.sales) || UNNAMED_CREDIT_CUSTOMER
+                    const kind =
+                      sale.payType === 'credit' || sale.pendingPayType === 'credit'
+                        ? 'Credit'
+                        : sale.payType === 'cheque' || sale.pendingPayType === 'cheque'
+                          ? 'Cheque'
+                          : sale.source === 'tally'
+                            ? 'Tally'
+                            : 'Pending'
+                    return (
+                      <li key={sale.id} className="settings-cheque-cancel-item settings-cheque-cancel-item--stack">
+                        <div className="settings-cheque-cancel-meta">
+                          <strong>{billName}</strong>
+                          <span>
+                            {kind} · {formatMoney(sale.billAmount)}
+                          </span>
+                        </div>
+                        <BillReminderControl
+                          saleId={sale.id}
+                          reminderAt={sale.reminderAt}
+                          reminderNote={sale.reminderNote}
+                          billKind={getSaleReminderKind(sale)}
+                          billLabel={billName}
+                          data={data}
+                          onSet={setBillReminder}
+                          onSaveAlertSettings={updateReminderAlertSettings}
+                          compact
+                        />
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </section>
+
             <section className="settings-cheque-cancel settings-credit-cancel">
               <div className="settings-cheque-cancel-head">
                 <h3>Pending credit bills</h3>
                 <p>
-                  Cancel removes open credit. Unpaid bills are deleted; partial payments are kept as
-                  collected.
+                  Set reminder date &amp; time for collection. Cancel removes open credit. Unpaid bills are
+                  deleted; partial payments are kept as collected.
                 </p>
               </div>
               {pendingCreditSales.length === 0 ? (
@@ -690,24 +798,38 @@ export default function Settings() {
                 <ul className="settings-cheque-cancel-list">
                   {pendingCreditSales.map((sale) => {
                     const collected = saleCollectedAmount(sale)
+                    const chequeInBank = getApprovedChequeAmount(sale)
+                    const paidExCheque = Math.max(0, collected - chequeInBank)
                     const total = sale.originalBillAmount ?? sale.billAmount + collected
                     const when = sale.updatedAt ?? sale.createdAt
                     const relatedSaleIds = sale.parentSplitId
                       ? [sale.parentSplitId, sale.id]
                       : [sale.id]
+                    const billName = getSaleCustomerName(sale, data.sales)
                     return (
-                      <li key={sale.id} className="settings-cheque-cancel-item">
+                      <li key={sale.id} className="settings-cheque-cancel-item settings-cheque-cancel-item--stack">
                         <div className="settings-cheque-cancel-meta">
-                          <strong>{sale.customerName?.trim() || '—'}</strong>
+                          <strong>{billName || '—'}</strong>
                           <span>
-                            {collected > 0
-                              ? `Paid ${formatMoney(collected)} · Credit ${formatMoney(sale.billAmount)}`
+                            {paidExCheque > 0
+                              ? `Paid ${formatMoney(paidExCheque)} · Credit ${formatMoney(sale.billAmount)}`
                               : formatMoney(sale.billAmount)}
                           </span>
                           <span className="settings-cheque-cancel-sub">
                             Bill {formatMoney(total)} · {formatDate(when)}
                           </span>
                         </div>
+                        <BillReminderControl
+                          saleId={sale.id}
+                          reminderAt={sale.reminderAt}
+                          reminderNote={sale.reminderNote}
+                          billKind="credit"
+                          billLabel={billName || 'Credit bill'}
+                          data={data}
+                          onSet={setBillReminder}
+                          onSaveAlertSettings={updateReminderAlertSettings}
+                          compact
+                        />
                         <button
                           type="button"
                           className="btn btn-secondary settings-cheque-cancel-btn"
@@ -725,6 +847,71 @@ export default function Settings() {
               ) : null}
             </section>
 
+            <section className="settings-cheque-cancel settings-pending-cheque">
+              <div className="settings-cheque-cancel-head">
+                <h3>Pending cheque bills</h3>
+                <p>
+                  Set reminder date &amp; time for collection. Cancel removes open cheque bills; partial
+                  payments are kept as collected.
+                </p>
+              </div>
+              {pendingChequeSales.length === 0 ? (
+                <p className="settings-cheque-cancel-empty">No open cheque bills.</p>
+              ) : (
+                <ul className="settings-cheque-cancel-list">
+                  {pendingChequeSales.map((sale) => {
+                    const collected = saleCollectedAmount(sale)
+                    const chequeInBank = getApprovedChequeAmount(sale)
+                    const paidExCheque = Math.max(0, collected - chequeInBank)
+                    const total = sale.originalBillAmount ?? sale.billAmount + collected
+                    const when = sale.updatedAt ?? sale.createdAt
+                    const relatedSaleIds = sale.parentSplitId
+                      ? [sale.parentSplitId, sale.id]
+                      : [sale.id]
+                    const billName = getSaleCustomerName(sale, data.sales)
+                    return (
+                      <li key={sale.id} className="settings-cheque-cancel-item settings-cheque-cancel-item--stack">
+                        <div className="settings-cheque-cancel-meta">
+                          <strong>{billName || '—'}</strong>
+                          <span>
+                            {chequeInBank > 0
+                              ? `Cheque ${formatMoney(chequeInBank)} · Open ${formatMoney(sale.billAmount)}`
+                              : paidExCheque > 0
+                                ? `Paid ${formatMoney(paidExCheque)} · Cheque ${formatMoney(sale.billAmount)}`
+                                : formatMoney(sale.billAmount)}
+                          </span>
+                          <span className="settings-cheque-cancel-sub">
+                            Bill {formatMoney(total)} · {formatDate(when)}
+                          </span>
+                        </div>
+                        <BillReminderControl
+                          saleId={sale.id}
+                          reminderAt={sale.reminderAt}
+                          reminderNote={sale.reminderNote}
+                          billKind="cheque"
+                          billLabel={billName || 'Cheque bill'}
+                          data={data}
+                          onSet={setBillReminder}
+                          onSaveAlertSettings={updateReminderAlertSettings}
+                          compact
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-secondary settings-cheque-cancel-btn"
+                          onClick={() => handleCancelSaleCheque(sale.id, relatedSaleIds)}
+                        >
+                          Cancel
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              {pendingChequeCancelStatus ? (
+                <p className="settings-cheque-cancel-status">{pendingChequeCancelStatus}</p>
+              ) : null}
+            </section>
+
             <section className="settings-cheque-cancel">
               <div className="settings-cheque-cancel-head">
                 <h3>Approved cheques</h3>
@@ -737,17 +924,32 @@ export default function Settings() {
                   {approvedCheques.map((sale) => {
                     const amount = getApprovedChequeAmount(sale)
                     const when = sale.updatedAt ?? sale.createdAt
+                    const billName = getSaleCustomerName(sale, data.sales)
+                    const openBalance = sale.status === 'pending' ? sale.billAmount : 0
+                    const otherPaid = saleCollectedAmount(sale) - amount
+                    const total =
+                      sale.originalBillAmount ??
+                      (openBalance > 0 ? openBalance + Math.max(0, otherPaid) + amount : sale.billAmount)
                     const label =
-                      sale.payType === 'split'
-                        ? 'Split · cheque → bank'
-                        : sale.pendingPayType === 'credit'
-                          ? 'Credit bill · cheque → bank'
+                      sale.status === 'pending'
+                        ? sale.payType === 'credit' || sale.pendingPayType === 'credit'
+                          ? 'Credit · cheque → bank'
+                          : 'Cheque → bank · open'
+                        : sale.payType === 'split'
+                          ? 'Split · cheque → bank'
                           : 'Cheque → bank'
                     return (
                       <li key={sale.id} className="settings-cheque-cancel-item">
                         <div className="settings-cheque-cancel-meta">
-                          <strong>{sale.customerName?.trim() || '—'}</strong>
-                          <span>{formatMoney(amount)}</span>
+                          <strong>{billName || '—'}</strong>
+                          <span className="settings-cheque-cancel-amount">
+                            Cheque {formatMoney(amount)}
+                          </span>
+                          {openBalance > 0 ? (
+                            <span className="settings-cheque-cancel-sub">
+                              Open {formatMoney(openBalance)} · Bill {formatMoney(total)}
+                            </span>
+                          ) : null}
                           <span className="settings-cheque-cancel-sub">
                             {label} · {formatDate(when)}
                           </span>
@@ -768,8 +970,10 @@ export default function Settings() {
                 <p className="settings-cheque-cancel-status">{chequeCancelStatus}</p>
               ) : null}
             </section>
+            </div>
 
             {pinError && <p className="settings-pin-error">{pinError}</p>}
+            <div className="settings-general-footer">
             <div className="settings-keyboard-wrap">
               <NumberKeyboard onPress={handleNumpad} showEnter={false} />
             </div>
@@ -781,11 +985,12 @@ export default function Settings() {
               {saved ? '✓ Saved!' : 'Save Settings'}
             </button>
             <p className="settings-note">PIN default 0000. Leave PIN empty to keep current.</p>
+            </div>
           </div>
         )}
 
         {tab === 'tally' && (
-          <div className="settings-scroll">
+          <div className="settings-scroll" ref={tallyScrollRef}>
             <section className="settings-panel settings-tally">
               <div className="settings-header">
                 <h2>Tally Prime</h2>
@@ -881,7 +1086,7 @@ export default function Settings() {
         )}
 
         {tab === 'cloud' && (
-          <div className="settings-scroll">
+          <div className="settings-scroll" ref={cloudScrollRef}>
           <section className="settings-panel">
             <div className="settings-header">
               <h2>Cloud Username</h2>
@@ -1043,7 +1248,10 @@ export default function Settings() {
             {billEditItems.length === 0 ? (
               <p className="settings-bill-edit-empty">No bills match your search.</p>
             ) : (
-              <ul className="settings-bill-edit-list settings-bill-edit-list--panel">
+              <ul
+                className="settings-bill-edit-list settings-bill-edit-list--panel"
+                ref={billEditListRef}
+              >
                 {billEditItems.map((item) => {
                   const isEditingDate = editingBillDateId === item.id
                   const pending = billIsPending(item, data.sales)

@@ -2,6 +2,8 @@ import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useDeviceSize } from '../hooks/useDeviceSize'
 import { useHomePinLock } from '../hooks/useHomePinLock'
+import ReminderAlertsNotifier from './ReminderAlertsNotifier'
+import { initReminderNotificationSound } from '../utils/reminderNotificationSound'
 import './Layout.css'
 
 const navItems = [
@@ -22,6 +24,10 @@ export default function Layout() {
   useHomePinLock()
   const navigate = useNavigate()
   const location = useLocation()
+
+  useEffect(() => {
+    initReminderNotificationSound()
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -68,6 +74,7 @@ export default function Layout() {
       <main className="main main--fit">
         <Outlet />
       </main>
+      <ReminderAlertsNotifier />
     </div>
   )
 }

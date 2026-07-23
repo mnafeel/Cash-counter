@@ -79,11 +79,41 @@
   -webkit-overflow-scrolling: touch;
 }
 
+.pending-bills-reminder--active {
+  color: var(--warning, #f5c542);
+}
+
 .pending-bills-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.pending-bills-reminder-btn {
+  min-height: 24px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  font-size: 0.52rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pending-bills-reminder--active {
+  color: var(--warning, #f5c542);
+}
+
+.pending-bills-item > .pending-bills-load {
+  width: 100%;
+}
+
+.pending-bills-row-actions {
   display: flex;
   align-items: stretch;
   gap: 4px;
-  flex-shrink: 0;
 }
 
 .pending-bills-load {
@@ -172,6 +202,32 @@
 
 .pending-bills-delete:active {
   opacity: 0.8;
+}
+
+.pending-bills-time--updated {
+  color: var(--cream-dim);
+}
+
+.pending-bills-reminder {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: var(--warning, #f5c542);
+}
+
+.pending-bills-reminder--upcoming {
+  color: var(--cream-dim);
+}
+
+.pending-bills-reminder-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.5rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+  line-height: 1.25;
+  word-break: break-word;
 }
 
 html[data-screen='desktop'] .pending-bills {

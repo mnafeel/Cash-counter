@@ -12,6 +12,7 @@ import type {
   ExpenseKind,
   ExpensePayType,
   PayType,
+  ReminderAlertSettings,
   Sale,
   SaleStatus,
   TransferDirection,
@@ -28,6 +29,7 @@ import {
   cancelApprovedCheque,
   cancelPurchaseCredit,
   cancelSaleCredit,
+  cancelSaleCheque,
   collectPendingBill,
   deleteExpense,
   deleteSale,
@@ -43,6 +45,9 @@ import {
   setHomePin,
   setOpeningBalance,
   setOpeningBankBalance,
+  setReminderAlertSettings,
+  setSaleReminder,
+  setCustomerReminder,
   updateExpenseName,
   updateExpense,
   updatePendingBill,
@@ -156,9 +161,18 @@ interface CashContextValue {
   updateHomePin: (pin: string) => void
   removeSale: (id: string, relatedSaleIds?: string[]) => void
   removeExpense: (id: string) => void
-  cancelApprovedCheque: (id: string) => void
+  cancelApprovedCheque: (id: string) => boolean
   cancelPurchaseCredit: (id: string) => void
   cancelSaleCredit: (id: string, relatedSaleIds?: string[]) => void
+  cancelSaleCheque: (id: string, relatedSaleIds?: string[]) => void
+  setBillReminder: (id: string, reminderAt: string | null, reminderNote?: string | null) => void
+  setCustomerReminder: (
+    customerName: string,
+    kind: 'credit' | 'cheque',
+    reminderAt: string | null,
+    reminderNote?: string | null,
+  ) => void
+  updateReminderAlertSettings: (settings: ReminderAlertSettings) => void
   applyPurchaseCreditPayment: (
     id: string,
     payment: {
@@ -533,8 +547,14 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => addSupplierItemToData(prev, name, item))
   }, [])
 
-  const cancelApprovedChequeSale = useCallback((id: string) => {
-    setData((prev) => cancelApprovedCheque(prev, id))
+  const cancelApprovedChequeSale = useCallback((id: string): boolean => {
+    let ok = false
+    setData((prev) => {
+      const next = cancelApprovedCheque(prev, id)
+      ok = next !== prev
+      return next
+    })
+    return ok
   }, [])
 
   const cancelPurchaseCreditBalance = useCallback((id: string) => {
@@ -543,6 +563,33 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const cancelSaleCreditBalance = useCallback((id: string, relatedSaleIds?: string[]) => {
     setData((prev) => cancelSaleCredit(prev, id, relatedSaleIds))
+  }, [])
+
+  const cancelSaleChequeBalance = useCallback((id: string, relatedSaleIds?: string[]) => {
+    setData((prev) => cancelSaleCheque(prev, id, relatedSaleIds))
+  }, [])
+
+  const setBillReminderHandler = useCallback(
+    (id: string, reminderAt: string | null, reminderNote?: string | null) => {
+      setData((prev) => setSaleReminder(prev, id, reminderAt, reminderNote))
+    },
+    [],
+  )
+
+  const setCustomerReminderHandler = useCallback(
+    (
+      customerName: string,
+      kind: 'credit' | 'cheque',
+      reminderAt: string | null,
+      reminderNote?: string | null,
+    ) => {
+      setData((prev) => setCustomerReminder(prev, customerName, kind, reminderAt, reminderNote))
+    },
+    [],
+  )
+
+  const updateReminderAlertSettingsHandler = useCallback((settings: ReminderAlertSettings) => {
+    setData((prev) => setReminderAlertSettings(prev, settings))
   }, [])
 
   const applyPurchaseCreditPaymentHandler = useCallback(
@@ -713,6 +760,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       cancelApprovedCheque: cancelApprovedChequeSale,
       cancelPurchaseCredit: cancelPurchaseCreditBalance,
       cancelSaleCredit: cancelSaleCreditBalance,
+      cancelSaleCheque: cancelSaleChequeBalance,
+      setBillReminder: setBillReminderHandler,
+      setCustomerReminder: setCustomerReminderHandler,
+      updateReminderAlertSettings: updateReminderAlertSettingsHandler,
       applyPurchaseCreditPayment: applyPurchaseCreditPaymentHandler,
       collectCreditPayment: collectCreditPaymentHandler,
       updateHistoryName,
@@ -751,6 +802,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       cancelApprovedChequeSale,
       cancelPurchaseCreditBalance,
       cancelSaleCreditBalance,
+      cancelSaleChequeBalance,
+      setBillReminderHandler,
+      setCustomerReminderHandler,
+      updateReminderAlertSettingsHandler,
       applyPurchaseCreditPaymentHandler,
       collectCreditPaymentHandler,
       updateHistoryName,

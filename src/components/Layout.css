@@ -180,6 +180,11 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--bg);
+}
+
+.main--fit:has(.home:not(.home--locked)) {
+  background: var(--bg);
 }
 
 .main--fit:has(.home--locked) {

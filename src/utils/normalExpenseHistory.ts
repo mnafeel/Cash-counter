@@ -62,6 +62,7 @@ export function filterNormalExpenseHistoryItems(
   items: NormalExpenseHistoryItem[],
   dateFilter: NormalExpenseDateFilter,
   selectedDate: string,
+  rangeTo?: string,
 ): NormalExpenseHistoryItem[] {
-  return items.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate))
+  return items.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate, rangeTo))
 }

@@ -17,11 +17,14 @@ import {
   getTodaySalesSummary,
   saleTotalCollected,
   summarizeSales,
+  summarizeSalesBillRows,
   toInputDate,
   type ReportPeriod,
+  type ReportSort,
   type SalesReportFilter,
 } from './salesReport'
 import { saleCollectedAmount } from './salePayment'
+import { UNNAMED_CREDIT_CUSTOMER } from './customerLedger'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
 
 export type ReportTab = 'all' | 'sales' | 'purchase' | 'expense' | 'credit' | 'cheque'
@@ -44,6 +47,13 @@ export interface CreditReportItem {
   id: string
   kind: 'sale' | 'purchase'
   name: string
+  /** Full bill / credit total. */
+  totalBill: number
+  /** Amount already collected toward credit. */
+  paidAmount: number
+  /** Open credit balance still unpaid. */
+  pendingAmount: number
+  /** Same as totalBill — kept for list display. */
   amount: number
   status: 'pending' | 'paid'
   date: string
@@ -155,7 +165,7 @@ export function buildReportOverview(data: AppData): ReportOverview {
     monthPurchases,
     todayExpenses,
     monthExpenses,
-    creditPending: pendingCredit.reduce((sum, item) => sum + item.amount, 0),
+    creditPending: pendingCredit.reduce((sum, item) => sum + item.pendingAmount, 0),
     creditCount: pendingCredit.length,
     chequePending: pendingCheque.reduce((sum, item) => sum + item.amount, 0),
     chequeCount: pendingCheque.length,
@@ -174,14 +184,17 @@ export function buildCreditReportItems(data: AppData): CreditReportItem[] {
     items.push({
       id: sale.id,
       kind: 'sale',
-      name: sale.customerName?.trim() || 'Credit sale',
+      name: sale.customerName?.trim() || UNNAMED_CREDIT_CUSTOMER,
+      totalBill,
+      paidAmount: collected,
+      pendingAmount: pending,
       amount: totalBill,
       status: sale.status === 'pending' ? 'pending' : 'paid',
       date: sale.updatedAt ?? sale.createdAt,
       payDetail:
         sale.status === 'pending'
           ? collected > 0
-            ? `Bill ${formatMoney(totalBill)} · Paid ${formatMoney(collected)} · Credit ${formatMoney(pending)}`
+            ? `Bill ${formatMoney(totalBill)} · Paid ${formatMoney(collected)} · Balance ${formatMoney(pending)}`
             : `Bill ${formatMoney(totalBill)} · Credit ${formatMoney(pending)}`
           : `Bill ${formatMoney(totalBill)} · Paid ${formatMoney(collected || totalBill)}`,
     })
@@ -195,6 +208,9 @@ export function buildCreditReportItems(data: AppData): CreditReportItem[] {
       id: expense.id,
       kind: 'purchase',
       name: expense.name,
+      totalBill: amount,
+      paidAmount: 0,
+      pendingAmount: amount,
       amount,
       status: 'pending',
       date: expense.createdAt,
@@ -250,30 +266,33 @@ export function filterCreditReportItems(
   items: CreditReportItem[],
   dateFilter: ReportDatePreset,
   selectedDate: string,
+  rangeTo?: string,
 ): CreditReportItem[] {
-  return items.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate))
+  return items.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate, rangeTo))
 }
 
 export function filterChequeReportItems(
   items: ChequeReportItem[],
   dateFilter: ReportDatePreset,
   selectedDate: string,
+  rangeTo?: string,
 ): ChequeReportItem[] {
-  return items.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate))
+  return items.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate, rangeTo))
 }
 
 export function summarizeCreditItems(items: CreditReportItem[]) {
   return items.reduce(
     (acc, item) => {
-      acc.total += item.amount
+      acc.total += item.totalBill
+      acc.paidTotal += item.paidAmount
       acc.count += 1
       if (item.status === 'pending') {
-        acc.pendingTotal += item.amount
+        acc.pendingTotal += item.pendingAmount
         acc.pendingCount += 1
       }
       return acc
     },
-    { total: 0, count: 0, pendingTotal: 0, pendingCount: 0 },
+    { total: 0, paidTotal: 0, count: 0, pendingTotal: 0, pendingCount: 0 },
   )
 }
 
@@ -306,14 +325,26 @@ export function salesBillsForPreset(
   data: AppData,
   preset: ReportDatePreset,
   selectedDate: string,
+  sort: ReportSort = 'date-desc',
+  rangeTo?: string,
 ) {
-  const filter = presetToSalesFilter(preset, selectedDate)
-  return buildSalesBillList(data, 'date-desc', filter)
+  const filter = presetToSalesFilter(preset, selectedDate, rangeTo)
+  return buildSalesBillList(data, sort, filter)
+}
+
+export function salesSummaryForPreset(
+  data: AppData,
+  preset: ReportDatePreset,
+  selectedDate: string,
+  rangeTo?: string,
+) {
+  return summarizeSalesBillRows(salesBillsForPreset(data, preset, selectedDate, 'date-desc', rangeTo))
 }
 
 export function presetToSalesFilter(
   preset: ReportDatePreset,
   selectedDate: string,
+  rangeTo?: string,
 ): SalesReportFilter | undefined {
   const today = toInputDate()
   if (preset === 'today') return { fromDate: today, toDate: today }
@@ -330,16 +361,32 @@ export function presetToSalesFilter(
   }
   if (preset === 'month') return monthFilter()
   if (preset === 'date' && selectedDate) return { fromDate: selectedDate, toDate: selectedDate }
+  if (preset === 'range' && selectedDate && rangeTo) {
+    const from = selectedDate <= rangeTo ? selectedDate : rangeTo
+    const to = selectedDate <= rangeTo ? rangeTo : selectedDate
+    return { fromDate: from, toDate: to }
+  }
   return undefined
 }
 
-export function formatReportPresetLabel(preset: ReportDatePreset, selectedDate: string): string {
+export function formatReportPresetLabel(
+  preset: ReportDatePreset,
+  selectedDate: string,
+  rangeTo?: string,
+): string {
   if (preset === 'today') return 'Today'
   if (preset === 'yesterday') return 'Yesterday'
   if (preset === 'week') return 'This Week'
   if (preset === 'month') return 'This Month'
   if (preset === 'date' && selectedDate) return formatDate(selectedDate)
+  if (preset === 'range' && selectedDate && rangeTo) {
+    const from = selectedDate <= rangeTo ? selectedDate : rangeTo
+    const to = selectedDate <= rangeTo ? rangeTo : selectedDate
+    if (from === to) return formatDate(from)
+    return `${formatDate(from)} – ${formatDate(to)}`
+  }
   return 'All Time'
 }
 
-export { summarizeSales, summarizePurchases, summarizeNormalExpenses, saleTotalCollected }
+export { summarizeSales, summarizeSalesBillRows, summarizePurchases, summarizeNormalExpenses, saleTotalCollected }
+export type { ReportSort }

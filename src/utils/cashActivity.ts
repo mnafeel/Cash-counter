@@ -2,7 +2,7 @@ import type { AppData, Expense, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import { saleCashCollected, saleBankCollected, saleChequeToBankCollected } from './salesReport'
 
-export type CashDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'date'
+export type CashDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'date' | 'range'
 
 export interface CashActivityItem {
   id: string
@@ -25,6 +25,7 @@ export function matchesCashDateFilter(
   iso: string,
   dateFilter: CashDateFilter,
   selectedDate: string,
+  rangeTo?: string,
 ): boolean {
   if (dateFilter === 'all') return true
   const d = new Date(iso)
@@ -53,6 +54,18 @@ export function matchesCashDateFilter(
     if (!selectedDate) return true
     const [y, m, day] = selectedDate.split('-').map(Number)
     return isSameDay(d, new Date(y, m - 1, day))
+  }
+
+  if (dateFilter === 'range' && selectedDate && rangeTo) {
+    const from = selectedDate <= rangeTo ? selectedDate : rangeTo
+    const to = selectedDate <= rangeTo ? rangeTo : selectedDate
+    const [fy, fm, fd] = from.split('-').map(Number)
+    const [ty, tm, td] = to.split('-').map(Number)
+    const start = new Date(fy, fm - 1, fd)
+    start.setHours(0, 0, 0, 0)
+    const end = new Date(ty, tm - 1, td)
+    end.setHours(23, 59, 59, 999)
+    return d.getTime() >= start.getTime() && d.getTime() <= end.getTime()
   }
 
   return true

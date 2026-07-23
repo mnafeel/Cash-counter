@@ -43,16 +43,24 @@ import {
   isPurchaseExpense,
   NO1_BILL_LABEL,
   NO2_BILL_LABEL,
-  NO1_EXPENSE_LABEL,
-  NO2_EXPENSE_LABEL,
 } from '../utils/expenseBillLabels'
 import {
   buildPurchaseHistoryItems,
   getTopPurchaseShop,
   summarizePurchases,
 } from '../utils/purchaseHistory'
-import PurchaseHistoryPanel from '../components/PurchaseHistoryPanel'
 import ReportsPanel, { type ReportSection } from '../components/ReportsPanel'
+import CustomerDashboard, { type CustomerListFilter } from '../components/CustomerDashboard'
+import CreditDashboard, { type CreditListFilter } from '../components/CreditDashboard'
+import ChequeDashboard, { type ChequeListFilter } from '../components/ChequeDashboard'
+import { buildCreditOverview } from '../utils/customerLedger'
+import { buildChequeOverview } from '../utils/chequeLedger'
+import { getTodayDailyTotals } from '../utils/dailyTotals'
+import {
+  buildActiveChequeReminders,
+  buildActiveCreditReminders,
+  countActiveBillReminders,
+} from '../utils/billReminders'
 import type { ReportDatePreset } from '../utils/reportsHub'
 import './Home.css'
 
@@ -68,7 +76,7 @@ const BALANCE_DATE_OPTIONS: { id: CashDateFilter; label: string }[] = [
 
 export default function Home() {
   const navigate = useNavigate()
-  const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense, homeUnlocked, unlockHome } =
+  const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense, homeUnlocked, unlockHome, setCustomerReminder, updateReminderAlertSettings } =
     useCash()
   const [pinStr, setPinStr] = useState('')
   const [pinError, setPinError] = useState(false)
@@ -88,16 +96,51 @@ export default function Home() {
   const [showBankHistory, setShowBankHistory] = useState(false)
   const [bankDateFilter, setBankDateFilter] = useState<BankDateFilter>('today')
   const [bankSelectedDate, setBankSelectedDate] = useState('')
-  const [showPurchaseHistory, setShowPurchaseHistory] = useState(false)
   const [showReports, setShowReports] = useState(false)
+  const [showCustomers, setShowCustomers] = useState(false)
+  const [showCredits, setShowCredits] = useState(false)
+  const [showCheques, setShowCheques] = useState(false)
+  const [customerFilter, setCustomerFilter] = useState<CustomerListFilter>('all')
+  const [creditFilter, setCreditFilter] = useState<CreditListFilter>('credit')
+  const [chequeFilter, setChequeFilter] = useState<ChequeListFilter>('cheque')
+  const [customerInitialName, setCustomerInitialName] = useState<string | undefined>()
+  const [creditInitialName, setCreditInitialName] = useState<string | undefined>()
+  const [chequeInitialName, setChequeInitialName] = useState<string | undefined>()
   const [reportPreset, setReportPreset] = useState<ReportDatePreset>('today')
   const [reportSection, setReportSection] = useState<ReportSection | undefined>()
   const noteInputRef = useRef<HTMLInputElement>(null)
+
+  function openPurchaseHistory() {
+    navigate('/history', { state: { showPurchaseHistory: true } })
+  }
 
   function openReports(preset: ReportDatePreset = 'today', section?: ReportSection) {
     setReportPreset(preset)
     setReportSection(section)
     setShowReports(true)
+  }
+
+  function openCustomers(filter: CustomerListFilter = 'all', customerName?: string) {
+    setCustomerFilter(filter)
+    setCustomerInitialName(customerName)
+    setShowCustomers(true)
+  }
+
+  function openCredits(filter: CreditListFilter = 'credit', customerName?: string) {
+    setCreditFilter(filter)
+    setCreditInitialName(customerName)
+    setShowCredits(true)
+  }
+
+  function openCheques(filter: ChequeListFilter = 'cheque', customerName?: string) {
+    setChequeFilter(filter)
+    setChequeInitialName(customerName)
+    setShowCheques(true)
+  }
+
+  function openCustomerFromReports(customerName: string) {
+    setShowReports(false)
+    openCredits('credit', customerName)
   }
 
   const homePin = normalizePin(data.homePin, DEFAULT_PIN)
@@ -126,6 +169,12 @@ export default function Home() {
 
   const today = new Date().toDateString()
   const todaySalesSummary = useMemo(() => getTodaySalesSummary(data), [data])
+  const creditOverview = useMemo(() => buildCreditOverview(data), [data])
+  const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
+  const todayDailyTotals = useMemo(() => getTodayDailyTotals(data), [data])
+  const dueReminders = useMemo(() => countActiveBillReminders(data), [data])
+  const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(data), [data])
+  const activeChequeAlerts = useMemo(() => buildActiveChequeReminders(data), [data])
   const todayRegularExpenses = data.expenses.filter(
     (e) =>
       new Date(e.createdAt).toDateString() === today &&
@@ -340,37 +389,6 @@ export default function Home() {
         ? 'Add to Bank'
         : 'Add to Counter'
 
-  const cards = [
-    {
-      to: '/counter',
-      title: 'Cash Counter',
-      desc: 'Bill amount, customer pay & return change',
-      icon: '💵',
-      color: 'green',
-    },
-    {
-      to: '/expenses',
-      title: 'Expenses',
-      desc: 'Normal cash or bank expenses',
-      icon: '📤',
-      color: 'blue',
-    },
-    {
-      to: '/history',
-      title: 'History',
-      desc: 'Search, filter & sort records',
-      icon: '📋',
-      color: 'blue',
-    },
-    {
-      to: '/settings',
-      title: 'Settings',
-      desc: 'Opening balances & home PIN',
-      icon: '⚙️',
-      color: 'gray',
-    },
-  ]
-
   if (!homeUnlocked) {
     return (
       <div className="home home--locked">
@@ -402,7 +420,27 @@ export default function Home() {
 
   return (
     <div className="home">
-      <section className="home-balances">
+      <section className="home-launch" aria-label="Quick launch">
+        <Link to="/counter" className="home-launch-btn home-launch-btn--primary">
+          <span className="home-launch-icon" aria-hidden="true">
+            💵
+          </span>
+          <span className="home-launch-copy">
+            <strong>Cash Counter</strong>
+            <small>Bill amount · pay · change</small>
+          </span>
+          <span className="home-launch-arrow" aria-hidden="true">
+            →
+          </span>
+        </Link>
+        <button type="button" className="home-launch-btn" onClick={() => openReports('today')}>
+          📊 Reports
+        </button>
+      </section>
+
+      <section className="home-section home-section--balances" aria-label="Balances">
+        <h2 className="home-section-title">Balances</h2>
+        <div className="home-balances">
         <div className="home-balance-row">
           <div className="home-balance-card">
             <div className="home-balance-head">
@@ -524,7 +562,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="home-transfers">
+        <div className="home-transfers home-transfers--pair">
           <button
             type="button"
             className="home-transfer-btn"
@@ -539,9 +577,172 @@ export default function Home() {
           >
             🏦 → 💵 Bank to Cash
           </button>
+        </div>
+        </div>
+      </section>
+
+      <section className="home-section" aria-label="Today">
+        <h2 className="home-section-title">Today</h2>
+        <div className="home-today-grid">
           <button
             type="button"
-            className="home-transfer-btn home-transfer-btn--delete"
+            className="stat-card stat-card--action"
+            onClick={() => openReports('today', 'sales')}
+          >
+            <span className="stat-label">Sales collected</span>
+            <span className="stat-value stat-value--green">
+              {formatMoney(todaySalesSummary.totalBills)}
+            </span>
+            <span className="stat-meta stat-meta--breakdown">
+              {formatSalesBreakdown(
+                todaySalesSummary.cashTotal,
+                todaySalesSummary.bankTotal,
+                todaySalesSummary.creditPending,
+                todaySalesSummary.chequeTotal + todaySalesSummary.chequePending,
+              )}
+            </span>
+            <span className="stat-meta">
+              {todaySalesSummary.billCount} bills · With credit{' '}
+              {formatMoney(todaySalesSummary.withCreditSales)}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="stat-card stat-card--action"
+            onClick={() => navigate('/expenses')}
+          >
+            <span className="stat-label">Expenses</span>
+            <span className="stat-value stat-value--orange">
+              {formatMoney(todayRegularExpensesTotal)}
+            </span>
+            <span className="stat-meta">{todayRegularExpenses.length} items today</span>
+          </button>
+          <button
+            type="button"
+            className="stat-card stat-card--action"
+            onClick={() => openReports('today', 'purchase')}
+          >
+            <span className="stat-label">Purchases</span>
+            <span className="stat-value stat-value--orange">
+              {formatMoney(todayPurchaseSummary.total)}
+            </span>
+            <span className="stat-meta stat-meta--breakdown">
+              {NO1_BILL_LABEL} {formatMoney(todayPurchaseSummary.gstTotal)} · {NO2_BILL_LABEL}{' '}
+              {formatMoney(todayPurchaseSummary.noGstTotal)}
+            </span>
+            {todayTopShop ? (
+              <span className="stat-meta">Top: {todayTopShop.shopName}</span>
+            ) : (
+              <span className="stat-meta">{todayPurchases.length} items today</span>
+            )}
+          </button>
+          <button
+            type="button"
+            className="stat-card stat-card--action"
+            onClick={() => openReports('today')}
+          >
+            <span className="stat-label">Net inflow</span>
+            <span className="stat-value">{formatMoney(todayDailyTotals.netInflow)}</span>
+            <span className="stat-meta stat-meta--breakdown">
+              💵 {formatMoney(todayDailyTotals.cashCollected)} · 🏦{' '}
+              {formatMoney(todayDailyTotals.bankCollected)} · 🧾{' '}
+              {formatMoney(todayDailyTotals.chequeCollected)}
+            </span>
+            <span className="stat-meta">
+              Credit+Cheque {formatMoney(todayDailyTotals.creditChequeAddedCombined)} · Added{' '}
+              {formatMoney(todayDailyTotals.moneyAddedTotal)}
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <section className="home-purchases" aria-label="Purchase">
+        <div className="home-purchases-head">
+          <p className="home-purchases-label">Purchase</p>
+          <span className="home-purchases-total">{formatMoney(todayPurchaseSummary.total)} today</span>
+        </div>
+        <div className="home-purchases-row">
+          <button
+            type="button"
+            className="home-purchase-btn home-purchase-btn--open"
+            onClick={() => navigate('/purchase')}
+          >
+            🛒 Open Purchase
+          </button>
+          <button
+            type="button"
+            className="home-purchase-btn home-purchase-btn--history"
+            onClick={openPurchaseHistory}
+          >
+            📋 History · time order
+          </button>
+        </div>
+      </section>
+
+      <section className="home-section" aria-label="Collect open bills">
+        <h2 className="home-section-title">Collect · open bills</h2>
+        <div className="home-collect-grid">
+          <button
+            type="button"
+            className="stat-card stat-card--action stat-card--credit"
+            onClick={() => openCredits('credit')}
+          >
+            <span className="stat-label">Credit open</span>
+            <span className="stat-value stat-value--credit">
+              {formatMoney(creditOverview.totalPending)}
+            </span>
+            <span className="stat-meta">
+              {creditOverview.customerCount} customers · {creditOverview.openBillCount} bills
+              {dueReminders > 0
+                ? ` · ${activeCreditAlerts.length} alert${activeCreditAlerts.length === 1 ? '' : 's'}`
+                : ''}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="stat-card stat-card--action stat-card--cheque"
+            onClick={() => openCheques('cheque')}
+          >
+            <span className="stat-label">Cheque open</span>
+            <span className="stat-value stat-value--cheque">
+              {formatMoney(chequeOverview.totalPending)}
+            </span>
+            <span className="stat-meta">
+              {chequeOverview.customerCount} customers · {chequeOverview.openBillCount} bills
+              {activeChequeAlerts.length > 0
+                ? ` · ${activeChequeAlerts.length} alert${activeChequeAlerts.length === 1 ? '' : 's'}`
+                : ''}
+            </span>
+          </button>
+        </div>
+        <div className="home-collect-actions">
+          <button type="button" className="home-tool-btn home-tool-btn--credit" onClick={() => openCredits('credit')}>
+            💳 Credit Dashboard
+          </button>
+          <button type="button" className="home-tool-btn home-tool-btn--cheque" onClick={() => openCheques('cheque')}>
+            🧾 Cheque Dashboard
+          </button>
+        </div>
+      </section>
+
+      <section className="home-section" aria-label="More tools">
+        <h2 className="home-section-title">More</h2>
+        <div className="home-tools-grid">
+          <button type="button" className="home-tool-btn" onClick={() => openCustomers('all')}>
+            👤 Customers
+          </button>
+          <Link to="/history" className="home-tool-btn home-tool-btn--link">
+            🕘 History
+          </Link>
+          <Link to="/expenses" className="home-tool-btn home-tool-btn--link">
+            📤 Expenses
+          </Link>
+          <Link to="/settings" className="home-tool-btn home-tool-btn--link">
+            ⚙️ Settings
+          </Link>
+          <button
+            type="button"
+            className="home-tool-btn home-tool-btn--muted"
             onClick={() => {
               closePanel()
               setDeleteRecordSearch('')
@@ -549,108 +750,9 @@ export default function Home() {
               setShowDeleteRecords(true)
             }}
           >
-            🗑 Delete
+            🗑 Delete record
           </button>
         </div>
-      </section>
-
-      <section className="home-stats">
-        <button
-          type="button"
-          className="stat-card stat-card--action"
-          onClick={() => openReports('today', 'sales')}
-        >
-          <span className="stat-label">Today Sales</span>
-          <span className="stat-value stat-value--green">
-            {formatMoney(todaySalesSummary.totalBills)}
-          </span>
-          <span className="stat-meta stat-meta--breakdown">
-            {formatSalesBreakdown(todaySalesSummary.cashTotal, todaySalesSummary.bankTotal)}
-            {todaySalesSummary.creditPending > 0
-              ? ` · Credit ${formatMoney(todaySalesSummary.creditPending)}`
-              : ''}
-          </span>
-          <span className="stat-meta">
-            {todaySalesSummary.billCount} bills collected
-            {todaySalesSummary.billTotal > todaySalesSummary.totalBills
-              ? ` · Bills ${formatMoney(todaySalesSummary.billTotal)}`
-              : ''}{' '}
-            · Tap for details →
-          </span>
-        </button>
-        <button
-          type="button"
-          className="stat-card stat-card--action"
-          onClick={() => openReports('today', 'expense')}
-        >
-          <span className="stat-label">Today Expenses</span>
-          <span className="stat-value stat-value--orange">
-            {formatMoney(todayRegularExpensesTotal)}
-          </span>
-          <span className="stat-meta">{todayRegularExpenses.length} items · Tap for details →</span>
-        </button>
-        <button
-          type="button"
-          className="stat-card stat-card--action"
-          onClick={() => openReports('today', 'purchase')}
-        >
-          <span className="stat-label">Today Purchases</span>
-          <span className="stat-value stat-value--orange">
-            {formatMoney(todayPurchaseSummary.total)}
-          </span>
-          <span className="stat-meta stat-meta--breakdown">
-            {NO1_BILL_LABEL} {formatMoney(todayPurchaseSummary.gstTotal)} · {NO2_BILL_LABEL}{' '}
-            {formatMoney(todayPurchaseSummary.noGstTotal)}
-          </span>
-          {todayTopShop ? (
-            <span className="stat-meta">
-              Top: {todayTopShop.shopName} · {NO1_EXPENSE_LABEL}{' '}
-              {formatMoney(todayTopShop.gstTotal)} · {NO2_EXPENSE_LABEL}{' '}
-              {formatMoney(todayTopShop.noGstTotal)}
-            </span>
-          ) : (
-            <span className="stat-meta">
-              {todayPurchases.length} items · Tap for details →
-            </span>
-          )}
-        </button>
-      </section>
-
-      <section className="home-quick-actions">
-        <button
-          type="button"
-          className="home-report-open-btn"
-          onClick={() => openReports('today')}
-        >
-          📊 Reports — Sales · Purchase · Expense · Credit · Cheque
-        </button>
-        <button
-          type="button"
-          className="home-purchase-btn home-purchase-btn--open"
-          onClick={() => navigate('/purchase')}
-        >
-          🛒 Open Purchase
-        </button>
-        <button
-          type="button"
-          className="home-purchase-btn home-purchase-btn--history"
-          onClick={() => setShowPurchaseHistory(true)}
-        >
-          📋 Purchase History
-        </button>
-      </section>
-
-      <section className="home-grid">
-        {cards.map((card) => (
-          <Link key={card.to} to={card.to} className={`home-card home-card--${card.color}`}>
-            <span className="home-card-icon">{card.icon}</span>
-            <div className="home-card-text">
-              <h2>{card.title}</h2>
-              <p>{card.desc}</p>
-            </div>
-            <span className="home-card-arrow">→</span>
-          </Link>
-        ))}
       </section>
 
       {showCashHistory && (
@@ -966,19 +1068,53 @@ export default function Home() {
         </div>
       )}
 
-      <PurchaseHistoryPanel
-        open={showPurchaseHistory}
-        onClose={() => setShowPurchaseHistory(false)}
-        data={data}
-        variant="fullscreen"
-      />
-
       <ReportsPanel
         open={showReports}
         onClose={() => setShowReports(false)}
         data={data}
         initialPreset={reportPreset}
         initialSection={reportSection}
+        focusSection={Boolean(reportSection)}
+        onOpenCustomer={openCustomerFromReports}
+      />
+
+      <CustomerDashboard
+        open={showCustomers}
+        onClose={() => {
+          setShowCustomers(false)
+          setCustomerInitialName(undefined)
+        }}
+        data={data}
+        initialFilter={customerFilter}
+        initialCustomer={customerInitialName}
+        onSetCustomerReminder={setCustomerReminder}
+        onSaveAlertSettings={updateReminderAlertSettings}
+      />
+
+      <CreditDashboard
+        open={showCredits}
+        onClose={() => {
+          setShowCredits(false)
+          setCreditInitialName(undefined)
+        }}
+        data={data}
+        initialFilter={creditFilter}
+        initialCustomer={creditInitialName}
+        onSetCustomerReminder={setCustomerReminder}
+        onSaveAlertSettings={updateReminderAlertSettings}
+      />
+
+      <ChequeDashboard
+        open={showCheques}
+        onClose={() => {
+          setShowCheques(false)
+          setChequeInitialName(undefined)
+        }}
+        data={data}
+        initialFilter={chequeFilter}
+        initialCustomer={chequeInitialName}
+        onSetCustomerReminder={setCustomerReminder}
+        onSaveAlertSettings={updateReminderAlertSettings}
       />
     </div>
   )

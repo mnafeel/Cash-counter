@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import { formatDate, formatMoney } from '../utils/format'
 import { buildPurchaseCreditItems } from '../utils/purchaseHistory'
@@ -147,6 +147,7 @@ function editKey(item: HistoryItem): string {
 export default function History() {
   const { data, updateHistoryName, cancelPurchaseCredit } = useCash()
   const navigate = useNavigate()
+  const location = useLocation()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [paymentFilter, setPaymentFilter] = useState<HistoryPaymentFilter>('all')
   const [sort, setSort] = useState<HistorySort>('date-desc')
@@ -162,6 +163,15 @@ export default function History() {
   const [showPurchaseHistory, setShowPurchaseHistory] = useState(false)
   const editInputRef = useRef<HTMLInputElement>(null)
   const purchaseCreditBarRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const fromQuery = params.get('purchases') === '1'
+    const fromState = Boolean(
+      (location.state as { showPurchaseHistory?: boolean } | null)?.showPurchaseHistory,
+    )
+    if (fromQuery || fromState) setShowPurchaseHistory(true)
+  }, [location.key, location.search, location.state])
 
   useEffect(() => {
     if (!purchaseCreditListOpen) return
@@ -261,16 +271,23 @@ export default function History() {
       deposit: { sum: 0, count: 0 },
       transfer: { sum: 0, count: 0 },
     }
-    for (const item of normalItems) {
-      totals[item.type].sum += historyItemDisplayAmount(item, false)
+    const items = showPurchaseHistory ? combinedItems : normalItems
+    for (const item of items) {
+      totals[item.type].sum += historyItemDisplayAmount(
+        item,
+        showPurchaseHistory && item.type === 'purchase',
+      )
       totals[item.type].count += 1
     }
     return totals
-  }, [normalItems])
+  }, [combinedItems, normalItems, showPurchaseHistory])
 
   const summaryTypes =
     filter === 'all'
-      ? TYPE_SUMMARY.filter((t) => t.id !== 'purchase' && typeTotals[t.id].count > 0)
+      ? TYPE_SUMMARY.filter((t) => {
+          if (t.id === 'purchase') return showPurchaseHistory && typeTotals.purchase.count > 0
+          return typeTotals[t.id].count > 0
+        })
       : TYPE_SUMMARY.filter((t) => t.id === filter)
 
   const showPaymentFilters = filter !== 'transfer'
@@ -485,7 +502,7 @@ export default function History() {
                   </div>
                   <span className="history-item-sub">{item.sub}</span>
                   <span className="history-item-meta">
-                    {item.paySummary ? (
+                    {item.paySummary && item.type !== 'purchase' ? (
                       <span className="history-item-payment">{item.paySummary}</span>
                     ) : item.paymentMode ? (
                       <span className="history-item-payment">
@@ -745,7 +762,7 @@ export default function History() {
             </div>
           ) : null}
 
-          {summaryTypes.length > 0 && normalItems.length > 0 && !showPurchaseHistory ? (
+          {summaryTypes.length > 0 ? (
             <div className="history-summary">
               {summaryTypes.map((t) => (
                 <div key={t.id} className={`history-summary-item history-summary-item--${t.id}`}>
@@ -894,6 +911,9 @@ export default function History() {
                             </span>
                           ) : null}
                         </div>
+                        {event.detail ? (
+                          <span className="history-receipt-timeline-detail">{event.detail}</span>
+                        ) : null}
                         <span className="history-receipt-timeline-date">{formatDate(event.date)}</span>
                       </div>
                     </li>

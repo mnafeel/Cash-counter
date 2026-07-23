@@ -1,0 +1,114 @@
+.bill-reminder-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.bill-reminder-control--compact {
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.bill-reminder-control-kind {
+  font-size: 0.54rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cream-dim);
+}
+
+.bill-reminder-control-datetime {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.bill-reminder-control-pick {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.bill-reminder-control-pick span {
+  font-size: 0.52rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+
+.bill-reminder-control-pick input {
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.6rem;
+}
+
+.bill-reminder-control-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.bill-reminder-control-btn {
+  min-height: 26px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream);
+  font-size: 0.56rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bill-reminder-control-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.bill-reminder-control-btn--open {
+  flex: 1;
+  min-height: 30px;
+  font-size: 0.62rem;
+}
+
+.bill-reminder-control-btn--clear {
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+}
+
+.bill-reminder-control-status {
+  font-size: 0.54rem;
+  color: var(--cream-dim);
+  font-weight: 600;
+}
+
+.bill-reminder-control-status--due {
+  color: var(--warning, #f5c542);
+}
+
+.bill-reminder-control-note {
+  font-size: 0.52rem;
+  color: var(--cream-dim);
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.pending-bills-reminder {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: var(--warning, #f5c542);
+}
+
+.pending-bills-reminder--upcoming {
+  color: var(--cream-dim);
+}

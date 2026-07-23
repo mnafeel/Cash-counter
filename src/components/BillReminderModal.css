@@ -1,0 +1,201 @@
+.bill-reminder-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 8px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.bill-reminder-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(20, 10, 6, 0.72);
+  cursor: pointer;
+}
+
+.bill-reminder-modal-panel {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  max-height: min(92vh, 680px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--brown);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.bill-reminder-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.bill-reminder-modal-head h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--cream);
+}
+
+.bill-reminder-modal-head p {
+  margin: 4px 0 0;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.bill-reminder-modal-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  cursor: pointer;
+}
+
+.bill-reminder-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  min-height: 0;
+}
+
+.bill-reminder-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.bill-reminder-modal-section-title {
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cream);
+}
+
+.bill-reminder-modal-datetime {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.bill-reminder-modal-pick {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.bill-reminder-modal-pick span {
+  font-size: 0.54rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+
+.bill-reminder-modal-pick input {
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.72rem;
+}
+
+.bill-reminder-modal-current {
+  margin: 0;
+  font-size: 0.58rem;
+  color: var(--cream-dim);
+}
+
+.bill-reminder-modal-note {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bill-reminder-modal-note span {
+  font-size: 0.54rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+
+.bill-reminder-modal-note textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.68rem;
+  line-height: 1.35;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.bill-reminder-modal-preview {
+  margin: 0;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--brown-dark);
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+}
+
+.bill-reminder-modal-preview--active {
+  color: var(--warning, #f5c542);
+}
+
+.bill-reminder-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.bill-reminder-modal-btn {
+  min-height: 34px;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bill-reminder-modal-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.bill-reminder-modal-btn--primary {
+  background: var(--surface);
+}
+
+@media (min-width: 520px) {
+  .bill-reminder-modal-overlay {
+    align-items: center;
+  }
+}

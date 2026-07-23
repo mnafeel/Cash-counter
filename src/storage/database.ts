@@ -1,5 +1,5 @@
-import type { AppData, AppTheme, Expense, PayType, Sale, SupplierEntry, TransferDirection } from '../types'
-import { STORAGE_KEY } from '../types'
+import type { AppData, AppTheme, Expense, PayType, ReminderAlertSettings, Sale, SupplierEntry, TransferDirection, CustomerReminderMap } from '../types'
+import { DEFAULT_REMINDER_ALERTS, STORAGE_KEY } from '../types'
 import { collectSplitNameTargets } from '../utils/saleCustomerName'
 import { stripExpenseBillSuffix, isPurchaseExpense } from '../utils/expenseBillLabels'
 import {
@@ -8,6 +8,8 @@ import {
   type CreditPaymentInput,
 } from '../utils/purchaseHistory'
 import { notifyDataChanged } from '../firebase/sync'
+import { applyStoredCustomerReminderToSale, listOpenBillIdsForCustomer } from '../utils/customerReminders'
+import type { BillReminderKind } from '../utils/billReminders'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
@@ -102,13 +104,51 @@ export function addSupplierItem(data: AppData, rawName: string, item: string): A
   return next
 }
 
+function normalizeCustomerReminders(raw: unknown): CustomerReminderMap | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const map: CustomerReminderMap = {}
+  for (const [name, entry] of Object.entries(raw as CustomerReminderMap)) {
+    const trimmed = name.trim()
+    if (!trimmed || !entry || typeof entry !== 'object') continue
+    const creditReminderAt =
+      typeof entry.creditReminderAt === 'string' ? entry.creditReminderAt : undefined
+    const creditReminderNote =
+      typeof entry.creditReminderNote === 'string' ? entry.creditReminderNote.trim() || undefined : undefined
+    const chequeReminderAt =
+      typeof entry.chequeReminderAt === 'string' ? entry.chequeReminderAt : undefined
+    const chequeReminderNote =
+      typeof entry.chequeReminderNote === 'string' ? entry.chequeReminderNote.trim() || undefined : undefined
+    if (!creditReminderAt && !chequeReminderAt) continue
+    map[trimmed] = {
+      creditReminderAt,
+      creditReminderNote,
+      chequeReminderAt,
+      chequeReminderNote,
+    }
+  }
+  return Object.keys(map).length > 0 ? map : undefined
+}
+
 export function normalizeData(parsed: Partial<AppData>): AppData {
+  const alerts = parsed.reminderAlerts
   return {
     openingBalance: parsed.openingBalance ?? 0,
     openingBankBalance: parsed.openingBankBalance ?? 0,
     homePin: normalizePin(parsed.homePin, '0000'),
     theme: normalizeTheme(parsed.theme),
     suppliers: normalizeSuppliers(parsed.suppliers),
+    reminderAlerts: {
+      creditDaysBefore: Math.max(0, alerts?.creditDaysBefore ?? DEFAULT_REMINDER_ALERTS.creditDaysBefore),
+      chequeDaysBefore: Math.max(0, alerts?.chequeDaysBefore ?? DEFAULT_REMINDER_ALERTS.chequeDaysBefore),
+      alertIntervalDays: Math.max(1, alerts?.alertIntervalDays ?? DEFAULT_REMINDER_ALERTS.alertIntervalDays),
+      notificationShowSeconds: Math.max(
+        0,
+        alerts?.notificationShowSeconds ?? DEFAULT_REMINDER_ALERTS.notificationShowSeconds,
+      ),
+      notificationSoundEnabled:
+        alerts?.notificationSoundEnabled ?? DEFAULT_REMINDER_ALERTS.notificationSoundEnabled,
+    },
+    customerReminders: normalizeCustomerReminders(parsed.customerReminders),
     sales: parsed.sales ?? [],
     expenses: (parsed.expenses ?? []).map((e) => ({
       ...e,
@@ -252,13 +292,13 @@ export function addSale(
   const presetId = sale.id
   const { id: _id, ...rest } = sale
   const now = new Date().toISOString()
-  const newSale: Sale = {
+  const newSale: Sale = applyStoredCustomerReminderToSale(data, {
     ...rest,
     status: rest.status ?? 'paid',
     id: presetId ?? crypto.randomUUID(),
     createdAt: now,
     updatedAt: (rest.status ?? 'paid') === 'paid' ? now : rest.updatedAt,
-  }
+  })
   const next = { ...data, sales: [newSale, ...data.sales] }
   saveData(next)
   return next
@@ -588,18 +628,121 @@ export function updatePendingBill(
   return next
 }
 
-export function isApprovedChequeSale(sale: Sale): boolean {
-  if (sale.status !== 'paid') return false
-  if (sale.payType === 'cheque') return true
-  if (sale.payType === 'split' && sale.chequeApproved && (sale.chequeAmount ?? 0) > 0) {
-    return true
+export function setSaleReminder(
+  data: AppData,
+  id: string,
+  reminderAt: string | null,
+  reminderNote?: string | null,
+): AppData {
+  const sale = data.sales.find((s) => s.id === id)
+  if (!sale || sale.status !== 'pending') return data
+
+  const next: AppData = {
+    ...data,
+    sales: data.sales.map((s) =>
+      s.id === id
+        ? {
+            ...s,
+            reminderAt: reminderAt ?? undefined,
+            reminderNote: reminderAt ? reminderNote?.trim() || undefined : undefined,
+          }
+        : s,
+    ),
   }
-  return false
+  saveData(next)
+  return next
+}
+
+export function setCustomerReminder(
+  data: AppData,
+  customerName: string,
+  kind: Extract<BillReminderKind, 'credit' | 'cheque'>,
+  reminderAt: string | null,
+  reminderNote?: string | null,
+): AppData {
+  const trimmed = customerName.trim()
+  if (!trimmed) return data
+
+  const trimmedNote = reminderNote?.trim() || undefined
+
+  const existing = { ...(data.customerReminders ?? {}) }
+  const entry = { ...(existing[trimmed] ?? {}) }
+  if (kind === 'credit') {
+    if (reminderAt) {
+      entry.creditReminderAt = reminderAt
+      entry.creditReminderNote = trimmedNote
+    } else {
+      delete entry.creditReminderAt
+      delete entry.creditReminderNote
+    }
+  } else {
+    if (reminderAt) {
+      entry.chequeReminderAt = reminderAt
+      entry.chequeReminderNote = trimmedNote
+    } else {
+      delete entry.chequeReminderAt
+      delete entry.chequeReminderNote
+    }
+  }
+
+  if (!entry.creditReminderAt && !entry.chequeReminderAt) delete existing[trimmed]
+  else existing[trimmed] = entry
+
+  let next: AppData = {
+    ...data,
+    customerReminders: Object.keys(existing).length > 0 ? existing : undefined,
+  }
+
+  const billIds = new Set(listOpenBillIdsForCustomer(next, trimmed, kind))
+  if (billIds.size > 0) {
+    next = {
+      ...next,
+      sales: next.sales.map((s) =>
+        billIds.has(s.id)
+          ? {
+              ...s,
+              reminderAt: reminderAt ?? undefined,
+              reminderNote: reminderAt ? trimmedNote : undefined,
+            }
+          : s,
+      ),
+    }
+  }
+
+  saveData(next)
+  return next
+}
+
+export function setReminderAlertSettings(
+  data: AppData,
+  settings: ReminderAlertSettings,
+): AppData {
+  const next: AppData = {
+    ...data,
+    reminderAlerts: {
+      creditDaysBefore: Math.max(0, settings.creditDaysBefore),
+      chequeDaysBefore: Math.max(0, settings.chequeDaysBefore),
+      alertIntervalDays: Math.max(1, settings.alertIntervalDays),
+      notificationShowSeconds: Math.max(0, settings.notificationShowSeconds),
+      notificationSoundEnabled: settings.notificationSoundEnabled,
+    },
+  }
+  saveData(next)
+  return next
+}
+
+export function isApprovedChequeSale(sale: Sale): boolean {
+  return getApprovedChequeAmount(sale) > 0
 }
 
 export function getApprovedChequeAmount(sale: Sale): number {
-  if (sale.payType === 'split') return sale.chequeAmount ?? 0
-  return sale.chequeAmount ?? sale.billAmount
+  if (sale.chequeApproved && (sale.chequeAmount ?? 0) > 0) {
+    return sale.chequeAmount ?? 0
+  }
+  if (sale.status === 'paid' && sale.payType === 'cheque') {
+    return sale.chequeAmount ?? sale.billAmount
+  }
+  return 0
 }
 
 export function listApprovedCheques(data: AppData): Sale[] {
@@ -615,6 +758,16 @@ export function listApprovedCheques(data: AppData): Sale[] {
 export function listPendingCreditSales(data: AppData): Sale[] {
   return data.sales
     .filter(isPendingCreditSale)
+    .sort(
+      (a, b) =>
+        new Date(b.updatedAt ?? b.createdAt).getTime() -
+        new Date(a.updatedAt ?? a.createdAt).getTime(),
+    )
+}
+
+export function listPendingChequeSales(data: AppData): Sale[] {
+  return data.sales
+    .filter(isPendingChequeSale)
     .sort(
       (a, b) =>
         new Date(b.updatedAt ?? b.createdAt).getTime() -
@@ -661,6 +814,40 @@ export function cancelSaleCredit(
   })
 }
 
+/** Clear open cheque bill — deletes unpaid bills or finalizes partial collections. */
+export function cancelSaleCheque(
+  data: AppData,
+  id: string,
+  relatedSaleIds?: string[],
+): AppData {
+  const sale = data.sales.find((s) => s.id === id)
+  if (!sale || !isPendingChequeSale(sale)) return data
+
+  const collected = saleCollectedAmount(sale)
+  if (collected <= 0) {
+    return deleteSale(data, id, relatedSaleIds)
+  }
+
+  const cash = sale.cashAmount ?? 0
+  const bank = sale.bankAmount ?? 0
+  const cheque =
+    sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
+  const originalBillAmount = sale.originalBillAmount ?? sale.billAmount + collected
+
+  return collectPendingBill(data, id, {
+    billAmount: originalBillAmount,
+    originalBillAmount,
+    paidAmount: collected,
+    changeAmount: 0,
+    payType: payTypeFromCollectedTotals(cash, bank, cheque, 'cheque'),
+    cashAmount: cash || undefined,
+    bankAmount: bank || undefined,
+    chequeAmount: cheque || undefined,
+    chequeApproved: cheque > 0 ? true : undefined,
+    customerName: sale.customerName,
+  })
+}
+
 function revertPendingPayTypes(sale: Sale): { payType: PayType; pendingPayType: PayType } {
   if (sale.pendingPayType === 'credit') {
     return { payType: 'credit', pendingPayType: 'credit' }
@@ -673,11 +860,37 @@ export function cancelApprovedCheque(data: AppData, id: string): AppData {
   if (!sale || !isApprovedChequeSale(sale)) return data
 
   const now = new Date().toISOString()
+  const chequeAmt = getApprovedChequeAmount(sale)
+  if (chequeAmt <= 0) return data
+
+  if (sale.status === 'pending' && sale.chequeApproved) {
+    const cash = sale.cashAmount ?? 0
+    const bank = Math.max(0, (sale.bankAmount ?? 0) - chequeAmt)
+    const totalPaid = cash + bank
+    let next: AppData = {
+      ...data,
+      sales: data.sales.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              chequeAmount: undefined,
+              chequeApproved: undefined,
+              bankAmount: bank > 0 ? bank : undefined,
+              paidAmount: totalPaid,
+              updatedAt: now,
+            }
+          : s,
+      ),
+    }
+    const updated = next.sales.find((s) => s.id === id)
+    if (updated?.parentSplitId && isPendingCreditSale(updated)) {
+      next = syncParentSplitCreditAmount(next, updated, updated.billAmount)
+    }
+    saveData(next)
+    return next
+  }
 
   if (sale.payType === 'split') {
-    const chequeAmt = sale.chequeAmount ?? 0
-    if (chequeAmt <= 0) return data
-
     const bankOnly = Math.max(0, (sale.bankAmount ?? 0) - chequeAmt)
     const pendingCheque: Sale = {
       id: crypto.randomUUID(),
@@ -716,6 +929,9 @@ export function cancelApprovedCheque(data: AppData, id: string): AppData {
   }
 
   const revert = revertPendingPayTypes(sale)
+  const reopenDue = revert.pendingPayType === 'credit'
+    ? sale.originalBillAmount ?? sale.billAmount
+    : chequeAmt
   const next = {
     ...data,
     sales: data.sales.map((s) =>
@@ -725,11 +941,15 @@ export function cancelApprovedCheque(data: AppData, id: string): AppData {
             status: 'pending' as const,
             payType: revert.payType,
             pendingPayType: revert.pendingPayType,
+            billAmount: reopenDue,
+            originalBillAmount: s.originalBillAmount,
             paidAmount: 0,
             changeAmount: 0,
             chequeApproved: undefined,
             bankAmount: undefined,
-            chequeAmount: revert.payType === 'cheque' ? s.chequeAmount ?? s.billAmount : undefined,
+            cashAmount: undefined,
+            chequeAmount: revert.payType === 'cheque' ? reopenDue : undefined,
+            creditAmount: revert.pendingPayType === 'credit' ? reopenDue : undefined,
             updatedAt: now,
           }
         : s,
@@ -1045,7 +1265,10 @@ export function collectPendingBill(
               (s.payType === 'credit' || s.payType === 'cheque' ? s.payType : undefined),
             status: 'paid' as const,
             creditAmount: sale.payType === 'split' ? sale.creditAmount : undefined,
-            chequeApproved: sale.payType === 'split' ? sale.chequeApproved : undefined,
+            chequeApproved:
+              sale.payType === 'split' || sale.payType === 'cheque'
+                ? sale.chequeApproved ?? (sale.payType === 'cheque' ? true : undefined)
+                : undefined,
             updatedAt: now,
           }
         : s,

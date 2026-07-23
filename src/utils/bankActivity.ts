@@ -13,7 +13,11 @@ export type { CashDateFilter as BankDateFilter, CashActivityItem as BankActivity
 export { matchesCashDateFilter as matchesBankDateFilter }
 
 function saleActivityDate(sale: Sale): string {
-  if (sale.status === 'pending') return sale.createdAt
+  if (sale.status === 'pending') {
+    const bank = saleBankCollected(sale) + saleChequeToBankCollected(sale)
+    if (bank > 0 && sale.updatedAt) return sale.updatedAt
+    return sale.createdAt
+  }
   return sale.updatedAt ?? sale.createdAt
 }
 

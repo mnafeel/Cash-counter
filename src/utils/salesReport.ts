@@ -31,11 +31,26 @@ export interface SalesBillRow {
   billAmount: number
   collectedTotal: number
   creditPending: number
+  chequePending: number
   cashTotal: number
   bankTotal: number
+  chequeTotal: number
   customerName?: string
   payLabel: string
   detailLabel: string
+  groupId: string
+}
+
+export interface SalesBillSummary {
+  billCount: number
+  totalBills: number
+  billTotal: number
+  withCreditSales: number
+  cashTotal: number
+  bankTotal: number
+  chequeTotal: number
+  creditPending: number
+  chequePending: number
 }
 
 export function toInputDate(d: Date = new Date()): string {
@@ -316,46 +331,224 @@ export function buildSalesReport(
   return rows
 }
 
+function buildChildrenMap(sales: Sale[]): Map<string, Sale[]> {
+  const map = new Map<string, Sale[]>()
+  for (const sale of sales) {
+    if (!sale.parentSplitId) continue
+    const list = map.get(sale.parentSplitId) ?? []
+    list.push(sale)
+    map.set(sale.parentSplitId, list)
+  }
+  return map
+}
+
+function saleMatchesReportFilter(sale: Sale, filter?: SalesReportFilter): boolean {
+  const mode = filter?.dateMode ?? 'collected'
+  return isInDateRange(saleReportDate(sale, mode), filter)
+}
+
+function groupOriginalBillAmount(parent: Sale, children: Sale[]): number {
+  if (parent.originalBillAmount && parent.originalBillAmount > 0) return parent.originalBillAmount
+  const childOrig = children.find((c) => c.originalBillAmount && c.originalBillAmount > 0)
+  if (childOrig?.originalBillAmount) return childOrig.originalBillAmount
+  const childPendingCredit = children.reduce((sum, c) => sum + saleCreditPendingAmount(c), 0)
+  const parentCollected = parent.status !== 'pending' ? saleTotalCollected(parent) : 0
+  const childCollected = children.reduce((sum, c) => sum + saleCollectedAmount(c), 0)
+  if (childPendingCredit > 0 || parentCollected + childCollected > 0) {
+    return parent.billAmount + childPendingCredit + childCollected
+  }
+  return parent.billAmount + children.reduce((sum, c) => sum + c.billAmount, 0)
+}
+
+function groupCreditPending(parent: Sale, children: Sale[]): number {
+  return saleCreditPendingAmount(parent) + children.reduce((sum, c) => sum + saleCreditPendingAmount(c), 0)
+}
+
+function groupChequePending(parent: Sale, children: Sale[]): number {
+  return saleChequePendingAmount(parent) + children.reduce((sum, c) => sum + saleChequePendingAmount(c), 0)
+}
+
+function groupCustomerName(parent: Sale, children: Sale[]): string | undefined {
+  return parent.customerName?.trim() || children.find((c) => c.customerName?.trim())?.customerName?.trim()
+}
+
+function buildGroupedSalesBillDetailLabel(
+  parent: Sale,
+  billAmount: number,
+  collectedInPeriod: number,
+  creditPending: number,
+  chequePending: number,
+): string {
+  const parts: string[] = [`Bill ${formatMoney(billAmount)}`]
+  if (collectedInPeriod > 0) parts.push(`Paid ${formatMoney(collectedInPeriod)}`)
+  if (creditPending > 0) parts.push(`Credit ${formatMoney(creditPending)}`)
+  if (chequePending > 0) parts.push(`Cheque ${formatMoney(chequePending)}`)
+  if (parts.length > 1) return parts.join(' · ')
+  return buildSalesBillDetailLabel(parent)
+}
+
+function buildSingleSalesBillRow(sale: Sale, mode: SaleDateMode): SalesBillRow {
+  const date = saleReportDate(sale, mode)
+  const cashTotal = saleCashCollected(sale)
+  const bankTotal = saleBankCollected(sale)
+  const chequeTotal = saleChequeToBankCollected(sale)
+  const collected = cashTotal + bankTotal + chequeTotal
+  const billAmount = saleOriginalBillAmount(sale)
+  const creditPending = saleCreditPendingAmount(sale)
+  const chequePending = saleChequePendingAmount(sale)
+  return {
+    id: sale.id,
+    groupId: saleBillGroupId(sale),
+    date,
+    dateLabel: formatDate(date),
+    createdDate: sale.createdAt,
+    createdDateLabel: formatDate(sale.createdAt),
+    billAmount,
+    collectedTotal: collected,
+    creditPending,
+    chequePending,
+    cashTotal,
+    bankTotal,
+    chequeTotal,
+    customerName: sale.customerName,
+    payLabel: buildSalesBillDetailLabel(sale),
+    detailLabel: `Bill ${formatMoney(billAmount)} · ${buildSalesBillDetailLabel(sale)}`,
+  }
+}
+
+function buildGroupedSalesBillRow(
+  parent: Sale,
+  children: Sale[],
+  filter: SalesReportFilter | undefined,
+  mode: SaleDateMode,
+): SalesBillRow | null {
+  const members = [parent, ...children]
+  const inRange = members.filter((member) => saleMatchesReportFilter(member, filter))
+  if (inRange.length === 0) return null
+
+  const billAmount = groupOriginalBillAmount(parent, children)
+  const cashTotal = inRange.reduce((sum, member) => sum + saleCashCollected(member), 0)
+  const bankTotal = inRange.reduce((sum, member) => sum + saleBankCollected(member), 0)
+  const chequeTotal = inRange.reduce((sum, member) => sum + saleChequeToBankCollected(member), 0)
+  const collectedTotal = cashTotal + bankTotal + chequeTotal
+  const creditPending = groupCreditPending(parent, children)
+  const chequePending = groupChequePending(parent, children)
+  const date = inRange.reduce((latest, member) => {
+    const memberDate = saleReportDate(member, mode)
+    return !latest || new Date(memberDate).getTime() > new Date(latest).getTime() ? memberDate : latest
+  }, '')
+
+  return {
+    id: parent.id,
+    groupId: parent.id,
+    date,
+    dateLabel: formatDate(date),
+    createdDate: parent.createdAt,
+    createdDateLabel: formatDate(parent.createdAt),
+    billAmount,
+    collectedTotal,
+    creditPending,
+    chequePending,
+    cashTotal,
+    bankTotal,
+    chequeTotal,
+    customerName: groupCustomerName(parent, children),
+    payLabel: buildGroupedSalesBillDetailLabel(
+      parent,
+      billAmount,
+      collectedTotal,
+      creditPending,
+      chequePending,
+    ),
+    detailLabel: buildGroupedSalesBillDetailLabel(
+      parent,
+      billAmount,
+      collectedTotal,
+      creditPending,
+      chequePending,
+    ),
+  }
+}
+
+function sortSalesBillRows(rows: SalesBillRow[], sort: ReportSort): SalesBillRow[] {
+  return [...rows].sort((a, b) => {
+    const aTime = localDayTimestamp(a.date)
+    const bTime = localDayTimestamp(b.date)
+    if (sort === 'date-desc') return bTime - aTime || b.billAmount - a.billAmount
+    if (sort === 'date-asc') return aTime - bTime || a.billAmount - b.billAmount
+    if (sort === 'amount-desc') return b.collectedTotal - a.collectedTotal || bTime - aTime
+    return a.collectedTotal - b.collectedTotal || aTime - bTime
+  })
+}
+
 export function buildSalesBillList(
   data: AppData,
   sort: ReportSort,
   filter?: SalesReportFilter,
 ): SalesBillRow[] {
   const mode = filter?.dateMode ?? 'collected'
-  const rows = filteredReportSales(data, filter).map((sale) => {
-    const date = saleReportDate(sale, mode)
-    const collected = saleTotalCollected(sale)
-    const cashTotal = saleCashCollected(sale)
-    const bankTotal = saleBankCollected(sale) + saleChequeToBankCollected(sale)
-    const billAmount = saleOriginalBillAmount(sale)
-    const creditPending = saleCreditPendingAmount(sale)
-    return {
-      id: sale.id,
-      date,
-      dateLabel: formatDate(date),
-      createdDate: sale.createdAt,
-      createdDateLabel: formatDate(sale.createdAt),
-      billAmount,
-      collectedTotal: collected,
-      creditPending,
-      cashTotal,
-      bankTotal,
-      customerName: sale.customerName,
-      payLabel: buildSalesBillDetailLabel(sale),
-      detailLabel: `Bill ${formatMoney(billAmount)} · ${buildSalesBillDetailLabel(sale)}`,
+  const childrenByParent = buildChildrenMap(data.sales)
+  const consumedChildIds = new Set<string>()
+  const rows: SalesBillRow[] = []
+
+  for (const sale of data.sales) {
+    if (sale.parentSplitId) continue
+
+    const children = childrenByParent.get(sale.id) ?? []
+    const isSplitGroup = sale.payType === 'split' || children.length > 0
+
+    if (isSplitGroup) {
+      for (const child of children) consumedChildIds.add(child.id)
+      const row = buildGroupedSalesBillRow(sale, children, filter, mode)
+      if (row) rows.push(row)
+      continue
     }
-  })
 
-  rows.sort((a, b) => {
-    const aTime = localDayTimestamp(a.date)
-    const bTime = localDayTimestamp(b.date)
-    if (sort === 'date-desc') return bTime - aTime || b.billAmount - a.billAmount
-    if (sort === 'date-asc') return aTime - bTime || a.billAmount - b.billAmount
-    if (sort === 'amount-desc') return b.billAmount - a.billAmount || bTime - aTime
-    return a.billAmount - b.billAmount || aTime - bTime
-  })
+    if (!saleMatchesReportFilter(sale, filter)) continue
+    rows.push(buildSingleSalesBillRow(sale, mode))
+  }
 
-  return rows
+  for (const sale of data.sales) {
+    if (!sale.parentSplitId || consumedChildIds.has(sale.id)) continue
+    if (!saleMatchesReportFilter(sale, filter)) continue
+    rows.push(buildSingleSalesBillRow(sale, mode))
+  }
+
+  return sortSalesBillRows(rows, sort)
+}
+
+export function summarizeSalesBillRows(rows: SalesBillRow[]): SalesBillSummary {
+  const seenGroups = new Set<string>()
+  const summary = rows.reduce(
+    (acc, row) => {
+      acc.totalBills += row.collectedTotal
+      acc.cashTotal += row.cashTotal
+      acc.bankTotal += row.bankTotal
+      acc.chequeTotal += row.chequeTotal
+      acc.creditPending += row.creditPending
+      acc.chequePending += row.chequePending
+      if (!seenGroups.has(row.groupId)) {
+        seenGroups.add(row.groupId)
+        acc.billCount += 1
+        acc.billTotal += row.billAmount
+      }
+      return acc
+    },
+    {
+      billCount: 0,
+      totalBills: 0,
+      billTotal: 0,
+      withCreditSales: 0,
+      cashTotal: 0,
+      bankTotal: 0,
+      chequeTotal: 0,
+      creditPending: 0,
+      chequePending: 0,
+    },
+  )
+  summary.withCreditSales =
+    summary.totalBills + summary.creditPending + summary.chequePending
+  return summary
 }
 
 export function summarizeSales(rows: Pick<SalesPeriodRow, 'billCount' | 'totalBills' | 'cashTotal' | 'bankTotal'>[]) {
@@ -370,27 +563,23 @@ export function summarizeSales(rows: Pick<SalesPeriodRow, 'billCount' | 'totalBi
   )
 }
 
-export function getTodaySalesSummary(data: AppData) {
+export function getTodaySalesSummary(data: AppData): SalesBillSummary {
   const today = toInputDate()
   const filter: SalesReportFilter = { fromDate: today, toDate: today, dateMode: 'collected' }
-  const sales = filteredReportSales(data, filter)
-  const paidGroups = new Set(
-    filteredFullyPaidSales(data, filter).map((sale) => saleBillGroupId(sale)),
-  )
-
-  return {
-    billCount: paidGroups.size,
-    totalBills: sales.reduce((sum, sale) => sum + saleTotalCollected(sale), 0),
-    cashTotal: sales.reduce((sum, sale) => sum + saleCashCollected(sale), 0),
-    bankTotal: sales.reduce(
-      (sum, sale) => sum + saleBankCollected(sale) + saleChequeToBankCollected(sale),
-      0,
-    ),
-    creditPending: sales.reduce((sum, sale) => sum + saleCreditPendingAmount(sale), 0),
-    billTotal: sales.reduce((sum, sale) => sum + saleOriginalBillAmount(sale), 0),
-  }
+  return summarizeSalesBillRows(buildSalesBillList(data, 'date-desc', filter))
 }
 
-export function formatSalesBreakdown(cash: number, bank: number): string {
-  return `💵 ${formatMoney(cash)} · 🏦 ${formatMoney(bank)}`
+export function formatSalesBreakdown(
+  cash: number,
+  bank: number,
+  credit = 0,
+  cheque = 0,
+): string {
+  const parts = [
+    `💵 ${formatMoney(cash)}`,
+    `🏦 ${formatMoney(bank)}`,
+    `💳 ${formatMoney(credit)}`,
+    `🧾 ${formatMoney(cheque)}`,
+  ]
+  return parts.join(' · ')
 }
