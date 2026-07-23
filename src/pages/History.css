@@ -848,6 +848,14 @@
   line-height: 1.4;
 }
 
+.history-receipt-edit-btn {
+  width: 100%;
+  min-height: 36px;
+  margin-top: 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
 .history-receipt-foot {
   display: flex;
   align-items: center;

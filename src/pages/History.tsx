@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import { formatDate, formatMoney } from '../utils/format'
 import { buildPurchaseCreditItems } from '../utils/purchaseHistory'
+import { counterBillPath, resolveHistoryItemBillId } from '../utils/counterBillRoute'
 import {
   buildHistoryItems,
   getHistoryPaymentLabel,
@@ -300,6 +301,22 @@ export default function History() {
     cancelEdit()
   }
 
+  function openSaleBillEditor(item: HistoryItem) {
+    const billId = resolveHistoryItemBillId(item)
+    if (!billId) return
+    setReceiptItem(null)
+    navigate(counterBillPath(billId))
+  }
+
+  function handleEditClick(item: HistoryItem, e: MouseEvent) {
+    e.stopPropagation()
+    if (item.type === 'sale') {
+      openSaleBillEditor(item)
+      return
+    }
+    startEdit(item)
+  }
+
   function openPurchaseCreditUpdate(expenseId: string) {
     setPurchaseCreditListOpen(false)
     setReceiptItem(null)
@@ -413,6 +430,10 @@ export default function History() {
                             type="button"
                             className="history-item-name history-item-name--empty history-item-name--add"
                             onClick={(e) => {
+                              if (item.type === 'sale') {
+                                handleEditClick(item, e)
+                                return
+                              }
                               e.stopPropagation()
                               startEdit(item)
                             }}
@@ -423,11 +444,14 @@ export default function History() {
                         <button
                           type="button"
                           className="history-name-edit-btn"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            startEdit(item)
-                          }}
-                          aria-label={item.name ? `Edit ${nameLabel(item.type)}` : `Add ${nameLabel(item.type)}`}
+                          onClick={(e) => handleEditClick(item, e)}
+                          aria-label={
+                            item.type === 'sale'
+                              ? 'Edit bill'
+                              : item.name
+                                ? `Edit ${nameLabel(item.type)}`
+                                : `Add ${nameLabel(item.type)}`
+                          }
                         >
                           ✎
                         </button>
@@ -478,7 +502,7 @@ export default function History() {
           {showPurchaseHistory
             ? `${combinedItems.length} records · time order · ${purchaseItems.length} paid purchases (${formatMoney(purchasePaidTotal)})`
             : `${normalItems.length} records`}
-          {' · '}tap for receipt · ✎ to edit name
+          {' · '}tap for receipt · ✎ open bill on Counter
         </p>
       </div>
 
@@ -890,6 +914,16 @@ export default function History() {
               </ul>
               )
             })()}
+
+            {receiptItem.type === 'sale' ? (
+              <button
+                type="button"
+                className="btn btn-secondary history-receipt-edit-btn"
+                onClick={() => openSaleBillEditor(receiptItem)}
+              >
+                Edit bill on Counter
+              </button>
+            ) : null}
 
             <div className="history-receipt-foot">
               <span>{getHistoryTypeLabel(receiptItem.type)}</span>

@@ -869,6 +869,16 @@ html[data-screen='tablet'] .settings-info {
   letter-spacing: 0.04em;
 }
 
+.settings-bill-edit-datetime {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.settings-bill-edit-field input[type='time'] {
+  color-scheme: dark;
+}
+
 .settings-bill-edit-field input,
 .settings-bill-edit-field select {
   padding: 6px 8px;

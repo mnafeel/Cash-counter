@@ -538,15 +538,30 @@ export function updatePendingBill(
                 ? updates.chequeAmount
                 : updates.payType === 'split'
                   ? updates.chequeAmount
-                  : updates.payType === 'credit' || s.payType === 'credit'
-                    ? s.chequeAmount
-                    : undefined,
+                  : updates.payType === 'cheque' ||
+                      (updates.payType == null &&
+                        (s.payType === 'cheque' || s.pendingPayType === 'cheque'))
+                    ? updates.billAmount
+                    : updates.payType === 'credit' || s.payType === 'credit'
+                      ? s.chequeAmount
+                      : undefined,
             creditAmount:
-              updates.payType === 'split'
+              updates.creditAmount !== undefined
                 ? updates.creditAmount
-                : updates.payType === 'credit' || s.payType === 'credit'
-                  ? updates.billAmount
-                  : undefined,
+                : updates.payType === 'split'
+                  ? updates.creditAmount
+                  : updates.payType === 'credit' ||
+                      (updates.payType == null &&
+                        (s.payType === 'credit' || s.pendingPayType === 'credit'))
+                    ? updates.billAmount
+                    : undefined,
+            chequeApproved:
+              updates.payType === 'cheque' ||
+              (updates.payType == null && (s.payType === 'cheque' || s.pendingPayType === 'cheque'))
+                ? s.chequeApproved
+                : updates.payType === 'credit'
+                  ? undefined
+                  : s.chequeApproved,
             paidAmount: updates.paidAmount ?? s.paidAmount,
             updatedAt: new Date().toISOString(),
           }
@@ -760,6 +775,68 @@ export function isPendingCreditSale(sale: Sale): boolean {
     sale.status === 'pending' &&
     (sale.pendingPayType === 'credit' || sale.payType === 'credit')
   )
+}
+
+export function isPendingChequeSale(sale: Sale): boolean {
+  return (
+    sale.status === 'pending' &&
+    (sale.pendingPayType === 'cheque' || sale.payType === 'cheque')
+  )
+}
+
+export function isPendingBalanceSale(sale: Sale): boolean {
+  return isPendingCreditSale(sale) || isPendingChequeSale(sale)
+}
+
+export type BillCreatePayType = Extract<PayType, 'cash' | 'bank' | 'credit' | 'cheque'>
+
+export function saleBillCreatePayType(sale: Sale): BillCreatePayType {
+  if (sale.pendingPayType === 'credit' || (sale.status === 'pending' && sale.payType === 'credit')) {
+    return 'credit'
+  }
+  if (sale.pendingPayType === 'cheque' || (sale.status === 'pending' && sale.payType === 'cheque')) {
+    return 'cheque'
+  }
+  if (sale.payType === 'bank') return 'bank'
+  if (sale.payType === 'cheque') return 'cheque'
+  if (sale.payType === 'credit') return 'credit'
+  return 'cash'
+}
+
+function applyPaidBillPayType(sale: Sale, payType: BillCreatePayType, billAmount: number): Sale {
+  const amount = billAmount
+  const paidAmount = sale.paidAmount > 0 ? sale.paidAmount : amount
+  const base: Sale = {
+    ...sale,
+    payType,
+    billAmount: amount,
+    paidAmount,
+    pendingPayType: undefined,
+    status: 'paid',
+    cashAmount: undefined,
+    bankAmount: undefined,
+    chequeAmount: undefined,
+    creditAmount: undefined,
+    chequeApproved: undefined,
+    updatedAt: new Date().toISOString(),
+  }
+
+  if (payType === 'cash') {
+    return { ...base, changeAmount: Math.max(0, paidAmount - amount) }
+  }
+  if (payType === 'bank') {
+    return { ...base, bankAmount: amount, changeAmount: 0 }
+  }
+  if (payType === 'cheque') {
+    return {
+      ...base,
+      bankAmount: amount,
+      chequeAmount: amount,
+      chequeApproved: true,
+      changeAmount: 0,
+    }
+  }
+  return { ...base, changeAmount: 0 }
 }
 
 function isCreditPendingSale(sale: Sale): boolean {
@@ -1023,6 +1100,7 @@ export function updateSaleBill(
     billAmount?: number
     originalBillAmount?: number
     paidCollected?: number
+    payType?: BillCreatePayType
     pendingPayType?: Extract<PayType, 'credit' | 'cheque'>
     createdAt?: string
   },
@@ -1040,10 +1118,35 @@ export function updateSaleBill(
       ? updates.customerName.trim() || undefined
       : sale.customerName
 
+  const targetPayType = updates.payType ?? updates.pendingPayType
+
   if (sale.status === 'pending') {
-    const pendingPayType = updates.pendingPayType ?? sale.pendingPayType ?? sale.payType
-    const payType = updates.pendingPayType ?? sale.payType
-    const isCredit = isPendingCreditSale(sale)
+    if (targetPayType === 'cash' || targetPayType === 'bank') {
+      const total =
+        updates.originalBillAmount != null && updates.originalBillAmount > 0
+          ? updates.originalBillAmount
+          : updates.billAmount != null && updates.billAmount > 0
+            ? updates.billAmount
+            : sale.originalBillAmount ?? sale.billAmount
+      return collectPendingBill(working, id, {
+        billAmount: total,
+        originalBillAmount: total,
+        paidAmount: total,
+        changeAmount: 0,
+        payType: targetPayType,
+        cashAmount: targetPayType === 'cash' ? total : undefined,
+        bankAmount: targetPayType === 'bank' ? total : undefined,
+        customerName,
+      })
+    }
+
+    const pendingPayType =
+      targetPayType ??
+      updates.pendingPayType ??
+      sale.pendingPayType ??
+      sale.payType
+    const payType = targetPayType ?? updates.pendingPayType ?? sale.payType
+    const isBalance = isPendingBalanceSale(sale) || payType === 'credit' || payType === 'cheque'
 
     let billAmount =
       updates.billAmount != null && updates.billAmount >= 0
@@ -1058,8 +1161,9 @@ export function updateSaleBill(
     let cashAmount = sale.cashAmount
     let bankAmount = sale.bankAmount
     let chequeAmount = sale.chequeAmount
+    let creditAmount: number | undefined
 
-    if (isCredit && updates.paidCollected != null && updates.paidCollected >= 0) {
+    if (isBalance && updates.paidCollected != null && updates.paidCollected >= 0) {
       const paid = Math.min(updates.paidCollected, originalBillAmount)
       paidAmount = paid
       if (paid !== saleCollectedAmount(sale)) {
@@ -1072,19 +1176,38 @@ export function updateSaleBill(
       }
     }
 
-    if (isCredit && updates.originalBillAmount != null && updates.originalBillAmount > 0) {
+    if (isBalance && updates.originalBillAmount != null && updates.originalBillAmount > 0) {
       originalBillAmount = updates.originalBillAmount
       if (updates.paidCollected == null && updates.billAmount == null) {
         billAmount = Math.max(0, originalBillAmount - saleCollectedAmount(sale))
       }
     }
 
-    if (isCredit && updates.billAmount != null && updates.billAmount >= 0) {
+    if (isBalance && updates.billAmount != null && updates.billAmount >= 0) {
       billAmount = updates.billAmount
       if (updates.originalBillAmount == null && updates.paidCollected == null) {
         const collected = saleCollectedAmount(sale)
         originalBillAmount = Math.max(billAmount + collected, billAmount)
       }
+    }
+
+    const resolvedPayType =
+      payType === 'credit' || payType === 'cheque'
+        ? payType
+        : sale.payType === 'credit' || sale.payType === 'cheque'
+          ? sale.payType
+          : sale.payType
+    const resolvedPending =
+      pendingPayType === 'credit' || pendingPayType === 'cheque'
+        ? pendingPayType
+        : sale.pendingPayType
+
+    if (resolvedPayType === 'credit') {
+      creditAmount = billAmount
+      chequeAmount = undefined
+    } else if (resolvedPayType === 'cheque') {
+      creditAmount = undefined
+      chequeAmount = billAmount
     }
 
     return updatePendingBill(working, id, {
@@ -1095,17 +1218,50 @@ export function updateSaleBill(
       cashAmount,
       bankAmount,
       chequeAmount,
-      payType:
-        payType === 'credit' || payType === 'cheque'
-          ? payType
-          : sale.payType === 'credit' || sale.payType === 'cheque'
-            ? sale.payType
-            : sale.payType,
-      pendingPayType:
-        pendingPayType === 'credit' || pendingPayType === 'cheque'
-          ? pendingPayType
-          : sale.pendingPayType,
+      creditAmount,
+      payType: resolvedPayType,
+      pendingPayType: resolvedPending,
     })
+  }
+
+  if (targetPayType) {
+    const billAmount =
+      updates.billAmount != null && updates.billAmount > 0
+        ? updates.billAmount
+        : sale.billAmount
+    const now = new Date().toISOString()
+    const nameTargets = new Set<string>()
+    for (const saleId of collectSplitNameTargets(working, id)) nameTargets.add(saleId)
+    if (relatedSaleIds) {
+      for (const saleId of relatedSaleIds) {
+        if (working.sales.some((s) => s.id === saleId)) {
+          for (const relatedId of collectSplitNameTargets(working, saleId)) {
+            nameTargets.add(relatedId)
+          }
+        }
+      }
+    }
+    if (nameTargets.size === 0) nameTargets.add(id)
+
+    const next = {
+      ...working,
+      sales: working.sales.map((s) => {
+        if (!nameTargets.has(s.id) && s.id !== id) return s
+        if (s.id !== id) {
+          return customerName !== undefined
+            ? { ...s, customerName, updatedAt: now }
+            : s
+        }
+        let patched = applyPaidBillPayType(s, targetPayType, billAmount)
+        if (customerName !== undefined) patched = { ...patched, customerName }
+        if (updates.originalBillAmount != null && updates.originalBillAmount > 0) {
+          patched = { ...patched, originalBillAmount: updates.originalBillAmount }
+        }
+        return patched
+      }),
+    }
+    saveData(next)
+    return next
   }
 
   const billAmount =

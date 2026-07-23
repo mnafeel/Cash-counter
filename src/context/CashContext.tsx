@@ -31,6 +31,7 @@ import {
   collectPendingBill,
   deleteExpense,
   deleteSale,
+  type BillCreatePayType,
   getBankBalance,
   getCurrentBalance,
   getPendingBills,
@@ -216,6 +217,7 @@ interface CashContextValue {
       billAmount?: number
       originalBillAmount?: number
       paidCollected?: number
+      payType?: BillCreatePayType
       pendingPayType?: Extract<PayType, 'credit' | 'cheque'>
       createdAt?: string
     },
@@ -666,6 +668,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         billAmount?: number
         originalBillAmount?: number
         paidCollected?: number
+        payType?: BillCreatePayType
         pendingPayType?: Extract<PayType, 'credit' | 'cheque'>
         createdAt?: string
       },

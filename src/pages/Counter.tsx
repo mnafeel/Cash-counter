@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
@@ -152,6 +153,7 @@ type SavedAction = 'collect' | 'pending' | null
 
 export default function Counter() {
   const { recordSale, updatePendingSale, collectPendingSale, collectCreditPayment, pendingBills, data } = useCash()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [billStr, setBillStr] = useState('')
   const [giveStr, setGiveStr] = useState('')
   const [paidStr, setPaidStr] = useState('')
@@ -191,6 +193,7 @@ export default function Counter() {
   const [pendingSectionFocus, setPendingSectionFocus] = useState(false)
   const [highlightedPendingIndex, setHighlightedPendingIndex] = useState<number | null>(null)
   const customerNameInputRef = useRef<HTMLInputElement>(null)
+  const creditReloadAfterCollectRef = useRef<string | null>(null)
   const pendingPanelRef = useRef<HTMLElement>(null)
   const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
   const nameSuggestionsListRef = useRef<HTMLUListElement>(null)
@@ -709,8 +712,7 @@ export default function Counter() {
     billAmount > 0 &&
     (collectingCreditId
       ? payType === 'split'
-        ? creditCollectDisplayAmount === 0 &&
-          (cashSplitAmount > 0 || bankSplitAmount > 0 || chequeSplitAmount > 0) &&
+        ? (cashSplitAmount > 0 || bankSplitAmount > 0 || chequeSplitAmount > 0) &&
           (cashSplitAmount === 0 || giveAmount >= cashSplitAmount)
         : payType === 'cash'
           ? paymentStep && paidAmount > 0 && giveAmount >= paidAmount
@@ -1677,8 +1679,8 @@ export default function Counter() {
         )
       } else {
         applyPendingCreditPaidBreakdown(bill)
-        setPayType('cash')
-        setActiveField('paid')
+        setPayType('split')
+        setActiveField('cashSplit')
       }
 
       setCollectingCreditId(bill.id)
@@ -1803,6 +1805,110 @@ export default function Counter() {
     setPendingSectionFocus(false)
     setHighlightedPendingIndex(null)
   }
+
+  function loadPaidBill(bill: Sale) {
+    const amount = bill.originalBillAmount ?? bill.billAmount
+    setChequeListOpen(false)
+    setCreditListOpen(false)
+    setHighlightedChequeIndex(-1)
+    setHighlightedCreditIndex(-1)
+    setCollectingCreditId(null)
+    setCollectingChequeId(null)
+    setCreditCollectDue(0)
+    setChequeCollectDue(0)
+    setChequeCollectCreditMode(false)
+    setBalanceDueAmount(null)
+    setOriginalBillHint(null)
+    setLoadedPendingId(bill.id)
+    setCustomerName(getSaleCustomerName(bill, data.sales) ?? '')
+    setPaymentStep(true)
+    setSavedAction(null)
+    setGiveStr('')
+    setPaidStr('')
+    setRoundOffAmount(null)
+    clearSplitCreditPaidBreakdown()
+    setSplitChequeApprovedAmount(0)
+    setSplitSiblingChequePending(0)
+    setSplitSiblingCreditPending(0)
+    setSiblingChequePendingId(null)
+
+    if (bill.payType === 'split') {
+      const childPending = findSplitChildPending(data.sales, bill.id)
+      setBillStr(String(amount))
+      setPayType('split')
+      setCashSplitStr(bill.cashAmount ? formatSplitPart(bill.cashAmount) : '')
+      if (bill.chequeApproved && (bill.chequeAmount ?? 0) > 0) {
+        setSplitChequeApprovedAmount(bill.chequeAmount ?? 0)
+        setChequeSplitStr('')
+        const bankOnly = Math.max(0, (bill.bankAmount ?? 0) - (bill.chequeAmount ?? 0))
+        setBankSplitStr(bankOnly ? formatSplitPart(bankOnly) : '')
+      } else if (childPending.chequeId) {
+        setSplitChequeApprovedAmount(0)
+        setBankSplitStr(bill.bankAmount ? formatSplitPart(bill.bankAmount) : '')
+        setChequeSplitStr(formatSplitPart(childPending.chequeAmount))
+        setSiblingChequePendingId(childPending.chequeId)
+        setSplitSiblingChequePending(childPending.chequeAmount)
+      } else {
+        setSplitChequeApprovedAmount(0)
+        setBankSplitStr(bill.bankAmount ? formatSplitPart(bill.bankAmount) : '')
+        setChequeSplitStr(bill.chequeAmount ? formatSplitPart(bill.chequeAmount) : '')
+        setSiblingChequePendingId(null)
+        setSplitSiblingChequePending(0)
+      }
+      if (childPending.creditId) {
+        setCreditSplitStr(formatSplitPart(childPending.creditAmount))
+        setSplitSiblingCreditPending(childPending.creditAmount)
+      } else {
+        setCreditSplitStr(bill.creditAmount ? formatSplitPart(bill.creditAmount) : '')
+        setSplitSiblingCreditPending(0)
+      }
+      setActiveField('cashSplit')
+      return
+    }
+
+    setBillStr(String(amount))
+
+    if (bill.payType === 'bank') {
+      setPayType('bank')
+      setPaidStr(String(bill.billAmount))
+      setActiveField('paid')
+      return
+    }
+
+    if (bill.payType === 'cheque') {
+      setPayType('cheque')
+      setPaidStr(String(bill.chequeAmount ?? bill.billAmount))
+      setActiveField('paid')
+      return
+    }
+
+    const paid = bill.paidAmount > 0 ? bill.paidAmount : bill.billAmount
+    setPayType('cash')
+    setPaidStr(String(paid))
+    setGiveStr(String(paid))
+    setActiveField('give')
+  }
+
+  function loadSaleBill(bill: Sale) {
+    if (bill.status === 'pending') {
+      loadPendingBill(bill)
+      return
+    }
+    loadPaidBill(bill)
+  }
+
+  function openBillById(billId: string) {
+    const bill = data.sales.find((sale) => sale.id === billId)
+    if (!bill) return
+    loadSaleBill(bill)
+  }
+
+  useEffect(() => {
+    const billId = searchParams.get('bill')
+    if (!billId) return
+    openBillById(billId)
+    setSearchParams({}, { replace: true })
+  }, [searchParams, data.sales, setSearchParams])
 
   function clearPendingSection() {
     setPendingSectionFocus(false)
@@ -2057,8 +2163,7 @@ export default function Counter() {
 
     if (activeCreditCollectId) {
       if (recordCreditCollection(name, activeCreditCollectId)) {
-        setSavedAction('collect')
-        setTimeout(resetForm, 900)
+        finishCreditCollection(activeCreditCollectId)
         return
       }
       updateCreditPendingBill(activeCreditCollectId, name)
@@ -2351,6 +2456,31 @@ export default function Counter() {
     return true
   }
 
+  function finishCreditCollection(creditId: string) {
+    setSavedAction('collect')
+    creditReloadAfterCollectRef.current = creditId
+  }
+
+  useEffect(() => {
+    const creditId = creditReloadAfterCollectRef.current
+    if (!creditId) return
+
+    const bill = data.sales.find((sale) => sale.id === creditId)
+    if (!bill) return
+
+    creditReloadAfterCollectRef.current = null
+
+    if (bill.status === 'pending' && isCreditPendingBill(bill)) {
+      const timer = window.setTimeout(() => {
+        loadPendingBill(bill)
+      }, 700)
+      return () => window.clearTimeout(timer)
+    }
+
+    const timer = window.setTimeout(resetForm, 700)
+    return () => window.clearTimeout(timer)
+  }, [data.sales])
+
   function handleSavePending() {
     if (!canSavePending) return
 
@@ -2359,8 +2489,7 @@ export default function Counter() {
 
     if (activeCreditCollectId) {
       if (recordCreditCollection(name, activeCreditCollectId)) {
-        setSavedAction('collect')
-        setTimeout(resetForm, 900)
+        finishCreditCollection(activeCreditCollectId)
         return
       }
       updateCreditPendingBill(activeCreditCollectId, name)
@@ -2401,8 +2530,7 @@ export default function Counter() {
 
     if (loadedBill?.status === 'pending' && isCreditPendingBill(loadedBill)) {
       if (recordCreditCollection(name, loadedBill.id)) {
-        setSavedAction('collect')
-        setTimeout(resetForm, 900)
+        finishCreditCollection(loadedBill.id)
         return
       }
       updateCreditPendingBill(loadedBill.id, name)
@@ -2455,8 +2583,7 @@ export default function Counter() {
 
     if (activeCreditCollectId) {
       if (recordCreditCollection(name, activeCreditCollectId)) {
-        setSavedAction('collect')
-        setTimeout(resetForm, 900)
+        finishCreditCollection(activeCreditCollectId)
       }
       return
     }
