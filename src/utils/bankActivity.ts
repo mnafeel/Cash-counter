@@ -1,6 +1,6 @@
 import type { AppData, Expense, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
-import { saleBankCollected } from './salesReport'
+import { saleBankCollected, saleChequeToBankCollected } from './salesReport'
 import {
   cashClosingLabel,
   cashOpeningLabel,
@@ -18,16 +18,29 @@ function saleActivityDate(sale: Sale): string {
 }
 
 function pushSaleItems(items: CashActivityItem[], sale: Sale) {
+  const date = saleActivityDate(sale)
   const bank = saleBankCollected(sale)
-  if (!(bank > 0)) return
-  items.push({
-    id: `sale-${sale.id}`,
-    label: 'Bill · bank collected',
-    amount: bank,
-    direction: 'in',
-    date: saleActivityDate(sale),
-    name: sale.customerName,
-  })
+  if (bank > 0) {
+    items.push({
+      id: `sale-${sale.id}-bank`,
+      label: 'Bill · bank collected',
+      amount: bank,
+      direction: 'in',
+      date,
+      name: sale.customerName,
+    })
+  }
+  const cheque = saleChequeToBankCollected(sale)
+  if (cheque > 0) {
+    items.push({
+      id: `sale-${sale.id}-cheque`,
+      label: 'Bill · cheque collected',
+      amount: cheque,
+      direction: 'in',
+      date,
+      name: sale.customerName,
+    })
+  }
 }
 
 function bankOutLabel(expense: Expense, kind: 'expense' | 'cheque' | 'bank'): string {

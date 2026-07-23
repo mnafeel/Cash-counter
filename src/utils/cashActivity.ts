@@ -81,17 +81,6 @@ function pushSaleItems(items: CashActivityItem[], sale: Sale) {
       name: sale.customerName,
     })
   }
-  const bank = saleBankCollected(sale) + saleChequeToBankCollected(sale)
-  if (bank > 0) {
-    items.push({
-      id: `sale-${sale.id}-bank`,
-      label: 'Bill · bank collected',
-      amount: bank,
-      direction: 'in',
-      date,
-      name: sale.customerName,
-    })
-  }
 }
 
 function expenseOutLabel(expense: Expense): string {
