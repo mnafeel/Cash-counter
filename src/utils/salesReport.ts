@@ -26,11 +26,16 @@ export interface SalesBillRow {
   id: string
   date: string
   dateLabel: string
+  createdDate: string
+  createdDateLabel: string
   billAmount: number
+  collectedTotal: number
+  creditPending: number
   cashTotal: number
   bankTotal: number
   customerName?: string
   payLabel: string
+  detailLabel: string
 }
 
 export function toInputDate(d: Date = new Date()): string {
@@ -95,6 +100,59 @@ function filteredReportSales(data: AppData, filter?: SalesReportFilter): Sale[] 
 function filteredFullyPaidSales(data: AppData, filter?: SalesReportFilter): Sale[] {
   const mode = filter?.dateMode ?? 'collected'
   return paidSales(data).filter((sale) => isInDateRange(saleReportDate(sale, mode), filter))
+}
+
+function isCreditPendingSale(sale: Sale): boolean {
+  return (
+    sale.status === 'pending' &&
+    (sale.payType === 'credit' || sale.pendingPayType === 'credit')
+  )
+}
+
+function isChequePendingSale(sale: Sale): boolean {
+  return (
+    sale.status === 'pending' &&
+    (sale.payType === 'cheque' || sale.pendingPayType === 'cheque')
+  )
+}
+
+export function saleOriginalBillAmount(sale: Sale): number {
+  const collected = saleCollectedAmount(sale)
+  if (sale.originalBillAmount && sale.originalBillAmount > 0) return sale.originalBillAmount
+  if (isCreditPendingSale(sale) || isChequePendingSale(sale)) {
+    return sale.billAmount + collected
+  }
+  return sale.billAmount
+}
+
+export function saleCreditPendingAmount(sale: Sale): number {
+  if (!isCreditPendingSale(sale)) return 0
+  return sale.billAmount
+}
+
+export function saleChequePendingAmount(sale: Sale): number {
+  if (!isChequePendingSale(sale)) return 0
+  return sale.billAmount
+}
+
+function buildSalesBillDetailLabel(sale: Sale): string {
+  const collected = saleTotalCollected(sale)
+  const creditPending = saleCreditPendingAmount(sale)
+  const chequePending = saleChequePendingAmount(sale)
+  const parts: string[] = []
+
+  if (collected > 0) {
+    parts.push(`Paid ${formatMoney(collected)}`)
+  }
+  if (creditPending > 0) {
+    parts.push(`Credit ${formatMoney(creditPending)}`)
+  }
+  if (chequePending > 0) {
+    parts.push(`Cheque ${formatMoney(chequePending)}`)
+  }
+
+  if (parts.length > 0) return parts.join(' · ')
+  return salePayLabel(sale)
 }
 
 function salePayLabel(sale: Sale): string {
@@ -267,18 +325,24 @@ export function buildSalesBillList(
   const rows = filteredReportSales(data, filter).map((sale) => {
     const date = saleReportDate(sale, mode)
     const collected = saleTotalCollected(sale)
+    const cashTotal = saleCashCollected(sale)
+    const bankTotal = saleBankCollected(sale) + saleChequeToBankCollected(sale)
+    const billAmount = saleOriginalBillAmount(sale)
+    const creditPending = saleCreditPendingAmount(sale)
     return {
       id: sale.id,
       date,
       dateLabel: formatDate(date),
-      billAmount: sale.originalBillAmount ?? sale.billAmount,
-      cashTotal: saleCashCollected(sale),
-      bankTotal: saleBankCollected(sale) + saleChequeToBankCollected(sale),
+      createdDate: sale.createdAt,
+      createdDateLabel: formatDate(sale.createdAt),
+      billAmount,
+      collectedTotal: collected,
+      creditPending,
+      cashTotal,
+      bankTotal,
       customerName: sale.customerName,
-      payLabel:
-        collected > 0 && (sale.originalBillAmount ?? sale.billAmount) !== collected
-          ? `${salePayLabel(sale)} · Collected ${formatMoney(collected)}`
-          : salePayLabel(sale),
+      payLabel: buildSalesBillDetailLabel(sale),
+      detailLabel: `Bill ${formatMoney(billAmount)} · ${buildSalesBillDetailLabel(sale)}`,
     }
   })
 
@@ -322,6 +386,8 @@ export function getTodaySalesSummary(data: AppData) {
       (sum, sale) => sum + saleBankCollected(sale) + saleChequeToBankCollected(sale),
       0,
     ),
+    creditPending: sales.reduce((sum, sale) => sum + saleCreditPendingAmount(sale), 0),
+    billTotal: sales.reduce((sum, sale) => sum + saleOriginalBillAmount(sale), 0),
   }
 }
 

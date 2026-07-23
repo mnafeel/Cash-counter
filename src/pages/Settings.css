@@ -618,6 +618,87 @@ html[data-screen='tablet'] .settings-info {
   font-weight: 800;
 }
 
+.settings-bill-edit-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.settings-bill-edit-toggle--compact {
+  margin-bottom: 0;
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+
+.settings-bill-edit-toggle:has(input:checked) {
+  border-color: rgba(64, 145, 108, 0.45);
+  background: rgba(64, 145, 108, 0.12);
+}
+
+.settings-bill-edit-toggle-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--cream);
+}
+
+.settings-bill-edit-toggle-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.settings-bill-edit-toggle-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.settings-bill-edit-toggle-track {
+  display: block;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.settings-bill-edit-toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--cream-dim);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.settings-bill-edit-toggle-switch input:checked + .settings-bill-edit-toggle-track {
+  background: rgba(64, 145, 108, 0.35);
+  border-color: rgba(64, 145, 108, 0.55);
+}
+
+.settings-bill-edit-toggle-switch input:checked + .settings-bill-edit-toggle-track::after {
+  transform: translateX(18px);
+  background: var(--cream);
+}
+
+.settings-bill-edit-toggle-switch input:focus-visible + .settings-bill-edit-toggle-track {
+  outline: 2px solid rgba(64, 145, 108, 0.55);
+  outline-offset: 2px;
+}
+
 .settings-bill-edit-overlay {
   position: fixed;
   inset: 0;

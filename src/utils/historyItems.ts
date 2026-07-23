@@ -620,7 +620,11 @@ function buildSplitGroupItem(parent: Sale, children: Sale[]): HistoryItem {
     paymentModes: paymentModesFromReceiptLines(receiptLines),
     paySummary:
       moneyCollected > 0
-        ? `Paid ${formatMoney(moneyCollected)}${completedAt ? ' · Updated' : ''}`
+        ? `Paid ${formatMoney(moneyCollected)}${
+            completedAt && completedAt !== parent.createdAt
+              ? ` · Updated ${formatDate(completedAt)}`
+              : ''
+          }`
         : formatSplitPaymentBreakdown(receiptLines) || undefined,
   }
 }
@@ -788,24 +792,25 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
   }
 
   const wasUpdated = Boolean(sale.updatedAt && sale.updatedAt !== sale.createdAt)
+  const updatedLabel = wasUpdated && sale.updatedAt ? ` · Updated ${formatDate(sale.updatedAt)}` : ''
+  const totalBill =
+    sale.originalBillAmount ??
+    (isCreditBill(sale) || isChequeBill(sale) ? sale.billAmount + collected : sale.billAmount)
   const paySummary =
     sale.status !== 'pending' && collected > 0
-      ? `Paid ${formatMoney(collected)}${wasUpdated ? ' · Updated' : ''}`
+      ? `Paid ${formatMoney(collected)}${updatedLabel}`
       : sale.status === 'pending' && (isCreditBill(sale) || isChequeBill(sale))
         ? collected > 0
-          ? `Paid ${formatMoney(collected)} · Pending ${formatMoney(sale.billAmount)}${wasUpdated ? ' · Updated' : ''}`
+          ? `Paid ${formatMoney(collected)} · Pending ${formatMoney(sale.billAmount)}${updatedLabel}`
           : `Pending ${formatMoney(sale.billAmount)}`
         : undefined
 
   return {
     type: 'sale',
     id: sale.id,
-    amount: collected || sale.billAmount,
-    originalBillAmount:
-      sale.originalBillAmount ??
-      (isCreditBill(sale) || isChequeBill(sale)
-        ? sale.billAmount + collected
-        : sale.billAmount),
+    amount:
+      isCreditBill(sale) || isChequeBill(sale) ? totalBill : collected || sale.billAmount,
+    originalBillAmount: totalBill,
     sub,
     name: sale.customerName,
     date: sale.updatedAt ?? sale.createdAt,

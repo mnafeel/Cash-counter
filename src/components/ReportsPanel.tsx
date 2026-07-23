@@ -81,13 +81,15 @@ export default function ReportsPanel({
     () =>
       salesBills.reduce(
         (acc, row) => {
-          acc.totalBills += row.billAmount
+          acc.totalBills += row.collectedTotal
+          acc.billTotal += row.billAmount
           acc.cashTotal += row.cashTotal
           acc.bankTotal += row.bankTotal
+          acc.creditPending += row.creditPending
           acc.billCount += 1
           return acc
         },
-        { totalBills: 0, cashTotal: 0, bankTotal: 0, billCount: 0 },
+        { totalBills: 0, billTotal: 0, cashTotal: 0, bankTotal: 0, creditPending: 0, billCount: 0 },
       ),
     [salesBills],
   )
@@ -173,7 +175,11 @@ export default function ReportsPanel({
                 <span>Sales</span>
                 <strong>{formatMoney(salesTotals.totalBills)}</strong>
                 <small>
-                  {salesTotals.billCount} bills · {formatSalesBreakdown(salesTotals.cashTotal, salesTotals.bankTotal)}
+                  Collected · {salesTotals.billCount} bills ·{' '}
+                  {formatSalesBreakdown(salesTotals.cashTotal, salesTotals.bankTotal)}
+                  {salesTotals.creditPending > 0
+                    ? ` · Credit ${formatMoney(salesTotals.creditPending)}`
+                    : ''}
                 </small>
               </div>
               <div className="reports-summary-card reports-summary-card--orange">
@@ -210,6 +216,13 @@ export default function ReportsPanel({
               <h2>💰 Sales</h2>
               <strong>{formatMoney(salesTotals.totalBills)}</strong>
             </div>
+            {salesTotals.creditPending > 0 ? (
+              <p className="reports-section-note">
+                Collected {formatMoney(salesTotals.totalBills)} · Credit open{' '}
+                {formatMoney(salesTotals.creditPending)} · Bills{' '}
+                {formatMoney(salesTotals.billTotal)}
+              </p>
+            ) : null}
             {salesBills.length === 0 ? (
               <p className="reports-empty">No sales for this period.</p>
             ) : (
@@ -221,8 +234,12 @@ export default function ReportsPanel({
                       <span className="reports-item-amount">{formatMoney(row.billAmount)}</span>
                     </div>
                     <div className="reports-item-meta">
-                      {formatDate(row.date)} · {row.payLabel} · Collected{' '}
-                      {formatMoney(row.cashTotal + row.bankTotal)}
+                      Created {row.createdDateLabel} · Paid {row.dateLabel} · Collected{' '}
+                      {formatMoney(row.collectedTotal)} ·{' '}
+                      {formatSalesBreakdown(row.cashTotal, row.bankTotal)}
+                    </div>
+                    <div className="reports-item-meta reports-item-meta--detail">
+                      {row.detailLabel}
                     </div>
                   </li>
                 ))}

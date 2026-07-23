@@ -247,6 +247,13 @@
   white-space: nowrap;
 }
 
+.reports-section-note {
+  margin: 0 0 6px;
+  font-size: 0.58rem;
+  color: var(--cream-dim);
+  line-height: 1.35;
+}
+
 .reports-body {
   flex: 1;
   min-height: 0;
@@ -307,6 +314,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.reports-item-meta--detail {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+  color: var(--cream-dim);
+  font-weight: 600;
 }
 
 .reports-empty {

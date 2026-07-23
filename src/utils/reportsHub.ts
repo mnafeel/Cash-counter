@@ -21,6 +21,7 @@ import {
   type ReportPeriod,
   type SalesReportFilter,
 } from './salesReport'
+import { saleCollectedAmount } from './salePayment'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
 
 export type ReportTab = 'all' | 'sales' | 'purchase' | 'expense' | 'credit' | 'cheque'
@@ -81,6 +82,13 @@ function saleCreditAmount(sale: Sale): number {
   if (sale.status === 'pending') return sale.billAmount
   if (sale.payType === 'credit') return sale.billAmount
   return sale.creditAmount ?? 0
+}
+
+function saleCreditTotalBill(sale: Sale): number {
+  const collected = saleCollectedAmount(sale)
+  if (sale.originalBillAmount && sale.originalBillAmount > 0) return sale.originalBillAmount
+  if (sale.status === 'pending' && isSaleCredit(sale)) return sale.billAmount + collected
+  return sale.billAmount
 }
 
 function isExpenseCredit(expense: Expense): boolean {
@@ -159,19 +167,23 @@ export function buildCreditReportItems(data: AppData): CreditReportItem[] {
 
   for (const sale of data.sales) {
     if (!isSaleCredit(sale)) continue
-    const amount = saleCreditAmount(sale)
-    if (amount <= 0) continue
+    const pending = saleCreditAmount(sale)
+    const collected = saleCollectedAmount(sale)
+    const totalBill = saleCreditTotalBill(sale)
+    if (pending <= 0 && collected <= 0) continue
     items.push({
       id: sale.id,
       kind: 'sale',
       name: sale.customerName?.trim() || 'Credit sale',
-      amount,
+      amount: totalBill,
       status: sale.status === 'pending' ? 'pending' : 'paid',
       date: sale.updatedAt ?? sale.createdAt,
       payDetail:
         sale.status === 'pending'
-          ? `💳 Credit pending · ${formatMoney(amount)}`
-          : `💳 Credit · ${formatMoney(amount)}`,
+          ? collected > 0
+            ? `Bill ${formatMoney(totalBill)} · Paid ${formatMoney(collected)} · Credit ${formatMoney(pending)}`
+            : `Bill ${formatMoney(totalBill)} · Credit ${formatMoney(pending)}`
+          : `Bill ${formatMoney(totalBill)} · Paid ${formatMoney(collected || totalBill)}`,
     })
   }
 

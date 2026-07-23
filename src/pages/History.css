@@ -546,6 +546,36 @@
   text-align: right;
 }
 
+.history-item-date--editable {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: rgba(64, 145, 108, 0.45);
+  text-underline-offset: 2px;
+}
+
+.history-item-date--editable:hover {
+  color: var(--cream-dim);
+}
+
+.history-item-name--editable {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.history-item-name--editable:hover {
+  color: var(--cream);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+}
+
 .history-item-amount {
   font-size: 1rem;
   font-weight: 800;

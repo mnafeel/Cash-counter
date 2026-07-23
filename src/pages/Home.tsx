@@ -566,9 +566,16 @@ export default function Home() {
           </span>
           <span className="stat-meta stat-meta--breakdown">
             {formatSalesBreakdown(todaySalesSummary.cashTotal, todaySalesSummary.bankTotal)}
+            {todaySalesSummary.creditPending > 0
+              ? ` · Credit ${formatMoney(todaySalesSummary.creditPending)}`
+              : ''}
           </span>
           <span className="stat-meta">
-            {todaySalesSummary.billCount} bills · Tap for details →
+            {todaySalesSummary.billCount} bills collected
+            {todaySalesSummary.billTotal > todaySalesSummary.totalBills
+              ? ` · Bills ${formatMoney(todaySalesSummary.billTotal)}`
+              : ''}{' '}
+            · Tap for details →
           </span>
         </button>
         <button

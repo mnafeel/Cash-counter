@@ -8,7 +8,7 @@ import {
   type CreditPaymentInput,
 } from '../utils/purchaseHistory'
 import { notifyDataChanged } from '../firebase/sync'
-import { saleCollectedAmount } from '../utils/salePayment'
+import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
 
@@ -163,9 +163,12 @@ function splitSaleBankAmount(sale: Sale): number {
 }
 
 function saleCashToDrawer(sale: Sale): number {
-  if (sale.status === 'pending') return 0
+  if (sale.status === 'pending') {
+    return salePendingCreditPaidBreakdown(sale).cash
+  }
   if (sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque') return 0
   if (sale.payType === 'split') return sale.cashAmount ?? 0
+  if ((sale.cashAmount ?? 0) > 0) return sale.cashAmount ?? 0
   return sale.billAmount
 }
 
@@ -202,7 +205,10 @@ function expenseCashToDrawer(expense: Expense): number {
 }
 
 function saleBankToBalance(sale: Sale): number {
-  if (sale.status === 'pending') return 0
+  if (sale.status === 'pending') {
+    const { bank, cheque } = salePendingCreditPaidBreakdown(sale)
+    return bank + cheque
+  }
   if (sale.payType === 'bank' || sale.payType === 'cheque') return sale.billAmount
   if (sale.payType === 'split') return splitSaleBankAmount(sale)
   return 0
@@ -910,7 +916,7 @@ export function applyPartialCreditSaleCollection(
   const patched: Sale = {
     ...sale,
     billAmount: remaining,
-    originalBillAmount: sale.originalBillAmount ?? due,
+    originalBillAmount: sale.originalBillAmount ?? remaining + totalPaid,
     paidAmount: totalPaid,
     payType: 'credit',
     pendingPayType: 'credit',

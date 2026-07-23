@@ -32,6 +32,7 @@ import {
 import { buildHistoryItems, getHistoryPaymentLabel, historyItemSortTime, matchesHistorySearch, type HistoryItem } from '../utils/historyItems'
 import { saleCollectedAmount } from '../utils/salePayment'
 import { counterBillPath, resolveHistoryItemBillId } from '../utils/counterBillRoute'
+import { readBillEditMode, writeBillEditMode } from '../utils/billEditMode'
 import { downloadFullHistoryReport, printFullHistoryReportPdf } from '../utils/historyReport'
 import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
@@ -146,6 +147,7 @@ export default function Settings() {
   const [billEditSearch, setBillEditSearch] = useState('')
   const [billEditFilter, setBillEditFilter] = useState<BillEditFilter>('all')
   const [billEditOpen, setBillEditOpen] = useState(false)
+  const [billEditMode, setBillEditMode] = useState(() => readBillEditMode())
   const [editingBillDateId, setEditingBillDateId] = useState<string | null>(null)
   const [editBillDate, setEditBillDate] = useState('')
   const [editBillTime, setEditBillTime] = useState('')
@@ -197,6 +199,15 @@ export default function Settings() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [billEditOpen])
+
+  useEffect(() => {
+    function onBillEditModeChange(event: Event) {
+      const detail = (event as CustomEvent<boolean>).detail
+      if (typeof detail === 'boolean') setBillEditMode(detail)
+    }
+    window.addEventListener('bill-edit-mode', onBillEditModeChange)
+    return () => window.removeEventListener('bill-edit-mode', onBillEditModeChange)
+  }, [])
 
   useEffect(() => {
     if (!firebaseBuilt) return
@@ -285,6 +296,13 @@ export default function Settings() {
         : 'Credit bill removed — balance cleared.',
     )
     setTimeout(() => setCreditCancelStatus(''), 4000)
+  }
+
+  function toggleBillEditMode() {
+    const next = !billEditMode
+    setBillEditMode(next)
+    writeBillEditMode(next)
+    if (!next) cancelBillDateEdit()
   }
 
   function openBillInCounter(item: HistoryItem) {
@@ -630,10 +648,22 @@ export default function Settings() {
               <div className="settings-bill-edit-head">
                 <h3>Edit bills</h3>
                 <p>
-                  Pick a bill and open it on Cash Counter for amount, paid, and payment type — or
-                  edit the bill date here.
+                  Turn on edit mode for date and bill changes. Open bills on Cash Counter for amount,
+                  paid, and payment type.
                 </p>
               </div>
+              <label className="settings-bill-edit-toggle">
+                <span className="settings-bill-edit-toggle-label">Bill edit mode</span>
+                <span className="settings-bill-edit-toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={billEditMode}
+                    onChange={toggleBillEditMode}
+                    aria-label="Bill edit mode"
+                  />
+                  <span className="settings-bill-edit-toggle-track" aria-hidden="true" />
+                </span>
+              </label>
               <button
                 type="button"
                 className="btn btn-primary settings-bill-edit-open-btn"
@@ -959,8 +989,24 @@ export default function Settings() {
             <div className="settings-bill-edit-panel-head">
               <div>
                 <h3>Open bills</h3>
-                <p>Recent first · open on Counter for amounts · edit date here</p>
+                <p>
+                  {billEditMode
+                    ? 'Edit mode on · tap Edit date or Open bill'
+                    : 'Edit mode off · turn on in Settings to edit date'}
+                </p>
               </div>
+              <label className="settings-bill-edit-toggle settings-bill-edit-toggle--compact">
+                <span className="settings-bill-edit-toggle-label">Edit</span>
+                <span className="settings-bill-edit-toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={billEditMode}
+                    onChange={toggleBillEditMode}
+                    aria-label="Bill edit mode"
+                  />
+                  <span className="settings-bill-edit-toggle-track" aria-hidden="true" />
+                </span>
+              </label>
               <button
                 type="button"
                 className="settings-bill-edit-close"
@@ -1089,14 +1135,16 @@ export default function Settings() {
                         >
                           Open bill
                         </button>
-                        <button
-                          type="button"
-                          className="btn btn-secondary settings-bill-edit-btn"
-                          onClick={() => startBillDateEdit(item)}
-                        >
-                          Edit date
-                        </button>
-                        {isCredit ? (
+                        {billEditMode ? (
+                          <button
+                            type="button"
+                            className="btn btn-secondary settings-bill-edit-btn"
+                            onClick={() => startBillDateEdit(item)}
+                          >
+                            Edit date
+                          </button>
+                        ) : null}
+                        {billEditMode && isCredit ? (
                           <button
                             type="button"
                             className="btn btn-secondary settings-bill-edit-btn"
