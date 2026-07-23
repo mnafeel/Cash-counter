@@ -801,6 +801,11 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
     type: 'sale',
     id: sale.id,
     amount: collected || sale.billAmount,
+    originalBillAmount:
+      sale.originalBillAmount ??
+      (isCreditBill(sale) || isChequeBill(sale)
+        ? sale.billAmount + collected
+        : sale.billAmount),
     sub,
     name: sale.customerName,
     date: sale.updatedAt ?? sale.createdAt,

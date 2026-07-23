@@ -459,6 +459,14 @@ html[data-screen='tablet'] .settings-info {
   }
 }
 
+.settings-credit-cancel {
+  max-height: min(28vh, 220px);
+}
+
+.settings-credit-cancel .settings-cheque-cancel-list {
+  max-height: min(20vh, 160px);
+}
+
 .settings-cheque-cancel {
   flex-shrink: 1;
   min-height: 0;
