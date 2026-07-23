@@ -35,6 +35,17 @@ import { saleCollectedAmount } from '../utils/salePayment'
 import { counterBillPath, resolveHistoryItemBillId } from '../utils/counterBillRoute'
 import { readBillEditMode, writeBillEditMode } from '../utils/billEditMode'
 import { downloadFullHistoryReport, printFullHistoryReportPdf } from '../utils/historyReport'
+import {
+  downloadCombinedDailyReportSpreadsheet,
+  downloadDailyReportSpreadsheet,
+  downloadDailySummaryReportSpreadsheet,
+  getDailyReportCounts,
+  printCombinedDailyReportPdf,
+  printDailyReportPdf,
+  printDailySummaryReportPdf,
+  type DailyReportKind,
+} from '../utils/dailyReport'
+import { toInputDate } from '../utils/salesReport'
 import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
 import BillReminderControl from '../components/BillReminderControl'
 import BillReminderAlertsSettings from '../components/BillReminderAlertsSettings'
@@ -100,6 +111,16 @@ const TALLY_SCOPE_OPTIONS: { id: TallyDateScope; label: string }[] = [
   { id: 'month', label: 'Month' },
 ]
 
+const DAILY_REPORT_DOWNLOAD_GROUPS: {
+  kind: DailyReportKind
+  label: string
+  countKey: keyof ReturnType<typeof getDailyReportCounts>
+}[] = [
+  { kind: 'cash', label: 'Cash', countKey: 'cash' },
+  { kind: 'bank', label: 'Bank', countKey: 'bank' },
+  { kind: 'expense', label: 'Expense', countKey: 'expense' },
+]
+
 export default function Settings() {
   const {
     data,
@@ -156,6 +177,8 @@ export default function Settings() {
   const [pendingChequeCancelStatus, setPendingChequeCancelStatus] = useState('')
   const [creditCancelStatus, setCreditCancelStatus] = useState('')
   const [historyReportStatus, setHistoryReportStatus] = useState('')
+  const [dailyReportDate, setDailyReportDate] = useState(() => toInputDate())
+  const [dailyReportStatus, setDailyReportStatus] = useState('')
   const [billEditSearch, setBillEditSearch] = useState('')
   const [billEditFilter, setBillEditFilter] = useState<BillEditFilter>('all')
   const [billEditOpen, setBillEditOpen] = useState(false)
@@ -190,6 +213,18 @@ export default function Settings() {
   const reminderAlertSettings = useMemo(() => getReminderAlertSettings(data), [data])
   const [alertSettingsStatus, setAlertSettingsStatus] = useState('')
   const historyRecordCount = useMemo(() => buildHistoryItems(data).length, [data])
+  const dailyReportCounts = useMemo(
+    () => getDailyReportCounts({ data, selectedDate: dailyReportDate }),
+    [data, dailyReportDate],
+  )
+  const todayInputDate = toInputDate()
+  const yesterdayInputDate = useMemo(() => {
+    const y = new Date()
+    y.setDate(y.getDate() - 1)
+    return toInputDate(y)
+  }, [])
+  const dailyReportTotalCount =
+    dailyReportCounts.cash + dailyReportCounts.bank + dailyReportCounts.expense
   const billEditItems = useMemo(() => {
     return buildHistoryItems(data)
       .filter((item) => item.type === 'sale')
@@ -311,6 +346,89 @@ export default function Settings() {
     printFullHistoryReportPdf(data, historyReportMeta())
     setHistoryReportStatus(`PDF ready · ${historyRecordCount} records · choose Save as PDF`)
     setTimeout(() => setHistoryReportStatus(''), 5000)
+  }
+
+  function dailyReportInput() {
+    return {
+      data,
+      selectedDate: dailyReportDate,
+      currentCash: balance,
+      currentBank: bankBalance,
+    }
+  }
+
+  function handlePrintCombinedDailyStatement() {
+    if (!dailyReportDate) {
+      setDailyReportStatus('Pick a date first')
+      setTimeout(() => setDailyReportStatus(''), 4000)
+      return
+    }
+    printCombinedDailyReportPdf(dailyReportInput())
+    setDailyReportStatus(
+      `Daily statement PDF ready · ${dailyReportTotalCount} items · cash → bank → expense · choose Save as PDF`,
+    )
+    setTimeout(() => setDailyReportStatus(''), 6000)
+  }
+
+  function handleDownloadCombinedDailyStatement() {
+    if (!dailyReportDate) {
+      setDailyReportStatus('Pick a date first')
+      setTimeout(() => setDailyReportStatus(''), 4000)
+      return
+    }
+    downloadCombinedDailyReportSpreadsheet(dailyReportInput())
+    setDailyReportStatus(`Daily statement sheet downloaded · ${dailyReportTotalCount} items`)
+    setTimeout(() => setDailyReportStatus(''), 5000)
+  }
+
+  function handlePrintDailyReport(kind: DailyReportKind) {
+    if (!dailyReportDate) {
+      setDailyReportStatus('Pick a date first')
+      setTimeout(() => setDailyReportStatus(''), 4000)
+      return
+    }
+    printDailyReportPdf(dailyReportInput(), kind)
+    const count = dailyReportCounts[kind]
+    setDailyReportStatus(
+      `${kind.charAt(0).toUpperCase()}${kind.slice(1)} PDF ready · ${count} items · choose Save as PDF`,
+    )
+    setTimeout(() => setDailyReportStatus(''), 5000)
+  }
+
+  function handleDownloadDailyReportSpreadsheet(kind: DailyReportKind) {
+    if (!dailyReportDate) {
+      setDailyReportStatus('Pick a date first')
+      setTimeout(() => setDailyReportStatus(''), 4000)
+      return
+    }
+    downloadDailyReportSpreadsheet(dailyReportInput(), kind)
+    const count = dailyReportCounts[kind]
+    setDailyReportStatus(
+      `${kind.charAt(0).toUpperCase()}${kind.slice(1)} sheet downloaded · ${count} items`,
+    )
+    setTimeout(() => setDailyReportStatus(''), 5000)
+  }
+
+  function handlePrintDailySummaryReport() {
+    if (!dailyReportDate) {
+      setDailyReportStatus('Pick a date first')
+      setTimeout(() => setDailyReportStatus(''), 4000)
+      return
+    }
+    printDailySummaryReportPdf(dailyReportInput())
+    setDailyReportStatus('Summary PDF ready · choose Save as PDF')
+    setTimeout(() => setDailyReportStatus(''), 5000)
+  }
+
+  function handleDownloadDailySummaryReportSpreadsheet() {
+    if (!dailyReportDate) {
+      setDailyReportStatus('Pick a date first')
+      setTimeout(() => setDailyReportStatus(''), 4000)
+      return
+    }
+    downloadDailySummaryReportSpreadsheet(dailyReportInput())
+    setDailyReportStatus('Summary sheet downloaded')
+    setTimeout(() => setDailyReportStatus(''), 5000)
   }
 
   function handleCancelApprovedCheque(id: string) {
@@ -666,6 +784,105 @@ export default function Settings() {
                 <span className="settings-highlight">{formatMoney(bankBalance)}</span>
               </div>
             </div>
+
+            <section className="settings-history-report settings-daily-report">
+              <div className="settings-daily-report-layout">
+                <div className="settings-daily-report-main">
+                  <div className="settings-history-report-head">
+                    <h3>Daily reports</h3>
+                    <p>
+                      Pick a date. Full statement PDF: cash list, then bank, then expense — all in
+                      time order. Summary PDF shows totals and credit sales.
+                    </p>
+                  </div>
+                  <div className="settings-daily-report-dates">
+                    <button
+                      type="button"
+                      className={`settings-daily-report-date-chip ${dailyReportDate === todayInputDate ? 'settings-daily-report-date-chip--active' : ''}`}
+                      onClick={() => setDailyReportDate(todayInputDate)}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      className={`settings-daily-report-date-chip ${dailyReportDate === yesterdayInputDate ? 'settings-daily-report-date-chip--active' : ''}`}
+                      onClick={() => setDailyReportDate(yesterdayInputDate)}
+                    >
+                      Yesterday
+                    </button>
+                    <input
+                      type="date"
+                      className="settings-daily-report-date-input"
+                      value={dailyReportDate}
+                      onChange={(e) => setDailyReportDate(e.target.value)}
+                      aria-label="Pick date for daily report"
+                    />
+                  </div>
+                  {dailyReportStatus ? (
+                    <p className="settings-history-report-status">{dailyReportStatus}</p>
+                  ) : null}
+                </div>
+                <div className="settings-daily-report-downloads">
+                  <div className="settings-daily-report-group settings-daily-report-group--full">
+                    <span className="settings-daily-report-group-label">
+                      Full Statement ({dailyReportTotalCount})
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-primary settings-history-report-btn"
+                      onClick={handlePrintCombinedDailyStatement}
+                    >
+                      PDF
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary settings-history-report-btn"
+                      onClick={handleDownloadCombinedDailyStatement}
+                    >
+                      Sheet
+                    </button>
+                  </div>
+                  {DAILY_REPORT_DOWNLOAD_GROUPS.map((group) => (
+                    <div key={group.kind} className="settings-daily-report-group">
+                      <span className="settings-daily-report-group-label">
+                        {group.label} ({dailyReportCounts[group.countKey]})
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary settings-history-report-btn"
+                        onClick={() => handlePrintDailyReport(group.kind)}
+                      >
+                        PDF
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary settings-history-report-btn"
+                        onClick={() => handleDownloadDailyReportSpreadsheet(group.kind)}
+                      >
+                        Sheet
+                      </button>
+                    </div>
+                  ))}
+                  <div className="settings-daily-report-group settings-daily-report-group--summary">
+                    <span className="settings-daily-report-group-label">Summary</span>
+                    <button
+                      type="button"
+                      className="btn btn-primary settings-history-report-btn"
+                      onClick={handlePrintDailySummaryReport}
+                    >
+                      PDF
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary settings-history-report-btn"
+                      onClick={handleDownloadDailySummaryReportSpreadsheet}
+                    >
+                      Sheet
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
 
             <section className="settings-history-report">
               <div className="settings-history-report-head">

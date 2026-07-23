@@ -532,6 +532,92 @@ html[data-screen='tablet'] .settings-info {
   color: var(--cream-dim);
 }
 
+.settings-daily-report-dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-daily-report-date-chip {
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings-daily-report-date-chip--active {
+  background: var(--cream-dim);
+  color: var(--brown-dark);
+  border-color: var(--cream-dim);
+}
+
+.settings-daily-report-date-input {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream);
+  font-size: 0.65rem;
+}
+
+.settings-daily-report-layout {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.settings-daily-report-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-daily-report-downloads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 118px;
+}
+
+.settings-daily-report-group--full {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-daily-report-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-daily-report-group--summary {
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-daily-report-group-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--cream);
+  line-height: 1.2;
+}
+
+.settings-daily-report-group .settings-history-report-btn {
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+}
+
 .settings-cheque-cancel-head h3 {
   margin: 0;
   font-size: 0.82rem;
