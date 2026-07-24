@@ -109,6 +109,74 @@ export function appendSalePaymentEvent(
   }
 }
 
+export function salePaidCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
+  const cash = sale.cashAmount ?? 0
+  const cheque =
+    sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
+  let bank = sale.bankAmount ?? 0
+  if (cheque > 0) bank = Math.max(0, bank - cheque)
+  const total = cash + bank + cheque
+  if (total > 0) {
+    return {
+      cash,
+      bank,
+      cheque,
+      total,
+    }
+  }
+  if (sale.paidAmount > 0) {
+    return { cash: sale.paidAmount, bank: 0, cheque: 0, total: sale.paidAmount }
+  }
+  if (sale.billAmount > 0) {
+    return { cash: sale.billAmount, bank: 0, cheque: 0, total: sale.billAmount }
+  }
+  return { cash: 0, bank: 0, cheque: 0, total: 0 }
+}
+
+function paymentEventFromBreakdown(at: string, breakdown: SaleCollectedBreakdown): SalePaymentEvent {
+  return {
+    at,
+    amount: breakdown.total,
+    cash: breakdown.cash > 0 ? breakdown.cash : undefined,
+    bank: breakdown.bank > 0 ? breakdown.bank : undefined,
+    cheque: breakdown.cheque > 0 ? breakdown.cheque : undefined,
+  }
+}
+
+/** Rebuild payment events for sales saved before paymentEvents existed. */
+export function inferLegacyPaymentEvents(sale: Sale): SalePaymentEvent[] {
+  if (sale.paymentEvents && sale.paymentEvents.length > 0) return sale.paymentEvents
+
+  if (sale.status === 'pending') {
+    const prior = salePendingCreditPaidBreakdown(sale)
+    if (prior.total <= 0) return []
+    return [paymentEventFromBreakdown(sale.updatedAt ?? sale.createdAt, prior)]
+  }
+
+  const collected = salePaidCollectedBreakdown(sale)
+  if (collected.total <= 0) return []
+
+  return [paymentEventFromBreakdown(sale.updatedAt ?? sale.createdAt, collected)]
+}
+
+export function getSalePaymentEvents(sale: Sale): SalePaymentEvent[] {
+  if (sale.paymentEvents && sale.paymentEvents.length > 0) {
+    return repairSalePaymentEvents(sale).paymentEvents ?? []
+  }
+  return inferLegacyPaymentEvents(sale)
+}
+
+export function migrateSalePaymentEvents(sale: Sale): Sale {
+  const repaired = repairSalePaymentEvents(sale)
+  if (repaired.paymentEvents && repaired.paymentEvents.length > 0) {
+    return repaired
+  }
+
+  const inferred = inferLegacyPaymentEvents(sale)
+  if (inferred.length === 0) return sale
+  return { ...sale, paymentEvents: inferred }
+}
+
 export function repairSalePaymentEvents(sale: Sale): Sale {
   if (!sale.paymentEvents || sale.paymentEvents.length < 2) return sale
 
@@ -134,7 +202,7 @@ export function salePaymentEventsInRange(
   fromDate?: string,
   toDate?: string,
 ): SalePaymentEvent[] {
-  return (sale.paymentEvents ?? []).filter((event) => isIsoInDateRange(event.at, fromDate, toDate))
+  return getSalePaymentEvents(sale).filter((event) => isIsoInDateRange(event.at, fromDate, toDate))
 }
 
 export function saleHasCollectionInRange(

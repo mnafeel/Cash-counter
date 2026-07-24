@@ -13,8 +13,8 @@ import type { BillReminderKind } from '../utils/billReminders'
 import {
   appendSalePaymentEvent,
   buildIncrementalPaymentEvent,
+  migrateSalePaymentEvents,
   priorPaymentEventsFromSale,
-  repairSalePaymentEvents,
   saleCollectedAmount,
   salePendingCreditPaidBreakdown,
 } from '../utils/salePayment'
@@ -157,7 +157,7 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
         alerts?.notificationSoundEnabled ?? DEFAULT_REMINDER_ALERTS.notificationSoundEnabled,
     },
     customerReminders: normalizeCustomerReminders(parsed.customerReminders),
-    sales: (parsed.sales ?? []).map((sale) => repairSalePaymentEvents(sale)),
+    sales: (parsed.sales ?? []).map((sale) => migrateSalePaymentEvents(sale)),
     expenses: (parsed.expenses ?? []).map((e) => ({
       ...e,
       name: e.name ?? e.note ?? 'Expense',
@@ -178,7 +178,17 @@ export function loadData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...defaultData }
-    return normalizeData(JSON.parse(raw) as AppData)
+    const parsed = JSON.parse(raw) as AppData
+    const normalized = normalizeData(parsed)
+    const migrated = (parsed.sales ?? []).some((sale, index) => {
+      const next = normalized.sales[index]
+      return JSON.stringify(sale.paymentEvents ?? null) !== JSON.stringify(next?.paymentEvents ?? null)
+    })
+    if (migrated) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+      notifyDataChanged(normalized)
+    }
+    return normalized
   } catch {
     return { ...defaultData }
   }
@@ -1302,7 +1312,10 @@ export function collectPendingBill(
         updatedAt: now,
       }
 
-      if (event.amount > 0) return appendSalePaymentEvent(settled, event)
+      if (event.amount > 0) {
+        const priorEvents = original ? priorPaymentEventsFromSale(original) : (s.paymentEvents ?? [])
+        return appendSalePaymentEvent({ ...settled, paymentEvents: priorEvents }, event)
+      }
       const priorEvents = original ? priorPaymentEventsFromSale(original) : []
       return priorEvents.length > 0 ? { ...settled, paymentEvents: priorEvents } : settled
     }),

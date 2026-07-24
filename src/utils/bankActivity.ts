@@ -1,5 +1,6 @@
 import type { AppData, Expense, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
+import { getSalePaymentEvents } from './salePayment'
 import { saleBankCollected, saleChequeToBankCollected } from './salesReport'
 import {
   cashClosingLabel,
@@ -22,8 +23,9 @@ function saleActivityDate(sale: Sale): string {
 }
 
 function pushSaleItems(items: CashActivityItem[], sale: Sale) {
-  if (sale.paymentEvents && sale.paymentEvents.length > 0) {
-    sale.paymentEvents.forEach((event, index) => {
+  const events = getSalePaymentEvents(sale)
+  if (events.length > 0) {
+    events.forEach((event, index) => {
       const bank = event.bank ?? 0
       if (bank > 0) {
         items.push({

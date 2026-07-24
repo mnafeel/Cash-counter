@@ -5,6 +5,7 @@ import {
   saleHasCollectionInRange,
   salePaymentEventsInRange,
   salePendingCreditPaidBreakdown,
+  getSalePaymentEvents,
 } from './salePayment'
 
 export type ReportPeriod = 'day' | 'week' | 'month'
@@ -101,7 +102,7 @@ export function saleCollectedForFilter(
     return full
   }
 
-  if (sale.paymentEvents && sale.paymentEvents.length > 0) {
+  if (getSalePaymentEvents(sale).length > 0) {
     const events = salePaymentEventsInRange(sale, filter.fromDate, filter.toDate)
     return events.length > 0 ? sumPaymentEvents(events) : emptyCollectedBreakdown()
   }
@@ -431,7 +432,7 @@ function saleMatchesReportFilter(sale: Sale, filter?: SalesReportFilter): boolea
     return true
   }
 
-  if (sale.paymentEvents && sale.paymentEvents.length > 0) {
+  if ((sale.paymentEvents?.length ?? 0) > 0 || getSalePaymentEvents(sale).length > 0) {
     return false
   }
 
