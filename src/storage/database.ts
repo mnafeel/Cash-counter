@@ -10,7 +10,14 @@ import {
 import { notifyDataChanged } from '../firebase/sync'
 import { applyStoredCustomerReminderToSale, listOpenBillIdsForCustomer } from '../utils/customerReminders'
 import type { BillReminderKind } from '../utils/billReminders'
-import { appendSalePaymentEvent, saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
+import {
+  appendSalePaymentEvent,
+  buildIncrementalPaymentEvent,
+  priorPaymentEventsFromSale,
+  repairSalePaymentEvents,
+  saleCollectedAmount,
+  salePendingCreditPaidBreakdown,
+} from '../utils/salePayment'
 import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
@@ -150,7 +157,7 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
         alerts?.notificationSoundEnabled ?? DEFAULT_REMINDER_ALERTS.notificationSoundEnabled,
     },
     customerReminders: normalizeCustomerReminders(parsed.customerReminders),
-    sales: parsed.sales ?? [],
+    sales: (parsed.sales ?? []).map((sale) => repairSalePaymentEvents(sale)),
     expenses: (parsed.expenses ?? []).map((e) => ({
       ...e,
       name: e.name ?? e.note ?? 'Expense',
@@ -1070,7 +1077,7 @@ function isCreditPendingSale(sale: Sale): boolean {
   return isPendingCreditSale(sale)
 }
 
-export function applyPartialCreditSaleCollection(
+export function applyPartialBalanceSaleCollection(
   data: AppData,
   id: string,
   payment: {
@@ -1085,7 +1092,9 @@ export function applyPartialCreditSaleCollection(
   },
 ): AppData {
   const sale = data.sales.find((s) => s.id === id && s.status === 'pending')
-  if (!sale) return data
+  if (!sale || !isPendingBalanceSale(sale)) return data
+
+  const isCheque = isPendingChequeSale(sale)
 
   const due = sale.billAmount
   const collected = Math.min(Math.max(0, payment.collected), due)
@@ -1141,19 +1150,20 @@ export function applyPartialCreditSaleCollection(
     }, paymentEvent)
   }
 
+  const balancePayType = isCheque ? 'cheque' : 'credit'
   const patched: Sale = appendSalePaymentEvent(
     {
       ...sale,
       billAmount: remaining,
       originalBillAmount: sale.originalBillAmount ?? remaining + totalPaid,
       paidAmount: totalPaid,
-      payType: 'credit',
-      pendingPayType: 'credit',
+      payType: balancePayType,
+      pendingPayType: balancePayType,
       cashAmount: totalCash || undefined,
       bankAmount: totalBank || undefined,
       chequeAmount: totalCheque || undefined,
-      chequeApproved: totalCheque > 0 ? payment.chequeApproved : undefined,
-      creditAmount: remaining,
+      chequeApproved: totalCheque > 0 ? payment.chequeApproved ?? true : sale.chequeApproved,
+      creditAmount: isCheque ? undefined : remaining,
       customerName: payment.customerName ?? sale.customerName,
       status: 'pending',
       updatedAt: now,
@@ -1165,10 +1175,15 @@ export function applyPartialCreditSaleCollection(
     ...data,
     sales: data.sales.map((s) => (s.id === id ? patched : s)),
   }
-  next = syncParentSplitCreditAmount(next, patched, remaining)
+  if (!isCheque) {
+    next = syncParentSplitCreditAmount(next, patched, remaining)
+  }
   saveData(next)
   return next
 }
+
+/** @deprecated Use applyPartialBalanceSaleCollection */
+export const applyPartialCreditSaleCollection = applyPartialBalanceSaleCollection
 
 function applyCreditPaymentFields(expense: Expense, updates: Partial<Expense>): Expense {
   const payType = updates.payType ?? expense.payType
@@ -1265,36 +1280,32 @@ export function collectPendingBill(
 ): AppData {
   const original = data.sales.find((s) => s.id === id && s.status === 'pending')
   const now = new Date().toISOString()
-  const event: SalePaymentEvent = paymentEvent ?? {
-    at: now,
-    amount: sale.paidAmount,
-    cash: sale.cashAmount,
-    bank: sale.bankAmount,
-    cheque: sale.chequeApproved ? sale.chequeAmount : undefined,
-  }
+  const event: SalePaymentEvent =
+    paymentEvent ?? buildIncrementalPaymentEvent(original, sale, now)
   const next = {
     ...data,
-    sales: data.sales.map((s) =>
-      s.id === id && s.status === 'pending'
-        ? appendSalePaymentEvent(
-            {
-              ...s,
-              ...sale,
-              pendingPayType:
-                s.pendingPayType ??
-                (s.payType === 'credit' || s.payType === 'cheque' ? s.payType : undefined),
-              status: 'paid' as const,
-              creditAmount: sale.payType === 'split' ? sale.creditAmount : undefined,
-              chequeApproved:
-                sale.payType === 'split' || sale.payType === 'cheque'
-                  ? sale.chequeApproved ?? (sale.payType === 'cheque' ? true : undefined)
-                  : undefined,
-              updatedAt: now,
-            },
-            event,
-          )
-        : s,
-    ),
+    sales: data.sales.map((s) => {
+      if (s.id !== id || s.status !== 'pending') return s
+
+      const settled: Sale = {
+        ...s,
+        ...sale,
+        pendingPayType:
+          s.pendingPayType ??
+          (s.payType === 'credit' || s.payType === 'cheque' ? s.payType : undefined),
+        status: 'paid' as const,
+        creditAmount: sale.payType === 'split' ? sale.creditAmount : undefined,
+        chequeApproved:
+          sale.payType === 'split' || sale.payType === 'cheque'
+            ? sale.chequeApproved ?? (sale.payType === 'cheque' ? true : undefined)
+            : undefined,
+        updatedAt: now,
+      }
+
+      if (event.amount > 0) return appendSalePaymentEvent(settled, event)
+      const priorEvents = original ? priorPaymentEventsFromSale(original) : []
+      return priorEvents.length > 0 ? { ...settled, paymentEvents: priorEvents } : settled
+    }),
   }
   const settled = next.sales.find((s) => s.id === id)
   const synced =

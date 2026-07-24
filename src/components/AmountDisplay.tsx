@@ -15,8 +15,9 @@ interface AmountDisplayProps {
   priorPendingAmount?: number
   /** Credit already collected — shown small with ✓ (e.g. when approving cheque later). */
   priorCreditPaidAmount?: number
-  /** Remaining balance shown small above main value (e.g. credit due while paying cash/bank). */
+  /** Remaining balance shown small above main value (e.g. credit/cheque due while paying). */
   remainingAmount?: number
+  remainingKind?: 'credit' | 'cheque'
 }
 
 export default function AmountDisplay({
@@ -33,8 +34,11 @@ export default function AmountDisplay({
   priorPendingAmount,
   priorCreditPaidAmount,
   remainingAmount,
+  remainingKind = 'credit',
 }: AmountDisplayProps) {
   const display = value ? formatMoney(parseAmount(value)) : '0'
+  const remainingLabel = remainingKind === 'cheque' ? 'Cheque' : 'Credit'
+  const remainingDueLabel = remainingKind === 'cheque' ? 'Cheque due' : 'Credit due'
   const className = [
     'amount-display',
     compact ? 'amount-display--compact' : '',
@@ -78,8 +82,8 @@ export default function AmountDisplay({
         {remainingAmount != null && remainingAmount >= 0 ? (
           <span className="amount-display-prior amount-display-prior--credit">
             {compact
-              ? `Credit ${formatMoney(remainingAmount)}`
-              : `Credit due ${formatMoney(remainingAmount)}`}
+              ? `${remainingLabel} ${formatMoney(remainingAmount)}`
+              : `${remainingDueLabel} ${formatMoney(remainingAmount)}`}
           </span>
         ) : null}
         <span className="amount-display-value">{display}</span>
@@ -103,10 +107,10 @@ export default function AmountDisplay({
       {remainingAmount != null && remainingAmount >= 0 ? (
         <span className="amount-display-prior amount-display-prior--credit">
           {compact
-            ? `Credit ${formatMoney(remainingAmount)}`
-            : `Credit due ${formatMoney(remainingAmount)}`}
-        </span>
-      ) : null}
+            ? `${remainingLabel} ${formatMoney(remainingAmount)}`
+            : `${remainingDueLabel} ${formatMoney(remainingAmount)}`}
+          </span>
+        ) : null}
       {priorPendingAmount && priorPendingAmount > 0 ? (
         <span className="amount-display-prior amount-display-prior--pending">
           {compact ? `⏳ ${formatMoney(priorPendingAmount)}` : `Pending ${formatMoney(priorPendingAmount)}`}

@@ -16,7 +16,7 @@ import {
   buildPurchaseHistoryItems,
   summarizePurchases,
 } from './purchaseHistory'
-import { saleCollectedAmount, salePendingCreditPaidBreakdown } from './salePayment'
+import { saleCollectedAmount } from './salePayment'
 
 export interface DailyTotalsSummary {
   fromDate: string
@@ -71,13 +71,6 @@ function filterItemsByDateRange<T extends { date: string }>(
   return items.filter((item) => isInDateRange(item.date, fromDate, toDate))
 }
 
-function saleChequeCollectedInPeriod(sale: Sale): number {
-  if (sale.status === 'pending') return salePendingCreditPaidBreakdown(sale).cheque
-  if (sale.payType === 'cheque') return sale.billAmount
-  if (sale.payType === 'split' && sale.chequeApproved) return sale.chequeAmount ?? 0
-  return sale.chequeAmount ?? 0
-}
-
 function pendingCreditAddedOnCreate(sale: Sale, fromDate: string, toDate: string): number {
   if (!isInDateRange(sale.createdAt, fromDate, toDate)) return 0
   if (sale.status !== 'pending') return 0
@@ -111,13 +104,7 @@ export function buildDailyTotals(
   for (const row of salesRows) {
     cashCollected += row.cashTotal
     bankCollected += row.bankTotal
-  }
-  for (const sale of data.sales) {
-    if (sale.parentSplitId) continue
-    const date = sale.updatedAt ?? sale.createdAt
-    if (!isInDateRange(date, fromDate, toDate)) continue
-    if (sale.status === 'pending' && saleCollectedAmount(sale) <= 0) continue
-    chequeCollected += saleChequeCollectedInPeriod(sale)
+    chequeCollected += row.chequeTotal
   }
 
   let creditAddedInPeriod = 0

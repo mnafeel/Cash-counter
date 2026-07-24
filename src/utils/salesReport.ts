@@ -101,9 +101,9 @@ export function saleCollectedForFilter(
     return full
   }
 
-  const events = salePaymentEventsInRange(sale, filter.fromDate, filter.toDate)
-  if (events.length > 0) {
-    return sumPaymentEvents(events)
+  if (sale.paymentEvents && sale.paymentEvents.length > 0) {
+    const events = salePaymentEventsInRange(sale, filter.fromDate, filter.toDate)
+    return events.length > 0 ? sumPaymentEvents(events) : emptyCollectedBreakdown()
   }
 
   if (!saleMatchesReportFilter(sale, filter)) {
@@ -431,6 +431,10 @@ function saleMatchesReportFilter(sale: Sale, filter?: SalesReportFilter): boolea
     return true
   }
 
+  if (sale.paymentEvents && sale.paymentEvents.length > 0) {
+    return false
+  }
+
   return isInDateRange(saleReportDate(sale, mode), filter)
 }
 
@@ -474,8 +478,18 @@ function buildGroupedSalesBillDetailLabel(
   return buildSalesBillDetailLabel(parent)
 }
 
+function buildPeriodCollectedLabel(collected: SaleCollectedBreakdown): string {
+  if (collected.total <= 0) return 'Paid —'
+  const parts: string[] = [`Paid ${formatMoney(collected.total)}`]
+  if (collected.cash > 0) parts.push(`💵 ${formatMoney(collected.cash)}`)
+  if (collected.bank > 0) parts.push(`🏦 ${formatMoney(collected.bank)}`)
+  if (collected.cheque > 0) parts.push(`🧾 ${formatMoney(collected.cheque)}`)
+  return parts.join(' · ')
+}
+
 function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesBillRow {
   const mode = filter?.dateMode ?? 'collected'
+  const hasDateFilter = Boolean(filter?.fromDate || filter?.toDate)
   const events = filter ? salePaymentEventsInRange(sale, filter.fromDate, filter.toDate) : []
   const date =
     events.length > 0 ? events[events.length - 1].at : saleReportDate(sale, mode)
@@ -483,6 +497,10 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
   const billAmount = saleOriginalBillAmount(sale)
   const creditPending = saleCreditPendingAmount(sale)
   const chequePending = saleChequePendingAmount(sale)
+  const payLabel =
+    hasDateFilter && mode === 'collected'
+      ? buildPeriodCollectedLabel(collected)
+      : buildSalesBillDetailLabel(sale)
   return {
     id: sale.id,
     groupId: saleBillGroupId(sale),
@@ -498,8 +516,8 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
     bankTotal: collected.bank,
     chequeTotal: collected.cheque,
     customerName: sale.customerName,
-    payLabel: buildSalesBillDetailLabel(sale),
-    detailLabel: `Bill ${formatMoney(billAmount)} · ${buildSalesBillDetailLabel(sale)}`,
+    payLabel,
+    detailLabel: `Bill ${formatMoney(billAmount)} · ${payLabel}`,
   }
 }
 

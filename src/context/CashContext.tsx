@@ -24,7 +24,7 @@ import {
   addSupplier as addSupplierToData,
   addSupplierItem as addSupplierItemToData,
   addTransfer,
-  applyPartialCreditSaleCollection,
+  applyPartialBalanceSaleCollection,
   applyPurchaseCreditPayment,
   cancelApprovedCheque,
   cancelPurchaseCredit,
@@ -182,6 +182,20 @@ interface CashContextValue {
       bankAmount?: number
       chequeAmount?: number
       chequeApproved?: boolean
+    },
+  ) => void
+  collectChequePayment: (
+    id: string,
+    payment: {
+      dueAmount: number
+      collected: number
+      payType: PayType
+      cashAmount?: number
+      bankAmount?: number
+      chequeAmount?: number
+      chequeApproved?: boolean
+      customerName?: string
+      changeAmount?: number
     },
   ) => void
   collectCreditPayment: (
@@ -609,7 +623,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const collectCreditPaymentHandler = useCallback(
+  const collectBalancePaymentHandler = useCallback(
     (
       id: string,
       payment: {
@@ -627,7 +641,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       setData((prev) => {
         if (payment.collected <= 0) return prev
 
-        return applyPartialCreditSaleCollection(prev, id, {
+        return applyPartialBalanceSaleCollection(prev, id, {
           collected: payment.collected,
           payType: payment.payType,
           cashAmount: payment.cashAmount,
@@ -765,7 +779,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       setCustomerReminder: setCustomerReminderHandler,
       updateReminderAlertSettings: updateReminderAlertSettingsHandler,
       applyPurchaseCreditPayment: applyPurchaseCreditPaymentHandler,
-      collectCreditPayment: collectCreditPaymentHandler,
+      collectCreditPayment: collectBalancePaymentHandler,
+      collectChequePayment: collectBalancePaymentHandler,
       updateHistoryName,
       updateExpense: updateExpenseHandler,
       updateSaleBill: updateSaleBillHandler,
@@ -807,7 +822,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       setCustomerReminderHandler,
       updateReminderAlertSettingsHandler,
       applyPurchaseCreditPaymentHandler,
-      collectCreditPaymentHandler,
+      collectBalancePaymentHandler,
       updateHistoryName,
       updateExpenseHandler,
       updateSaleBillHandler,
