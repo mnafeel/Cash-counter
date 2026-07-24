@@ -10,7 +10,8 @@ import {
 import { notifyDataChanged } from '../firebase/sync'
 import { applyStoredCustomerReminderToSale, listOpenBillIdsForCustomer } from '../utils/customerReminders'
 import type { BillReminderKind } from '../utils/billReminders'
-import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
+import { appendSalePaymentEvent, saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
+import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
 
@@ -1110,6 +1111,13 @@ export function applyPartialCreditSaleCollection(
   const totalBank = prevBank + addBank
   const totalCheque = prevCheque + addCheque
   const totalPaid = totalCash + totalBank + totalCheque
+  const paymentEvent = {
+    at: now,
+    amount: collected,
+    cash: addCash,
+    bank: addBank,
+    cheque: addCheque,
+  }
 
   if (remaining <= 0) {
     const originalBillAmount = sale.originalBillAmount ?? due + (totalPaid - collected)
@@ -1130,25 +1138,28 @@ export function applyPartialCreditSaleCollection(
       chequeAmount: totalCheque || undefined,
       chequeApproved: totalCheque > 0 ? true : undefined,
       customerName: payment.customerName,
-    })
+    }, paymentEvent)
   }
 
-  const patched: Sale = {
-    ...sale,
-    billAmount: remaining,
-    originalBillAmount: sale.originalBillAmount ?? remaining + totalPaid,
-    paidAmount: totalPaid,
-    payType: 'credit',
-    pendingPayType: 'credit',
-    cashAmount: totalCash || undefined,
-    bankAmount: totalBank || undefined,
-    chequeAmount: totalCheque || undefined,
-    chequeApproved: totalCheque > 0 ? payment.chequeApproved : undefined,
-    creditAmount: remaining,
-    customerName: payment.customerName ?? sale.customerName,
-    status: 'pending',
-    updatedAt: now,
-  }
+  const patched: Sale = appendSalePaymentEvent(
+    {
+      ...sale,
+      billAmount: remaining,
+      originalBillAmount: sale.originalBillAmount ?? remaining + totalPaid,
+      paidAmount: totalPaid,
+      payType: 'credit',
+      pendingPayType: 'credit',
+      cashAmount: totalCash || undefined,
+      bankAmount: totalBank || undefined,
+      chequeAmount: totalCheque || undefined,
+      chequeApproved: totalCheque > 0 ? payment.chequeApproved : undefined,
+      creditAmount: remaining,
+      customerName: payment.customerName ?? sale.customerName,
+      status: 'pending',
+      updatedAt: now,
+    },
+    paymentEvent,
+  )
 
   let next: AppData = {
     ...data,
@@ -1250,27 +1261,38 @@ export function collectPendingBill(
     chequeApproved?: boolean
     customerName?: string
   },
+  paymentEvent?: Omit<SalePaymentEvent, 'amount'> & { amount: number },
 ): AppData {
   const original = data.sales.find((s) => s.id === id && s.status === 'pending')
   const now = new Date().toISOString()
+  const event: SalePaymentEvent = paymentEvent ?? {
+    at: now,
+    amount: sale.paidAmount,
+    cash: sale.cashAmount,
+    bank: sale.bankAmount,
+    cheque: sale.chequeApproved ? sale.chequeAmount : undefined,
+  }
   const next = {
     ...data,
     sales: data.sales.map((s) =>
       s.id === id && s.status === 'pending'
-        ? {
-            ...s,
-            ...sale,
-            pendingPayType:
-              s.pendingPayType ??
-              (s.payType === 'credit' || s.payType === 'cheque' ? s.payType : undefined),
-            status: 'paid' as const,
-            creditAmount: sale.payType === 'split' ? sale.creditAmount : undefined,
-            chequeApproved:
-              sale.payType === 'split' || sale.payType === 'cheque'
-                ? sale.chequeApproved ?? (sale.payType === 'cheque' ? true : undefined)
-                : undefined,
-            updatedAt: now,
-          }
+        ? appendSalePaymentEvent(
+            {
+              ...s,
+              ...sale,
+              pendingPayType:
+                s.pendingPayType ??
+                (s.payType === 'credit' || s.payType === 'cheque' ? s.payType : undefined),
+              status: 'paid' as const,
+              creditAmount: sale.payType === 'split' ? sale.creditAmount : undefined,
+              chequeApproved:
+                sale.payType === 'split' || sale.payType === 'cheque'
+                  ? sale.chequeApproved ?? (sale.payType === 'cheque' ? true : undefined)
+                  : undefined,
+              updatedAt: now,
+            },
+            event,
+          )
         : s,
     ),
   }

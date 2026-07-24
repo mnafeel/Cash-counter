@@ -22,6 +22,34 @@ function saleActivityDate(sale: Sale): string {
 }
 
 function pushSaleItems(items: CashActivityItem[], sale: Sale) {
+  if (sale.paymentEvents && sale.paymentEvents.length > 0) {
+    sale.paymentEvents.forEach((event, index) => {
+      const bank = event.bank ?? 0
+      if (bank > 0) {
+        items.push({
+          id: `sale-${sale.id}-bank-${index}`,
+          label: 'Bill · bank collected',
+          amount: bank,
+          direction: 'in',
+          date: event.at,
+          name: sale.customerName,
+        })
+      }
+      const cheque = event.cheque ?? 0
+      if (cheque > 0) {
+        items.push({
+          id: `sale-${sale.id}-cheque-${index}`,
+          label: 'Bill · cheque collected',
+          amount: cheque,
+          direction: 'in',
+          date: event.at,
+          name: sale.customerName,
+        })
+      }
+    })
+    return
+  }
+
   const date = saleActivityDate(sale)
   const bank = saleBankCollected(sale)
   if (bank > 0) {

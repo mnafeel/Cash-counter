@@ -1,6 +1,11 @@
 import type { AppData, Sale } from '../types'
 import { formatDate, formatMoney } from './format'
-import { saleCollectedAmount, salePendingCreditPaidBreakdown } from './salePayment'
+import {
+  saleCollectedAmount,
+  saleHasCollectionInRange,
+  salePaymentEventsInRange,
+  salePendingCreditPaidBreakdown,
+} from './salePayment'
 
 export type ReportPeriod = 'day' | 'week' | 'month'
 export type ReportSort = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
@@ -51,6 +56,61 @@ export interface SalesBillSummary {
   chequeTotal: number
   creditPending: number
   chequePending: number
+}
+
+export interface SaleCollectedBreakdown {
+  cash: number
+  bank: number
+  cheque: number
+  total: number
+}
+
+function emptyCollectedBreakdown(): SaleCollectedBreakdown {
+  return { cash: 0, bank: 0, cheque: 0, total: 0 }
+}
+
+function sumPaymentEvents(
+  events: ReturnType<typeof salePaymentEventsInRange>,
+): SaleCollectedBreakdown {
+  return events.reduce(
+    (acc, event) => {
+      acc.cash += event.cash ?? 0
+      acc.bank += event.bank ?? 0
+      acc.cheque += event.cheque ?? 0
+      acc.total += event.amount
+      return acc
+    },
+    emptyCollectedBreakdown(),
+  )
+}
+
+export function saleCollectedForFilter(
+  sale: Sale,
+  filter?: SalesReportFilter,
+): SaleCollectedBreakdown {
+  const full = {
+    cash: saleCashCollected(sale),
+    bank: saleBankCollected(sale),
+    cheque: saleChequeToBankCollected(sale),
+    total: 0,
+  }
+  full.total = full.cash + full.bank + full.cheque
+
+  const mode = filter?.dateMode ?? 'collected'
+  if (mode === 'created' || (!filter?.fromDate && !filter?.toDate)) {
+    return full
+  }
+
+  const events = salePaymentEventsInRange(sale, filter.fromDate, filter.toDate)
+  if (events.length > 0) {
+    return sumPaymentEvents(events)
+  }
+
+  if (!saleMatchesReportFilter(sale, filter)) {
+    return emptyCollectedBreakdown()
+  }
+
+  return full
 }
 
 export function toInputDate(d: Date = new Date()): string {
@@ -106,15 +166,11 @@ function salesForReport(data: AppData): Sale[] {
 }
 
 function filteredReportSales(data: AppData, filter?: SalesReportFilter): Sale[] {
-  const mode = filter?.dateMode ?? 'collected'
-  return salesForReport(data).filter((sale) =>
-    isInDateRange(saleReportDate(sale, mode), filter),
-  )
+  return salesForReport(data).filter((sale) => saleMatchesReportFilter(sale, filter))
 }
 
 function filteredFullyPaidSales(data: AppData, filter?: SalesReportFilter): Sale[] {
-  const mode = filter?.dateMode ?? 'collected'
-  return paidSales(data).filter((sale) => isInDateRange(saleReportDate(sale, mode), filter))
+  return paidSales(data).filter((sale) => saleMatchesReportFilter(sale, filter))
 }
 
 function isCreditPendingSale(sale: Sale): boolean {
@@ -288,7 +344,29 @@ export function buildSalesReport(
   >()
 
   for (const sale of filteredReportSales(data, filter)) {
-    const iso = saleReportDate(sale, filter?.dateMode ?? 'collected')
+    const mode = filter?.dateMode ?? 'collected'
+    const events = filter ? salePaymentEventsInRange(sale, filter.fromDate, filter.toDate) : []
+
+    if (events.length > 0) {
+      for (const event of events) {
+        const key = periodKey(event.at, period)
+        const row = groups.get(key) ?? {
+          billCount: 0,
+          totalBills: 0,
+          cashTotal: 0,
+          bankTotal: 0,
+        }
+        row.totalBills += event.amount
+        row.cashTotal += event.cash ?? 0
+        row.bankTotal += (event.bank ?? 0) + (event.cheque ?? 0)
+        groups.set(key, row)
+      }
+      continue
+    }
+
+    const collected = saleCollectedForFilter(sale, filter)
+    if (collected.total <= 0) continue
+    const iso = saleReportDate(sale, mode)
     const key = periodKey(iso, period)
     const row = groups.get(key) ?? {
       billCount: 0,
@@ -296,15 +374,16 @@ export function buildSalesReport(
       cashTotal: 0,
       bankTotal: 0,
     }
-    row.totalBills += saleTotalCollected(sale)
-    row.cashTotal += saleCashCollected(sale)
-    row.bankTotal += saleBankCollected(sale) + saleChequeToBankCollected(sale)
+    row.totalBills += collected.total
+    row.cashTotal += collected.cash
+    row.bankTotal += collected.bank + collected.cheque
     groups.set(key, row)
   }
 
   for (const [key, row] of groups) {
     const groupIds = new Set<string>()
     for (const sale of filteredFullyPaidSales(data, filter)) {
+      if (saleCollectedForFilter(sale, filter).total <= 0) continue
       const iso = saleReportDate(sale, filter?.dateMode ?? 'collected')
       if (periodKey(iso, period) !== key) continue
       groupIds.add(saleBillGroupId(sale))
@@ -344,6 +423,14 @@ function buildChildrenMap(sales: Sale[]): Map<string, Sale[]> {
 
 function saleMatchesReportFilter(sale: Sale, filter?: SalesReportFilter): boolean {
   const mode = filter?.dateMode ?? 'collected'
+  if (mode === 'created') {
+    return isInDateRange(sale.createdAt, filter)
+  }
+
+  if (saleHasCollectionInRange(sale, filter?.fromDate, filter?.toDate)) {
+    return true
+  }
+
   return isInDateRange(saleReportDate(sale, mode), filter)
 }
 
@@ -387,12 +474,12 @@ function buildGroupedSalesBillDetailLabel(
   return buildSalesBillDetailLabel(parent)
 }
 
-function buildSingleSalesBillRow(sale: Sale, mode: SaleDateMode): SalesBillRow {
-  const date = saleReportDate(sale, mode)
-  const cashTotal = saleCashCollected(sale)
-  const bankTotal = saleBankCollected(sale)
-  const chequeTotal = saleChequeToBankCollected(sale)
-  const collected = cashTotal + bankTotal + chequeTotal
+function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesBillRow {
+  const mode = filter?.dateMode ?? 'collected'
+  const events = filter ? salePaymentEventsInRange(sale, filter.fromDate, filter.toDate) : []
+  const date =
+    events.length > 0 ? events[events.length - 1].at : saleReportDate(sale, mode)
+  const collected = saleCollectedForFilter(sale, filter)
   const billAmount = saleOriginalBillAmount(sale)
   const creditPending = saleCreditPendingAmount(sale)
   const chequePending = saleChequePendingAmount(sale)
@@ -404,12 +491,12 @@ function buildSingleSalesBillRow(sale: Sale, mode: SaleDateMode): SalesBillRow {
     createdDate: sale.createdAt,
     createdDateLabel: formatDate(sale.createdAt),
     billAmount,
-    collectedTotal: collected,
+    collectedTotal: collected.total,
     creditPending,
     chequePending,
-    cashTotal,
-    bankTotal,
-    chequeTotal,
+    cashTotal: collected.cash,
+    bankTotal: collected.bank,
+    chequeTotal: collected.cheque,
     customerName: sale.customerName,
     payLabel: buildSalesBillDetailLabel(sale),
     detailLabel: `Bill ${formatMoney(billAmount)} · ${buildSalesBillDetailLabel(sale)}`,
@@ -427,9 +514,12 @@ function buildGroupedSalesBillRow(
   if (inRange.length === 0) return null
 
   const billAmount = groupOriginalBillAmount(parent, children)
-  const cashTotal = inRange.reduce((sum, member) => sum + saleCashCollected(member), 0)
-  const bankTotal = inRange.reduce((sum, member) => sum + saleBankCollected(member), 0)
-  const chequeTotal = inRange.reduce((sum, member) => sum + saleChequeToBankCollected(member), 0)
+  const cashTotal = inRange.reduce((sum, member) => sum + saleCollectedForFilter(member, filter).cash, 0)
+  const bankTotal = inRange.reduce((sum, member) => sum + saleCollectedForFilter(member, filter).bank, 0)
+  const chequeTotal = inRange.reduce(
+    (sum, member) => sum + saleCollectedForFilter(member, filter).cheque,
+    0,
+  )
   const collectedTotal = cashTotal + bankTotal + chequeTotal
   const creditPending = groupCreditPending(parent, children)
   const chequePending = groupChequePending(parent, children)
@@ -487,6 +577,9 @@ export function buildSalesBillList(
   filter?: SalesReportFilter,
 ): SalesBillRow[] {
   const mode = filter?.dateMode ?? 'collected'
+  const hasDateFilter = Boolean(filter?.fromDate || filter?.toDate)
+  const includeBillRow = (row: SalesBillRow) =>
+    !hasDateFilter || mode === 'created' || row.collectedTotal > 0
   const childrenByParent = buildChildrenMap(data.sales)
   const consumedChildIds = new Set<string>()
   const rows: SalesBillRow[] = []
@@ -500,18 +593,20 @@ export function buildSalesBillList(
     if (isSplitGroup) {
       for (const child of children) consumedChildIds.add(child.id)
       const row = buildGroupedSalesBillRow(sale, children, filter, mode)
-      if (row) rows.push(row)
+      if (row && includeBillRow(row)) rows.push(row)
       continue
     }
 
     if (!saleMatchesReportFilter(sale, filter)) continue
-    rows.push(buildSingleSalesBillRow(sale, mode))
+    const row = buildSingleSalesBillRow(sale, filter)
+    if (includeBillRow(row)) rows.push(row)
   }
 
   for (const sale of data.sales) {
     if (!sale.parentSplitId || consumedChildIds.has(sale.id)) continue
     if (!saleMatchesReportFilter(sale, filter)) continue
-    rows.push(buildSingleSalesBillRow(sale, mode))
+    const row = buildSingleSalesBillRow(sale, filter)
+    if (includeBillRow(row)) rows.push(row)
   }
 
   return sortSalesBillRows(rows, sort)

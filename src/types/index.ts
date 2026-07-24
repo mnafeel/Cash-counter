@@ -1,6 +1,14 @@
 export type PayType = 'cash' | 'bank' | 'credit' | 'split' | 'cheque'
 export type SaleStatus = 'pending' | 'paid'
 
+export interface SalePaymentEvent {
+  at: string
+  amount: number
+  cash?: number
+  bank?: number
+  cheque?: number
+}
+
 export interface Sale {
   id: string
   billAmount: number
@@ -25,6 +33,8 @@ export interface Sale {
   sourceId?: string
   createdAt: string
   updatedAt?: string
+  /** Per payment collection — used so later credit pay-down only counts on that day. */
+  paymentEvents?: SalePaymentEvent[]
   /** Follow-up date to remind about collecting this pending bill. */
   reminderAt?: string
   /** Optional note shown with reminder alerts. */

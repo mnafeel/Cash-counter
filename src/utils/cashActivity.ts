@@ -82,6 +82,22 @@ function saleActivityDate(sale: Sale): string {
 }
 
 function pushSaleItems(items: CashActivityItem[], sale: Sale) {
+  if (sale.paymentEvents && sale.paymentEvents.length > 0) {
+    sale.paymentEvents.forEach((event, index) => {
+      const cash = event.cash ?? 0
+      if (cash <= 0) return
+      items.push({
+        id: `sale-${sale.id}-cash-${index}`,
+        label: 'Bill · cash collected',
+        amount: cash,
+        direction: 'in',
+        date: event.at,
+        name: sale.customerName,
+      })
+    })
+    return
+  }
+
   const date = saleActivityDate(sale)
   const cash = saleCashCollected(sale)
   if (cash > 0) {
