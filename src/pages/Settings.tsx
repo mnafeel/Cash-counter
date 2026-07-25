@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { User } from 'firebase/auth'
 import { useCash } from '../context/CashContext'
@@ -46,6 +46,16 @@ import {
   type DailyReportKind,
 } from '../utils/dailyReport'
 import { toInputDate } from '../utils/salesReport'
+import {
+  downloadDataBackup,
+  formatBackupSummary,
+  readBackupFile,
+} from '../utils/dataBackup'
+import {
+  listLocalBackupSnapshots,
+  loadLocalBackupSnapshot,
+  type LocalBackupSnapshotMeta,
+} from '../storage/localBackup'
 import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
 import BillReminderControl from '../components/BillReminderControl'
 import BillReminderAlertsSettings from '../components/BillReminderAlertsSettings'
@@ -179,6 +189,9 @@ export default function Settings() {
   const [historyReportStatus, setHistoryReportStatus] = useState('')
   const [dailyReportDate, setDailyReportDate] = useState(() => toInputDate())
   const [dailyReportStatus, setDailyReportStatus] = useState('')
+  const [dataBackupStatus, setDataBackupStatus] = useState('')
+  const [localSnapshots, setLocalSnapshots] = useState<LocalBackupSnapshotMeta[]>([])
+  const backupFileInputRef = useRef<HTMLInputElement>(null)
   const [billEditSearch, setBillEditSearch] = useState('')
   const [billEditFilter, setBillEditFilter] = useState<BillEditFilter>('all')
   const [billEditOpen, setBillEditOpen] = useState(false)
@@ -206,6 +219,19 @@ export default function Settings() {
   useEffect(() => {
     billEditListRef.current?.scrollTo(0, 0)
   }, [billEditFilter, billEditSearch, billEditOpen])
+
+  const refreshLocalSnapshots = useCallback(async () => {
+    try {
+      setLocalSnapshots(await listLocalBackupSnapshots())
+    } catch {
+      setLocalSnapshots([])
+    }
+  }, [])
+
+  useEffect(() => {
+    if (tab !== 'general') return
+    void refreshLocalSnapshots()
+  }, [tab, data, refreshLocalSnapshots])
 
   const approvedCheques = useMemo(() => listApprovedCheques(data), [data])
   const pendingCreditSales = useMemo(() => listPendingCreditSales(data), [data.sales])
@@ -340,6 +366,68 @@ export default function Settings() {
     downloadFullHistoryReport(data, historyReportMeta())
     setHistoryReportStatus(`CSV downloaded · ${historyRecordCount} records`)
     setTimeout(() => setHistoryReportStatus(''), 4000)
+  }
+
+  function handleDownloadDataBackup() {
+    const payload = downloadDataBackup(data)
+    setDataBackupStatus(
+      `Backup downloaded · ${payload.summary.salesCount} bills · ${payload.summary.expensesCount} records · ${payload.summary.pendingCount} pending`,
+    )
+    setTimeout(() => setDataBackupStatus(''), 5000)
+  }
+
+  function handlePickBackupFile() {
+    backupFileInputRef.current?.click()
+  }
+
+  async function handleRestoreBackupFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    try {
+      const restored = await readBackupFile(file)
+      const summary = formatBackupSummary(restored)
+      const ok = window.confirm(
+        `Restore backup from ${file.name}?\n\n${summary}\n\nThis replaces all data on this device.`,
+      )
+      if (!ok) return
+      replaceAllData(restored)
+      setOpeningStr(String(restored.openingBalance))
+      setOpeningBankStr(String(restored.openingBankBalance ?? 0))
+      setDataBackupStatus(`Restored from file · ${summary}`)
+      void refreshLocalSnapshots()
+      setTimeout(() => setDataBackupStatus(''), 5000)
+    } catch (err) {
+      setDataBackupStatus(err instanceof Error ? err.message : 'Restore failed')
+      setTimeout(() => setDataBackupStatus(''), 5000)
+    }
+  }
+
+  async function handleRestoreLocalSnapshot(id: string) {
+    try {
+      const restored = await loadLocalBackupSnapshot(id)
+      if (!restored) {
+        setDataBackupStatus('Local snapshot not found')
+        setTimeout(() => setDataBackupStatus(''), 4000)
+        return
+      }
+      const summary = formatBackupSummary(restored)
+      const snapshot = localSnapshots.find((item) => item.id === id)
+      const ok = window.confirm(
+        `Restore device backup from ${snapshot ? new Date(snapshot.savedAt).toLocaleString() : 'snapshot'}?\n\n${summary}\n\nThis replaces all data on this device.`,
+      )
+      if (!ok) return
+      replaceAllData(restored)
+      setOpeningStr(String(restored.openingBalance))
+      setOpeningBankStr(String(restored.openingBankBalance ?? 0))
+      setDataBackupStatus(`Restored device backup · ${summary}`)
+      void refreshLocalSnapshots()
+      setTimeout(() => setDataBackupStatus(''), 5000)
+    } catch (err) {
+      setDataBackupStatus(err instanceof Error ? err.message : 'Restore failed')
+      setTimeout(() => setDataBackupStatus(''), 5000)
+    }
   }
 
   function handlePrintHistoryReportPdf() {
@@ -910,6 +998,69 @@ export default function Settings() {
               </div>
               {historyReportStatus ? (
                 <p className="settings-history-report-status">{historyReportStatus}</p>
+              ) : null}
+            </section>
+
+            <section className="settings-history-report settings-data-backup">
+              <div className="settings-history-report-head">
+                <h3>Data backup</h3>
+                <p>
+                  All bills, expenses, pending credit/cheque, suppliers, and settings. Auto-saved on
+                  this device ({localSnapshots.length} snapshots). Download a JSON file anytime or
+                  restore from file / device backup.
+                </p>
+              </div>
+              <div className="settings-history-report-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary settings-history-report-btn"
+                  onClick={handleDownloadDataBackup}
+                >
+                  Download backup
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary settings-history-report-btn"
+                  onClick={handlePickBackupFile}
+                >
+                  Restore from file
+                </button>
+                <input
+                  ref={backupFileInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  hidden
+                  onChange={(event) => void handleRestoreBackupFile(event)}
+                />
+              </div>
+              {localSnapshots.length > 0 ? (
+                <ul className="settings-data-backup-list">
+                  {localSnapshots.slice(0, 8).map((snapshot) => (
+                    <li key={snapshot.id} className="settings-data-backup-item">
+                      <div className="settings-data-backup-item-meta">
+                        <span>{new Date(snapshot.savedAt).toLocaleString()}</span>
+                        <span>
+                          {snapshot.salesCount} bills · {snapshot.expensesCount} records ·{' '}
+                          {snapshot.pendingCount} pending
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-ghost settings-data-backup-restore-btn"
+                        onClick={() => void handleRestoreLocalSnapshot(snapshot.id)}
+                      >
+                        Restore
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="settings-backup-meta">
+                  Device snapshots appear here after you save bills or expenses.
+                </p>
+              )}
+              {dataBackupStatus ? (
+                <p className="settings-history-report-status">{dataBackupStatus}</p>
               ) : null}
             </section>
 

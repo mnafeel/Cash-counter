@@ -178,7 +178,7 @@ export default function Home() {
   const todayRegularExpenses = data.expenses.filter(
     (e) =>
       new Date(e.createdAt).toDateString() === today &&
-      e.kind === 'expense' &&
+      (!e.kind || e.kind === 'expense') &&
       !isPurchaseExpense(e),
   )
   const todayRegularExpensesTotal = todayRegularExpenses.reduce((sum, e) => sum + e.amount, 0)

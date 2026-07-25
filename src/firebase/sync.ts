@@ -3,11 +3,13 @@ import {
   applyRemoteCloudData,
   getLocalDataUpdatedAt,
   loadData,
+  markLocalDataSynced,
 } from '../storage/database'
 import { isFirebaseConfigured } from './config'
 import {
   backupAppData,
   fetchRemoteAppData,
+  getLocalLastBackupTime,
   isAutoBackupEnabled,
   isCloudLoggedIn,
   parseBackupTimestamp,
@@ -21,9 +23,24 @@ let onStatusChange: ((message: string, isError?: boolean) => void) | null = null
 let remoteListener: ((data: AppData) => void) | null = null
 let cloudSnapshotUnsub: (() => void) | null = null
 let applyingRemote = false
+let backingUp = false
 let lastAppliedRemoteBackupAt = 0
 
 const DEBOUNCE_MS = 600
+
+function getEffectiveLocalTimestamp(): number {
+  return Math.max(
+    parseBackupTimestamp(getLocalDataUpdatedAt()),
+    parseBackupTimestamp(getLocalLastBackupTime()),
+  )
+}
+
+function hasUnsyncedLocalChanges(): boolean {
+  if (debounceTimer !== null || backingUp) return true
+  const localMs = parseBackupTimestamp(getLocalDataUpdatedAt())
+  const backupMs = parseBackupTimestamp(getLocalLastBackupTime())
+  return localMs > backupMs
+}
 
 export function setCloudRemoteListener(listener: ((data: AppData) => void) | null): void {
   remoteListener = listener
@@ -46,23 +63,33 @@ export function setBackupStatusListener(
 }
 
 function shouldApplyRemote(backupAt: string): boolean {
-  if (applyingRemote) return false
+  if (applyingRemote || backingUp) return false
+  if (hasUnsyncedLocalChanges()) return false
   const remoteMs = parseBackupTimestamp(backupAt)
   if (remoteMs <= lastAppliedRemoteBackupAt) return false
-  const localMs = parseBackupTimestamp(getLocalDataUpdatedAt())
-  return remoteMs > localMs
+  return remoteMs > getEffectiveLocalTimestamp()
 }
 
 function applyRemoteSnapshot(data: AppData, backupAt: string): void {
   if (!shouldApplyRemote(backupAt)) return
   applyingRemote = true
+  let rebackup: AppData | null = null
   try {
-    const next = applyRemoteCloudData(data, backupAt)
+    const { data: next, preservedLocal } = applyRemoteCloudData(data, backupAt)
     lastAppliedRemoteBackupAt = parseBackupTimestamp(backupAt)
     remoteListener?.(next)
-    onStatusChange?.(`Synced from cloud · ${new Date(backupAt).toLocaleString()}`)
+    if (preservedLocal) {
+      onStatusChange?.('Kept local pending bills & records · syncing to cloud…')
+      rebackup = next
+    } else {
+      onStatusChange?.(`Synced from cloud · ${new Date(backupAt).toLocaleString()}`)
+    }
   } finally {
     applyingRemote = false
+  }
+  if (rebackup && isAutoBackupEnabled() && isCloudLoggedIn()) {
+    pendingData = rebackup
+    queueBackup(rebackup)
   }
 }
 
@@ -117,16 +144,22 @@ function queueBackup(data: AppData): void {
 }
 
 async function runBackup(data: AppData): Promise<void> {
-  if (!isCloudLoggedIn() || applyingRemote) return
+  if (!isCloudLoggedIn() || applyingRemote || backingUp) return
 
+  backingUp = true
+  debounceTimer = null
   try {
     onStatusChange?.('Backing up to Firebase…')
     const at = await backupAppData(data)
+    markLocalDataSynced(at)
+    pendingData = null
     lastAppliedRemoteBackupAt = parseBackupTimestamp(at)
     onStatusChange?.(`Backed up ${new Date(at).toLocaleString()}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Backup failed'
     onStatusChange?.(message, true)
+  } finally {
+    backingUp = false
   }
 }
 
@@ -139,7 +172,12 @@ export function notifyDataChanged(data: AppData): void {
 
 export async function backupNow(data: AppData): Promise<string> {
   const at = await backupAppData(data)
-  pendingData = data
+  markLocalDataSynced(at)
+  pendingData = null
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
   lastAppliedRemoteBackupAt = parseBackupTimestamp(at)
   onStatusChange?.(`Backed up ${new Date(at).toLocaleString()}`)
   return at

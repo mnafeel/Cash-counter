@@ -5,10 +5,12 @@ import { stripExpenseBillSuffix, isPurchaseExpense } from '../utils/expenseBillL
 import {
   buildCreditPaymentUpdate,
   isPurchaseCreditExpense,
+  purchaseCreditAmount,
   type CreditPaymentInput,
 } from '../utils/purchaseHistory'
 import { notifyDataChanged } from '../firebase/sync'
 import { markLocalBackupTime } from '../firebase/backup'
+import { queueLocalBackupSnapshot } from './localBackup'
 import { applyStoredCustomerReminderToSale, listOpenBillIdsForCustomer } from '../utils/customerReminders'
 import type { BillReminderKind } from '../utils/billReminders'
 import {
@@ -176,6 +178,153 @@ function expenseWasNormalized(before: Expense, after: Expense): boolean {
   )
 }
 
+function recordTimestamp(iso?: string): number {
+  if (!iso) return 0
+  const ms = new Date(iso).getTime()
+  return Number.isFinite(ms) ? ms : 0
+}
+
+function sortRecordsNewestFirst<T extends { createdAt: string }>(items: T[]): T[] {
+  return items.sort(
+    (a, b) => recordTimestamp(b.createdAt) - recordTimestamp(a.createdAt),
+  )
+}
+
+function isPendingSale(sale: Sale): boolean {
+  return sale.status === 'pending'
+}
+
+function saleHasCollectionProof(sale: Sale): boolean {
+  if (sale.status === 'paid') return true
+  if ((sale.paymentEvents?.length ?? 0) > 0) return true
+  return false
+}
+
+/** Prefer open pending bills unless the other copy clearly collected payment. */
+function mergeSalePair(local: Sale, remote: Sale): Sale {
+  const localTime = recordTimestamp(local.updatedAt ?? local.createdAt)
+  const remoteTime = recordTimestamp(remote.updatedAt ?? remote.createdAt)
+  const localPending = isPendingSale(local)
+  const remotePending = isPendingSale(remote)
+
+  if (localPending && !remotePending) {
+    if (!saleHasCollectionProof(remote) || remoteTime <= localTime) return local
+    return remote
+  }
+  if (!localPending && remotePending) {
+    if (!saleHasCollectionProof(local) || localTime <= remoteTime) return remote
+    return local
+  }
+
+  return localTime >= remoteTime ? local : remote
+}
+
+function mergeSaleLists(local: Sale[], remote: Sale[]): Sale[] {
+  const byId = new Map<string, Sale>()
+  for (const item of remote) byId.set(item.id, item)
+  for (const item of local) {
+    const other = byId.get(item.id)
+    byId.set(item.id, other ? mergeSalePair(item, other) : item)
+  }
+  return sortRecordsNewestFirst(Array.from(byId.values()))
+}
+
+function expenseHasOpenBalance(expense: Expense): boolean {
+  if (isPurchaseCreditExpense(expense)) return purchaseCreditAmount(expense) > 0
+  if (expense.payType === 'cheque' && !expense.chequeApproved) return true
+  if (
+    expense.payType === 'split' &&
+    (expense.chequeAmount ?? 0) > 0 &&
+    !expense.chequeApproved
+  ) {
+    return true
+  }
+  return false
+}
+
+function expenseBalanceSettled(expense: Expense): boolean {
+  if (isPurchaseCreditExpense(expense)) return purchaseCreditAmount(expense) <= 0
+  if (expense.payType === 'cheque') return Boolean(expense.chequeApproved)
+  if (
+    expense.payType === 'split' &&
+    (expense.chequeAmount ?? 0) > 0
+  ) {
+    return Boolean(expense.chequeApproved)
+  }
+  return true
+}
+
+/** Prefer open purchase credit / pending cheque unless the other copy clearly settled. */
+function mergeExpensePair(local: Expense, remote: Expense): Expense {
+  const localTime = recordTimestamp(local.updatedAt ?? local.createdAt)
+  const remoteTime = recordTimestamp(remote.updatedAt ?? remote.createdAt)
+  const localOpen = expenseHasOpenBalance(local)
+  const remoteOpen = expenseHasOpenBalance(remote)
+
+  if (localOpen && !remoteOpen) {
+    if (!expenseBalanceSettled(remote) || remoteTime <= localTime) return local
+    if (purchaseCreditAmount(local) > purchaseCreditAmount(remote)) return local
+    return remote
+  }
+  if (!localOpen && remoteOpen) {
+    if (!expenseBalanceSettled(local) || localTime <= remoteTime) return remote
+    return local
+  }
+
+  return localTime >= remoteTime ? local : remote
+}
+
+function mergeExpenseLists(local: Expense[], remote: Expense[]): Expense[] {
+  const byId = new Map<string, Expense>()
+  for (const item of remote) byId.set(item.id, item)
+  for (const item of local) {
+    const other = byId.get(item.id)
+    byId.set(item.id, other ? mergeExpensePair(item, other) : item)
+  }
+  return sortRecordsNewestFirst(Array.from(byId.values()))
+}
+
+function countPendingSales(data: AppData): number {
+  return data.sales.filter((sale) => sale.status === 'pending').length
+}
+
+function countOpenPurchaseBalances(data: AppData): number {
+  return data.expenses.filter((expense) => expenseHasOpenBalance(expense)).length
+}
+
+export function mergeCloudAppData(local: AppData, remote: AppData): AppData {
+  const normalizedRemote = normalizeData(remote)
+  const normalizedLocal = normalizeData(local)
+  return normalizeData({
+    ...normalizedRemote,
+    sales: mergeSaleLists(normalizedLocal.sales, normalizedRemote.sales),
+    expenses: mergeExpenseLists(normalizedLocal.expenses, normalizedRemote.expenses),
+    suppliers: normalizeSuppliers([
+      ...(normalizedRemote.suppliers ?? []),
+      ...(normalizedLocal.suppliers ?? []),
+    ]),
+    customerReminders: {
+      ...(normalizedRemote.customerReminders ?? {}),
+      ...(normalizedLocal.customerReminders ?? {}),
+    },
+  })
+}
+
+function cloudDataPreservedLocalRecords(local: AppData, remote: AppData, merged: AppData): boolean {
+  const remoteExpenseIds = new Set(remote.expenses.map((e) => e.id))
+  const remoteSaleIds = new Set(remote.sales.map((s) => s.id))
+  const localOnlyExpenses = local.expenses.some((e) => !remoteExpenseIds.has(e.id))
+  const localOnlySales = local.sales.some((s) => !remoteSaleIds.has(s.id))
+  return (
+    localOnlyExpenses ||
+    localOnlySales ||
+    merged.expenses.length > remote.expenses.length ||
+    merged.sales.length > remote.sales.length ||
+    countPendingSales(merged) > countPendingSales(remote) ||
+    countOpenPurchaseBalances(merged) > countOpenPurchaseBalances(remote)
+  )
+}
+
 export function normalizeData(parsed: Partial<AppData>): AppData {
   const alerts = parsed.reminderAlerts
   const normalizedExpenses = (parsed.expenses ?? []).map((expense) => normalizeExpense(expense))
@@ -229,6 +378,7 @@ export function saveData(data: AppData): void {
   const serialized = JSON.stringify(data)
   localStorage.setItem(STORAGE_KEY, serialized)
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, new Date().toISOString())
+  queueLocalBackupSnapshot(data)
   notifyDataChanged(data)
 }
 
@@ -240,12 +390,22 @@ export function getLocalDataUpdatedAt(): string | null {
   }
 }
 
-export function applyRemoteCloudData(data: AppData, backupAt: string): AppData {
-  const next = normalizeData(data)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-  localStorage.setItem(LOCAL_UPDATED_AT_KEY, backupAt)
+export function markLocalDataSynced(at: string): void {
+  localStorage.setItem(LOCAL_UPDATED_AT_KEY, at)
+}
+
+export function applyRemoteCloudData(
+  data: AppData,
+  backupAt: string,
+): { data: AppData; preservedLocal: boolean } {
+  const local = loadData()
+  const remote = normalizeData(data)
+  const merged = mergeCloudAppData(local, remote)
+  const preservedLocal = cloudDataPreservedLocalRecords(local, remote, merged)
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+  localStorage.setItem(LOCAL_UPDATED_AT_KEY, preservedLocal ? new Date().toISOString() : backupAt)
   markLocalBackupTime(backupAt)
-  return next
+  return { data: merged, preservedLocal }
 }
 
 export function replaceData(data: AppData): AppData {
@@ -541,7 +701,7 @@ export function addSale(
     status: rest.status ?? 'paid',
     id: presetId ?? crypto.randomUUID(),
     createdAt: now,
-    updatedAt: (rest.status ?? 'paid') === 'paid' ? now : rest.updatedAt,
+    updatedAt: now,
   })
   const next = { ...data, sales: [newSale, ...data.sales] }
   saveData(next)
@@ -865,7 +1025,9 @@ export function updatePendingBill(
         patched.payType !== s.payType ||
         patched.pendingPayType !== s.pendingPayType
 
-      return financialChanged ? { ...patched, updatedAt: new Date().toISOString() } : patched
+      return financialChanged
+        ? { ...patched, updatedAt: new Date().toISOString() }
+        : { ...patched, updatedAt: patched.updatedAt ?? new Date().toISOString() }
     }),
   }
   const updated = next.sales.find((s) => s.id === id)
