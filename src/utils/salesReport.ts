@@ -683,3 +683,16 @@ export function formatSalesBreakdown(
   ]
   return parts.join(' · ')
 }
+
+/** Collected cash / bank / approved cheque only — excludes open credit & pending cheque. */
+export function formatCollectedSalesBreakdown(
+  cash: number,
+  bank: number,
+  chequeCollected = 0,
+): string {
+  return [
+    `💵 ${formatMoney(cash)}`,
+    `🏦 ${formatMoney(bank)}`,
+    `🧾 ${formatMoney(chequeCollected)}`,
+  ].join(' · ')
+}

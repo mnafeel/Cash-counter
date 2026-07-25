@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useDeviceSize } from '../hooks/useDeviceSize'
 import { useHomePinLock } from '../hooks/useHomePinLock'
 import ReminderAlertsNotifier from './ReminderAlertsNotifier'
+import CloudStatusNotifier from './CloudStatusNotifier'
 import { initReminderNotificationSound } from '../utils/reminderNotificationSound'
 import './Layout.css'
 
@@ -75,6 +76,7 @@ export default function Layout() {
         <Outlet />
       </main>
       <ReminderAlertsNotifier />
+      <CloudStatusNotifier />
     </div>
   )
 }

@@ -36,7 +36,7 @@ import {
   type CashDateFilter,
 } from '../utils/cashActivity'
 import {
-  formatSalesBreakdown,
+  formatCollectedSalesBreakdown,
   getTodaySalesSummary,
 } from '../utils/salesReport'
 import {
@@ -594,15 +594,14 @@ export default function Home() {
               {formatMoney(todaySalesSummary.totalBills)}
             </span>
             <span className="stat-meta stat-meta--breakdown">
-              {formatSalesBreakdown(
+              {formatCollectedSalesBreakdown(
                 todaySalesSummary.cashTotal,
                 todaySalesSummary.bankTotal,
-                todaySalesSummary.creditPending,
-                todaySalesSummary.chequeTotal + todaySalesSummary.chequePending,
+                todaySalesSummary.chequeTotal,
               )}
             </span>
             <span className="stat-meta">
-              {todaySalesSummary.billCount} bills · With credit{' '}
+              {todaySalesSummary.billCount} bills · Credit+Cheque sales{' '}
               {formatMoney(todaySalesSummary.withCreditSales)}
             </span>
           </button>

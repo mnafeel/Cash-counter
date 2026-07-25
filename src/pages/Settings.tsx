@@ -14,11 +14,15 @@ import {
   isAutoBackupEnabled,
   loginCloud,
   logoutCloud,
-  restoreAppData,
   setAutoBackupEnabled,
   subscribeToAuth,
 } from '../firebase/backup'
-import { backupNow, setBackupStatusListener } from '../firebase/sync'
+import {
+  backupNow,
+  restoreFullCloudData,
+  setBackupStatusListener,
+  setCloudLoginRestoreActive,
+} from '../firebase/sync'
 import type { AppData } from '../types'
 import { getApprovedChequeAmount, listApprovedCheques, listPendingChequeSales, listPendingCreditSales, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
 import {
@@ -627,29 +631,32 @@ export default function Settings() {
     return `${snapshot.sales.length} bills · ${snapshot.expenses.length} records · cash ${formatMoney(snapshot.openingBalance)} · bank ${formatMoney(snapshot.openingBankBalance ?? 0)}`
   }
 
-  function applyCloudDataToForm(snapshot: AppData) {
-    replaceAllData(snapshot)
-    setOpeningStr(String(snapshot.openingBalance))
-    setOpeningBankStr(String(snapshot.openingBankBalance ?? 0))
-  }
-
   async function loadCloudDataAfterAuth(isNewAccount: boolean) {
-    const restored = await restoreAppData()
-    if (restored) {
-      applyCloudDataToForm(restored)
-      const remote = await getRemoteLastBackupTime().catch(() => null)
-      if (remote) setLastBackup(remote)
-      setBackupStatus(`Opened · full data loaded · ${cloudDataSummary(restored)}`)
-      return
+    setCloudLoginRestoreActive(true)
+    try {
+      const restored = await restoreFullCloudData()
+      if (restored) {
+        setOpeningStr(String(restored.openingBalance))
+        setOpeningBankStr(String(restored.openingBankBalance ?? 0))
+        const remote = await getRemoteLastBackupTime().catch(() => null)
+        if (remote) setLastBackup(remote)
+        setBackupStatus(`Opened · full data loaded · ${cloudDataSummary(restored)}`)
+        setBackupError(false)
+        return
+      }
+      if (isNewAccount) {
+        setCloudLoginRestoreActive(false)
+        const at = await backupNow(data)
+        setLastBackup(at)
+        setBackupStatus(`Username created · ${cloudDataSummary(data)} saved to cloud`)
+        setBackupError(false)
+        return
+      }
+      setBackupStatus('No cloud data yet for this username.')
+      setBackupError(true)
+    } finally {
+      setCloudLoginRestoreActive(false)
     }
-    if (isNewAccount) {
-      const at = await backupNow(data)
-      setLastBackup(at)
-      setBackupStatus(`Username created · ${cloudDataSummary(data)} saved to cloud`)
-      return
-    }
-    setBackupStatus('No cloud data yet for this username.')
-    setBackupError(true)
   }
 
   async function handleCloudCreate() {
@@ -663,6 +670,7 @@ export default function Settings() {
         setOpeningBankStr('0')
         setCloudUser(null)
       }
+      setCloudLoginRestoreActive(true)
       await createCloudAccount(cloudUsername, cloudPassword)
       setCloudPassword('')
       await loadCloudDataAfterAuth(true)
@@ -685,6 +693,7 @@ export default function Settings() {
         setOpeningBankStr('0')
         setCloudUser(null)
       }
+      setCloudLoginRestoreActive(true)
       await loginCloud(cloudUsername, cloudPassword)
       setCloudPassword('')
       await loadCloudDataAfterAuth(false)

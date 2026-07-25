@@ -7,6 +7,7 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import type { AppData } from '../types'
+import { mergeCloudAppData, normalizeData } from '../storage/database'
 import { authEmailToUsername, clearLastCloudUsername, saveLastCloudUsername, usernameToAuthEmail } from './cloudUser'
 import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from './config'
 import { formatFirebaseError, stripUndefined } from './utils'
@@ -125,7 +126,23 @@ export async function backupAppData(data: AppData): Promise<string> {
   const user = requireCloudUser()
 
   const backedUpAt = new Date().toISOString()
-  const cleanData = stripUndefined(data)
+  let mergedData = normalizeData(data)
+
+  try {
+    const existingSnap = await getDoc(latestDocRef(user.uid))
+    if (existingSnap.exists()) {
+      const parsed = cloudPayloadToAppData(
+        existingSnap.data() as AppData & { _backupAt?: string; _updatedAt?: unknown },
+      )
+      if (parsed) {
+        mergedData = mergeCloudAppData(mergedData, parsed.data)
+      }
+    }
+  } catch {
+    /* keep local copy if cloud read fails — still attempt write */
+  }
+
+  const cleanData = stripUndefined(mergedData)
   const payload = {
     ...cleanData,
     _backupAt: backedUpAt,
@@ -193,6 +210,7 @@ function cloudPayloadToAppData(raw: AppData & { _backupAt?: string; _updatedAt?:
 /** Live listener — fires when another device backs up to cloud. */
 export function subscribeToCloudData(
   onUpdate: (data: AppData, backupAt: string) => void,
+  onError?: (message: string) => void,
 ): () => void {
   const user = getCloudUser()
   if (!user || !isFirebaseConfigured()) return () => {}
@@ -208,8 +226,8 @@ export function subscribeToCloudData(
       setLocalLastBackupTime(parsed.backupAt)
       onUpdate(parsed.data, parsed.backupAt)
     },
-    () => {
-      /* offline or permission — ignore */
+    (error) => {
+      onError?.(formatFirebaseError(error))
     },
   )
 }

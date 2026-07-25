@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AppData } from '../types'
 import { formatDate, formatMoney } from '../utils/format'
-import { formatSalesBreakdown, toInputDate, type ReportSort } from '../utils/salesReport'
+import { formatCollectedSalesBreakdown, toInputDate, type ReportSort } from '../utils/salesReport'
 import {
   buildChequeReportItems,
   buildCreditReportItems,
@@ -393,11 +393,10 @@ export default function ReportsPanel({
                   <strong>{formatMoney(salesTotals.totalBills)}</strong>
                   <small>
                     {salesTotals.billCount} bills ·{' '}
-                    {formatSalesBreakdown(
+                    {formatCollectedSalesBreakdown(
                       salesTotals.cashTotal,
                       salesTotals.bankTotal,
-                      salesTotals.creditPending,
-                      salesTotals.chequeTotal + salesTotals.chequePending,
+                      salesTotals.chequeTotal,
                     )}
                   </small>
                 </div>
@@ -460,11 +459,10 @@ export default function ReportsPanel({
                 Collected {formatMoney(salesTotals.totalBills)} · With credit sales{' '}
                 {formatMoney(salesTotals.withCreditSales)} · Bills {formatMoney(salesTotals.billTotal)}
                 {' · '}
-                {formatSalesBreakdown(
+                {formatCollectedSalesBreakdown(
                   salesTotals.cashTotal,
                   salesTotals.bankTotal,
-                  salesTotals.creditPending,
-                  salesTotals.chequeTotal + salesTotals.chequePending,
+                  salesTotals.chequeTotal,
                 )}
               </p>
               {salesBills.length === 0 ? (
@@ -480,11 +478,10 @@ export default function ReportsPanel({
                       <div className="reports-item-meta">
                         Created {row.createdDateLabel} · Collected {row.dateLabel} · Bill{' '}
                         {formatMoney(row.billAmount)} ·{' '}
-                        {formatSalesBreakdown(
+                        {formatCollectedSalesBreakdown(
                           row.cashTotal,
                           row.bankTotal,
-                          row.creditPending,
-                          row.chequeTotal + row.chequePending,
+                          row.chequeTotal,
                         )}
                       </div>
                       <div className="reports-item-meta reports-item-meta--detail">{row.detailLabel}</div>

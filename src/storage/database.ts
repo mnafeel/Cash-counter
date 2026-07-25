@@ -394,6 +394,24 @@ export function markLocalDataSynced(at: string): void {
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, at)
 }
 
+export function isLocalDataEmpty(data: AppData): boolean {
+  return (
+    data.sales.length === 0 &&
+    data.expenses.length === 0 &&
+    (data.openingBalance ?? 0) === 0 &&
+    (data.openingBankBalance ?? 0) === 0
+  )
+}
+
+/** Login restore — replace local with full cloud copy (no merge). */
+export function applyFullRemoteCloudData(data: AppData, backupAt: string): AppData {
+  const next = normalizeData(data)
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+  localStorage.setItem(LOCAL_UPDATED_AT_KEY, backupAt)
+  markLocalBackupTime(backupAt)
+  return next
+}
+
 export function applyRemoteCloudData(
   data: AppData,
   backupAt: string,
