@@ -29,7 +29,15 @@ function addPaymentAmount(
   >,
 ) {
   if (item.type !== 'sale') return
-  const amount = historyItemDisplayAmount(item, false)
+
+  if (item.collectionBreakdown) {
+    totals.salesCash += item.collectionBreakdown.cash
+    totals.salesBank += item.collectionBreakdown.bank
+    totals.salesCheque += item.collectionBreakdown.cheque
+    return
+  }
+
+  const amount = item.collectedAmount ?? historyItemDisplayAmount(item, false)
   const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
   if (modes.length === 0) {
     totals.salesCash += amount

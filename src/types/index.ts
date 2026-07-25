@@ -128,3 +128,4 @@ export interface AppData {
 }
 
 export const STORAGE_KEY = 'cash-counter-data'
+export const LOCAL_UPDATED_AT_KEY = 'cash-counter-local-updated-at'

@@ -10,11 +10,12 @@ import {
   getHistoryPaymentLabel,
   getHistoryPaymentSortKey,
   getHistoryTypeLabel,
-  historyItemDisplayAmount,
+  historyItemAmountForDateFilter,
   historyItemCreatedTime,
   historyItemSortTime,
   historyItemActivityLabel,
   historyItemListDateLabel,
+  matchesHistoryDateFilter,
   matchesHistoryPaymentFilter,
   matchesHistorySearch,
   type HistoryFilter,
@@ -46,9 +47,9 @@ const FILTER_OPTIONS: { id: HistoryFilter; label: string }[] = [
 ]
 
 const SORT_OPTIONS: { id: HistorySort; label: string }[] = [
-  { id: 'date-desc', label: 'Recent first' },
-  { id: 'created-desc', label: 'Newest first' },
-  { id: 'date-asc', label: 'Oldest first' },
+  { id: 'date-desc', label: 'Latest → Oldest' },
+  { id: 'date-asc', label: 'Oldest → Latest' },
+  { id: 'created-desc', label: 'Newest bill first' },
   { id: 'amount-desc', label: 'Highest amount' },
   { id: 'amount-asc', label: 'Lowest amount' },
   { id: 'payment-asc', label: 'Payment A → Z' },
@@ -64,43 +65,6 @@ const DATE_FILTER_OPTIONS: { id: DateFilter; label: string }[] = [
   { id: 'week', label: 'This week' },
   { id: 'date', label: 'Pick a date…' },
 ]
-
-function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  )
-}
-
-function matchesDateFilter(iso: string, dateFilter: DateFilter, selectedDate: string): boolean {
-  if (dateFilter === 'all') return true
-  const d = new Date(iso)
-  const now = new Date()
-
-  if (dateFilter === 'today') return isSameDay(d, now)
-
-  if (dateFilter === 'yesterday') {
-    const y = new Date(now)
-    y.setDate(now.getDate() - 1)
-    return isSameDay(d, y)
-  }
-
-  if (dateFilter === 'week') {
-    const start = new Date(now)
-    start.setDate(now.getDate() - 6)
-    start.setHours(0, 0, 0, 0)
-    return d.getTime() >= start.getTime()
-  }
-
-  if (dateFilter === 'date') {
-    if (!selectedDate) return true
-    const [y, m, day] = selectedDate.split('-').map(Number)
-    return isSameDay(d, new Date(y, m - 1, day))
-  }
-
-  return true
-}
 
 const TYPE_SUMMARY: { id: HistoryItemType; label: string; icon: string; sign: string }[] = [
   { id: 'sale', label: 'Bills', icon: '💵', sign: '+' },
@@ -206,11 +170,11 @@ export default function History() {
       const bUpdated = historyItemSortTime(b)
       const aCreated = historyItemCreatedTime(a)
       const bCreated = historyItemCreatedTime(b)
-      const aAmount = historyItemDisplayAmount(a, purchasePaidDisplay)
-      const bAmount = historyItemDisplayAmount(b, purchasePaidDisplay)
+      const aAmount = historyItemAmountForDateFilter(a, dateFilter, selectedDate, purchasePaidDisplay)
+      const bAmount = historyItemAmountForDateFilter(b, dateFilter, selectedDate, purchasePaidDisplay)
       if (sort === 'date-desc') return bUpdated - aUpdated
       if (sort === 'created-desc') return bCreated - aCreated
-      if (sort === 'date-asc') return aCreated - bCreated
+      if (sort === 'date-asc') return aUpdated - bUpdated
       if (sort === 'amount-desc') return bAmount - aAmount || bUpdated - aUpdated
       if (sort === 'amount-asc') return aAmount - bAmount || aUpdated - bUpdated
       if (sort === 'payment-asc' || sort === 'payment-desc') {
@@ -235,7 +199,7 @@ export default function History() {
   const normalItems = useMemo(() => {
     let next = allItems.filter((item) => item.type !== 'purchase')
     next = next.filter((item) => filter === 'all' || item.type === filter)
-    next = next.filter((item) => matchesDateFilter(item.date, dateFilter, selectedDate))
+    next = next.filter((item) => matchesHistoryDateFilter(item, dateFilter, selectedDate))
     next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter))
     next = next.filter((item) => matchesHistorySearch(item, search))
     return sortItems(next, false)
@@ -247,7 +211,7 @@ export default function History() {
     let next = allItems.filter(
       (item) => item.type === 'purchase' && (item.paidAmount ?? 0) > 0,
     )
-    next = next.filter((item) => matchesDateFilter(item.date, dateFilter, selectedDate))
+    next = next.filter((item) => matchesHistoryDateFilter(item, dateFilter, selectedDate))
     next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter))
     next = next.filter((item) => matchesHistorySearch(item, search))
     return sortItems(next, true)
@@ -273,14 +237,16 @@ export default function History() {
     }
     const items = showPurchaseHistory ? combinedItems : normalItems
     for (const item of items) {
-      totals[item.type].sum += historyItemDisplayAmount(
+      totals[item.type].sum += historyItemAmountForDateFilter(
         item,
+        dateFilter,
+        selectedDate,
         showPurchaseHistory && item.type === 'purchase',
       )
       totals[item.type].count += 1
     }
     return totals
-  }, [combinedItems, normalItems, showPurchaseHistory])
+  }, [combinedItems, normalItems, showPurchaseHistory, dateFilter, selectedDate])
 
   const summaryTypes =
     filter === 'all'
@@ -402,8 +368,10 @@ export default function History() {
         {listItems.map((item) => {
           const key = editKey(item)
           const isEditing = editingKey === key
-          const displayAmount = historyItemDisplayAmount(
+          const displayAmount = historyItemAmountForDateFilter(
             item,
+            dateFilter,
+            selectedDate,
             purchasePaidRows && item.type === 'purchase',
           )
           const dateEditable = canEditBillFromHistory(item)

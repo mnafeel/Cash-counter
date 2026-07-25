@@ -60,6 +60,141 @@ export interface HistoryItem {
   openCreditExpenseId?: string
   /** Purchase cash / bank / approved cheque paid (excludes credit). */
   paidAmount?: number
+  /** Cash / bank / cheque actually collected on this sale row. */
+  collectionBreakdown?: { cash: number; bank: number; cheque: number }
+  /** Money collected (partial or full) — used for totals when bill amount differs. */
+  collectedAmount?: number
+  /** Per-day collections — used to filter history by payment date. */
+  paymentCollections?: Array<{
+    at: string
+    amount: number
+    cash: number
+    bank: number
+    cheque: number
+  }>
+}
+
+export type HistoryDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'date'
+
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  )
+}
+
+function isoMatchesHistoryDateFilter(
+  iso: string,
+  dateFilter: HistoryDateFilter,
+  selectedDate: string,
+): boolean {
+  if (dateFilter === 'all') return true
+  const d = new Date(iso)
+  const now = new Date()
+
+  if (dateFilter === 'today') return isSameLocalDay(d, now)
+
+  if (dateFilter === 'yesterday') {
+    const y = new Date(now)
+    y.setDate(now.getDate() - 1)
+    return isSameLocalDay(d, y)
+  }
+
+  if (dateFilter === 'week') {
+    const start = new Date(now)
+    start.setDate(now.getDate() - 6)
+    start.setHours(0, 0, 0, 0)
+    return d.getTime() >= start.getTime()
+  }
+
+  if (dateFilter === 'date') {
+    if (!selectedDate) return true
+    const [y, m, day] = selectedDate.split('-').map(Number)
+    return isSameLocalDay(d, new Date(y, m - 1, day))
+  }
+
+  return true
+}
+
+export function matchesHistoryDateFilter(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter,
+  selectedDate: string,
+): boolean {
+  if (dateFilter === 'all') return true
+
+  if (item.type === 'sale' && item.paymentCollections && item.paymentCollections.length > 0) {
+    if (
+      item.paymentCollections.some((collection) =>
+        isoMatchesHistoryDateFilter(collection.at, dateFilter, selectedDate),
+      )
+    ) {
+      return true
+    }
+
+    const isPending = item.receiptLines?.some((line) => line.status === 'pending') ?? false
+    if (isPending && item.billCreatedAt) {
+      return isoMatchesHistoryDateFilter(item.billCreatedAt, dateFilter, selectedDate)
+    }
+
+    return false
+  }
+
+  const dateToMatch = item.completedAt ?? item.billCreatedAt ?? item.date
+  return isoMatchesHistoryDateFilter(dateToMatch, dateFilter, selectedDate)
+}
+
+export function historyItemAmountForDateFilter(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter,
+  selectedDate: string,
+  purchasePaidOnly = false,
+): number {
+  if (dateFilter === 'all') {
+    return historyItemDisplayAmount(item, purchasePaidOnly)
+  }
+
+  if (item.type === 'sale' && item.paymentCollections && item.paymentCollections.length > 0) {
+    const dayTotal = item.paymentCollections
+      .filter((collection) => isoMatchesHistoryDateFilter(collection.at, dateFilter, selectedDate))
+      .reduce((sum, collection) => sum + collection.amount, 0)
+    if (dayTotal > 0) return dayTotal
+
+    const isPending = item.receiptLines?.some((line) => line.status === 'pending') ?? false
+    if (
+      isPending &&
+      item.billCreatedAt &&
+      isoMatchesHistoryDateFilter(item.billCreatedAt, dateFilter, selectedDate)
+    ) {
+      return 0
+    }
+  }
+
+  return historyItemDisplayAmount(item, purchasePaidOnly)
+}
+
+export function historyItemCollectionBreakdownForDateFilter(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter,
+  selectedDate: string,
+): { cash: number; bank: number; cheque: number } | undefined {
+  if (dateFilter === 'all') return item.collectionBreakdown
+
+  if (item.type !== 'sale' || !item.paymentCollections || item.paymentCollections.length === 0) {
+    return item.collectionBreakdown
+  }
+
+  const breakdown = { cash: 0, bank: 0, cheque: 0 }
+  for (const collection of item.paymentCollections) {
+    if (!isoMatchesHistoryDateFilter(collection.at, dateFilter, selectedDate)) continue
+    breakdown.cash += collection.cash
+    breakdown.bank += collection.bank
+    breakdown.cheque += collection.cheque
+  }
+
+  if (breakdown.cash > 0 || breakdown.bank > 0 || breakdown.cheque > 0) return breakdown
+  return undefined
 }
 
 export function getHistoryTypeLabel(type: HistoryItemType): string {
@@ -98,17 +233,40 @@ export function getHistoryPaymentSortKey(item: HistoryItem): number {
   return Math.min(...modes.map((mode) => PAYMENT_MODE_SORT_ORDER[mode]))
 }
 
-function salePaymentMode(sale: Sale): HistoryPaymentMode {
+function saleCollectionBreakdown(sale: Sale): { cash: number; bank: number; cheque: number } {
+  return saleCollectedComponentBreakdown(sale)
+}
+
+function saleCollectionPaymentModes(sale: Sale): HistoryPaymentMode[] {
+  const breakdown = saleCollectionBreakdown(sale)
+  const modes: HistoryPaymentMode[] = []
+  if (breakdown.cash > 0) modes.push('cash')
+  if (breakdown.bank > 0) modes.push('bank')
+  if (breakdown.cheque > 0) modes.push('cheque')
+
+  if (modes.length > 1) return ['split', ...modes]
+  if (modes.length === 1) return modes
+
   if (sale.status === 'pending') {
-    if (isCreditBill(sale)) return 'credit'
-    if (isChequeBill(sale)) return 'cheque'
-    return 'pending'
+    if (isCreditBill(sale)) return ['credit']
+    if (isChequeBill(sale)) return ['cheque']
+    return ['pending']
   }
-  if (isCreditBill(sale)) return 'credit'
-  if (isChequeBill(sale)) return 'cheque'
-  if (sale.payType === 'bank') return 'bank'
-  if (sale.payType === 'split') return 'split'
-  return 'cash'
+
+  if (sale.payType === 'bank') return ['bank']
+  if (sale.payType === 'cheque') return ['cheque']
+  if (sale.payType === 'split') return ['split']
+  return ['cash']
+}
+
+function salePaymentMode(sale: Sale): HistoryPaymentMode {
+  const modes = saleCollectionPaymentModes(sale)
+  if (modes.includes('split')) return 'split'
+  if (modes.length === 1) return modes[0]
+  if (modes.includes('credit')) return 'credit'
+  if (modes.includes('cheque')) return 'cheque'
+  if (modes.includes('pending')) return 'pending'
+  return modes[0] ?? 'cash'
 }
 
 function paymentModesFromReceiptLines(
@@ -140,7 +298,12 @@ function isChequeBill(sale: Sale): boolean {
   )
 }
 
-import { saleCollectedAmount, salePendingCreditPaidBreakdown } from './salePayment'
+import {
+  getSalePaymentEvents,
+  saleCollectedAmount,
+  saleCollectedComponentBreakdown,
+  salePendingCreditPaidBreakdown,
+} from './salePayment'
 
 function partialCollectionMethodLabel(sale: Sale): string {
   const { cash, bank, cheque } = salePendingCreditPaidBreakdown(sale)
@@ -649,11 +812,7 @@ function buildSplitGroupItem(parent: Sale, children: Sale[]): HistoryItem {
     paymentModes: paymentModesFromReceiptLines(receiptLines),
     paySummary:
       moneyCollected > 0
-        ? `Paid ${formatMoney(moneyCollected)}${
-            completedAt && completedAt !== parent.createdAt
-              ? ` · Updated ${formatDate(completedAt)}`
-              : ''
-          }`
+        ? `Paid ${formatMoney(moneyCollected)}`
         : formatSplitPaymentBreakdown(receiptLines) || undefined,
   }
 }
@@ -743,12 +902,11 @@ function buildSaleTimeline(sale: Sale): HistoryReceiptEvent[] {
   } else {
     const method = collectionMethodLabel(sale)
     const collectedAt = sale.updatedAt ?? sale.createdAt
-    const wasUpdated = Boolean(sale.updatedAt && sale.updatedAt !== sale.createdAt)
     let label = `${saleReceiptLabel(sale)} collected`
     if (isCreditBill(sale)) {
-      label = wasUpdated ? `Credit payment · ${method}` : `Credit paid · ${method}`
+      label = `Credit paid · ${method}`
     } else if (isChequeBill(sale)) {
-      label = wasUpdated ? `Cheque payment · ${method}` : `Cheque paid · ${method}`
+      label = `Cheque paid · ${method}`
     }
 
     events.push({
@@ -761,24 +919,36 @@ function buildSaleTimeline(sale: Sale): HistoryReceiptEvent[] {
   return events
 }
 
+function buildSalePaymentCollections(sale: Sale): HistoryItem['paymentCollections'] {
+  return getSalePaymentEvents(sale)
+    .filter((event) => event.amount > 0)
+    .map((event) => ({
+      at: event.at,
+      amount: event.amount,
+      cash: event.cash ?? 0,
+      bank: event.bank ?? 0,
+      cheque: event.cheque ?? 0,
+    }))
+}
+
 function buildSaleHistoryItem(sale: Sale): HistoryItem {
   const collected = collectedPaymentAmount(sale)
+  const breakdown = saleCollectionBreakdown(sale)
+  const paymentModes = saleCollectionPaymentModes(sale)
+  const paymentCollections = buildSalePaymentCollections(sale)
+  const lastCollectionAt =
+    paymentCollections && paymentCollections.length > 0
+      ? paymentCollections[paymentCollections.length - 1].at
+      : undefined
   const paidAt =
     sale.status !== 'pending'
-      ? sale.updatedAt ?? sale.createdAt
-      : collected > 0 && sale.updatedAt && sale.updatedAt !== sale.createdAt
-        ? sale.updatedAt
-        : undefined
+      ? lastCollectionAt ?? sale.updatedAt ?? sale.createdAt
+      : lastCollectionAt
   const amount = formatMoney(sale.billAmount)
   let sub: string
 
   if (isCreditBill(sale)) {
-    const paidTime =
-      paidAt && sale.updatedAt && sale.updatedAt !== sale.createdAt
-        ? `Updated ${formatDate(paidAt)}`
-        : paidAt
-          ? formatDate(paidAt)
-          : ''
+    const paidTime = paidAt ? formatDate(paidAt) : ''
     sub =
       sale.status === 'pending'
         ? collected > 0
@@ -786,12 +956,7 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
           : `Credit · ${amount} pending`
         : `Credit · Paid ${formatMoney(collected)} · ${collectionMethodLabel(sale)}${paidTime ? ` · ${paidTime}` : ''}`
   } else if (isChequeBill(sale)) {
-    const paidTime =
-      paidAt && sale.updatedAt && sale.updatedAt !== sale.createdAt
-        ? `Updated ${formatDate(paidAt)}`
-        : paidAt
-          ? formatDate(paidAt)
-          : ''
+    const paidTime = paidAt ? formatDate(paidAt) : ''
     sub =
       sale.status === 'pending'
         ? collected > 0
@@ -811,26 +976,19 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
         : sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque'
           ? `Paid ${paidDetail ?? payLabel} · `
           : `Give ${formatMoney(sale.paidAmount)} · ${paidDetail ?? payLabel} · `
-    const paidTime =
-      paidAt && sale.updatedAt && sale.updatedAt !== sale.createdAt
-        ? `Updated ${formatDate(paidAt)}`
-        : paidAt
-          ? formatDate(paidAt)
-          : ''
+    const paidTime = paidAt ? formatDate(paidAt) : ''
     sub = `${orig}${paidPart}${sale.changeAmount > 0 ? `Change ${formatMoney(sale.changeAmount)} · ` : ''}${paidTime}`.replace(/ · $/, '')
   }
 
-  const wasUpdated = Boolean(sale.updatedAt && sale.updatedAt !== sale.createdAt)
-  const updatedLabel = wasUpdated && sale.updatedAt ? ` · Updated ${formatDate(sale.updatedAt)}` : ''
   const totalBill =
     sale.originalBillAmount ??
     (isCreditBill(sale) || isChequeBill(sale) ? sale.billAmount + collected : sale.billAmount)
   const paySummary =
     sale.status !== 'pending' && collected > 0
-      ? `Paid ${formatMoney(collected)}${updatedLabel}`
+      ? `Paid ${formatMoney(collected)}`
       : sale.status === 'pending' && (isCreditBill(sale) || isChequeBill(sale))
         ? collected > 0
-          ? `Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · Pending ${formatMoney(sale.billAmount)}${updatedLabel}`
+          ? `Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · Pending ${formatMoney(sale.billAmount)}`
           : `Pending ${formatMoney(sale.billAmount)}`
         : undefined
 
@@ -840,15 +998,21 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
     amount:
       isCreditBill(sale) || isChequeBill(sale) ? totalBill : collected || sale.billAmount,
     originalBillAmount: totalBill,
+    collectedAmount: collected > 0 ? collected : undefined,
+    collectionBreakdown:
+      breakdown.cash > 0 || breakdown.bank > 0 || breakdown.cheque > 0
+        ? { cash: breakdown.cash, bank: breakdown.bank, cheque: breakdown.cheque }
+        : undefined,
     sub,
     name: sale.customerName,
-    date: sale.updatedAt ?? sale.createdAt,
+    date: lastCollectionAt ?? sale.createdAt,
+    paymentCollections,
     receiptLines: buildSaleReceiptLines(sale),
     receiptTimeline: buildSaleTimeline(sale),
     billCreatedAt: sale.createdAt,
     completedAt: paidAt,
     paymentMode: salePaymentMode(sale),
-    paymentModes: [salePaymentMode(sale)],
+    paymentModes,
     paySummary,
     groupSaleIds:
       isCreditBill(sale) || isChequeBill(sale)
@@ -1129,6 +1293,12 @@ export function historyItemDisplayAmount(item: HistoryItem, purchasePaidOnly = f
 export function historyItemSaleAmount(item: HistoryItem): number {
   if (item.type !== 'sale') return item.amount
   if (item.isSplitGroup) return item.amount
+  if (item.collectedAmount != null && item.collectedAmount > 0) {
+    const isPending = item.receiptLines?.some((line) => line.status === 'pending') ?? false
+    if (isPending || item.amount === item.originalBillAmount) {
+      return item.collectedAmount
+    }
+  }
   return item.amount
 }
 

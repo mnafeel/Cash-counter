@@ -6,7 +6,11 @@ import {
   saleOriginalBillAmount,
   saleTotalCollected,
 } from './salesReport'
-import { saleCollectedAmount } from './salePayment'
+import {
+  getSalePaymentEvents,
+  saleCollectedAmount,
+  saleCollectedComponentBreakdown,
+} from './salePayment'
 
 export interface CustomerPurchaseRow {
   id: string
@@ -19,6 +23,10 @@ export interface CustomerPurchaseRow {
   creditPending: number
   creditInvolved: boolean
   payDetail: string
+  /** Cash / bank / cheque collected so far. */
+  paidBreakdown?: string
+  /** Per-day collection lines from payment events. */
+  paymentHistory?: string
 }
 
 export interface CustomerSummary {
@@ -95,6 +103,46 @@ function buildChildrenMap(sales: Sale[]): Map<string, Sale[]> {
   return map
 }
 
+function saleCollectedPayDetail(sale: Sale): string {
+  const breakdown = saleCollectedComponentBreakdown(sale)
+  const parts: string[] = []
+  if (breakdown.cash > 0) parts.push(`💵 ${formatMoney(breakdown.cash)}`)
+  if (breakdown.bank > 0) parts.push(`🏦 ${formatMoney(breakdown.bank)}`)
+  if (breakdown.cheque > 0) parts.push(`🧾 ${formatMoney(breakdown.cheque)}`)
+  if (parts.length > 0) return parts.join(' · ')
+  return salePayDetail(sale)
+}
+
+function salePaymentHistoryDetail(sale: Sale): string | undefined {
+  const events = getSalePaymentEvents(sale).filter((event) => event.amount > 0)
+  if (events.length === 0) return undefined
+  return events
+    .map((event) => {
+      const parts: string[] = []
+      if ((event.cash ?? 0) > 0) parts.push(`💵 ${formatMoney(event.cash ?? 0)}`)
+      if ((event.bank ?? 0) > 0) parts.push(`🏦 ${formatMoney(event.bank ?? 0)}`)
+      if ((event.cheque ?? 0) > 0) parts.push(`🧾 ${formatMoney(event.cheque ?? 0)}`)
+      return `${formatDate(event.at)} · ${parts.join(' · ')}`
+    })
+    .join(' · ')
+}
+
+export function buildPayDetail(
+  sale: Sale,
+  billAmount: number,
+  paidAmount: number,
+  openPending: number,
+  openLabel: 'Credit' | 'Cheque' = 'Credit',
+): { payDetail: string; paidBreakdown?: string; paymentHistory?: string } {
+  const paidBreakdown = paidAmount > 0 ? saleCollectedPayDetail(sale) : undefined
+  const paymentHistory = salePaymentHistoryDetail(sale)
+  const payDetail =
+    openPending > 0
+      ? `Bill ${formatMoney(billAmount)} · Paid ${formatMoney(paidAmount)}${paidBreakdown ? ` (${paidBreakdown})` : ''} · ${openLabel} ${formatMoney(openPending)}`
+      : `${paidBreakdown ?? salePayDetail(sale)} · Paid ${formatMoney(paidAmount)}`
+  return { payDetail, paidBreakdown, paymentHistory }
+}
+
 function salePayDetail(sale: Sale): string {
   if (sale.payType === 'bank') return '🏦 Bank'
   if (sale.payType === 'cheque') return '🧾 Cheque'
@@ -137,6 +185,7 @@ function buildGroupPurchaseRow(parent: Sale, children: Sale[]): CustomerPurchase
   if (!customerName) return null
 
   const date = parent.updatedAt ?? parent.createdAt
+  const detail = buildPayDetail(parent, billAmount, paidAmount, creditPending)
 
   return {
     id: parent.id,
@@ -148,10 +197,9 @@ function buildGroupPurchaseRow(parent: Sale, children: Sale[]): CustomerPurchase
     paidAmount,
     creditPending,
     creditInvolved: groupCreditInvolved(parent, children),
-    payDetail:
-      creditPending > 0
-        ? `Bill ${formatMoney(billAmount)} · Paid ${formatMoney(paidAmount)} · Credit ${formatMoney(creditPending)}`
-        : `${salePayDetail(parent)} · Paid ${formatMoney(paidAmount)}`,
+    payDetail: detail.payDetail,
+    paidBreakdown: detail.paidBreakdown,
+    paymentHistory: detail.paymentHistory,
   }
 }
 
@@ -164,6 +212,7 @@ function buildSinglePurchaseRow(sale: Sale): CustomerPurchaseRow | null {
   if (!customerName) return null
 
   const date = sale.updatedAt ?? sale.createdAt
+  const detail = buildPayDetail(sale, billAmount, paidAmount, creditPending)
 
   return {
     id: sale.id,
@@ -175,10 +224,9 @@ function buildSinglePurchaseRow(sale: Sale): CustomerPurchaseRow | null {
     paidAmount,
     creditPending,
     creditInvolved: isCreditInvolvedSale(sale),
-    payDetail:
-      creditPending > 0
-        ? `Bill ${formatMoney(billAmount)} · Paid ${formatMoney(paidAmount)} · Credit ${formatMoney(creditPending)}`
-        : `${salePayDetail(sale)} · Paid ${formatMoney(paidAmount)}`,
+    payDetail: detail.payDetail,
+    paidBreakdown: detail.paidBreakdown,
+    paymentHistory: detail.paymentHistory,
   }
 }
 

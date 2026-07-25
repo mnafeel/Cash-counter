@@ -5,7 +5,7 @@ import {
   signOut,
   type User,
 } from 'firebase/auth'
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import type { AppData } from '../types'
 import { authEmailToUsername, clearLastCloudUsername, saveLastCloudUsername, usernameToAuthEmail } from './cloudUser'
 import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from './config'
@@ -44,6 +44,17 @@ export function getLocalLastBackupTime(): string | null {
 
 function setLocalLastBackupTime(iso: string): void {
   localStorage.setItem(LAST_BACKUP_KEY, iso)
+}
+
+/** Keep local backup timestamp aligned after applying a remote snapshot. */
+export function markLocalBackupTime(iso: string): void {
+  setLocalLastBackupTime(iso)
+}
+
+export function parseBackupTimestamp(iso: string | null | undefined): number {
+  if (!iso) return 0
+  const ms = new Date(iso).getTime()
+  return Number.isFinite(ms) ? ms : 0
 }
 
 export function subscribeToAuth(onChange: (user: User | null) => void): () => void {
@@ -164,6 +175,55 @@ export async function getRemoteLastBackupTime(): Promise<string | null> {
     if (!snap.exists()) return null
     const raw = snap.data() as { _backupAt?: string }
     return raw._backupAt ?? null
+  } catch {
+    return null
+  }
+}
+
+function cloudPayloadToAppData(raw: AppData & { _backupAt?: string; _updatedAt?: unknown }): {
+  data: AppData
+  backupAt: string
+} | null {
+  if (!raw._backupAt) return null
+  const { _backupAt: backupAt, _updatedAt: _ignoredUpdated, ...rest } = raw
+  void _ignoredUpdated
+  return { data: rest as AppData, backupAt }
+}
+
+/** Live listener — fires when another device backs up to cloud. */
+export function subscribeToCloudData(
+  onUpdate: (data: AppData, backupAt: string) => void,
+): () => void {
+  const user = getCloudUser()
+  if (!user || !isFirebaseConfigured()) return () => {}
+
+  return onSnapshot(
+    latestDocRef(user.uid),
+    (snap) => {
+      if (!snap.exists()) return
+      const parsed = cloudPayloadToAppData(
+        snap.data() as AppData & { _backupAt?: string; _updatedAt?: unknown },
+      )
+      if (!parsed) return
+      setLocalLastBackupTime(parsed.backupAt)
+      onUpdate(parsed.data, parsed.backupAt)
+    },
+    () => {
+      /* offline or permission — ignore */
+    },
+  )
+}
+
+export async function fetchRemoteAppData(): Promise<{ data: AppData; backupAt: string } | null> {
+  const user = getCloudUser()
+  if (!user) return null
+
+  try {
+    const snap = await getDoc(latestDocRef(user.uid))
+    if (!snap.exists()) return null
+    return cloudPayloadToAppData(
+      snap.data() as AppData & { _backupAt?: string; _updatedAt?: unknown },
+    )
   } catch {
     return null
   }

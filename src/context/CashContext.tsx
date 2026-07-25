@@ -31,17 +31,18 @@ import {
   cancelSaleCredit,
   cancelSaleCheque,
   collectPendingBill,
+  clearAllLocalData,
   deleteExpense,
   deleteSale,
+  editPaidSalePayment,
   type BillCreatePayType,
+  type PaidSalePaymentEdit,
   getBankBalance,
   getCurrentBalance,
   getPendingBills,
   importTallyBills,
   loadData,
   replaceData,
-  replaceDataPreservingTallyPending,
-  clearAllLocalData,
   setHomePin,
   setOpeningBalance,
   setOpeningBankBalance,
@@ -54,8 +55,7 @@ import {
   updateSaleBill,
   updateSaleCustomerName,
 } from '../storage/database'
-import { isFirebaseConfigured } from '../firebase/config'
-import { restoreCloudDataForUser, subscribeToAuth } from '../firebase/backup'
+import { setCloudRemoteListener } from '../firebase/sync'
 import {
   fetchTallyBills,
   getTallyApiUrl,
@@ -251,6 +251,7 @@ interface CashContextValue {
     },
     relatedSaleIds?: string[],
   ) => void
+  editPaidSalePayment: (id: string, payment: PaidSalePaymentEdit, relatedSaleIds?: string[]) => void
   replaceAllData: (data: AppData) => void
   resetAllData: () => void
   refresh: () => void
@@ -296,17 +297,14 @@ export function CashProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!isFirebaseConfigured()) return
-    return subscribeToAuth(async (user) => {
-      if (!user) return
-      try {
-        const restored = await restoreCloudDataForUser()
-        if (restored) setData((prev) => replaceDataPreservingTallyPending(prev, restored))
-      } catch {
-        /* cloud restore optional on session resume */
-      }
+    setCloudRemoteListener((remoteData) => {
+      setData(remoteData)
     })
+    return () => setCloudRemoteListener(null)
   }, [])
+
+  // Local data loads from localStorage on mount. Cloud sync uses live Firestore
+  // listener — applies remote only when cloud backup is newer than local edits.
 
   useEffect(() => {
     let active = true
@@ -740,6 +738,13 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const editPaidSalePaymentHandler = useCallback(
+    (id: string, payment: PaidSalePaymentEdit, relatedSaleIds?: string[]) => {
+      setData((prev) => editPaidSalePayment(prev, id, payment, relatedSaleIds))
+    },
+    [],
+  )
+
   const replaceAllData = useCallback((next: AppData) => {
     setData(replaceData(next))
   }, [])
@@ -784,6 +789,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateHistoryName,
       updateExpense: updateExpenseHandler,
       updateSaleBill: updateSaleBillHandler,
+      editPaidSalePayment: editPaidSalePaymentHandler,
       replaceAllData,
       resetAllData,
       refresh,
@@ -826,6 +832,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateHistoryName,
       updateExpenseHandler,
       updateSaleBillHandler,
+      editPaidSalePaymentHandler,
       replaceAllData,
       resetAllData,
       refresh,

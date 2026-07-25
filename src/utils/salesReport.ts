@@ -4,7 +4,7 @@ import {
   saleCollectedAmount,
   saleHasCollectionInRange,
   salePaymentEventsInRange,
-  salePendingCreditPaidBreakdown,
+  saleCollectedComponentBreakdown,
   getSalePaymentEvents,
 } from './salePayment'
 
@@ -242,29 +242,15 @@ function salePayLabel(sale: Sale): string {
 }
 
 export function saleCashCollected(sale: Sale): number {
-  if (sale.status === 'pending') return salePendingCreditPaidBreakdown(sale).cash
-  if (sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque') return 0
-  if (sale.payType === 'split') return sale.cashAmount ?? 0
-  return sale.billAmount
+  return saleCollectedComponentBreakdown(sale).cash
 }
 
 export function saleBankCollected(sale: Sale): number {
-  if (sale.status === 'pending') return salePendingCreditPaidBreakdown(sale).bank
-  if (sale.payType === 'bank') return sale.billAmount
-  if (sale.payType === 'cheque') return sale.billAmount
-  if (sale.payType === 'split') {
-    const cheque = sale.chequeAmount ?? 0
-    let bank = sale.bankAmount ?? 0
-    if (sale.chequeApproved && cheque > 0) bank = Math.max(0, bank - cheque)
-    return bank
-  }
-  return 0
+  return saleCollectedComponentBreakdown(sale).bank
 }
 
 export function saleChequeToBankCollected(sale: Sale): number {
-  if (sale.status === 'pending') return salePendingCreditPaidBreakdown(sale).cheque
-  if (sale.payType === 'split' && sale.chequeApproved) return sale.chequeAmount ?? 0
-  return 0
+  return saleCollectedComponentBreakdown(sale).cheque
 }
 
 export function saleTotalCollected(sale: Sale): number {

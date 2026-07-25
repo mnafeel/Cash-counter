@@ -294,6 +294,11 @@ function CustomerDetail({
                   <span>{formatMoney(purchase.creditPending)}</span>
                 </div>
                 <div className="customer-purchase-meta">{purchase.payDetail}</div>
+              {purchase.paymentHistory ? (
+                <div className="customer-purchase-meta customer-purchase-meta--muted">
+                  {purchase.paymentHistory}
+                </div>
+              ) : null}
               </div>
             ))}
           </>
@@ -315,6 +320,11 @@ function CustomerDetail({
                 <span>{formatMoney(purchase.billAmount)}</span>
               </div>
               <div className="customer-purchase-meta">{purchase.payDetail}</div>
+              {purchase.paymentHistory ? (
+                <div className="customer-purchase-meta customer-purchase-meta--muted">
+                  {purchase.paymentHistory}
+                </div>
+              ) : null}
             </div>
           ))
         )}

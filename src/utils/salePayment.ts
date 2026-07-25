@@ -235,6 +235,25 @@ export function saleCollectedAmount(sale: Sale): number {
   return sale.billAmount
 }
 
+export function saleCollectedComponentBreakdown(sale: Sale): SaleCollectedBreakdown {
+  const events = getSalePaymentEvents(sale)
+  if (events.length > 0) {
+    return events.reduce(
+      (acc, event) => {
+        acc.cash += event.cash ?? 0
+        acc.bank += event.bank ?? 0
+        acc.cheque += event.cheque ?? 0
+        acc.total += event.amount
+        return acc
+      },
+      { cash: 0, bank: 0, cheque: 0, total: 0 },
+    )
+  }
+  if (sale.status === 'pending') return salePendingCreditPaidBreakdown(sale)
+  return salePaidCollectedBreakdown(sale)
+}
+
+/** Cash / bank / approved cheque already collected on a pending credit or cheque bill. */
 export function salePendingCreditPaidBreakdown(sale: Sale): {
   cash: number
   bank: number

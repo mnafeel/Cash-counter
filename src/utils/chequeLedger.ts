@@ -1,5 +1,5 @@
 import type { AppData, Sale } from '../types'
-import { formatDate, formatMoney } from './format'
+import { formatDate } from './format'
 import {
   saleBillGroupId,
   saleChequePendingAmount,
@@ -7,6 +7,7 @@ import {
   saleTotalCollected,
 } from './salesReport'
 import { saleCollectedAmount } from './salePayment'
+import { buildPayDetail } from './customerLedger'
 
 export interface ChequePurchaseRow {
   id: string
@@ -19,6 +20,8 @@ export interface ChequePurchaseRow {
   chequePending: number
   chequeInvolved: boolean
   payDetail: string
+  paidBreakdown?: string
+  paymentHistory?: string
 }
 
 export interface ChequeCustomerSummary {
@@ -97,21 +100,6 @@ function buildChildrenMap(sales: Sale[]): Map<string, Sale[]> {
   return map
 }
 
-function salePayDetail(sale: Sale): string {
-  if (sale.payType === 'bank') return '🏦 Bank'
-  if (sale.payType === 'cheque') return '🧾 Cheque'
-  if (sale.payType === 'credit') return '💳 Credit'
-  if (sale.payType === 'split') {
-    const parts: string[] = []
-    if ((sale.cashAmount ?? 0) > 0) parts.push(`💵 ${formatMoney(sale.cashAmount ?? 0)}`)
-    if ((sale.bankAmount ?? 0) > 0) parts.push(`🏦 ${formatMoney(sale.bankAmount ?? 0)}`)
-    if ((sale.chequeAmount ?? 0) > 0) parts.push(`🧾 ${formatMoney(sale.chequeAmount ?? 0)}`)
-    if ((sale.creditAmount ?? 0) > 0) parts.push(`💳 ${formatMoney(sale.creditAmount ?? 0)}`)
-    return parts.length > 0 ? parts.join(' · ') : '➗ Split'
-  }
-  return '💵 Cash'
-}
-
 function groupBillAmount(parent: Sale, children: Sale[]): number {
   if (parent.originalBillAmount && parent.originalBillAmount > 0) return parent.originalBillAmount
   const childOrig = children.find((c) => c.originalBillAmount && c.originalBillAmount > 0)
@@ -139,6 +127,7 @@ function buildGroupRow(parent: Sale, children: Sale[]): ChequePurchaseRow | null
   if (!customerName) return null
 
   const date = parent.updatedAt ?? parent.createdAt
+  const detail = buildPayDetail(parent, billAmount, paidAmount, chequePending, 'Cheque')
 
   return {
     id: parent.id,
@@ -150,10 +139,9 @@ function buildGroupRow(parent: Sale, children: Sale[]): ChequePurchaseRow | null
     paidAmount,
     chequePending,
     chequeInvolved,
-    payDetail:
-      chequePending > 0
-        ? `Bill ${formatMoney(billAmount)} · Paid ${formatMoney(paidAmount)} · Cheque ${formatMoney(chequePending)}`
-        : `${salePayDetail(parent)} · Paid ${formatMoney(paidAmount)}`,
+    payDetail: detail.payDetail,
+    paidBreakdown: detail.paidBreakdown,
+    paymentHistory: detail.paymentHistory,
   }
 }
 
@@ -166,6 +154,7 @@ function buildSingleRow(sale: Sale): ChequePurchaseRow | null {
   if (!customerName) return null
 
   const date = sale.updatedAt ?? sale.createdAt
+  const detail = buildPayDetail(sale, billAmount, paidAmount, chequePending, 'Cheque')
 
   return {
     id: sale.id,
@@ -177,10 +166,9 @@ function buildSingleRow(sale: Sale): ChequePurchaseRow | null {
     paidAmount,
     chequePending,
     chequeInvolved: isChequeInvolvedSale(sale),
-    payDetail:
-      chequePending > 0
-        ? `Bill ${formatMoney(billAmount)} · Paid ${formatMoney(paidAmount)} · Cheque ${formatMoney(chequePending)}`
-        : `${salePayDetail(sale)} · Paid ${formatMoney(paidAmount)}`,
+    payDetail: detail.payDetail,
+    paidBreakdown: detail.paidBreakdown,
+    paymentHistory: detail.paymentHistory,
   }
 }
 

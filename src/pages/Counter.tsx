@@ -157,7 +157,7 @@ function resolveLoadedPendingBill(
 type SavedAction = 'collect' | 'pending' | null
 
 export default function Counter() {
-  const { recordSale, updatePendingSale, collectPendingSale, collectCreditPayment, collectChequePayment, pendingBills, data, setBillReminder, updateReminderAlertSettings } = useCash()
+  const { recordSale, updatePendingSale, collectPendingSale, collectCreditPayment, collectChequePayment, editPaidSalePayment, pendingBills, data, setBillReminder, updateReminderAlertSettings } = useCash()
   const [searchParams, setSearchParams] = useSearchParams()
   const [billStr, setBillStr] = useState('')
   const [giveStr, setGiveStr] = useState('')
@@ -2184,6 +2184,28 @@ export default function Counter() {
       : undefined
     const loadedPendingOpen =
       Boolean(loadedPendingId && loadedBill?.status === 'pending')
+    const isPaidBillEdit = Boolean(loadedPendingId && loadedBill?.status === 'paid')
+
+    if (isPaidBillEdit && loadedPendingId) {
+      savePaidBillEdit(loadedPendingId, name, {
+        originalBillAmount: billAmount,
+        billAmount: splitTotal,
+        paidAmount: cashSplitAmount,
+        changeAmount: 0,
+        payType: 'split',
+        cashAmount: cashSplitAmount > 0 ? cashSplitAmount : undefined,
+        bankAmount: bankAmount > 0 ? bankAmount : undefined,
+        chequeAmount:
+          chequeSplitAmount > 0 || splitChequeApprovedAmount > 0
+            ? chequeSplitAmount || splitChequeApprovedAmount
+            : undefined,
+        creditAmount: creditSplitAmount > 0 ? creditSplitAmount : undefined,
+        chequeApproved: chequeToBank || splitChequeApprovedAmount > 0 || undefined,
+        creditPending: options.createCreditPending ? creditSplitAmount : 0,
+        chequePending: options.createChequePending ? chequeSplitAmount : 0,
+      })
+      return splitSaleId
+    }
 
     if (loadedPendingOpen && loadedPendingId) {
       collectPendingSale(loadedPendingId, salePayload)
@@ -2692,6 +2714,41 @@ export default function Counter() {
     setTimeout(resetForm, 900)
   }
 
+  function savePaidBillEdit(
+    id: string,
+    name: string | undefined,
+    payment: {
+      originalBillAmount: number
+      billAmount: number
+      paidAmount: number
+      changeAmount: number
+      payType: PayType
+      cashAmount?: number
+      bankAmount?: number
+      chequeAmount?: number
+      creditAmount?: number
+      chequeApproved?: boolean
+      creditPending?: number
+      chequePending?: number
+    },
+  ) {
+    editPaidSalePayment(id, {
+      originalBillAmount: payment.originalBillAmount,
+      billAmount: payment.billAmount,
+      paidAmount: payment.paidAmount,
+      changeAmount: payment.changeAmount,
+      payType: payment.payType,
+      cashAmount: payment.cashAmount,
+      bankAmount: payment.bankAmount,
+      chequeAmount: payment.chequeAmount,
+      creditAmount: payment.creditAmount,
+      chequeApproved: payment.chequeApproved,
+      creditPending: payment.creditPending,
+      chequePending: payment.chequePending,
+      customerName: name,
+    })
+  }
+
   function handleSave() {
     if (!isValid) return
 
@@ -2799,7 +2856,26 @@ export default function Counter() {
       customerName: name,
     }
 
-    if (loadedPendingId) {
+    const loadedBill = loadedPendingId
+      ? data.sales.find((sale) => sale.id === loadedPendingId)
+      : undefined
+
+    if (loadedPendingId && loadedBill?.status === 'paid') {
+      const collectedTotal = cashAmount + bankAmount + chequeAmount
+      const openCredit = Math.max(0, billAmount - collectedTotal)
+      savePaidBillEdit(loadedPendingId, name, {
+        originalBillAmount: billAmount,
+        billAmount: payType === 'cash' ? giveAmount : paidAmount,
+        paidAmount: payType === 'bank' || payType === 'cheque' ? paidAmount : giveAmount,
+        changeAmount,
+        payType,
+        cashAmount: cashAmount > 0 ? cashAmount : undefined,
+        bankAmount: bankAmount > 0 ? bankAmount : undefined,
+        chequeAmount: chequeAmount > 0 ? chequeAmount : undefined,
+        chequeApproved: payType === 'cheque' ? true : undefined,
+        creditPending: openCredit > 0 ? openCredit : 0,
+      })
+    } else if (loadedPendingId) {
       collectPendingSale(loadedPendingId, salePayload)
     } else {
       recordSale(salePayload)

@@ -291,6 +291,11 @@ function ChequeCustomerDetail({
                   <span>{formatMoney(purchase.chequePending)}</span>
                 </div>
                 <div className="customer-purchase-meta">{purchase.payDetail}</div>
+              {purchase.paymentHistory ? (
+                <div className="customer-purchase-meta customer-purchase-meta--muted">
+                  {purchase.paymentHistory}
+                </div>
+              ) : null}
               </div>
             ))}
           </>
@@ -312,6 +317,11 @@ function ChequeCustomerDetail({
                 <span>{formatMoney(purchase.billAmount)}</span>
               </div>
               <div className="customer-purchase-meta">{purchase.payDetail}</div>
+              {purchase.paymentHistory ? (
+                <div className="customer-purchase-meta customer-purchase-meta--muted">
+                  {purchase.paymentHistory}
+                </div>
+              ) : null}
             </div>
           ))
         )}
