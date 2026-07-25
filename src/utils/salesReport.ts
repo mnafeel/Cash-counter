@@ -138,6 +138,7 @@ function saleHasPartialCollection(sale: Sale): boolean {
 export function saleReportDate(sale: Sale, mode: SaleDateMode = 'collected'): string {
   if (mode === 'created') return sale.createdAt
   if (sale.status === 'pending') {
+    if (isPendingBalanceBill(sale)) return sale.updatedAt ?? sale.createdAt
     if (saleHasPartialCollection(sale) && sale.updatedAt) return sale.updatedAt
     return sale.createdAt
   }
@@ -418,6 +419,11 @@ function saleMatchesReportFilter(sale: Sale, filter?: SalesReportFilter): boolea
     return true
   }
 
+  if (isPendingBalanceBill(sale)) {
+    const activityAt = sale.updatedAt ?? sale.createdAt
+    if (isInDateRange(activityAt, filter)) return true
+  }
+
   if ((sale.paymentEvents?.length ?? 0) > 0 || getSalePaymentEvents(sale).length > 0) {
     return false
   }
@@ -584,7 +590,11 @@ export function buildSalesBillList(
   const mode = filter?.dateMode ?? 'collected'
   const hasDateFilter = Boolean(filter?.fromDate || filter?.toDate)
   const includeBillRow = (row: SalesBillRow) =>
-    !hasDateFilter || mode === 'created' || row.collectedTotal > 0
+    !hasDateFilter ||
+    mode === 'created' ||
+    row.collectedTotal > 0 ||
+    row.creditPending > 0 ||
+    row.chequePending > 0
   const childrenByParent = buildChildrenMap(data.sales)
   const consumedChildIds = new Set<string>()
   const rows: SalesBillRow[] = []
