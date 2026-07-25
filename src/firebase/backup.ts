@@ -47,6 +47,10 @@ function setLocalLastBackupTime(iso: string): void {
   localStorage.setItem(LAST_BACKUP_KEY, iso)
 }
 
+export function clearLocalLastBackupTime(): void {
+  localStorage.removeItem(LAST_BACKUP_KEY)
+}
+
 /** Keep local backup timestamp aligned after applying a remote snapshot. */
 export function markLocalBackupTime(iso: string): void {
   setLocalLastBackupTime(iso)
@@ -136,6 +140,14 @@ export async function backupAppData(data: AppData): Promise<string> {
       )
       if (parsed) {
         mergedData = mergeCloudAppData(mergedData, parsed.data)
+        mergedData = normalizeData({
+          ...mergedData,
+          openingBalance: data.openingBalance,
+          openingBankBalance: data.openingBankBalance,
+          homePin: data.homePin,
+          theme: data.theme,
+          reminderAlerts: data.reminderAlerts,
+        })
       }
     }
   } catch {

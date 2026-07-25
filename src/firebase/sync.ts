@@ -2,15 +2,22 @@ import type { AppData } from '../types'
 import {
   applyFullRemoteCloudData,
   applyRemoteCloudData,
+  clearAllLocalData,
   getLocalDataUpdatedAt,
+  getLocalUserUid,
   isLocalDataEmpty,
+  isLocalDataOwnedByUser,
   loadData,
   markLocalDataSynced,
+  setLocalUserUid,
 } from '../storage/database'
+import { clearAllLocalBackupSnapshots } from '../storage/localBackup'
 import { isFirebaseConfigured } from './config'
 import {
   backupAppData,
+  clearLocalLastBackupTime,
   fetchRemoteAppData,
+  getCloudUser,
   getLocalLastBackupTime,
   isAutoBackupEnabled,
   isCloudLoggedIn,
@@ -56,16 +63,26 @@ export function setCloudLoginRestoreActive(active: boolean): void {
   }
 }
 
+function wipeLocalDeviceData(): void {
+  clearAllLocalData()
+  clearLocalLastBackupTime()
+  lastAppliedRemoteBackupAt = 0
+  void clearAllLocalBackupSnapshots()
+}
+
 /** Pull full cloud data on login — replaces local, never merges with empty/stale device data. */
 export async function restoreFullCloudData(): Promise<AppData | null> {
   if (!isFirebaseConfigured() || !isCloudLoggedIn()) return null
+  const user = getCloudUser()
+  if (!user) return null
+
   const remote = await fetchRemoteAppData()
   if (!remote) return null
 
   loginRestoreActive = true
   applyingRemote = true
   try {
-    const next = applyFullRemoteCloudData(remote.data, remote.backupAt)
+    const next = applyFullRemoteCloudData(remote.data, remote.backupAt, user.uid)
     lastAppliedRemoteBackupAt = parseBackupTimestamp(remote.backupAt)
     markLocalDataSynced(remote.backupAt)
     remoteListener?.(next)
@@ -77,6 +94,78 @@ export async function restoreFullCloudData(): Promise<AppData | null> {
     applyingRemote = false
     loginRestoreActive = false
   }
+}
+
+async function replaceLocalFromCloud(uid: string): Promise<AppData | null> {
+  loginRestoreActive = true
+  applyingRemote = true
+  try {
+    const remote = await fetchRemoteAppData()
+    if (remote) {
+      const next = applyFullRemoteCloudData(remote.data, remote.backupAt, uid)
+      lastAppliedRemoteBackupAt = parseBackupTimestamp(remote.backupAt)
+      markLocalDataSynced(remote.backupAt)
+      remoteListener?.(next)
+      emitBackupStatus(
+        `Account data loaded · ${next.sales.length} bills · ${next.expenses.length} records`,
+      )
+      return next
+    }
+
+    setLocalUserUid(uid)
+    const empty = loadData()
+    remoteListener?.(empty)
+    return empty
+  } finally {
+    applyingRemote = false
+    loginRestoreActive = false
+  }
+}
+
+/** Ensure local storage belongs to the signed-in cloud user — never merge across accounts. */
+async function onCloudUserSignedIn(uid: string): Promise<void> {
+  const storedUid = getLocalUserUid()
+  const local = loadData()
+
+  if (storedUid && storedUid !== uid) {
+    emitBackupStatus('Switching account — loading your cloud data…')
+    wipeLocalDeviceData()
+    await replaceLocalFromCloud(uid)
+    return
+  }
+
+  if (!storedUid && !isLocalDataEmpty(local)) {
+    const remote = await fetchRemoteAppData()
+    if (remote) {
+      emitBackupStatus('Loading your cloud data…')
+      wipeLocalDeviceData()
+      loginRestoreActive = true
+      applyingRemote = true
+      try {
+        const next = applyFullRemoteCloudData(remote.data, remote.backupAt, uid)
+        lastAppliedRemoteBackupAt = parseBackupTimestamp(remote.backupAt)
+        markLocalDataSynced(remote.backupAt)
+        remoteListener?.(next)
+      } finally {
+        applyingRemote = false
+        loginRestoreActive = false
+      }
+      return
+    }
+
+    setLocalUserUid(uid)
+    remoteListener?.(local)
+    return
+  }
+
+  setLocalUserUid(uid)
+
+  if (isLocalDataEmpty(local)) {
+    await restoreFullCloudData()
+    return
+  }
+
+  await pullCloudIfNewer()
 }
 
 function getEffectiveLocalTimestamp(): number {
@@ -114,7 +203,9 @@ export function setBackupStatusListener(
 }
 
 function shouldApplyRemote(backupAt: string): boolean {
-  if (applyingRemote || backingUp) return false
+  if (applyingRemote || backingUp || loginRestoreActive) return false
+  const user = getCloudUser()
+  if (user && !isLocalDataOwnedByUser(user.uid)) return false
   if (hasUnsyncedLocalChanges()) return false
   const remoteMs = parseBackupTimestamp(backupAt)
   if (remoteMs <= lastAppliedRemoteBackupAt) return false
@@ -123,6 +214,9 @@ function shouldApplyRemote(backupAt: string): boolean {
 
 function applyRemoteSnapshot(data: AppData, backupAt: string): void {
   if (!shouldApplyRemote(backupAt)) return
+  const user = getCloudUser()
+  if (user && !isLocalDataOwnedByUser(user.uid)) return
+
   applyingRemote = true
   let rebackup: AppData | null = null
   try {
@@ -163,6 +257,8 @@ function stopCloudListener(): void {
 
 export async function pullCloudIfNewer(): Promise<boolean> {
   if (!isFirebaseConfigured() || !isCloudLoggedIn()) return false
+  const user = getCloudUser()
+  if (user && !isLocalDataOwnedByUser(user.uid)) return false
   const remote = await fetchRemoteAppData()
   if (!remote) return false
   if (!shouldApplyRemote(remote.backupAt)) return false
@@ -177,12 +273,7 @@ export function initFirebaseSync(): () => void {
     stopCloudListener()
     if (user) {
       startCloudListener()
-      const local = loadData()
-      if (isLocalDataEmpty(local)) {
-        void restoreFullCloudData()
-      } else {
-        void pullCloudIfNewer()
-      }
+      void onCloudUserSignedIn(user.uid)
       return
     }
     lastAppliedRemoteBackupAt = 0
@@ -198,6 +289,8 @@ export function initFirebaseSync(): () => void {
 function queueBackup(data: AppData): void {
   if (!isFirebaseConfigured() || !isAutoBackupEnabled() || !isCloudLoggedIn()) return
   if (applyingRemote || loginRestoreActive) return
+  const user = getCloudUser()
+  if (user && !isLocalDataOwnedByUser(user.uid)) return
 
   pendingData = data
   if (debounceTimer) clearTimeout(debounceTimer)
@@ -208,7 +301,9 @@ function queueBackup(data: AppData): void {
 }
 
 async function runBackup(data: AppData): Promise<void> {
-  if (!isCloudLoggedIn() || applyingRemote || backingUp) return
+  if (!isCloudLoggedIn() || applyingRemote || backingUp || loginRestoreActive) return
+  const user = getCloudUser()
+  if (user && !isLocalDataOwnedByUser(user.uid)) return
 
   backingUp = true
   debounceTimer = null
@@ -231,10 +326,16 @@ export function notifyDataChanged(data: AppData): void {
   if (!isFirebaseConfigured() || !isAutoBackupEnabled()) return
   pendingData = data
   if (!isCloudLoggedIn() || applyingRemote || loginRestoreActive) return
+  const user = getCloudUser()
+  if (user && !isLocalDataOwnedByUser(user.uid)) return
   queueBackup(data)
 }
 
 export async function backupNow(data: AppData): Promise<string> {
+  const user = getCloudUser()
+  if (user && !isLocalDataOwnedByUser(user.uid)) {
+    setLocalUserUid(user.uid)
+  }
   const at = await backupAppData(data)
   markLocalDataSynced(at)
   pendingData = null

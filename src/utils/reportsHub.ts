@@ -21,6 +21,7 @@ import {
   toInputDate,
   type ReportPeriod,
   type ReportSort,
+  type SaleDateMode,
   type SalesReportFilter,
 } from './salesReport'
 import { saleCollectedAmount } from './salePayment'
@@ -321,14 +322,28 @@ export function salesRowsForPreset(
   return buildSalesReport(data, period, 'date-desc', filter)
 }
 
+export function salesFilterForPreset(
+  preset: ReportDatePreset,
+  selectedDate: string,
+  rangeTo?: string,
+  dateMode: SaleDateMode = 'collected',
+): SalesReportFilter | undefined {
+  const base = presetToSalesFilter(preset, selectedDate, rangeTo)
+  if (!base) {
+    return dateMode === 'collected' ? undefined : { dateMode }
+  }
+  return { ...base, dateMode }
+}
+
 export function salesBillsForPreset(
   data: AppData,
   preset: ReportDatePreset,
   selectedDate: string,
   sort: ReportSort = 'date-desc',
   rangeTo?: string,
+  dateMode: SaleDateMode = 'collected',
 ) {
-  const filter = presetToSalesFilter(preset, selectedDate, rangeTo)
+  const filter = salesFilterForPreset(preset, selectedDate, rangeTo, dateMode)
   return buildSalesBillList(data, sort, filter)
 }
 
@@ -337,8 +352,11 @@ export function salesSummaryForPreset(
   preset: ReportDatePreset,
   selectedDate: string,
   rangeTo?: string,
+  dateMode: SaleDateMode = 'collected',
 ) {
-  return summarizeSalesBillRows(salesBillsForPreset(data, preset, selectedDate, 'date-desc', rangeTo))
+  return summarizeSalesBillRows(
+    salesBillsForPreset(data, preset, selectedDate, 'date-desc', rangeTo, dateMode),
+  )
 }
 
 export function presetToSalesFilter(
@@ -389,4 +407,4 @@ export function formatReportPresetLabel(
 }
 
 export { summarizeSales, summarizeSalesBillRows, summarizePurchases, summarizeNormalExpenses, saleTotalCollected }
-export type { ReportSort }
+export type { ReportSort, SaleDateMode }

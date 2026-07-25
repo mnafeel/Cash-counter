@@ -1,5 +1,5 @@
 import type { AppData, AppTheme, Expense, ExpensePayType, PayType, ReminderAlertSettings, Sale, SupplierEntry, TransferDirection, CustomerReminderMap } from '../types'
-import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, STORAGE_KEY } from '../types'
+import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
 import { collectSplitNameTargets } from '../utils/saleCustomerName'
 import { stripExpenseBillSuffix, isPurchaseExpense } from '../utils/expenseBillLabels'
 import {
@@ -351,6 +351,27 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
   }
 }
 
+export function getLocalUserUid(): string | null {
+  try {
+    return localStorage.getItem(LOCAL_USER_UID_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setLocalUserUid(uid: string): void {
+  localStorage.setItem(LOCAL_USER_UID_KEY, uid)
+}
+
+export function clearLocalUserUid(): void {
+  localStorage.removeItem(LOCAL_USER_UID_KEY)
+}
+
+export function isLocalDataOwnedByUser(uid: string): boolean {
+  const stored = getLocalUserUid()
+  return stored === uid
+}
+
 export function loadData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -404,11 +425,12 @@ export function isLocalDataEmpty(data: AppData): boolean {
 }
 
 /** Login restore — replace local with full cloud copy (no merge). */
-export function applyFullRemoteCloudData(data: AppData, backupAt: string): AppData {
+export function applyFullRemoteCloudData(data: AppData, backupAt: string, uid?: string): AppData {
   const next = normalizeData(data)
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, backupAt)
   markLocalBackupTime(backupAt)
+  if (uid) setLocalUserUid(uid)
   return next
 }
 
@@ -420,10 +442,20 @@ export function applyRemoteCloudData(
   const remote = normalizeData(data)
   const merged = mergeCloudAppData(local, remote)
   const preservedLocal = cloudDataPreservedLocalRecords(local, remote, merged)
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(merged))
+  const next = preservedLocal
+    ? merged
+    : normalizeData({
+        ...merged,
+        openingBalance: remote.openingBalance,
+        openingBankBalance: remote.openingBankBalance,
+        homePin: remote.homePin,
+        theme: remote.theme,
+        reminderAlerts: remote.reminderAlerts,
+      })
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, preservedLocal ? new Date().toISOString() : backupAt)
   markLocalBackupTime(backupAt)
-  return { data: merged, preservedLocal }
+  return { data: next, preservedLocal }
 }
 
 export function replaceData(data: AppData): AppData {
@@ -432,11 +464,12 @@ export function replaceData(data: AppData): AppData {
   return next
 }
 
-/** Wipe local counter data — used on cloud logout. Does not trigger cloud backup. */
+/** Wipe local counter data — used on cloud logout / account switch. Does not trigger cloud backup. */
 export function clearAllLocalData(): AppData {
   const next = { ...defaultData }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, new Date().toISOString())
+  clearLocalUserUid()
   return next
 }
 

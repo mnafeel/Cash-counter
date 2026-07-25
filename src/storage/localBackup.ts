@@ -108,6 +108,18 @@ export function flushLocalBackupSnapshot(): void {
   if (snapshot) void persistSnapshot(snapshot).catch(() => {})
 }
 
+export async function clearAllLocalBackupSnapshots(): Promise<void> {
+  if (typeof indexedDB === 'undefined') return
+
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    tx.objectStore(STORE_NAME).clear()
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error ?? new Error('IndexedDB clear failed'))
+  })
+}
+
 export async function listLocalBackupSnapshots(): Promise<LocalBackupSnapshotMeta[]> {
   if (typeof indexedDB === 'undefined') return []
 

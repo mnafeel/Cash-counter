@@ -129,3 +129,5 @@ export interface AppData {
 
 export const STORAGE_KEY = 'cash-counter-data'
 export const LOCAL_UPDATED_AT_KEY = 'cash-counter-local-updated-at'
+/** Firebase UID that owns the current local `cash-counter-data` blob. */
+export const LOCAL_USER_UID_KEY = 'cash-counter-local-user-uid'

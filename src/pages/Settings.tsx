@@ -8,6 +8,7 @@ import { isFirebaseConfigured } from '../firebase/config'
 import { getLastCloudUsername } from '../firebase/cloudUser'
 import {
   createCloudAccount,
+  clearLocalLastBackupTime,
   getCloudUsername,
   getLocalLastBackupTime,
   getRemoteLastBackupTime,
@@ -24,7 +25,8 @@ import {
   setCloudLoginRestoreActive,
 } from '../firebase/sync'
 import type { AppData } from '../types'
-import { getApprovedChequeAmount, listApprovedCheques, listPendingChequeSales, listPendingCreditSales, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
+import { getApprovedChequeAmount, listApprovedCheques, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
+import { clearAllLocalBackupSnapshots } from '../storage/localBackup'
 import {
   dateTimeInputValuesToIso,
   formatMoney,
@@ -631,6 +633,19 @@ export default function Settings() {
     return `${snapshot.sales.length} bills · ${snapshot.expenses.length} records · cash ${formatMoney(snapshot.openingBalance)} · bank ${formatMoney(snapshot.openingBankBalance ?? 0)}`
   }
 
+  async function prepareLocalForCloudAuth() {
+    if (cloudUser) {
+      await logoutCloud()
+      setCloudUser(null)
+    }
+    resetAllData()
+    clearLocalLastBackupTime()
+    await clearAllLocalBackupSnapshots()
+    setOpeningStr('0')
+    setOpeningBankStr('0')
+    setLastBackup(null)
+  }
+
   async function loadCloudDataAfterAuth(isNewAccount: boolean) {
     setCloudLoginRestoreActive(true)
     try {
@@ -646,9 +661,10 @@ export default function Settings() {
       }
       if (isNewAccount) {
         setCloudLoginRestoreActive(false)
-        const at = await backupNow(data)
+        const fresh = loadData()
+        const at = await backupNow(fresh)
         setLastBackup(at)
-        setBackupStatus(`Username created · ${cloudDataSummary(data)} saved to cloud`)
+        setBackupStatus(`Username created · ${cloudDataSummary(fresh)} saved to cloud`)
         setBackupError(false)
         return
       }
@@ -663,13 +679,7 @@ export default function Settings() {
     setBackupBusy(true)
     setBackupError(false)
     try {
-      if (cloudUser) {
-        await logoutCloud()
-        resetAllData()
-        setOpeningStr('0')
-        setOpeningBankStr('0')
-        setCloudUser(null)
-      }
+      await prepareLocalForCloudAuth()
       setCloudLoginRestoreActive(true)
       await createCloudAccount(cloudUsername, cloudPassword)
       setCloudPassword('')
@@ -686,13 +696,7 @@ export default function Settings() {
     setBackupBusy(true)
     setBackupError(false)
     try {
-      if (cloudUser) {
-        await logoutCloud()
-        resetAllData()
-        setOpeningStr('0')
-        setOpeningBankStr('0')
-        setCloudUser(null)
-      }
+      await prepareLocalForCloudAuth()
       setCloudLoginRestoreActive(true)
       await loginCloud(cloudUsername, cloudPassword)
       setCloudPassword('')
@@ -729,6 +733,8 @@ export default function Settings() {
     try {
       await logoutCloud()
       resetAllData()
+      clearLocalLastBackupTime()
+      await clearAllLocalBackupSnapshots()
       setOpeningStr('0')
       setOpeningBankStr('0')
       setCloudUser(null)

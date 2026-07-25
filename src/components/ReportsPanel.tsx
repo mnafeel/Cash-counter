@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AppData } from '../types'
 import { formatDate, formatMoney } from '../utils/format'
-import { formatCollectedSalesBreakdown, toInputDate, type ReportSort } from '../utils/salesReport'
+import { formatCollectedSalesBreakdown, toInputDate, type ReportSort, type SaleDateMode } from '../utils/salesReport'
 import {
   buildChequeReportItems,
   buildCreditReportItems,
@@ -54,6 +54,11 @@ const SECTION_TABS: { id: ReportSection; label: string }[] = [
   { id: 'cheque', label: '🧾 Cheque' },
 ]
 
+const SALES_DATE_MODE_OPTIONS: { id: SaleDateMode; label: string }[] = [
+  { id: 'collected', label: 'Collected' },
+  { id: 'created', label: 'Bill created' },
+]
+
 const SORT_OPTIONS: { id: ReportSort; label: string }[] = [
   { id: 'date-desc', label: 'Date ↓' },
   { id: 'date-asc', label: 'Date ↑' },
@@ -88,6 +93,7 @@ export default function ReportsPanel({
   const [rangeTo, setRangeTo] = useState(toInputDate())
   const [activeSection, setActiveSection] = useState<ReportSection>(initialSection ?? 'sales')
   const [salesSort, setSalesSort] = useState<ReportSort>('date-desc')
+  const [salesDateMode, setSalesDateMode] = useState<SaleDateMode>('collected')
   const [creditSort, setCreditSort] = useState<CreditSort>('date-desc')
   const bodyRef = useRef<HTMLDivElement>(null)
 
@@ -99,12 +105,12 @@ export default function ReportsPanel({
   }, [open, initialPreset, initialSection])
 
   const salesBills = useMemo(
-    () => salesBillsForPreset(data, datePreset, selectedDate, salesSort, rangeTo),
-    [data, datePreset, selectedDate, salesSort, rangeTo],
+    () => salesBillsForPreset(data, datePreset, selectedDate, salesSort, rangeTo, salesDateMode),
+    [data, datePreset, selectedDate, salesSort, rangeTo, salesDateMode],
   )
   const salesTotals = useMemo(
-    () => salesSummaryForPreset(data, datePreset, selectedDate, rangeTo),
-    [data, datePreset, selectedDate, rangeTo],
+    () => salesSummaryForPreset(data, datePreset, selectedDate, rangeTo, salesDateMode),
+    [data, datePreset, selectedDate, rangeTo, salesDateMode],
   )
 
   const purchaseItems = useMemo(() => {
@@ -349,6 +355,22 @@ export default function ReportsPanel({
 
             {activeSection === 'sales' ? (
               <div className="reports-sort-bar">
+                <span>Show</span>
+                {SALES_DATE_MODE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`reports-sort-chip ${salesDateMode === opt.id ? 'reports-sort-chip--active' : ''}`}
+                    onClick={() => setSalesDateMode(opt.id)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {activeSection === 'sales' ? (
+              <div className="reports-sort-bar">
                 <span>Sort</span>
                 {SORT_OPTIONS.map((opt) => (
                   <button
@@ -389,17 +411,41 @@ export default function ReportsPanel({
             <div className={`reports-summary ${showAllSections ? 'reports-summary--all' : ''}`}>
               {activeSection === 'sales' && (
                 <div className="reports-summary-card reports-summary-card--green">
-                  <span>Sales collected</span>
-                  <strong>{formatMoney(salesTotals.totalBills)}</strong>
+                  <span>{salesDateMode === 'created' ? 'Bills created' : 'Sales collected'}</span>
+                  <strong>
+                    {salesDateMode === 'created'
+                      ? formatMoney(salesTotals.billTotal)
+                      : formatMoney(salesTotals.totalBills)}
+                  </strong>
                   <small>
                     {salesTotals.billCount} bills ·{' '}
-                    {formatCollectedSalesBreakdown(
-                      salesTotals.cashTotal,
-                      salesTotals.bankTotal,
-                      salesTotals.chequeTotal,
-                    )}
+                    {salesDateMode === 'created'
+                      ? `Collected ${formatMoney(salesTotals.totalBills)} · ${formatCollectedSalesBreakdown(
+                          salesTotals.cashTotal,
+                          salesTotals.bankTotal,
+                          salesTotals.chequeTotal,
+                        )}`
+                      : formatCollectedSalesBreakdown(
+                          salesTotals.cashTotal,
+                          salesTotals.bankTotal,
+                          salesTotals.chequeTotal,
+                        )}
                   </small>
                 </div>
+              )}
+              {activeSection === 'sales' && salesDateMode === 'created' && (
+                <>
+                  <div className="reports-summary-card">
+                    <span>Cash collected</span>
+                    <strong>{formatMoney(salesTotals.cashTotal)}</strong>
+                    <small>On bills created in this period</small>
+                  </div>
+                  <div className="reports-summary-card">
+                    <span>Bank collected</span>
+                    <strong>{formatMoney(salesTotals.bankTotal)}</strong>
+                    <small>On bills created in this period</small>
+                  </div>
+                </>
               )}
               {activeSection === 'sales' && (
                 <div className="reports-summary-card">
@@ -456,13 +502,27 @@ export default function ReportsPanel({
                 <strong>{formatMoney(salesTotals.totalBills)}</strong>
               </div>
               <p className="reports-section-note">
-                Collected {formatMoney(salesTotals.totalBills)} · With credit sales{' '}
-                {formatMoney(salesTotals.withCreditSales)} · Bills {formatMoney(salesTotals.billTotal)}
-                {' · '}
-                {formatCollectedSalesBreakdown(
-                  salesTotals.cashTotal,
-                  salesTotals.bankTotal,
-                  salesTotals.chequeTotal,
+                {salesDateMode === 'created' ? (
+                  <>
+                    Bills created {periodLabel.toLowerCase()} · {salesTotals.billCount} bills · Bill total{' '}
+                    {formatMoney(salesTotals.billTotal)} · Cash collected{' '}
+                    {formatMoney(salesTotals.cashTotal)} · Bank collected{' '}
+                    {formatMoney(salesTotals.bankTotal)}
+                    {(salesTotals.chequeTotal > 0 || salesTotals.creditPending > 0 || salesTotals.chequePending > 0)
+                      ? ` · Cheque ${formatMoney(salesTotals.chequeTotal)} · Credit ${formatMoney(salesTotals.creditPending)} · Cheque pending ${formatMoney(salesTotals.chequePending)}`
+                      : ''}
+                  </>
+                ) : (
+                  <>
+                    Collected {formatMoney(salesTotals.totalBills)} · With credit sales{' '}
+                    {formatMoney(salesTotals.withCreditSales)} · Bills {formatMoney(salesTotals.billTotal)}
+                    {' · '}
+                    {formatCollectedSalesBreakdown(
+                      salesTotals.cashTotal,
+                      salesTotals.bankTotal,
+                      salesTotals.chequeTotal,
+                    )}
+                  </>
                 )}
               </p>
               {salesBills.length === 0 ? (
@@ -473,15 +533,29 @@ export default function ReportsPanel({
                     <li key={row.id} className="reports-item">
                       <div className="reports-item-head">
                         <span className="reports-item-title">{row.customerName || 'Sale'}</span>
-                        <span className="reports-item-amount">{formatMoney(row.collectedTotal)}</span>
+                        <span className="reports-item-amount">
+                          {formatMoney(
+                            salesDateMode === 'created' ? row.billAmount : row.collectedTotal,
+                          )}
+                        </span>
                       </div>
                       <div className="reports-item-meta">
-                        Created {row.createdDateLabel} · Collected {row.dateLabel} · Bill{' '}
-                        {formatMoney(row.billAmount)} ·{' '}
-                        {formatCollectedSalesBreakdown(
-                          row.cashTotal,
-                          row.bankTotal,
-                          row.chequeTotal,
+                        {salesDateMode === 'created' ? (
+                          <>
+                            Created {row.createdDateLabel} · Bill {formatMoney(row.billAmount)} · Cash{' '}
+                            {formatMoney(row.cashTotal)} · Bank {formatMoney(row.bankTotal)}
+                            {row.chequeTotal > 0 ? ` · Cheque ${formatMoney(row.chequeTotal)}` : ''}
+                          </>
+                        ) : (
+                          <>
+                            Created {row.createdDateLabel} · Collected {row.dateLabel} · Bill{' '}
+                            {formatMoney(row.billAmount)} ·{' '}
+                            {formatCollectedSalesBreakdown(
+                              row.cashTotal,
+                              row.bankTotal,
+                              row.chequeTotal,
+                            )}
+                          </>
                         )}
                       </div>
                       <div className="reports-item-meta reports-item-meta--detail">{row.detailLabel}</div>
