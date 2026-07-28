@@ -73,6 +73,7 @@ interface ReportsPanelProps {
   onClose: () => void
   data: AppData
   initialPreset?: ReportDatePreset
+  initialSelectedDate?: string
   initialSection?: ReportSection
   /** When set, only one report section is shown (e.g. Today Sales). */
   focusSection?: boolean
@@ -84,6 +85,7 @@ export default function ReportsPanel({
   onClose,
   data,
   initialPreset = 'today',
+  initialSelectedDate,
   initialSection,
   focusSection = Boolean(initialSection),
   onOpenCustomer,
@@ -101,8 +103,12 @@ export default function ReportsPanel({
     if (!open) return
     setDatePreset(initialPreset)
     if (initialSection) setActiveSection(initialSection)
-    if (initialPreset === 'date' || initialPreset === 'range') setSelectedDate(toInputDate())
-  }, [open, initialPreset, initialSection])
+    if (initialPreset === 'date' && initialSelectedDate) {
+      setSelectedDate(initialSelectedDate)
+    } else if (initialPreset === 'date' || initialPreset === 'range') {
+      setSelectedDate(toInputDate())
+    }
+  }, [open, initialPreset, initialSection, initialSelectedDate])
 
   const salesBills = useMemo(
     () => salesBillsForPreset(data, datePreset, selectedDate, salesSort, rangeTo, salesDateMode),

@@ -767,6 +767,21 @@ html[data-screen='desktop'] .home-pin-digit {
   flex-shrink: 0;
 }
 
+.home-cash-dates--stat {
+  margin-bottom: 6px;
+  justify-content: flex-start;
+}
+
+.stat-card--sales {
+  text-align: left;
+}
+
+.stat-card--sales .stat-label,
+.stat-card--sales .stat-value,
+.stat-card--sales .stat-meta {
+  width: 100%;
+}
+
 .home-cash-date-chip {
   padding: 3px 8px;
   font-size: 0.58rem;

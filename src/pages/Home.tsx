@@ -37,8 +37,13 @@ import {
 } from '../utils/cashActivity'
 import {
   formatCollectedSalesBreakdown,
-  getTodaySalesSummary,
+  toInputDate,
 } from '../utils/salesReport'
+import {
+  formatReportPresetLabel,
+  salesSummaryForPreset,
+  type ReportDatePreset,
+} from '../utils/reportsHub'
 import {
   isPurchaseExpense,
   NO1_BILL_LABEL,
@@ -61,7 +66,6 @@ import {
   buildActiveCreditReminders,
   countActiveBillReminders,
 } from '../utils/billReminders'
-import type { ReportDatePreset } from '../utils/reportsHub'
 import './Home.css'
 
 const DEFAULT_PIN = '0000'
@@ -72,6 +76,13 @@ const BALANCE_DATE_OPTIONS: { id: CashDateFilter; label: string }[] = [
   { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
   { id: 'week', label: 'Week' },
+]
+
+type HomeSalesDateFilter = 'today' | 'yesterday' | 'date'
+
+const HOME_SALES_DATE_OPTIONS: { id: HomeSalesDateFilter; label: string }[] = [
+  { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
 ]
 
 export default function Home() {
@@ -107,17 +118,32 @@ export default function Home() {
   const [creditInitialName, setCreditInitialName] = useState<string | undefined>()
   const [chequeInitialName, setChequeInitialName] = useState<string | undefined>()
   const [reportPreset, setReportPreset] = useState<ReportDatePreset>('today')
+  const [reportSelectedDate, setReportSelectedDate] = useState('')
   const [reportSection, setReportSection] = useState<ReportSection | undefined>()
+  const [salesDateFilter, setSalesDateFilter] = useState<HomeSalesDateFilter>('today')
+  const [salesSelectedDate, setSalesSelectedDate] = useState('')
   const noteInputRef = useRef<HTMLInputElement>(null)
 
   function openPurchaseHistory() {
     navigate('/history', { state: { showPurchaseHistory: true } })
   }
 
-  function openReports(preset: ReportDatePreset = 'today', section?: ReportSection) {
+  function openReports(
+    preset: ReportDatePreset = 'today',
+    section?: ReportSection,
+    selectedDate?: string,
+  ) {
     setReportPreset(preset)
     setReportSection(section)
+    setReportSelectedDate(selectedDate ?? '')
     setShowReports(true)
+  }
+
+  function openSalesReports() {
+    const preset: ReportDatePreset = salesDateFilter === 'date' ? 'date' : salesDateFilter
+    const selectedDate =
+      salesDateFilter === 'date' ? salesSelectedDate || toInputDate() : toInputDate()
+    openReports(preset, 'sales', salesDateFilter === 'date' ? selectedDate : undefined)
   }
 
   function openCustomers(filter: CustomerListFilter = 'all', customerName?: string) {
@@ -168,7 +194,18 @@ export default function Home() {
   }, [addTarget, transferDirection])
 
   const today = new Date().toDateString()
-  const todaySalesSummary = useMemo(() => getTodaySalesSummary(data), [data])
+  const salesSummary = useMemo(() => {
+    const preset: ReportDatePreset = salesDateFilter === 'date' ? 'date' : salesDateFilter
+    const selectedDate =
+      salesDateFilter === 'date' ? salesSelectedDate || toInputDate() : toInputDate()
+    return salesSummaryForPreset(data, preset, selectedDate)
+  }, [data, salesDateFilter, salesSelectedDate])
+  const salesPeriodLabel = useMemo(() => {
+    const preset: ReportDatePreset = salesDateFilter === 'date' ? 'date' : salesDateFilter
+    const selectedDate =
+      salesDateFilter === 'date' ? salesSelectedDate || toInputDate() : toInputDate()
+    return formatReportPresetLabel(preset, selectedDate)
+  }, [salesDateFilter, salesSelectedDate])
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
   const todayDailyTotals = useMemo(() => getTodayDailyTotals(data), [data])
@@ -586,23 +623,53 @@ export default function Home() {
         <div className="home-today-grid">
           <button
             type="button"
-            className="stat-card stat-card--action"
-            onClick={() => openReports('today', 'sales')}
+            className="stat-card stat-card--action stat-card--sales"
+            onClick={openSalesReports}
           >
-            <span className="stat-label">Sales collected</span>
+            <div
+              className="home-cash-dates home-cash-dates--stat"
+              role="group"
+              aria-label="Sales date"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {HOME_SALES_DATE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`home-cash-date-chip ${salesDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                  onClick={() => {
+                    setSalesDateFilter(opt.id)
+                    setSalesSelectedDate('')
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <input
+                type="date"
+                className={`home-cash-date-input ${salesDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+                value={salesSelectedDate}
+                onChange={(e) => {
+                  setSalesSelectedDate(e.target.value)
+                  if (e.target.value) setSalesDateFilter('date')
+                }}
+                aria-label="Pick date for sales"
+              />
+            </div>
+            <span className="stat-label">Sales collected · {salesPeriodLabel}</span>
             <span className="stat-value stat-value--green">
-              {formatMoney(todaySalesSummary.totalBills)}
+              {formatMoney(salesSummary.totalBills)}
             </span>
             <span className="stat-meta stat-meta--breakdown">
               {formatCollectedSalesBreakdown(
-                todaySalesSummary.cashTotal,
-                todaySalesSummary.bankTotal,
-                todaySalesSummary.chequeTotal,
+                salesSummary.cashTotal,
+                salesSummary.bankTotal,
+                salesSummary.chequeTotal,
               )}
             </span>
             <span className="stat-meta">
-              {todaySalesSummary.billCount} bills · Credit+Cheque sales{' '}
-              {formatMoney(todaySalesSummary.withCreditSales)}
+              {salesSummary.billCount} bills · Credit+Cheque sales{' '}
+              {formatMoney(salesSummary.withCreditSales)}
             </span>
           </button>
           <button
@@ -1072,6 +1139,7 @@ export default function Home() {
         onClose={() => setShowReports(false)}
         data={data}
         initialPreset={reportPreset}
+        initialSelectedDate={reportSelectedDate}
         initialSection={reportSection}
         focusSection={Boolean(reportSection)}
         onOpenCustomer={openCustomerFromReports}
