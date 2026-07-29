@@ -1,4 +1,5 @@
 import type { AppData, Loan, LoanKind, LoanPaySource, LoanStatus } from '../types'
+import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
 import { formatDate } from './format'
 
 export interface LoanOverview {
@@ -105,4 +106,73 @@ export function loanBankToBalance(loan: Loan): number {
     if (loan.kind === 'borrow' && loan.settlementPaySource === 'bank') impact -= loan.amount
   }
   return impact
+}
+
+export interface LoanReportSummary {
+  count: number
+  givenTotal: number
+  givenCount: number
+  takenTotal: number
+  takenCount: number
+  pendingTotal: number
+  pendingCount: number
+  settledTotal: number
+  settledCount: number
+}
+
+export function buildLoanReportItems(data: AppData): LoanListItem[] {
+  return (data.loans ?? [])
+    .map(decorateLoan)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+}
+
+export function filterLoanReportItems(
+  items: LoanListItem[],
+  dateFilter: CashDateFilter,
+  selectedDate: string,
+  rangeTo?: string,
+): LoanListItem[] {
+  return items.filter((item) =>
+    matchesCashDateFilter(item.createdAt, dateFilter, selectedDate, rangeTo),
+  )
+}
+
+export function summarizeLoanReportItems(items: LoanListItem[]): LoanReportSummary {
+  let givenTotal = 0
+  let givenCount = 0
+  let takenTotal = 0
+  let takenCount = 0
+  let pendingTotal = 0
+  let pendingCount = 0
+  let settledTotal = 0
+  let settledCount = 0
+
+  for (const loan of items) {
+    if (loan.kind === 'lend') {
+      givenTotal += loan.amount
+      givenCount += 1
+    } else {
+      takenTotal += loan.amount
+      takenCount += 1
+    }
+    if (loan.status === 'settled') {
+      settledTotal += loan.amount
+      settledCount += 1
+    } else {
+      pendingTotal += loan.amount
+      pendingCount += 1
+    }
+  }
+
+  return {
+    count: items.length,
+    givenTotal,
+    givenCount,
+    takenTotal,
+    takenCount,
+    pendingTotal,
+    pendingCount,
+    settledTotal,
+    settledCount,
+  }
 }

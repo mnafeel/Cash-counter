@@ -44,9 +44,12 @@ export function setAutoBackupEnabled(enabled: boolean): void {
 
 export function isAutoPullFromCloudEnabled(): boolean {
   try {
-    return localStorage.getItem(AUTO_PULL_KEY) === 'true'
+    const stored = localStorage.getItem(AUTO_PULL_KEY)
+    if (stored !== null) return stored === 'true'
+    // Secondary devices default to auto-load; main billing device keeps local cash stable.
+    return !isMainBillingDevice()
   } catch {
-    return false
+    return !isMainBillingDevice()
   }
 }
 

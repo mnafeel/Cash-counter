@@ -194,8 +194,8 @@
 .reports-options {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
+  gap: 2px;
+  padding: 4px 6px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -205,7 +205,24 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
+}
+
+.reports-options-group--inline > span,
+.reports-options-group--inline > .reports-options-sep {
+  font-size: 0.4rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+  flex: 0 0 auto;
+  margin-right: 1px;
+  line-height: 1;
+}
+
+.reports-options-sep {
+  margin-left: 4px;
+  padding-left: 4px;
+  border-left: 1px solid var(--border);
 }
 
 .reports-options-group > span {
@@ -287,6 +304,28 @@
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.reports-tabs--sections {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+.reports-tabs--sections::-webkit-scrollbar {
+  display: none;
+}
+
+.reports-tabs--sections .reports-tab {
+  flex: 0 0 auto;
+  min-width: max-content;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
 .reports-range-pick {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -309,15 +348,17 @@
 }
 
 .reports-sort-chip {
-  min-height: 24px;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
+  min-height: 20px;
+  padding: 1px 4px;
+  border-radius: 4px;
   border: 1px solid var(--border);
   background: var(--brown-dark);
   color: var(--cream-dim);
-  font-size: 0.52rem;
+  font-size: 0.46rem;
   font-weight: 700;
+  line-height: 1.1;
   cursor: pointer;
+  font-family: inherit;
 }
 
 .reports-sort-chip--active {
@@ -651,6 +692,30 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.reports-summary--single {
+  grid-template-columns: 1fr;
+}
+
+.reports-summary-card--loan strong {
+  color: var(--warning, #f5c542);
+}
+
+.reports-summary-card--expandable {
+  min-height: 54px;
+}
+
+.reports-summary-card--expandable strong {
+  font-size: clamp(0.72rem, calc(var(--app-height, 800px) * 0.019), 0.88rem);
+}
+
+.reports-summary-card--expandable small {
+  font-size: 0.5rem;
+  white-space: normal;
+  line-height: 1.3;
+  overflow: visible;
+  text-overflow: unset;
+}
+
 .reports-summary-card--compact {
   padding: 5px 6px;
 }
@@ -676,6 +741,62 @@
 
 .reports-summary-card--today strong {
   color: var(--success, #7ddf8a);
+}
+
+.reports-sales-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reports-sales-accordion-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.reports-summary-card--expandable {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  position: relative;
+  padding-right: 1.25rem;
+}
+
+.reports-summary-card--expandable.reports-summary-card--active {
+  border-color: rgba(125, 223, 138, 0.55);
+  box-shadow: 0 0 0 1px rgba(125, 223, 138, 0.2);
+}
+
+.reports-section--sales-expanded {
+  margin: 0;
+  padding: 0;
+}
+
+.reports-summary-card-chevron {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.62rem;
+  color: var(--cream-dim);
+  line-height: 1;
+}
+
+.reports-sales-accordion-panel {
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: var(--brown-dark);
+  padding: 4px 6px 6px;
+  max-height: min(42vh, 320px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.reports-sales-accordion-panel .reports-list-meta {
+  margin: 0 0 4px;
 }
 
 .reports-summary {
@@ -956,8 +1077,29 @@ html[data-short='true'] .reports-item {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .reports-summary--sales-triple {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .reports-summary--sales-triple,
+  .reports-summary--sales-double {
+    grid-template-columns: 1fr;
+  }
+
+  .reports-summary-card--expandable {
+    min-height: 50px;
+  }
+
+  .reports-item-meta {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+
+  .reports-item-title {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+  }
+
+  .reports-item-head {
+    align-items: flex-start;
   }
 
   .reports-summary--all {
@@ -965,13 +1107,19 @@ html[data-short='true'] .reports-item {
   }
 
   .reports-sort-chip {
-    min-height: 22px;
-    font-size: 0.44rem;
+    min-height: 18px;
+    font-size: 0.42rem;
+    padding: 1px 3px;
   }
 }
 
-html[data-screen='phone'] .reports-summary--all {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+html[data-screen='phone'] .reports-summary--sales-triple,
+html[data-screen='phone'] .reports-summary--sales-double {
+  grid-template-columns: 1fr;
+}
+
+html[data-screen='phone'] .reports-item-meta {
+  white-space: normal;
 }
 
 @media (orientation: landscape) and (max-height: 520px) {

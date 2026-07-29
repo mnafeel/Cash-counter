@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AppData } from '../types'
 import { formatDate, formatMoney } from '../utils/format'
-import { formatCollectedSalesBreakdown, toInputDate, type ReportSort, type SaleDateMode } from '../utils/salesReport'
+import { formatCollectedSalesBreakdown, toInputDate, type ReportSort, type SaleDateMode, type SalesBillRow } from '../utils/salesReport'
 import {
   buildChequeReportItems,
   buildCreditReportItems,
@@ -28,7 +28,11 @@ import {
   filterPurchaseHistoryItems,
 } from '../utils/purchaseHistory'
 import { buildCreditOverview } from '../utils/customerLedger'
-import { buildDailyTotalsForPreset } from '../utils/dailyTotals'
+import {
+  buildLoanReportItems,
+  filterLoanReportItems,
+  summarizeLoanReportItems,
+} from '../utils/loanLedger'
 import {
   buildActiveChequeReminders,
   buildActiveCreditReminders,
@@ -39,7 +43,7 @@ import {
 import type { BillReminderItem } from '../utils/billReminders'
 import '../pages/Reports.css'
 
-export type ReportSection = 'sales' | 'purchase' | 'expense' | 'credit' | 'cheque'
+export type ReportSection = 'sales' | 'purchase' | 'expense' | 'credit' | 'cheque' | 'loan'
 
 const DATE_PRESETS: { id: ReportDatePreset; label: string }[] = [
   { id: 'today', label: 'Today' },
@@ -55,57 +59,42 @@ const SECTION_TABS: { id: ReportSection; label: string }[] = [
   { id: 'purchase', label: '🛒 Purchase' },
   { id: 'expense', label: '📤 Expense' },
   { id: 'cheque', label: '🧾 Cheque' },
+  { id: 'loan', label: '🤝 Loan' },
 ]
 
 const SALES_DATE_MODE_OPTIONS: { id: SaleDateMode; label: string }[] = [
   { id: 'collected', label: 'Collected' },
-  { id: 'created', label: 'Bill created' },
+  { id: 'created', label: 'Created' },
 ]
 
 const SORT_OPTIONS: { id: ReportSort; label: string }[] = [
-  { id: 'date-desc', label: 'Date ↓' },
-  { id: 'date-asc', label: 'Date ↑' },
-  { id: 'amount-desc', label: 'Amount ↓' },
-  { id: 'amount-asc', label: 'Amount ↑' },
+  { id: 'date-desc', label: 'New↓' },
+  { id: 'date-asc', label: 'Old↑' },
+  { id: 'amount-desc', label: 'High↓' },
+  { id: 'amount-asc', label: 'Low↑' },
 ]
 
 type CreditSort = 'date-desc' | 'date-asc' | 'pending-desc' | 'paid-desc'
+type LoanSort = 'date-desc' | 'date-asc'
 
-function sectionQuickAmount(
-  section: ReportSection,
-  salesTotals: ReturnType<typeof salesSummaryForPreset>,
-  creditTotals: ReturnType<typeof summarizeCreditItems>,
-  purchaseTotals: ReturnType<typeof summarizePurchases>,
-  expenseTotals: ReturnType<typeof summarizeNormalExpenses>,
-  chequeTotals: ReturnType<typeof summarizeChequeItems>,
-): { amount: string; hint: string } {
-  switch (section) {
-    case 'sales':
-      return {
-        amount: formatMoney(salesTotals.totalBills),
-        hint: `${salesTotals.billCount} bills · collected`,
-      }
-    case 'credit':
-      return {
-        amount: formatMoney(creditTotals.pendingTotal),
-        hint: `Open · paid ${formatMoney(creditTotals.paidTotal)}`,
-      }
-    case 'purchase':
-      return {
-        amount: formatMoney(purchaseTotals.total),
-        hint: `${purchaseTotals.count} bills · GST ${formatMoney(purchaseTotals.gstTotal)}`,
-      }
-    case 'expense':
-      return {
-        amount: formatMoney(expenseTotals.total + purchaseTotals.total),
-        hint: `Normal ${formatMoney(expenseTotals.total)} + purchase`,
-      }
-    case 'cheque':
-      return {
-        amount: formatMoney(chequeTotals.pendingTotal),
-        hint: `${chequeTotals.pendingCount} waiting · total ${formatMoney(chequeTotals.total)}`,
-      }
-  }
+const LOAN_SORT_OPTIONS: { id: LoanSort; label: string }[] = [
+  { id: 'date-desc', label: 'New↓' },
+  { id: 'date-asc', label: 'Old↑' },
+]
+
+const CREDIT_SORT_OPTIONS: { id: CreditSort; label: string }[] = [
+  { id: 'date-desc', label: 'New↓' },
+  { id: 'date-asc', label: 'Old↑' },
+  { id: 'pending-desc', label: 'Due↓' },
+  { id: 'paid-desc', label: 'Paid↓' },
+]
+
+type SalesExpandPanel = 'collected' | 'withCredit' | 'sameDay'
+
+function isWithCreditSaleRow(row: SalesBillRow): boolean {
+  if (row.creditPending > 0 || row.chequePending > 0) return true
+  const hay = `${row.payLabel} ${row.detailLabel}`.toLowerCase()
+  return hay.includes('credit') || hay.includes('cheque') || hay.includes('💳') || hay.includes('🧾')
 }
 
 interface ReportsPanelProps {
@@ -137,6 +126,8 @@ export default function ReportsPanel({
   const [salesSort, setSalesSort] = useState<ReportSort>('date-desc')
   const [salesDateMode, setSalesDateMode] = useState<SaleDateMode>('collected')
   const [creditSort, setCreditSort] = useState<CreditSort>('date-desc')
+  const [loanSort, setLoanSort] = useState<LoanSort>('date-desc')
+  const [expandedSalesPanel, setExpandedSalesPanel] = useState<SalesExpandPanel | null>('collected')
   const bodyRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -148,21 +139,16 @@ export default function ReportsPanel({
     } else if (initialPreset === 'date' || initialPreset === 'range') {
       setSelectedDate(toInputDate())
     }
+    if ((initialSection ?? 'sales') === 'sales') {
+      setExpandedSalesPanel('collected')
+    } else {
+      setExpandedSalesPanel(null)
+    }
   }, [open, initialPreset, initialSection, initialSelectedDate])
 
   const salesBills = useMemo(
     () =>
-      salesBillsForPreset(
-        data,
-        datePreset,
-        selectedDate,
-        salesSort,
-        rangeTo,
-        salesDateMode,
-        salesDateMode === 'collected' && isSingleDaySalesPreset(datePreset, selectedDate, rangeTo)
-          ? { sameDayCreatedAndPaid: true }
-          : undefined,
-      ),
+      salesBillsForPreset(data, datePreset, selectedDate, salesSort, rangeTo, salesDateMode),
     [data, datePreset, selectedDate, salesSort, rangeTo, salesDateMode],
   )
   const salesTotals = useMemo(
@@ -179,6 +165,49 @@ export default function ReportsPanel({
     [data, datePreset, selectedDate, rangeTo, showSameDaySalesBox],
   )
   const sameDaySalesLabel = sameDaySalesCollectedLabel(datePreset, selectedDate, rangeTo)
+
+  const sameDaySalesBills = useMemo(
+    () =>
+      showSameDaySalesBox
+        ? salesBillsForPreset(
+            data,
+            datePreset,
+            selectedDate,
+            salesSort,
+            rangeTo,
+            'collected',
+            { sameDayCreatedAndPaid: true },
+          )
+        : [],
+    [data, datePreset, selectedDate, salesSort, rangeTo, showSameDaySalesBox],
+  )
+
+  const withCreditSalesBills = useMemo(
+    () => salesBills.filter(isWithCreditSaleRow),
+    [salesBills],
+  )
+
+  const showSalesCollectedAccordion = activeSection === 'sales' && salesDateMode === 'collected'
+
+  useEffect(() => {
+    if (activeSection === 'sales' && salesDateMode === 'collected') {
+      setExpandedSalesPanel('collected')
+    } else {
+      setExpandedSalesPanel(null)
+    }
+  }, [datePreset, selectedDate, rangeTo, salesDateMode, activeSection])
+
+  function toggleSalesPanel(panel: SalesExpandPanel) {
+    setExpandedSalesPanel((current) => {
+      const next = current === panel ? null : panel
+      if (next) {
+        requestAnimationFrame(() => {
+          bodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+        })
+      }
+      return next
+    })
+  }
 
   const purchaseItems = useMemo(() => {
     const items = buildPurchaseHistoryItems(data)
@@ -216,11 +245,22 @@ export default function ReportsPanel({
   }, [data, datePreset, selectedDate, rangeTo])
   const chequeTotals = useMemo(() => summarizeChequeItems(chequeItems), [chequeItems])
 
+  const loanItems = useMemo(() => {
+    const items = filterLoanReportItems(
+      buildLoanReportItems(data),
+      datePreset,
+      selectedDate,
+      rangeTo,
+    )
+    return [...items].sort((a, b) => {
+      const ta = new Date(a.createdAt).getTime()
+      const tb = new Date(b.createdAt).getTime()
+      return loanSort === 'date-asc' ? ta - tb : tb - ta
+    })
+  }, [data, datePreset, selectedDate, rangeTo, loanSort])
+  const loanTotals = useMemo(() => summarizeLoanReportItems(loanItems), [loanItems])
+
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
-  const periodDailyTotals = useMemo(
-    () => buildDailyTotalsForPreset(data, datePreset, selectedDate, rangeTo),
-    [data, datePreset, selectedDate, rangeTo],
-  )
   const alertSettings = useMemo(() => getReminderAlertSettings(data), [data])
   const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(data), [data])
   const activeChequeAlerts = useMemo(() => buildActiveChequeReminders(data), [data])
@@ -231,12 +271,17 @@ export default function ReportsPanel({
   const showAllSections = !focusSection
   const visibleSection = focusSection ? activeSection : activeSection
 
-  const activeAlertCount = activeCreditAlerts.length + activeChequeAlerts.length
-  const hasAlertsPanel =
-    showAllSections &&
-    (scheduledCreditReminders.length > 0 ||
-      scheduledChequeReminders.length > 0 ||
-      creditOverview.customerCount > 0)
+  const activeAlertCount =
+    activeSection === 'credit'
+      ? activeCreditAlerts.length
+      : activeSection === 'cheque'
+        ? activeChequeAlerts.length
+        : 0
+  const hasCreditAlertsPanel =
+    activeSection === 'credit' &&
+    (scheduledCreditReminders.length > 0 || creditOverview.customerCount > 0)
+  const hasChequeAlertsPanel =
+    activeSection === 'cheque' && scheduledChequeReminders.length > 0
 
   function selectSection(section: ReportSection) {
     setActiveSection(section)
@@ -324,7 +369,7 @@ export default function ReportsPanel({
             ) : null}
 
             {showAllSections ? (
-              <div className="reports-tabs reports-tabs--five reports-tabs--easy">
+              <div className="reports-tabs reports-tabs--sections">
                 {SECTION_TABS.map((tab) => (
                   <button
                     key={tab.id}
@@ -339,92 +384,39 @@ export default function ReportsPanel({
             ) : null}
           </div>
 
-          {showAllSections ? (
-            <>
-              <div className="reports-net-strip" aria-label="Period net">
-                <span>{periodLabel}</span>
-                <strong className={periodDailyTotals.netInflow >= 0 ? 'reports-net-strip--pos' : 'reports-net-strip--neg'}>
-                  Net {formatMoney(periodDailyTotals.netInflow)}
-                </strong>
-                <small>
-                  In {formatMoney(periodDailyTotals.salesCollected)} · Out{' '}
-                  {formatMoney(periodDailyTotals.purchaseTotal + periodDailyTotals.expenseTotal)}
-                </small>
-              </div>
-
-              <div className="reports-quick-grid" aria-label="Quick report sections">
-                {SECTION_TABS.map((tab) => {
-                  const quick = sectionQuickAmount(
-                    tab.id,
-                    salesTotals,
-                    creditTotals,
-                    purchaseTotals,
-                    expenseTotals,
-                    chequeTotals,
-                  )
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      className={`reports-quick-card reports-quick-card--${tab.id} ${
-                        activeSection === tab.id ? 'reports-quick-card--active' : ''
-                      }`}
-                      onClick={() => selectSection(tab.id)}
-                    >
-                      <span>{tab.label}</span>
-                      <strong>{quick.amount}</strong>
-                      <small>{quick.hint}</small>
-                    </button>
-                  )
-                })}
-              </div>
-            </>
-          ) : null}
-
           <div className="reports-controls">
-            {(activeSection === 'sales' || activeSection === 'credit') && (
+            {(activeSection === 'sales' || activeSection === 'credit' || activeSection === 'loan') && (
               <div className="reports-options">
                 {activeSection === 'sales' ? (
-                  <>
-                    <div className="reports-options-group">
-                      <span>Show</span>
-                      {SALES_DATE_MODE_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          className={`reports-sort-chip ${salesDateMode === opt.id ? 'reports-sort-chip--active' : ''}`}
-                          onClick={() => setSalesDateMode(opt.id)}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="reports-options-group">
-                      <span>Sort</span>
-                      {SORT_OPTIONS.map((opt) => (
-                        <button
-                          key={opt.id}
-                          type="button"
-                          className={`reports-sort-chip ${salesSort === opt.id ? 'reports-sort-chip--active' : ''}`}
-                          onClick={() => setSalesSort(opt.id)}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </>
+                  <div className="reports-options-group reports-options-group--inline">
+                    <span>Show</span>
+                    {SALES_DATE_MODE_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        className={`reports-sort-chip ${salesDateMode === opt.id ? 'reports-sort-chip--active' : ''}`}
+                        onClick={() => setSalesDateMode(opt.id)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                    <span className="reports-options-sep">Sort</span>
+                    {SORT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        className={`reports-sort-chip ${salesSort === opt.id ? 'reports-sort-chip--active' : ''}`}
+                        onClick={() => setSalesSort(opt.id)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 ) : null}
                 {activeSection === 'credit' ? (
-                  <div className="reports-options-group">
+                  <div className="reports-options-group reports-options-group--inline">
                     <span>Sort</span>
-                    {(
-                      [
-                        { id: 'date-desc', label: 'Date ↓' },
-                        { id: 'date-asc', label: 'Date ↑' },
-                        { id: 'pending-desc', label: 'Balance ↓' },
-                        { id: 'paid-desc', label: 'Paid ↓' },
-                      ] as const
-                    ).map((opt) => (
+                    {CREDIT_SORT_OPTIONS.map((opt) => (
                       <button
                         key={opt.id}
                         type="button"
@@ -436,84 +428,68 @@ export default function ReportsPanel({
                     ))}
                   </div>
                 ) : null}
+                {activeSection === 'loan' ? (
+                  <div className="reports-options-group reports-options-group--inline">
+                    <span>Sort</span>
+                    {LOAN_SORT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        className={`reports-sort-chip ${loanSort === opt.id ? 'reports-sort-chip--active' : ''}`}
+                        onClick={() => setLoanSort(opt.id)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             )}
 
-            {!showAllSections ? (
-              <div
-                className={`reports-summary ${
-                  activeSection === 'sales' &&
-                  salesDateMode === 'collected' &&
-                  showSameDaySalesBox
-                    ? 'reports-summary--sales-triple'
-                    : activeSection === 'sales' && salesDateMode === 'collected'
-                      ? 'reports-summary--sales-double'
-                      : ''
-                }`}
-              >
-                {activeSection === 'sales' && salesDateMode === 'collected' && (
-                  <>
-                    <div className="reports-summary-card reports-summary-card--green reports-summary-card--compact">
-                      <span>Sales collected</span>
-                      <strong>{formatMoney(salesTotals.totalBills)}</strong>
-                      <small>
-                        {salesTotals.billCount} bills ·{' '}
-                        {formatCollectedSalesBreakdown(
-                          salesTotals.cashTotal,
-                          salesTotals.bankTotal,
-                        )}
-                      </small>
-                    </div>
-                    <div className="reports-summary-card reports-summary-card--compact">
-                      <span>With credit sales</span>
-                      <strong>{formatMoney(salesTotals.withCreditSales)}</strong>
-                      <small>
-                        Credit {formatMoney(salesTotals.creditPending)} · Cheque{' '}
-                        {formatMoney(salesTotals.chequePending)}
-                      </small>
-                    </div>
-                    {showSameDaySalesBox && sameDaySales ? (
-                      <div className="reports-summary-card reports-summary-card--compact reports-summary-card--today">
-                        <span>{sameDaySalesLabel}</span>
-                        <strong>{formatMoney(sameDaySales.totalBills)}</strong>
-                        <small>
-                          {sameDaySales.billCount} bills · created &amp; paid same day ·{' '}
-                          {formatCollectedSalesBreakdown(
-                            sameDaySales.cashTotal,
-                            sameDaySales.bankTotal,
-                          )}
-                        </small>
-                      </div>
-                    ) : null}
-                  </>
-                )}
-                {activeSection === 'sales' && salesDateMode === 'created' && (
-                  <div className="reports-summary-card reports-summary-card--green">
-                    <span>Bills created</span>
-                    <strong>{formatMoney(salesTotals.billTotal)}</strong>
-                    <small>
-                      {salesTotals.billCount} bills · Collected {formatMoney(salesTotals.totalBills)} ·{' '}
-                      {formatCollectedSalesBreakdown(
-                        salesTotals.cashTotal,
-                        salesTotals.bankTotal,
-                      )}
-                    </small>
-                  </div>
-                )}
-                {activeSection === 'sales' && salesDateMode === 'created' && (
-                  <>
-                    <div className="reports-summary-card">
-                      <span>Cash collected</span>
-                      <strong>{formatMoney(salesTotals.cashTotal)}</strong>
-                      <small>On bills created in this period</small>
-                    </div>
-                    <div className="reports-summary-card">
-                      <span>Bank collected</span>
-                      <strong>{formatMoney(salesTotals.bankTotal)}</strong>
-                      <small>On bills created in this period</small>
-                    </div>
-                  </>
-                )}
+            {showSalesCollectedAccordion ? (
+              <SalesCollectedSummaryCards
+                expanded={expandedSalesPanel}
+                onToggle={toggleSalesPanel}
+                salesTotals={salesTotals}
+                sameDaySales={sameDaySales}
+                sameDaySalesLabel={sameDaySalesLabel}
+                showSameDaySalesBox={showSameDaySalesBox}
+              />
+            ) : null}
+
+            {activeSection === 'sales' && salesDateMode === 'created' ? (
+              <div className="reports-summary">
+                <div className="reports-summary-card reports-summary-card--green">
+                  <span>Bills created</span>
+                  <strong>{formatMoney(salesTotals.billTotal)}</strong>
+                  <small>
+                    {salesTotals.billCount} bills · Collected {formatMoney(salesTotals.totalBills)} ·{' '}
+                    {formatCollectedSalesBreakdown(
+                      salesTotals.cashTotal,
+                      salesTotals.bankTotal,
+                    )}
+                  </small>
+                </div>
+              </div>
+            ) : null}
+
+            {activeSection === 'sales' && salesDateMode === 'created' ? (
+              <div className="reports-summary reports-summary--sales-double">
+                <div className="reports-summary-card">
+                  <span>Cash collected</span>
+                  <strong>{formatMoney(salesTotals.cashTotal)}</strong>
+                  <small>On bills created in this period</small>
+                </div>
+                <div className="reports-summary-card">
+                  <span>Bank collected</span>
+                  <strong>{formatMoney(salesTotals.bankTotal)}</strong>
+                  <small>On bills created in this period</small>
+                </div>
+              </div>
+            ) : null}
+
+            {activeSection !== 'sales' ? (
+              <div className="reports-summary reports-summary--single">
                 {activeSection === 'credit' && (
                   <div className="reports-summary-card">
                     <span>Credit open</span>
@@ -533,12 +509,9 @@ export default function ReportsPanel({
                 {activeSection === 'expense' && (
                   <div className="reports-summary-card reports-summary-card--orange">
                     <span>Expense</span>
-                    <strong>{formatMoney(expenseTotals.total + purchaseTotals.total)}</strong>
+                    <strong>{formatMoney(expenseTotals.total)}</strong>
                     <small>
-                      Normal {formatMoney(expenseTotals.total)} · {expenseTotals.count} items
-                    </small>
-                    <small>
-                      + Purchase {formatMoney(purchaseTotals.total)} · {purchaseTotals.count} items
+                      {expenseTotals.count} normal expense{expenseTotals.count === 1 ? '' : 's'}
                     </small>
                   </div>
                 )}
@@ -551,69 +524,33 @@ export default function ReportsPanel({
                     </small>
                   </div>
                 )}
+                {activeSection === 'loan' && (
+                  <div className="reports-summary-card reports-summary-card--loan">
+                    <span>Loan</span>
+                    <strong>{formatMoney(loanTotals.pendingTotal)}</strong>
+                    <small>
+                      Given {formatMoney(loanTotals.givenTotal)} · Taken {formatMoney(loanTotals.takenTotal)} ·{' '}
+                      {loanTotals.pendingCount} pending
+                    </small>
+                  </div>
+                )}
               </div>
             ) : null}
           </div>
         </div>
 
         <div ref={bodyRef} className="reports-body">
-          {hasAlertsPanel ? (
-            <details className="reports-alerts-details" open={activeAlertCount > 0}>
-              <summary className="reports-alerts-summary">
-                🔔 Alerts &amp; reminders
-                {activeAlertCount > 0 ? (
-                  <span className="reports-alerts-badge">{activeAlertCount} active</span>
-                ) : null}
-              </summary>
-              <div className="reports-alerts-details-body">
-                <ReminderAlertsBlock
-                  title="💳 Credit collect alerts"
-                  subtitle={`Alert ${alertSettings.creditDaysBefore} days before · every ${alertSettings.alertIntervalDays} day${alertSettings.alertIntervalDays === 1 ? '' : 's'}`}
-                  activeItems={activeCreditAlerts}
-                  scheduledItems={scheduledCreditReminders}
-                />
-                <ReminderAlertsBlock
-                  title="🧾 Cheque collect alerts"
-                  subtitle={`Alert ${alertSettings.chequeDaysBefore} days before · every ${alertSettings.alertIntervalDays} day${alertSettings.alertIntervalDays === 1 ? '' : 's'}`}
-                  activeItems={activeChequeAlerts}
-                  scheduledItems={scheduledChequeReminders}
-                />
-                {creditOverview.customerCount > 0 ? (
-                  <section className="reports-credit-notify" aria-label="Customers with open credit">
-                    <div className="reports-credit-notify-head">
-                      <span className="reports-credit-notify-title">Credit customers</span>
-                      <strong>{formatMoney(creditOverview.totalPending)}</strong>
-                    </div>
-                    <p className="reports-credit-notify-sub">
-                      {creditOverview.customerCount} customers · {creditOverview.openBillCount} unpaid bills
-                    </p>
-                    <ul className="reports-credit-notify-list">
-                      {creditOverview.customers.map((customer) => (
-                        <li key={customer.name}>
-                          <button
-                            type="button"
-                            className="reports-credit-notify-item"
-                            onClick={() => onOpenCustomer?.(customer.name)}
-                          >
-                            <span className="reports-credit-notify-name">{customer.name}</span>
-                            <span className="reports-credit-notify-meta">
-                              {customer.openBillCount} bill{customer.openBillCount === 1 ? '' : 's'} ·{' '}
-                              {customer.lastCreditLabel}
-                            </span>
-                            <strong className="reports-credit-notify-amount">
-                              {formatMoney(customer.pendingAmount)}
-                            </strong>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                ) : null}
-              </div>
-            </details>
+          {activeSection === 'sales' && showSalesCollectedAccordion && expandedSalesPanel ? (
+            <SalesCollectedHistoryList
+              panel={expandedSalesPanel}
+              collectedRows={salesBills}
+              withCreditRows={withCreditSalesBills}
+              sameDayRows={sameDaySalesBills}
+              sameDaySalesLabel={sameDaySalesLabel}
+            />
           ) : null}
 
-          {activeSection === 'sales' && (
+          {activeSection === 'sales' && !showSalesCollectedAccordion && (
             <section className="reports-section">
               <p className="reports-list-meta">
                 {salesBills.length} sale{salesBills.length === 1 ? '' : 's'}
@@ -683,7 +620,7 @@ export default function ReportsPanel({
           {activeSection === 'expense' && (
             <section className="reports-section">
               <p className="reports-list-meta">
-                {expenseItems.length} expense{expenseItems.length === 1 ? '' : 's'} · includes purchase in total above
+                {expenseItems.length} normal expense{expenseItems.length === 1 ? '' : 's'}
               </p>
               {expenseItems.length === 0 ? (
                 <p className="reports-empty">No expenses for this period.</p>
@@ -706,50 +643,153 @@ export default function ReportsPanel({
           )}
 
           {activeSection === 'credit' && (
-            <section className="reports-section">
-              <p className="reports-list-meta">
-                {creditItems.length} credit record{creditItems.length === 1 ? '' : 's'}
-              </p>
-              {creditItems.length === 0 ? (
-                <p className="reports-empty">No credit records for this period.</p>
-              ) : (
-                <ul className="reports-list">
-                  {creditItems.map((row) => (
-                    <li key={row.id} className="reports-item">
-                      <div className="reports-item-head">
-                        <span className="reports-item-title">{row.name}</span>
-                        <span className="reports-item-amount">{formatMoney(row.pendingAmount)}</span>
-                      </div>
-                      <div className="reports-item-meta">
-                        {formatDate(row.date)} · {row.kind === 'sale' ? 'Sale' : 'Purchase'} · {row.status}
-                      </div>
-                      <div className="reports-item-meta reports-item-meta--detail">{row.payDetail}</div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            <>
+              {hasCreditAlertsPanel ? (
+                <details className="reports-alerts-details" open={activeAlertCount > 0}>
+                  <summary className="reports-alerts-summary">
+                    🔔 Credit alerts
+                    {activeAlertCount > 0 ? (
+                      <span className="reports-alerts-badge">{activeAlertCount} active</span>
+                    ) : null}
+                  </summary>
+                  <div className="reports-alerts-details-body">
+                    <ReminderAlertsBlock
+                      title="💳 Credit collect alerts"
+                      subtitle={`Alert ${alertSettings.creditDaysBefore} days before · every ${alertSettings.alertIntervalDays} day${alertSettings.alertIntervalDays === 1 ? '' : 's'}`}
+                      activeItems={activeCreditAlerts}
+                      scheduledItems={scheduledCreditReminders}
+                    />
+                    {creditOverview.customerCount > 0 ? (
+                      <section className="reports-credit-notify" aria-label="Customers with open credit">
+                        <div className="reports-credit-notify-head">
+                          <span className="reports-credit-notify-title">Credit customers</span>
+                          <strong>{formatMoney(creditOverview.totalPending)}</strong>
+                        </div>
+                        <p className="reports-credit-notify-sub">
+                          {creditOverview.customerCount} customers · {creditOverview.openBillCount} unpaid bills
+                        </p>
+                        <ul className="reports-credit-notify-list">
+                          {creditOverview.customers.map((customer) => (
+                            <li key={customer.name}>
+                              <button
+                                type="button"
+                                className="reports-credit-notify-item"
+                                onClick={() => onOpenCustomer?.(customer.name)}
+                              >
+                                <span className="reports-credit-notify-name">{customer.name}</span>
+                                <span className="reports-credit-notify-meta">
+                                  {customer.openBillCount} bill{customer.openBillCount === 1 ? '' : 's'} ·{' '}
+                                  {customer.lastCreditLabel}
+                                </span>
+                                <strong className="reports-credit-notify-amount">
+                                  {formatMoney(customer.pendingAmount)}
+                                </strong>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+                  </div>
+                </details>
+              ) : null}
+              <section className="reports-section">
+                <p className="reports-list-meta">
+                  {creditItems.length} credit record{creditItems.length === 1 ? '' : 's'}
+                </p>
+                {creditItems.length === 0 ? (
+                  <p className="reports-empty">No credit records for this period.</p>
+                ) : (
+                  <ul className="reports-list">
+                    {creditItems.map((row) => (
+                      <li key={row.id} className="reports-item">
+                        <div className="reports-item-head">
+                          <span className="reports-item-title">{row.name}</span>
+                          <span className="reports-item-amount">{formatMoney(row.pendingAmount)}</span>
+                        </div>
+                        <div className="reports-item-meta">
+                          {formatDate(row.date)} · {row.kind === 'sale' ? 'Sale' : 'Purchase'} · {row.status}
+                        </div>
+                        <div className="reports-item-meta reports-item-meta--detail">{row.payDetail}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </>
           )}
 
           {activeSection === 'cheque' && (
+            <>
+              {hasChequeAlertsPanel ? (
+                <details className="reports-alerts-details" open={activeAlertCount > 0}>
+                  <summary className="reports-alerts-summary">
+                    🔔 Cheque alerts
+                    {activeAlertCount > 0 ? (
+                      <span className="reports-alerts-badge">{activeAlertCount} active</span>
+                    ) : null}
+                  </summary>
+                  <div className="reports-alerts-details-body">
+                    <ReminderAlertsBlock
+                      title="🧾 Cheque collect alerts"
+                      subtitle={`Alert ${alertSettings.chequeDaysBefore} days before · every ${alertSettings.alertIntervalDays} day${alertSettings.alertIntervalDays === 1 ? '' : 's'}`}
+                      activeItems={activeChequeAlerts}
+                      scheduledItems={scheduledChequeReminders}
+                    />
+                  </div>
+                </details>
+              ) : null}
+              <section className="reports-section">
+                <p className="reports-list-meta">
+                  {chequeItems.length} cheque{chequeItems.length === 1 ? '' : 's'}
+                </p>
+                {chequeItems.length === 0 ? (
+                  <p className="reports-empty">No cheque records for this period.</p>
+                ) : (
+                  <ul className="reports-list">
+                    {chequeItems.map((row) => (
+                      <li key={row.id} className="reports-item">
+                        <div className="reports-item-head">
+                          <span className="reports-item-title">{row.name}</span>
+                          <span className="reports-item-amount">{formatMoney(row.amount)}</span>
+                        </div>
+                        <div className="reports-item-meta">
+                          {formatDate(row.date)} · {row.kind} · {row.approved ? 'Approved' : 'Pending'} ·{' '}
+                          {row.payDetail}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </>
+          )}
+
+          {activeSection === 'loan' && (
             <section className="reports-section">
               <p className="reports-list-meta">
-                {chequeItems.length} cheque{chequeItems.length === 1 ? '' : 's'}
+                {loanItems.length} loan{loanItems.length === 1 ? '' : 's'} · by date given
               </p>
-              {chequeItems.length === 0 ? (
-                <p className="reports-empty">No cheque records for this period.</p>
+              {loanItems.length === 0 ? (
+                <p className="reports-empty">No loans for this period.</p>
               ) : (
                 <ul className="reports-list">
-                  {chequeItems.map((row) => (
-                    <li key={row.id} className="reports-item">
+                  {loanItems.map((loan) => (
+                    <li
+                      key={loan.id}
+                      className={`reports-item reports-item--loan reports-item--loan-${loan.kind}`}
+                    >
                       <div className="reports-item-head">
-                        <span className="reports-item-title">{row.name}</span>
-                        <span className="reports-item-amount">{formatMoney(row.amount)}</span>
+                        <span className="reports-item-title">{loan.personName}</span>
+                        <span className="reports-item-amount">{formatMoney(loan.amount)}</span>
                       </div>
                       <div className="reports-item-meta">
-                        {formatDate(row.date)} · {row.kind} · {row.approved ? 'Approved' : 'Pending'} ·{' '}
-                        {row.payDetail}
+                        {loan.dateLabel} · {loan.kindLabel} · {loan.paySourceLabel} · {loan.statusLabel}
+                        {loan.settledDateLabel ? ` · Settled ${loan.settledDateLabel}` : ''}
                       </div>
+                      {loan.note ? (
+                        <div className="reports-item-meta reports-item-meta--detail">{loan.note}</div>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -759,6 +799,168 @@ export default function ReportsPanel({
         </div>
       </div>
     </div>
+  )
+}
+
+function SalesBillList({
+  rows,
+  meta,
+  emptyMessage,
+  inline = false,
+}: {
+  rows: SalesBillRow[]
+  meta: string
+  emptyMessage: string
+  inline?: boolean
+}) {
+  return (
+    <div className={inline ? 'reports-sales-accordion-panel' : 'reports-section reports-section--sales-expanded'}>
+      <p className="reports-list-meta">{meta}</p>
+      {rows.length === 0 ? (
+        <p className="reports-empty">{emptyMessage}</p>
+      ) : (
+        <ul className="reports-list">
+          {rows.map((row) => (
+            <li key={row.id} className="reports-item">
+              <div className="reports-item-head">
+                <span className="reports-item-title">{row.customerName || 'Sale'}</span>
+                <span className="reports-item-amount">{formatMoney(row.collectedTotal)}</span>
+              </div>
+              <div className="reports-item-meta">
+                Created {row.createdDateLabel} · Collected {row.dateLabel} · Bill{' '}
+                {formatMoney(row.billAmount)} ·{' '}
+                {formatCollectedSalesBreakdown(row.cashTotal, row.bankTotal)}
+              </div>
+              <div className="reports-item-meta reports-item-meta--detail">{row.detailLabel}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function SalesCollectedSummaryCards({
+  expanded,
+  onToggle,
+  salesTotals,
+  sameDaySales,
+  sameDaySalesLabel,
+  showSameDaySalesBox,
+}: {
+  expanded: SalesExpandPanel | null
+  onToggle: (panel: SalesExpandPanel) => void
+  salesTotals: ReturnType<typeof salesSummaryForPreset>
+  sameDaySales: ReturnType<typeof salesSameDaySummaryForPreset> | null
+  sameDaySalesLabel: string
+  showSameDaySalesBox: boolean
+}) {
+  const gridClass =
+    showSameDaySalesBox && sameDaySales
+      ? 'reports-summary--sales-triple'
+      : 'reports-summary--sales-double'
+
+  return (
+    <div className={`reports-summary ${gridClass}`}>
+      <button
+        type="button"
+        className={`reports-summary-card reports-summary-card--green reports-summary-card--compact reports-summary-card--expandable ${
+          expanded === 'collected' ? 'reports-summary-card--active' : ''
+        }`}
+        aria-expanded={expanded === 'collected'}
+        onClick={() => onToggle('collected')}
+      >
+        <span>Sales collected</span>
+        <strong>{formatMoney(salesTotals.totalBills)}</strong>
+        <small>
+          {salesTotals.billCount} bills ·{' '}
+          {formatCollectedSalesBreakdown(salesTotals.cashTotal, salesTotals.bankTotal)}
+        </small>
+        <span className="reports-summary-card-chevron" aria-hidden="true">
+          {expanded === 'collected' ? '▾' : '▸'}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        className={`reports-summary-card reports-summary-card--compact reports-summary-card--expandable ${
+          expanded === 'withCredit' ? 'reports-summary-card--active' : ''
+        }`}
+        aria-expanded={expanded === 'withCredit'}
+        onClick={() => onToggle('withCredit')}
+      >
+        <span>With credit sales</span>
+        <strong>{formatMoney(salesTotals.withCreditSales)}</strong>
+        <small>
+          Credit {formatMoney(salesTotals.creditPending)} · Cheque{' '}
+          {formatMoney(salesTotals.chequePending)}
+        </small>
+        <span className="reports-summary-card-chevron" aria-hidden="true">
+          {expanded === 'withCredit' ? '▾' : '▸'}
+        </span>
+      </button>
+
+      {showSameDaySalesBox && sameDaySales ? (
+        <button
+          type="button"
+          className={`reports-summary-card reports-summary-card--compact reports-summary-card--today reports-summary-card--expandable ${
+            expanded === 'sameDay' ? 'reports-summary-card--active' : ''
+          }`}
+          aria-expanded={expanded === 'sameDay'}
+          onClick={() => onToggle('sameDay')}
+        >
+          <span>{sameDaySalesLabel}</span>
+          <strong>{formatMoney(sameDaySales.totalBills)}</strong>
+          <small>
+            {sameDaySales.billCount} bills · created &amp; paid same day ·{' '}
+            {formatCollectedSalesBreakdown(sameDaySales.cashTotal, sameDaySales.bankTotal)}
+          </small>
+          <span className="reports-summary-card-chevron" aria-hidden="true">
+            {expanded === 'sameDay' ? '▾' : '▸'}
+          </span>
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
+function SalesCollectedHistoryList({
+  panel,
+  collectedRows,
+  withCreditRows,
+  sameDayRows,
+  sameDaySalesLabel,
+}: {
+  panel: SalesExpandPanel
+  collectedRows: SalesBillRow[]
+  withCreditRows: SalesBillRow[]
+  sameDayRows: SalesBillRow[]
+  sameDaySalesLabel: string
+}) {
+  if (panel === 'collected') {
+    return (
+      <SalesBillList
+        rows={collectedRows}
+        meta={`${collectedRows.length} sale${collectedRows.length === 1 ? '' : 's'} · Sales collected · by collected date`}
+        emptyMessage="No collected sales for this period."
+      />
+    )
+  }
+  if (panel === 'withCredit') {
+    return (
+      <SalesBillList
+        rows={withCreditRows}
+        meta={`${withCreditRows.length} sale${withCreditRows.length === 1 ? '' : 's'} · With credit sales · credit & cheque bills`}
+        emptyMessage="No credit or cheque sales for this period."
+      />
+    )
+  }
+  return (
+    <SalesBillList
+      rows={sameDayRows}
+      meta={`${sameDayRows.length} sale${sameDayRows.length === 1 ? '' : 's'} · ${sameDaySalesLabel} · by collected · same day only`}
+      emptyMessage="No same-day collected sales for this date."
+    />
   )
 }
 

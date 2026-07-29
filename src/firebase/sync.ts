@@ -27,6 +27,7 @@ import {
   isMainBillingDevice,
   parseBackupTimestamp,
   remoteIsAheadOfLocal,
+  setAutoPullFromCloudEnabled,
   subscribeToAuth,
   subscribeToCloudData,
 } from './backup'
@@ -176,6 +177,34 @@ async function replaceLocalFromCloud(uid: string): Promise<AppData | null> {
   }
 }
 
+/** View-only / secondary devices — always mirror cloud (main device stays local-first). */
+function ensureSecondaryDeviceAutoPull(): void {
+  if (!isMainBillingDevice() && !isAutoPullFromCloudEnabled()) {
+    setAutoPullFromCloudEnabled(true)
+  }
+}
+
+async function syncSecondaryDeviceFromCloud(uid: string): Promise<void> {
+  const remote = await fetchRemoteAppData()
+  await refreshCloudRemoteSummary()
+  if (!remote) return
+
+  loginRestoreActive = true
+  applyingRemote = true
+  try {
+    const next = applyFullRemoteCloudData(remote.data, remote.backupAt, uid)
+    lastAppliedRemoteBackupAt = parseBackupTimestamp(remote.backupAt)
+    markLocalDataSynced(remote.backupAt)
+    remoteListener?.(next)
+    emitBackupStatus(
+      `Cloud loaded · ${next.sales.length} bills · ${next.expenses.length} records · ${new Date(remote.backupAt).toLocaleString()}`,
+    )
+  } finally {
+    applyingRemote = false
+    loginRestoreActive = false
+  }
+}
+
 /** Ensure local storage belongs to the signed-in cloud user — never merge across accounts. */
 async function onCloudUserSignedIn(uid: string): Promise<void> {
   const storedUid = getLocalUserUid()
@@ -213,6 +242,12 @@ async function onCloudUserSignedIn(uid: string): Promise<void> {
   }
 
   setLocalUserUid(uid)
+
+  if (!isMainBillingDevice()) {
+    ensureSecondaryDeviceAutoPull()
+    await syncSecondaryDeviceFromCloud(uid)
+    return
+  }
 
   if (isLocalDataEmpty(local)) {
     await restoreFullCloudData()

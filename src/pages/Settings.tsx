@@ -761,6 +761,10 @@ export default function Settings() {
     try {
       const restored = await restoreFullCloudData()
       if (restored) {
+        if (!isMainBillingDevice()) {
+          setAutoPullFromCloudEnabled(true)
+          setAutoPull(true)
+        }
         setOpeningStr(String(restored.openingBalance))
         setOpeningBankStr(String(restored.openingBankBalance ?? 0))
         setBackupStatus(`Opened · full data loaded · ${cloudDataSummary(restored)}`)
@@ -1960,8 +1964,8 @@ export default function Settings() {
                 </label>
                 {!mainBillingDevice && (
                   <p className="settings-backup-meta">
-                    View-only device — cloud amount above is shared. Use Load from cloud. Do not save
-                    from here.
+                    View-only device — sign in with your username and full cloud data loads
+                    automatically. Do not turn on Main billing device here.
                   </p>
                 )}
                 <label className="settings-backup-toggle">
@@ -1975,12 +1979,21 @@ export default function Settings() {
                 </label>
                 <label className="settings-backup-toggle">
                   <input type="checkbox" checked={autoPull} onChange={toggleAutoPull} />
-                  Auto load from cloud (off keeps cash stable on this device)
+                  Auto load from cloud
                 </label>
-                {!autoPull && (
+                {!mainBillingDevice ? (
                   <p className="settings-backup-meta">
-                    Cloud backup info updates on all devices. Auto load stays off so cash on this
-                    device stays stable until you tap Load from cloud.
+                    This device is not main billing — cloud data loads automatically when you sign
+                    in and when cloud updates.
+                  </p>
+                ) : !autoPull ? (
+                  <p className="settings-backup-meta">
+                    Main device: auto load off keeps local cash stable until you tap Load from
+                    cloud.
+                  </p>
+                ) : (
+                  <p className="settings-backup-meta">
+                    Main device will also pull newer cloud data automatically.
                   </p>
                 )}
                 <div className="settings-backup-actions">
