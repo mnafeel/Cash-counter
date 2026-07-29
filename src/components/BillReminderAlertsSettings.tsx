@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { ReminderAlertSettings } from '../types'
 import { DEFAULT_REMINDER_ALERTS, NOTIFICATION_SHOW_SECOND_OPTIONS } from '../types'
 import { formatNotificationShowLabel } from '../utils/billReminders'
+import { testReminderNotificationSound } from '../utils/reminderNotificationSound'
 import './BillReminderAlertsSettings.css'
 
 const DAY_OPTIONS = [0, 1, 2, 3, 5, 7, 14, 30]
@@ -131,6 +132,13 @@ export default function BillReminderAlertsSettings({
             onClick={() => setNotificationSoundEnabled(false)}
           >
             Off
+          </button>
+          <button
+            type="button"
+            className="bill-alert-settings-chip bill-alert-settings-chip--test"
+            onClick={() => void testReminderNotificationSound()}
+          >
+            Test
           </button>
         </div>
       </div>

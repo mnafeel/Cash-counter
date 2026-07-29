@@ -57,7 +57,7 @@ export default function ReminderAlertsNotifier() {
   const [collapsed, setCollapsed] = useState(false)
   const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(readDismissedKeys)
   const [shownAtByKey, setShownAtByKey] = useState<Record<string, number>>({})
-  const prevVisibleAlertKeysRef = useRef('')
+  const prevAlertStateRef = useRef<Record<string, { visible: boolean; due: boolean }>>({})
 
   const activeAlerts = useMemo(
     () => buildActiveBillReminders(data, now),
@@ -92,19 +92,24 @@ export default function ReminderAlertsNotifier() {
   }, [visibleAlertKeys, visibleActiveAlerts])
 
   useEffect(() => {
-    if (!alertSettings.notificationSoundEnabled || !visibleAlertKeys) return
+    if (!alertSettings.notificationSoundEnabled || visibleActiveAlerts.length === 0) return
 
-    const currentKeys = visibleAlertKeys.split('|').filter(Boolean)
-    const prevKeys = prevVisibleAlertKeysRef.current
-      ? prevVisibleAlertKeysRef.current.split('|').filter(Boolean)
-      : []
-    const prevSet = new Set(prevKeys)
-    const hasNewAlert = currentKeys.some((key) => !prevSet.has(key))
+    let shouldPlay = false
+    const nextState: Record<string, { visible: boolean; due: boolean }> = {}
 
-    prevVisibleAlertKeysRef.current = visibleAlertKeys
+    for (const item of visibleActiveAlerts) {
+      const key = alertDismissKey(item)
+      const due = item.isDue || item.isOverdue
+      const prev = prevAlertStateRef.current[key]
+      nextState[key] = { visible: true, due }
 
-    if (hasNewAlert) void playReminderNotificationSound()
-  }, [visibleAlertKeys, alertSettings.notificationSoundEnabled])
+      if (!prev?.visible) shouldPlay = true
+      else if (due && !prev.due) shouldPlay = true
+    }
+
+    prevAlertStateRef.current = nextState
+    if (shouldPlay) void playReminderNotificationSound()
+  }, [visibleActiveAlerts, alertSettings.notificationSoundEnabled])
 
   useEffect(() => {
     if (showSeconds <= 0 || visibleActiveAlerts.length === 0) return
