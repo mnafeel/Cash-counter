@@ -387,7 +387,7 @@ export function loadData(): AppData {
       return next ? expenseWasNormalized(expense, next) : false
     })
     if (salesMigrated || expensesMigrated) {
-      saveData(normalized)
+      saveLocalData(normalized)
     }
     return normalized
   } catch {
@@ -402,6 +402,13 @@ export function saveData(data: AppData, options?: { cloudImmediate?: boolean }):
   queueLocalBackupSnapshot(data)
   if (options?.cloudImmediate) notifyDataChangedImmediate(data)
   else notifyDataChanged(data)
+}
+
+/** Persist locally without cloud backup — used for migrations and cloud restore. */
+export function saveLocalData(data: AppData): void {
+  const serialized = JSON.stringify(data)
+  localStorage.setItem(STORAGE_KEY, serialized)
+  queueLocalBackupSnapshot(data)
 }
 
 export function getLocalDataUpdatedAt(): string | null {

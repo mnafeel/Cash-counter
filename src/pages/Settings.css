@@ -369,6 +369,12 @@
   border-color: var(--cream-dim);
 }
 
+.settings-backup-summary-time {
+  grid-column: 1 / -1;
+  font-size: 0.68rem;
+  color: var(--cream-dim) !important;
+}
+
 .settings-backup-meta--warn {
   color: var(--danger-text);
   font-weight: 700;

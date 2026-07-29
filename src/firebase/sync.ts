@@ -2,6 +2,8 @@ import type { AppData } from '../types'
 import {
   applyFullRemoteCloudData,
   clearAllLocalData,
+  getBankBalance,
+  getCurrentBalance,
   getLocalDataUpdatedAt,
   getLocalUserUid,
   isLocalDataEmpty,
@@ -19,6 +21,7 @@ import {
   getCloudUser,
   getLocalLastBackupTime,
   isAutoBackupEnabled,
+  isAutoPullFromCloudEnabled,
   isCloudLoggedIn,
   parseBackupTimestamp,
   subscribeToAuth,
@@ -37,6 +40,52 @@ let loginRestoreActive = false
 let lastAppliedRemoteBackupAt = 0
 
 const DEBOUNCE_MS = 400
+
+export interface CloudRemoteSummary {
+  bills: number
+  records: number
+  cash: number
+  bank: number
+  backupAt: string
+}
+
+let cloudRemoteSummaryListener: ((summary: CloudRemoteSummary | null) => void) | null = null
+
+export function setCloudRemoteSummaryListener(
+  listener: ((summary: CloudRemoteSummary | null) => void) | null,
+): void {
+  cloudRemoteSummaryListener = listener
+}
+
+function buildCloudRemoteSummary(data: AppData, backupAt: string): CloudRemoteSummary {
+  return {
+    bills: data.sales.length,
+    records: data.expenses.length,
+    cash: getCurrentBalance(data),
+    bank: getBankBalance(data),
+    backupAt,
+  }
+}
+
+function emitCloudRemoteSummary(data: AppData, backupAt: string): void {
+  cloudRemoteSummaryListener?.(buildCloudRemoteSummary(data, backupAt))
+}
+
+/** Read latest cloud backup metadata — same on every device, does not change local data. */
+export async function refreshCloudRemoteSummary(): Promise<CloudRemoteSummary | null> {
+  if (!isFirebaseConfigured() || !isCloudLoggedIn()) {
+    cloudRemoteSummaryListener?.(null)
+    return null
+  }
+  const remote = await fetchRemoteAppData()
+  if (!remote) {
+    cloudRemoteSummaryListener?.(null)
+    return null
+  }
+  const summary = buildCloudRemoteSummary(remote.data, remote.backupAt)
+  cloudRemoteSummaryListener?.(summary)
+  return summary
+}
 
 function emitBackupStatus(message: string, isError = false): void {
   onStatusChange?.(message, isError)
@@ -161,10 +210,15 @@ async function onCloudUserSignedIn(uid: string): Promise<void> {
 
   if (isLocalDataEmpty(local)) {
     await restoreFullCloudData()
+    await refreshCloudRemoteSummary()
     return
   }
 
-  await pullCloudIfNewer()
+  await refreshCloudRemoteSummary()
+
+  if (isAutoPullFromCloudEnabled()) {
+    await pullCloudIfNewer()
+  }
 }
 
 function getEffectiveLocalTimestamp(): number {
@@ -212,6 +266,14 @@ function shouldApplyRemote(backupAt: string): boolean {
 }
 
 function applyRemoteSnapshot(data: AppData, backupAt: string): void {
+  if (!isAutoPullFromCloudEnabled()) {
+    if (shouldApplyRemote(backupAt)) {
+      emitBackupStatus(
+        `Cloud has newer data · Settings → Cloud → Load from cloud (${new Date(backupAt).toLocaleString()})`,
+      )
+    }
+    return
+  }
   if (!shouldApplyRemote(backupAt)) return
   const user = getCloudUser()
   if (user && !isLocalDataOwnedByUser(user.uid)) return
@@ -233,6 +295,7 @@ function startCloudListener(): void {
   cloudSnapshotUnsub?.()
   cloudSnapshotUnsub = subscribeToCloudData(
     (data, backupAt) => {
+      emitCloudRemoteSummary(data, backupAt)
       applyRemoteSnapshot(data, backupAt)
     },
     (message) => {
@@ -247,6 +310,7 @@ function stopCloudListener(): void {
 }
 
 export async function pullCloudIfNewer(): Promise<boolean> {
+  if (!isAutoPullFromCloudEnabled()) return false
   if (!isFirebaseConfigured() || !isCloudLoggedIn()) return false
   const user = getCloudUser()
   if (user && !isLocalDataOwnedByUser(user.uid)) return false
@@ -305,6 +369,7 @@ async function runBackup(data: AppData): Promise<void> {
     markLocalDataSynced(at)
     pendingData = null
     lastAppliedRemoteBackupAt = parseBackupTimestamp(at)
+    emitCloudRemoteSummary(data, at)
     emitBackupStatus(`Backed up ${new Date(at).toLocaleString()}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Backup failed'
@@ -350,6 +415,7 @@ export async function backupNow(data: AppData): Promise<string> {
     debounceTimer = null
   }
   lastAppliedRemoteBackupAt = parseBackupTimestamp(at)
+  emitCloudRemoteSummary(data, at)
   emitBackupStatus(`Backed up ${new Date(at).toLocaleString()}`)
   return at
 }

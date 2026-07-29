@@ -13,6 +13,7 @@ import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from './config'
 import { formatFirebaseError, stripUndefined } from './utils'
 
 const AUTO_BACKUP_KEY = 'cash-counter-auto-backup'
+const AUTO_PULL_KEY = 'cash-counter-auto-pull'
 const LAST_BACKUP_KEY = 'cash-counter-last-backup'
 
 function latestDocRef(uid: string) {
@@ -33,6 +34,18 @@ export function isAutoBackupEnabled(): boolean {
 
 export function setAutoBackupEnabled(enabled: boolean): void {
   localStorage.setItem(AUTO_BACKUP_KEY, enabled ? 'true' : 'false')
+}
+
+export function isAutoPullFromCloudEnabled(): boolean {
+  try {
+    return localStorage.getItem(AUTO_PULL_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function setAutoPullFromCloudEnabled(enabled: boolean): void {
+  localStorage.setItem(AUTO_PULL_KEY, enabled ? 'true' : 'false')
 }
 
 export function getLocalLastBackupTime(): string | null {

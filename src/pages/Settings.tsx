@@ -11,22 +11,25 @@ import {
   clearLocalLastBackupTime,
   fetchRemoteAppData,
   getCloudUsername,
-  getLocalLastBackupTime,
-  getRemoteLastBackupTime,
   isAutoBackupEnabled,
+  isAutoPullFromCloudEnabled,
   loginCloud,
   logoutCloud,
   setAutoBackupEnabled,
+  setAutoPullFromCloudEnabled,
   subscribeToAuth,
 } from '../firebase/backup'
 import {
   backupNow,
+  refreshCloudRemoteSummary,
   restoreFullCloudData,
   setBackupStatusListener,
   setCloudLoginRestoreActive,
+  setCloudRemoteSummaryListener,
+  type CloudRemoteSummary,
 } from '../firebase/sync'
 import type { AppData } from '../types'
-import { getApprovedChequeAmount, listApprovedCheques, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
+import { getApprovedChequeAmount, getCurrentBalance, getBankBalance, listApprovedCheques, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
 import { clearAllLocalBackupSnapshots } from '../storage/localBackup'
 import {
   dateTimeInputValuesToIso,
@@ -208,15 +211,11 @@ export default function Settings() {
   const [cloudPassword, setCloudPassword] = useState('')
   const [cloudUser, setCloudUser] = useState<User | null>(null)
   const [autoBackup, setAutoBackup] = useState(isAutoBackupEnabled())
+  const [autoPull, setAutoPull] = useState(isAutoPullFromCloudEnabled())
   const [backupStatus, setBackupStatus] = useState('')
   const [backupError, setBackupError] = useState(false)
   const [backupBusy, setBackupBusy] = useState(false)
-  const [lastBackup, setLastBackup] = useState<string | null>(getLocalLastBackupTime())
-  const [cloudRemoteSummary, setCloudRemoteSummary] = useState<{
-    bills: number
-    records: number
-    backupAt: string | null
-  } | null>(null)
+  const [cloudRemoteSummary, setCloudRemoteSummary] = useState<CloudRemoteSummary | null>(null)
 
   const [tallyUrl, setTallyUrl] = useState(() => getTallyApiUrl() || 'http://localhost:9999')
   const [tallyScope, setTallyScope] = useState<TallyDateScope>(() => getTallyDateScope())
@@ -285,31 +284,21 @@ export default function Settings() {
     void refreshLocalSnapshots()
   }, [tab, data, refreshLocalSnapshots])
 
-  const refreshCloudRemoteSummary = useCallback(async () => {
+  const refreshCloudRemoteSummaryState = useCallback(async () => {
+    await refreshCloudRemoteSummary()
+  }, [])
+
+  useEffect(() => {
     if (!cloudUser) {
       setCloudRemoteSummary(null)
       return
     }
-    try {
-      const remote = await fetchRemoteAppData()
-      if (!remote) {
-        setCloudRemoteSummary(null)
-        return
-      }
-      setCloudRemoteSummary({
-        bills: remote.data.sales.length,
-        records: remote.data.expenses.length,
-        backupAt: remote.backupAt,
-      })
-    } catch {
-      setCloudRemoteSummary(null)
-    }
-  }, [cloudUser])
-
-  useEffect(() => {
-    if (tab !== 'cloud' || !cloudUser) return
-    void refreshCloudRemoteSummary()
-  }, [tab, cloudUser, lastBackup, data.sales.length, data.expenses.length, refreshCloudRemoteSummary])
+    setCloudRemoteSummaryListener((summary) => {
+      setCloudRemoteSummary(summary)
+    })
+    void refreshCloudRemoteSummaryState()
+    return () => setCloudRemoteSummaryListener(null)
+  }, [cloudUser, refreshCloudRemoteSummaryState])
 
   const approvedCheques = useMemo(() => listApprovedCheques(data), [data])
   const pendingCreditSales = useMemo(() => listPendingCreditSales(data), [data.sales])
@@ -412,11 +401,12 @@ export default function Settings() {
       setCloudUser(user)
       if (user) {
         setCloudUsername(getCloudUsername(user))
-        const remote = await getRemoteLastBackupTime().catch(() => null)
-        if (remote) setLastBackup(remote)
+        void refreshCloudRemoteSummaryState()
+      } else {
+        setCloudRemoteSummary(null)
       }
     })
-  }, [firebaseBuilt])
+  }, [firebaseBuilt, refreshCloudRemoteSummaryState])
 
   useEffect(() => {
     setBackupStatusListener((message, isError) => {
@@ -759,7 +749,6 @@ export default function Settings() {
     await clearAllLocalBackupSnapshots()
     setOpeningStr('0')
     setOpeningBankStr('0')
-    setLastBackup(null)
   }
 
   async function loadCloudDataAfterAuth(isNewAccount: boolean) {
@@ -769,8 +758,6 @@ export default function Settings() {
       if (restored) {
         setOpeningStr(String(restored.openingBalance))
         setOpeningBankStr(String(restored.openingBankBalance ?? 0))
-        const remote = await getRemoteLastBackupTime().catch(() => null)
-        if (remote) setLastBackup(remote)
         setBackupStatus(`Opened · full data loaded · ${cloudDataSummary(restored)}`)
         setBackupError(false)
         return
@@ -778,8 +765,7 @@ export default function Settings() {
       if (isNewAccount) {
         setCloudLoginRestoreActive(false)
         const fresh = loadData()
-        const at = await backupNow(fresh)
-        setLastBackup(at)
+        await backupNow(fresh)
         setBackupStatus(`Username created · ${cloudDataSummary(fresh)} saved to cloud`)
         setBackupError(false)
         return
@@ -830,9 +816,8 @@ export default function Settings() {
     setBackupBusy(true)
     setBackupError(false)
     try {
-      const at = await backupNow(data)
-      setLastBackup(at)
-      await refreshCloudRemoteSummary()
+      await backupNow(data)
+      await refreshCloudRemoteSummaryState()
     } catch (err) {
       setBackupStatus(err instanceof Error ? err.message : 'Backup failed')
       setBackupError(true)
@@ -878,8 +863,7 @@ export default function Settings() {
       replaceAllData(restored)
       setOpeningStr(String(restored.openingBalance))
       setOpeningBankStr(String(restored.openingBankBalance ?? 0))
-      setLastBackup(remote.backupAt)
-      await refreshCloudRemoteSummary()
+      await refreshCloudRemoteSummaryState()
       setBackupStatus(`Loaded from cloud · ${cloudDataSummary(restored)}`)
       setBackupError(false)
     } catch (err) {
@@ -905,7 +889,7 @@ export default function Settings() {
       setOpeningBankStr('0')
       setCloudUser(null)
       setCloudPassword('')
-      setLastBackup(null)
+      setCloudRemoteSummary(null)
       setBackupStatus('Logged out — local data removed')
       setBackupError(false)
     } catch (err) {
@@ -920,6 +904,12 @@ export default function Settings() {
     const next = !autoBackup
     setAutoBackup(next)
     setAutoBackupEnabled(next)
+  }
+
+  function toggleAutoPull() {
+    const next = !autoPull
+    setAutoPull(next)
+    setAutoPullFromCloudEnabled(next)
   }
 
   function updatePineLabsField<K extends keyof PineLabsSettings>(key: K, value: PineLabsSettings[K]) {
@@ -1877,35 +1867,44 @@ export default function Settings() {
                 <div className="settings-backup-summary">
                   <span>This device: {data.sales.length} bills</span>
                   <span>{data.expenses.length} records</span>
-                  <span>Cash {formatMoney(balance)}</span>
-                  <span>Bank {formatMoney(bankBalance)}</span>
+                  <span>Cash {formatMoney(getCurrentBalance(data))}</span>
+                  <span>Bank {formatMoney(getBankBalance(data))}</span>
                 </div>
-                {cloudRemoteSummary && (
+                {cloudRemoteSummary ? (
                   <div className="settings-backup-summary settings-backup-summary--cloud">
-                    <span>Cloud: {cloudRemoteSummary.bills} bills</span>
+                    <span>Cloud backup: {cloudRemoteSummary.bills} bills</span>
                     <span>{cloudRemoteSummary.records} records</span>
-                    {cloudRemoteSummary.backupAt && (
-                      <span>
-                        Saved {new Date(cloudRemoteSummary.backupAt).toLocaleString()}
-                      </span>
-                    )}
+                    <span>Cash {formatMoney(cloudRemoteSummary.cash)}</span>
+                    <span>Bank {formatMoney(cloudRemoteSummary.bank)}</span>
+                    <span className="settings-backup-summary-time">
+                      Last saved {new Date(cloudRemoteSummary.backupAt).toLocaleString()}
+                    </span>
                   </div>
+                ) : (
+                  <p className="settings-backup-meta">Loading cloud backup info…</p>
                 )}
                 {cloudRemoteSummary &&
                   (cloudRemoteSummary.bills !== data.sales.length ||
-                    cloudRemoteSummary.records !== data.expenses.length) && (
+                    cloudRemoteSummary.records !== data.expenses.length ||
+                    cloudRemoteSummary.cash !== getCurrentBalance(data) ||
+                    cloudRemoteSummary.bank !== getBankBalance(data)) && (
                     <p className="settings-backup-meta settings-backup-meta--warn">
-                      Counts differ — use the device with correct data → Save to cloud, then Load
-                      from cloud on other devices.
+                      This device differs from cloud — Save to cloud here, or Load from cloud to
+                      match the last backup.
                     </p>
                   )}
                 <label className="settings-backup-toggle">
                   <input type="checkbox" checked={autoBackup} onChange={toggleAutoBackup} />
                   Auto backup on every change
                 </label>
-                {lastBackup && (
+                <label className="settings-backup-toggle">
+                  <input type="checkbox" checked={autoPull} onChange={toggleAutoPull} />
+                  Auto load from cloud (off keeps cash stable on this device)
+                </label>
+                {!autoPull && (
                   <p className="settings-backup-meta">
-                    Last cloud save: {new Date(lastBackup).toLocaleString()}
+                    Cloud backup info updates on all devices. Auto load stays off so cash on this
+                    device stays stable until you tap Load from cloud.
                   </p>
                 )}
                 <div className="settings-backup-actions">
