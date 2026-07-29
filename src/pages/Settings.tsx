@@ -9,6 +9,7 @@ import { getLastCloudUsername } from '../firebase/cloudUser'
 import {
   createCloudAccount,
   clearLocalLastBackupTime,
+  fetchRemoteAppData,
   getCloudUsername,
   getLocalLastBackupTime,
   getRemoteLastBackupTime,
@@ -53,6 +54,15 @@ import {
 } from '../utils/dailyReport'
 import { toInputDate } from '../utils/salesReport'
 import {
+  downloadExpenseAndNo1PurchaseSpreadsheet,
+  filterNo1PurchaseItems,
+} from '../utils/expenseRangeExport'
+import {
+  buildNormalExpenseHistoryItems,
+  filterNormalExpenseHistoryItems,
+} from '../utils/normalExpenseHistory'
+import { buildPurchaseHistoryItems, filterPurchaseHistoryItems } from '../utils/purchaseHistory'
+import {
   downloadDataBackup,
   formatBackupSummary,
   readBackupFile,
@@ -63,6 +73,14 @@ import {
   type LocalBackupSnapshotMeta,
 } from '../storage/localBackup'
 import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
+import {
+  getPineLabsBaseUrl,
+  getPineLabsSettings,
+  setPineLabsSettings,
+  type PineLabsEnvironment,
+  type PineLabsSettings,
+} from '../pinelabs/config'
+import { pineLabsEnvironmentLabel, testPineLabsConnection } from '../pinelabs/pinelabsApi'
 import BillReminderControl from '../components/BillReminderControl'
 import BillReminderAlertsSettings from '../components/BillReminderAlertsSettings'
 import { UNNAMED_CREDIT_CUSTOMER } from '../utils/customerLedger'
@@ -73,11 +91,12 @@ import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import './Settings.css'
 
 type SettingsField = 'openingCash' | 'openingBank' | 'pin' | 'pinConfirm'
-type SettingsTab = 'general' | 'tally' | 'cloud'
+type SettingsTab = 'general' | 'tally' | 'pinelabs' | 'cloud'
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'tally', label: 'Tally' },
+  { id: 'pinelabs', label: 'Pine Labs' },
   { id: 'cloud', label: 'Cloud' },
 ]
 
@@ -125,6 +144,18 @@ const TALLY_SCOPE_OPTIONS: { id: TallyDateScope; label: string }[] = [
   { id: 'today', label: 'Today' },
   { id: 'week', label: 'Week' },
   { id: 'month', label: 'Month' },
+]
+
+const PINELABS_ENV_OPTIONS: { id: PineLabsEnvironment; label: string }[] = [
+  { id: 'uat', label: 'UAT' },
+  { id: 'production', label: 'Production' },
+]
+
+const PINELABS_PAYMENT_MODE_OPTIONS: { id: string; label: string }[] = [
+  { id: '0', label: 'All terminal modes' },
+  { id: '1', label: 'Card' },
+  { id: '10', label: 'UPI sale' },
+  { id: '8', label: 'PhonePe' },
 ]
 
 const DAILY_REPORT_DOWNLOAD_GROUPS: {
@@ -181,6 +212,11 @@ export default function Settings() {
   const [backupError, setBackupError] = useState(false)
   const [backupBusy, setBackupBusy] = useState(false)
   const [lastBackup, setLastBackup] = useState<string | null>(getLocalLastBackupTime())
+  const [cloudRemoteSummary, setCloudRemoteSummary] = useState<{
+    bills: number
+    records: number
+    backupAt: string | null
+  } | null>(null)
 
   const [tallyUrl, setTallyUrl] = useState(() => getTallyApiUrl() || 'http://localhost:9999')
   const [tallyScope, setTallyScope] = useState<TallyDateScope>(() => getTallyDateScope())
@@ -189,12 +225,19 @@ export default function Settings() {
   const [tallyBusy, setTallyBusy] = useState(false)
   const [manualName, setManualName] = useState('')
   const [manualAmount, setManualAmount] = useState('')
+  const [pineLabs, setPineLabs] = useState<PineLabsSettings>(() => getPineLabsSettings())
+  const [pineLabsStatus, setPineLabsStatus] = useState('')
+  const [pineLabsError, setPineLabsError] = useState(false)
+  const [pineLabsBusy, setPineLabsBusy] = useState(false)
   const [chequeCancelStatus, setChequeCancelStatus] = useState('')
   const [pendingChequeCancelStatus, setPendingChequeCancelStatus] = useState('')
   const [creditCancelStatus, setCreditCancelStatus] = useState('')
   const [historyReportStatus, setHistoryReportStatus] = useState('')
   const [dailyReportDate, setDailyReportDate] = useState(() => toInputDate())
   const [dailyReportStatus, setDailyReportStatus] = useState('')
+  const [expenseExportFrom, setExpenseExportFrom] = useState(() => toInputDate())
+  const [expenseExportTo, setExpenseExportTo] = useState(() => toInputDate())
+  const [expenseExportStatus, setExpenseExportStatus] = useState('')
   const [dataBackupStatus, setDataBackupStatus] = useState('')
   const [localSnapshots, setLocalSnapshots] = useState<LocalBackupSnapshotMeta[]>([])
   const backupFileInputRef = useRef<HTMLInputElement>(null)
@@ -209,6 +252,7 @@ export default function Settings() {
 
   const generalScrollRef = useRef<HTMLDivElement>(null)
   const tallyScrollRef = useRef<HTMLDivElement>(null)
+  const pinelabsScrollRef = useRef<HTMLDivElement>(null)
   const cloudScrollRef = useRef<HTMLDivElement>(null)
   const billEditListRef = useRef<HTMLUListElement>(null)
 
@@ -218,7 +262,9 @@ export default function Settings() {
         ? generalScrollRef.current
         : tab === 'tally'
           ? tallyScrollRef.current
-          : cloudScrollRef.current
+          : tab === 'pinelabs'
+            ? pinelabsScrollRef.current
+            : cloudScrollRef.current
     scrollEl?.scrollTo(0, 0)
   }, [tab])
 
@@ -239,6 +285,32 @@ export default function Settings() {
     void refreshLocalSnapshots()
   }, [tab, data, refreshLocalSnapshots])
 
+  const refreshCloudRemoteSummary = useCallback(async () => {
+    if (!cloudUser) {
+      setCloudRemoteSummary(null)
+      return
+    }
+    try {
+      const remote = await fetchRemoteAppData()
+      if (!remote) {
+        setCloudRemoteSummary(null)
+        return
+      }
+      setCloudRemoteSummary({
+        bills: remote.data.sales.length,
+        records: remote.data.expenses.length,
+        backupAt: remote.backupAt,
+      })
+    } catch {
+      setCloudRemoteSummary(null)
+    }
+  }, [cloudUser])
+
+  useEffect(() => {
+    if (tab !== 'cloud' || !cloudUser) return
+    void refreshCloudRemoteSummary()
+  }, [tab, cloudUser, lastBackup, data.sales.length, data.expenses.length, refreshCloudRemoteSummary])
+
   const approvedCheques = useMemo(() => listApprovedCheques(data), [data])
   const pendingCreditSales = useMemo(() => listPendingCreditSales(data), [data.sales])
   const pendingChequeSales = useMemo(() => listPendingChequeSales(data), [data.sales])
@@ -257,6 +329,30 @@ export default function Settings() {
   }, [])
   const dailyReportTotalCount =
     dailyReportCounts.cash + dailyReportCounts.bank + dailyReportCounts.expense
+  const expenseExportItems = useMemo(
+    () =>
+      filterNormalExpenseHistoryItems(
+        buildNormalExpenseHistoryItems(data),
+        'range',
+        expenseExportFrom,
+        expenseExportTo,
+      ),
+    [data, expenseExportFrom, expenseExportTo],
+  )
+  const expenseExportPurchaseItems = useMemo(
+    () =>
+      filterPurchaseHistoryItems(
+        buildPurchaseHistoryItems(data),
+        'range',
+        expenseExportFrom,
+        expenseExportTo,
+      ),
+    [data, expenseExportFrom, expenseExportTo],
+  )
+  const expenseExportNo1Count = useMemo(
+    () => filterNo1PurchaseItems(expenseExportPurchaseItems).length,
+    [expenseExportPurchaseItems],
+  )
   const billEditItems = useMemo(() => {
     return buildHistoryItems(data)
       .filter((item) => item.type === 'sale')
@@ -366,6 +462,26 @@ export default function Settings() {
       currentCash: balance,
       currentBank: bankBalance,
     }
+  }
+
+  function handleDownloadExpenseRangeSpreadsheet() {
+    if (!expenseExportFrom || !expenseExportTo) {
+      setExpenseExportStatus('Pick from and to dates')
+      return
+    }
+    const from = expenseExportFrom <= expenseExportTo ? expenseExportFrom : expenseExportTo
+    const to = expenseExportFrom <= expenseExportTo ? expenseExportTo : expenseExportFrom
+    const periodLabel =
+      from === to ? formatDate(from) : `${formatDate(from)} – ${formatDate(to)}`
+    downloadExpenseAndNo1PurchaseSpreadsheet(
+      expenseExportItems,
+      expenseExportPurchaseItems,
+      periodLabel,
+      `cash-counter-expenses-${from}_to_${to}`,
+    )
+    setExpenseExportStatus(
+      `Excel file downloaded · ${expenseExportItems.length} expenses · ${expenseExportNo1Count} No 1 purchases`,
+    )
   }
 
   function handleDownloadHistoryReport() {
@@ -716,8 +832,58 @@ export default function Settings() {
     try {
       const at = await backupNow(data)
       setLastBackup(at)
+      await refreshCloudRemoteSummary()
     } catch (err) {
       setBackupStatus(err instanceof Error ? err.message : 'Backup failed')
+      setBackupError(true)
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  async function handleLoadFromCloud() {
+    if (!cloudUser) return
+    setBackupBusy(true)
+    setBackupError(false)
+    try {
+      const remote = await fetchRemoteAppData()
+      if (!remote) {
+        setBackupStatus('No cloud backup found for this username.')
+        setBackupError(true)
+        return
+      }
+
+      const localBills = data.sales.length
+      const localRecords = data.expenses.length
+      const cloudBills = remote.data.sales.length
+      const cloudRecords = remote.data.expenses.length
+      const sameCounts = localBills === cloudBills && localRecords === cloudRecords
+
+      if (
+        !sameCounts &&
+        !window.confirm(
+          `Load from cloud?\n\nThis device: ${localBills} bills · ${localRecords} records\nCloud: ${cloudBills} bills · ${cloudRecords} records\n\nThis replaces all data on this device with the cloud backup.`,
+        )
+      ) {
+        return
+      }
+
+      const restored = await restoreFullCloudData()
+      if (!restored) {
+        setBackupStatus('Could not load cloud data.')
+        setBackupError(true)
+        return
+      }
+
+      replaceAllData(restored)
+      setOpeningStr(String(restored.openingBalance))
+      setOpeningBankStr(String(restored.openingBankBalance ?? 0))
+      setLastBackup(remote.backupAt)
+      await refreshCloudRemoteSummary()
+      setBackupStatus(`Loaded from cloud · ${cloudDataSummary(restored)}`)
+      setBackupError(false)
+    } catch (err) {
+      setBackupStatus(err instanceof Error ? err.message : 'Load from cloud failed')
       setBackupError(true)
     } finally {
       setBackupBusy(false)
@@ -754,6 +920,32 @@ export default function Settings() {
     const next = !autoBackup
     setAutoBackup(next)
     setAutoBackupEnabled(next)
+  }
+
+  function updatePineLabsField<K extends keyof PineLabsSettings>(key: K, value: PineLabsSettings[K]) {
+    setPineLabs((prev) => ({ ...prev, [key]: value }))
+  }
+
+  async function handlePineLabsTest() {
+    setPineLabsBusy(true)
+    setPineLabsError(false)
+    try {
+      const result = await testPineLabsConnection(pineLabs)
+      setPineLabsStatus(result.message)
+      setPineLabsError(!result.connected)
+    } finally {
+      setPineLabsBusy(false)
+    }
+  }
+
+  function handlePineLabsSave() {
+    setPineLabsSettings(pineLabs)
+    setPineLabsStatus(
+      pineLabs.enabled
+        ? `Saved · ${pineLabsEnvironmentLabel(pineLabs.environment)} · ready for card/UPI on terminal`
+        : 'Saved · Pine Labs disabled',
+    )
+    setPineLabsError(false)
   }
 
   async function handleTallyTest() {
@@ -985,6 +1177,59 @@ export default function Settings() {
                   </div>
                 </div>
               </div>
+            </section>
+
+            <section className="settings-history-report settings-expense-export">
+              <div className="settings-history-report-head">
+                <h3>Expense download</h3>
+                <p>
+                  Excel file: Sheet 1 = normal expenses + No 1 purchases by time. Also separate
+                  sheets for normal only ({expenseExportItems.length}) and No 1 only (
+                  {expenseExportNo1Count}).
+                </p>
+              </div>
+              <div className="settings-expense-export-dates">
+                <label className="settings-expense-export-date">
+                  <span>From</span>
+                  <input
+                    type="date"
+                    value={expenseExportFrom}
+                    onChange={(e) => setExpenseExportFrom(e.target.value)}
+                    aria-label="Expense export from date"
+                  />
+                </label>
+                <label className="settings-expense-export-date">
+                  <span>To</span>
+                  <input
+                    type="date"
+                    value={expenseExportTo}
+                    onChange={(e) => setExpenseExportTo(e.target.value)}
+                    aria-label="Expense export to date"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn btn-primary settings-history-report-btn"
+                  onClick={() => {
+                    setExpenseExportFrom(todayInputDate)
+                    setExpenseExportTo(todayInputDate)
+                  }}
+                >
+                  Today
+                </button>
+              </div>
+              <div className="settings-history-report-actions">
+                <button
+                  type="button"
+                  className="btn btn-primary settings-history-report-btn"
+                  onClick={handleDownloadExpenseRangeSpreadsheet}
+                >
+                  Download Excel
+                </button>
+              </div>
+              {expenseExportStatus ? (
+                <p className="settings-history-report-status">{expenseExportStatus}</p>
+              ) : null}
             </section>
 
             <section className="settings-history-report">
@@ -1474,6 +1719,150 @@ export default function Settings() {
           </div>
         )}
 
+        {tab === 'pinelabs' && (
+          <div className="settings-scroll" ref={pinelabsScrollRef}>
+            <section className="settings-panel settings-pinelabs">
+              <div className="settings-header">
+                <h2>Pine Labs</h2>
+                <p>Cloud POS — send bill to Plutus terminal for card / UPI payment</p>
+              </div>
+
+              <label className="settings-backup-toggle">
+                <input
+                  type="checkbox"
+                  checked={pineLabs.enabled}
+                  onChange={(e) => updatePineLabsField('enabled', e.target.checked)}
+                />
+                <span>Enable Pine Labs payments</span>
+              </label>
+
+              <span className="settings-backup-form-label">Environment</span>
+              <div className="settings-tally-scopes" role="group" aria-label="Pine Labs environment">
+                {PINELABS_ENV_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`settings-tally-scope ${pineLabs.environment === opt.id ? 'settings-tally-scope--active' : ''}`}
+                    onClick={() => updatePineLabsField('environment', opt.id)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="settings-backup-meta">
+                API host: <code>{getPineLabsBaseUrl(pineLabs.environment)}</code>
+              </p>
+
+              <label className="settings-backup-field">
+                <span>Merchant ID</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={pineLabs.merchantId}
+                  onChange={(e) => updatePineLabsField('merchantId', e.target.value)}
+                  placeholder="From Pine Labs onboarding"
+                  autoCapitalize="none"
+                />
+              </label>
+              <label className="settings-backup-field">
+                <span>Security token</span>
+                <input
+                  type="password"
+                  value={pineLabs.securityToken}
+                  onChange={(e) => updatePineLabsField('securityToken', e.target.value)}
+                  placeholder="Token from Pine Labs"
+                  autoCapitalize="none"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="settings-backup-field">
+                <span>Store ID</span>
+                <input
+                  type="text"
+                  value={pineLabs.storeId}
+                  onChange={(e) => updatePineLabsField('storeId', e.target.value)}
+                  placeholder="e.g. 61607"
+                  autoCapitalize="none"
+                />
+              </label>
+              <label className="settings-backup-field">
+                <span>Merchant store POS code (optional)</span>
+                <input
+                  type="text"
+                  value={pineLabs.merchantStorePosCode}
+                  onChange={(e) => updatePineLabsField('merchantStorePosCode', e.target.value)}
+                  placeholder="5-char store + 3-digit POS, e.g. MP123015"
+                  autoCapitalize="none"
+                />
+              </label>
+              <p className="settings-backup-meta">
+                Use <strong>Store ID</strong> or <strong>Merchant store POS code</strong> — whichever Pine Labs
+                gave you.
+              </p>
+
+              <label className="settings-backup-field">
+                <span>Client ID / IMEI (optional)</span>
+                <input
+                  type="text"
+                  value={pineLabs.clientId}
+                  onChange={(e) => updatePineLabsField('clientId', e.target.value)}
+                  placeholder="Device IMEI registered with Pine Labs"
+                  autoCapitalize="none"
+                />
+              </label>
+              <label className="settings-backup-field">
+                <span>Cashier ID (optional)</span>
+                <input
+                  type="text"
+                  value={pineLabs.userId}
+                  onChange={(e) => updatePineLabsField('userId', e.target.value)}
+                  placeholder="Shown on terminal receipt"
+                />
+              </label>
+
+              <span className="settings-backup-form-label">Default payment mode on terminal</span>
+              <div className="settings-tally-scopes" role="group" aria-label="Pine Labs payment mode">
+                {PINELABS_PAYMENT_MODE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    className={`settings-tally-scope ${pineLabs.allowedPaymentMode === opt.id ? 'settings-tally-scope--active' : ''}`}
+                    onClick={() => updatePineLabsField('allowedPaymentMode', opt.id)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              <p className="settings-backup-meta">
+                Credentials come from Pine Labs after merchant onboarding. After saving, use{' '}
+                <strong>Test connection</strong> while running the app locally (<code>npm run dev</code> or{' '}
+                <code>npm run preview</code>). Enter the PTRID on the Plutus terminal to collect payment.
+              </p>
+
+              <div className="settings-backup-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={pineLabsBusy}
+                  onClick={() => void handlePineLabsTest()}
+                >
+                  Test connection
+                </button>
+                <button type="button" className="btn btn-primary" disabled={pineLabsBusy} onClick={handlePineLabsSave}>
+                  Save settings
+                </button>
+              </div>
+
+              {pineLabsStatus && (
+                <p className={`settings-backup-status ${pineLabsError ? 'settings-backup-status--error' : ''}`}>
+                  {pineLabsStatus}
+                </p>
+              )}
+            </section>
+          </div>
+        )}
+
         {tab === 'cloud' && (
           <div className="settings-scroll" ref={cloudScrollRef}>
           <section className="settings-panel">
@@ -1486,11 +1875,30 @@ export default function Settings() {
               <div className="settings-backup-open">
                 <p className="settings-backup-signed-in">Open · {getCloudUsername(cloudUser)}</p>
                 <div className="settings-backup-summary">
-                  <span>{data.sales.length} bills</span>
+                  <span>This device: {data.sales.length} bills</span>
                   <span>{data.expenses.length} records</span>
                   <span>Cash {formatMoney(balance)}</span>
                   <span>Bank {formatMoney(bankBalance)}</span>
                 </div>
+                {cloudRemoteSummary && (
+                  <div className="settings-backup-summary settings-backup-summary--cloud">
+                    <span>Cloud: {cloudRemoteSummary.bills} bills</span>
+                    <span>{cloudRemoteSummary.records} records</span>
+                    {cloudRemoteSummary.backupAt && (
+                      <span>
+                        Saved {new Date(cloudRemoteSummary.backupAt).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {cloudRemoteSummary &&
+                  (cloudRemoteSummary.bills !== data.sales.length ||
+                    cloudRemoteSummary.records !== data.expenses.length) && (
+                    <p className="settings-backup-meta settings-backup-meta--warn">
+                      Counts differ — use the device with correct data → Save to cloud, then Load
+                      from cloud on other devices.
+                    </p>
+                  )}
                 <label className="settings-backup-toggle">
                   <input type="checkbox" checked={autoBackup} onChange={toggleAutoBackup} />
                   Auto backup on every change
@@ -1508,6 +1916,14 @@ export default function Settings() {
                     onClick={() => void handleBackupNow()}
                   >
                     Save to cloud
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    disabled={backupBusy || !firebaseBuilt}
+                    onClick={() => void handleLoadFromCloud()}
+                  >
+                    Load from cloud
                   </button>
                   <button
                     type="button"

@@ -364,6 +364,16 @@
   color: var(--cream);
 }
 
+.settings-backup-summary--cloud {
+  margin-top: 6px;
+  border-color: var(--cream-dim);
+}
+
+.settings-backup-meta--warn {
+  color: var(--danger-text);
+  font-weight: 700;
+}
+
 .settings-backup-status {
   margin: 0;
   font-size: 0.72rem;
@@ -599,6 +609,33 @@ html[data-screen='tablet'] .settings-info {
 }
 
 .settings-daily-report-date-input {
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream);
+  font-size: 0.65rem;
+}
+
+.settings-expense-export-dates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.settings-expense-export-date {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.settings-expense-export-date input {
   min-height: 28px;
   padding: 4px 8px;
   border-radius: var(--radius-sm);

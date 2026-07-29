@@ -1,7 +1,6 @@
 import type { AppData } from '../types'
 import {
   applyFullRemoteCloudData,
-  applyRemoteCloudData,
   clearAllLocalData,
   getLocalDataUpdatedAt,
   getLocalUserUid,
@@ -218,23 +217,15 @@ function applyRemoteSnapshot(data: AppData, backupAt: string): void {
   if (user && !isLocalDataOwnedByUser(user.uid)) return
 
   applyingRemote = true
-  let rebackup: AppData | null = null
   try {
-    const { data: next, preservedLocal } = applyRemoteCloudData(data, backupAt)
+    const next = applyFullRemoteCloudData(data, backupAt, user?.uid)
     lastAppliedRemoteBackupAt = parseBackupTimestamp(backupAt)
     remoteListener?.(next)
-    if (preservedLocal) {
-      emitBackupStatus('Kept local pending bills & records · syncing to cloud…')
-      rebackup = next
-    } else {
-      emitBackupStatus(`Synced from cloud · ${new Date(backupAt).toLocaleString()}`)
-    }
+    emitBackupStatus(
+      `Synced from cloud · ${next.sales.length} bills · ${next.expenses.length} records · ${new Date(backupAt).toLocaleString()}`,
+    )
   } finally {
     applyingRemote = false
-  }
-  if (rebackup && isAutoBackupEnabled() && isCloudLoggedIn()) {
-    pendingData = rebackup
-    queueBackup(rebackup)
   }
 }
 
@@ -296,7 +287,8 @@ function queueBackup(data: AppData): void {
   if (debounceTimer) clearTimeout(debounceTimer)
 
   debounceTimer = setTimeout(() => {
-    void runBackup(data)
+    const latest = pendingData
+    if (latest) void runBackup(latest)
   }, DEBOUNCE_MS)
 }
 
@@ -329,6 +321,20 @@ export function notifyDataChanged(data: AppData): void {
   const user = getCloudUser()
   if (user && !isLocalDataOwnedByUser(user.uid)) return
   queueBackup(data)
+}
+
+/** Push full local snapshot to cloud right away — used after deletes so other devices match. */
+export function notifyDataChangedImmediate(data: AppData): void {
+  if (!isFirebaseConfigured() || !isAutoBackupEnabled()) return
+  pendingData = data
+  if (!isCloudLoggedIn() || applyingRemote || loginRestoreActive) return
+  const user = getCloudUser()
+  if (user && !isLocalDataOwnedByUser(user.uid)) return
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+    debounceTimer = null
+  }
+  void runBackup(data)
 }
 
 export async function backupNow(data: AppData): Promise<string> {

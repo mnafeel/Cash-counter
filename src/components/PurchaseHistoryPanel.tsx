@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AppData } from '../types'
+import { downloadPurchaseExpenseItemsSpreadsheet } from '../utils/expenseRangeExport'
 import { formatDate, formatMoney } from '../utils/format'
 import { NO1_BILL_LABEL, NO1_EXPENSE_LABEL, NO2_BILL_LABEL, NO2_EXPENSE_LABEL } from '../utils/expenseBillLabels'
 import {
@@ -14,13 +15,15 @@ import {
   type PurchaseHistoryItem,
   type PurchaseSupplierGroup,
 } from '../utils/purchaseHistory'
+import { toInputDate } from '../utils/salesReport'
 import './PurchaseHistoryPanel.css'
 
-const DATE_OPTIONS: { id: PurchaseDateFilter; label: string }[] = [
+const DATE_OPTIONS: { id: PurchaseDateFilter | 'range'; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
   { id: 'week', label: 'Week' },
+  { id: 'range', label: 'Range' },
 ]
 
 interface PurchaseHistoryPanelProps {
@@ -48,17 +51,22 @@ export default function PurchaseHistoryPanel({
 }: PurchaseHistoryPanelProps) {
   const navigate = useNavigate()
   const fullscreen = variant === 'fullscreen'
-  const [dateFilter, setDateFilter] = useState<PurchaseDateFilter>('today')
+  const [dateFilter, setDateFilter] = useState<PurchaseDateFilter | 'range'>('today')
   const [selectedDate, setSelectedDate] = useState('')
+  const [rangeFrom, setRangeFrom] = useState(() => toInputDate())
+  const [rangeTo, setRangeTo] = useState(() => toInputDate())
   const [search, setSearch] = useState('')
   const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
+  const [exportStatus, setExportStatus] = useState('')
 
   const allItems = useMemo(() => buildPurchaseHistoryItems(data), [data])
-  const dateFilteredItems = useMemo(
-    () => filterPurchaseHistoryItems(allItems, dateFilter, selectedDate),
-    [allItems, dateFilter, selectedDate],
-  )
+  const dateFilteredItems = useMemo(() => {
+    if (dateFilter === 'range') {
+      return filterPurchaseHistoryItems(allItems, 'range', rangeFrom, rangeTo)
+    }
+    return filterPurchaseHistoryItems(allItems, dateFilter, selectedDate)
+  }, [allItems, dateFilter, selectedDate, rangeFrom, rangeTo])
   const items = useMemo(() => {
     if (!search.trim()) return dateFilteredItems
     return dateFilteredItems.filter((item) => matchesPurchaseHistorySearch(item, search))
@@ -106,7 +114,31 @@ export default function PurchaseHistoryPanel({
     setSelectedSupplierKey(null)
     setExpandedItemId(null)
     setSearch('')
+    setExportStatus('')
     onClose()
+  }
+
+  function purchasePeriodLabel(): string {
+    if (dateFilter === 'range') {
+      if (rangeFrom === rangeTo) return formatDate(rangeFrom)
+      return `${formatDate(rangeFrom)} – ${formatDate(rangeTo)}`
+    }
+    if (dateFilter === 'date' && selectedDate) return formatDate(selectedDate)
+    if (dateFilter === 'today') return 'Today'
+    if (dateFilter === 'yesterday') return 'Yesterday'
+    if (dateFilter === 'week') return 'This week'
+    if (dateFilter === 'month') return 'This month'
+    return 'All'
+  }
+
+  function handleDownloadSpreadsheet() {
+    const exportItems = selectedSupplier ? selectedSupplier.items : dateFilteredItems
+    const label = purchasePeriodLabel()
+    const filenameLabel = selectedSupplier
+      ? `${selectedSupplier.shopName}-${label}`.replace(/\s+/g, '-').toLowerCase()
+      : label.replace(/\s+/g, '-').toLowerCase()
+    downloadPurchaseExpenseItemsSpreadsheet(exportItems, label, `cash-counter-purchases-${filenameLabel}`)
+    setExportStatus(`Excel file downloaded · ${exportItems.length} purchases`)
   }
 
   function handleGoHome() {
@@ -276,6 +308,38 @@ export default function PurchaseHistoryPanel({
             </label>
           </div>
         ) : null}
+
+        {!selectedSupplier && dateFilter === 'range' ? (
+          <div className="purchase-hist-range-pick">
+            <label className="purchase-hist-date-pick">
+              <span>From</span>
+              <input
+                type="date"
+                className="purchase-hist-date-input purchase-hist-date-input--active"
+                value={rangeFrom}
+                onChange={(e) => setRangeFrom(e.target.value)}
+                aria-label="Purchase range from date"
+              />
+            </label>
+            <label className="purchase-hist-date-pick">
+              <span>To</span>
+              <input
+                type="date"
+                className="purchase-hist-date-input purchase-hist-date-input--active"
+                value={rangeTo}
+                onChange={(e) => setRangeTo(e.target.value)}
+                aria-label="Purchase range to date"
+              />
+            </label>
+          </div>
+        ) : null}
+
+        <div className="purchase-hist-export-bar">
+          <button type="button" className="purchase-hist-export-btn" onClick={handleDownloadSpreadsheet}>
+            Download Excel
+          </button>
+          {exportStatus ? <span className="purchase-hist-export-status">{exportStatus}</span> : null}
+        </div>
 
         {!selectedSupplier ? (
           <>

@@ -8,7 +8,7 @@ import {
   purchaseCreditAmount,
   type CreditPaymentInput,
 } from '../utils/purchaseHistory'
-import { notifyDataChanged } from '../firebase/sync'
+import { notifyDataChanged, notifyDataChangedImmediate } from '../firebase/sync'
 import { markLocalBackupTime } from '../firebase/backup'
 import { queueLocalBackupSnapshot } from './localBackup'
 import { applyStoredCustomerReminderToSale, listOpenBillIdsForCustomer } from '../utils/customerReminders'
@@ -395,12 +395,13 @@ export function loadData(): AppData {
   }
 }
 
-export function saveData(data: AppData): void {
+export function saveData(data: AppData, options?: { cloudImmediate?: boolean }): void {
   const serialized = JSON.stringify(data)
   localStorage.setItem(STORAGE_KEY, serialized)
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, new Date().toISOString())
   queueLocalBackupSnapshot(data)
-  notifyDataChanged(data)
+  if (options?.cloudImmediate) notifyDataChangedImmediate(data)
+  else notifyDataChanged(data)
 }
 
 export function getLocalDataUpdatedAt(): string | null {
@@ -413,6 +414,7 @@ export function getLocalDataUpdatedAt(): string | null {
 
 export function markLocalDataSynced(at: string): void {
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, at)
+  markLocalBackupTime(at)
 }
 
 export function isLocalDataEmpty(data: AppData): boolean {
@@ -939,13 +941,13 @@ export function deleteSale(
   if (idsToRemove.size === 0) return data
 
   const next = { ...data, sales: data.sales.filter((s) => !idsToRemove.has(s.id)) }
-  saveData(next)
+  saveData(next, { cloudImmediate: true })
   return next
 }
 
 export function deleteExpense(data: AppData, id: string): AppData {
   const next = { ...data, expenses: data.expenses.filter((e) => e.id !== id) }
-  saveData(next)
+  saveData(next, { cloudImmediate: true })
   return next
 }
 
