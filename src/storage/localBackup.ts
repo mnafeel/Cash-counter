@@ -12,6 +12,7 @@ export interface LocalBackupSnapshotMeta {
   salesCount: number
   expensesCount: number
   pendingCount: number
+  loansCount: number
 }
 
 interface LocalBackupRecord extends LocalBackupSnapshotMeta {
@@ -46,6 +47,7 @@ function snapshotMeta(data: AppData, savedAt: string): LocalBackupSnapshotMeta {
     salesCount: data.sales.length,
     expensesCount: data.expenses.length,
     pendingCount: data.sales.filter((sale) => sale.status === 'pending').length,
+    loansCount: data.loans?.length ?? 0,
   }
 }
 

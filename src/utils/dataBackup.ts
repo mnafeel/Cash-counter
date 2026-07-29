@@ -12,6 +12,7 @@ export interface DataBackupFile {
     salesCount: number
     expensesCount: number
     pendingCount: number
+    loansCount: number
     openingCash: number
     openingBank: number
   }
@@ -23,6 +24,7 @@ function backupSummary(data: AppData): DataBackupFile['summary'] {
     salesCount: data.sales.length,
     expensesCount: data.expenses.length,
     pendingCount: data.sales.filter((sale) => sale.status === 'pending').length,
+    loansCount: data.loans?.length ?? 0,
     openingCash: data.openingBalance,
     openingBank: data.openingBankBalance ?? 0,
   }
@@ -103,5 +105,6 @@ export async function readBackupFile(file: File): Promise<AppData> {
 
 export function formatBackupSummary(data: AppData): string {
   const summary = backupSummary(normalizeData(data))
-  return `${summary.salesCount} bills · ${summary.expensesCount} records · ${summary.pendingCount} pending`
+  const loansPart = summary.loansCount > 0 ? ` · ${summary.loansCount} loans` : ''
+  return `${summary.salesCount} bills · ${summary.expensesCount} records · ${summary.pendingCount} pending${loansPart}`
 }

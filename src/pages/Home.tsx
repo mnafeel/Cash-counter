@@ -102,7 +102,7 @@ function homeDaySelectedDate(filter: HomeDayFilter, selectedDate: string): strin
 
 export default function Home() {
   const navigate = useNavigate()
-  const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense, homeUnlocked, unlockHome, setCustomerReminder, updateReminderAlertSettings } =
+  const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense, removeLoan, homeUnlocked, unlockHome, setCustomerReminder, updateReminderAlertSettings } =
     useCash()
   const [pinStr, setPinStr] = useState('')
   const [pinError, setPinError] = useState(false)
@@ -309,6 +309,7 @@ export default function Home() {
   ) {
     if (!confirm('Delete this record? Balances will be updated.')) return
     if (type === 'sale') removeSale(id, groupSaleIds)
+    else if (type === 'loan' || (data.loans ?? []).some((loan) => loan.id === id)) removeLoan(id)
     else removeExpense(id)
   }
 
@@ -1039,6 +1040,7 @@ export default function Home() {
                   ['purchase', 'Purchases'],
                   ['deposit', 'Added'],
                   ['transfer', 'Transfer'],
+                  ['loan', 'Loans'],
                 ] as const
               ).map(([id, label]) => (
                 <button

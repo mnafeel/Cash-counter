@@ -1,9 +1,10 @@
 import type { AppData, Sale } from '../types'
 import { expenseBillTag, isPurchaseExpense } from './expenseBillLabels'
 import { formatDate, formatMoney } from './format'
+import { decorateLoan } from './loanLedger'
 import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, type PurchaseHistoryItem } from './purchaseHistory'
 
-export type HistoryItemType = 'sale' | 'expense' | 'purchase' | 'deposit' | 'transfer'
+export type HistoryItemType = 'sale' | 'expense' | 'purchase' | 'deposit' | 'transfer' | 'loan'
 
 export type HistoryFilter = 'all' | HistoryItemType
 
@@ -202,6 +203,7 @@ export function getHistoryTypeLabel(type: HistoryItemType): string {
   if (type === 'deposit') return 'Money Added'
   if (type === 'transfer') return 'Transfer'
   if (type === 'purchase') return 'Purchase'
+  if (type === 'loan') return 'Loan'
   return 'Expense'
 }
 
@@ -1269,7 +1271,48 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
     }
   })
 
-  return [...saleItems, ...expenseItems, ...purchaseItems]
+  const loanItems: HistoryItem[] = []
+  for (const loan of data.loans ?? []) {
+    const decorated = decorateLoan(loan)
+    const payLabel = loan.paySource === 'bank' ? 'Bank' : 'Cash'
+    const payMode: HistoryPaymentMode = loan.paySource === 'bank' ? 'bank' : 'cash'
+    const statusPart =
+      loan.status === 'settled' && decorated.settledDateLabel
+        ? ` · Settled ${decorated.settledDateLabel}`
+        : ' · Pending'
+
+    if (loan.kind === 'lend') {
+      const giveTag = loan.paySource === 'bank' ? '🏦 Bank expense' : '💵 Cash expense'
+      loanItems.push({
+        type: 'expense',
+        id: loan.id,
+        amount: loan.amount,
+        name: loan.personName,
+        sub: `🤝 Loan given · ${giveTag}${statusPart}${loan.note ? ` · ${loan.note}` : ''}`,
+        date: loan.createdAt,
+        billCreatedAt: loan.createdAt,
+        completedAt: loan.createdAt,
+        paymentMode: payMode,
+        paymentModes: [payMode],
+      })
+      continue
+    }
+
+    loanItems.push({
+      type: 'loan',
+      id: loan.id,
+      amount: loan.amount,
+      name: loan.personName,
+      sub: `${decorated.kindLabel} · ${payLabel}${statusPart}${loan.note ? ` · ${loan.note}` : ''}`,
+      date: loan.createdAt,
+      billCreatedAt: loan.createdAt,
+      completedAt: loan.createdAt,
+      paymentMode: payMode,
+      paymentModes: [payMode],
+    })
+  }
+
+  return [...saleItems, ...expenseItems, ...purchaseItems, ...loanItems]
 }
 
 /** Timestamp for sorting — last update / collection when available. */

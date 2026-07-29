@@ -35,6 +35,7 @@ import {
   collectPendingBill,
   clearAllLocalData,
   deleteExpense,
+  deleteLoan,
   deleteSale,
   editPaidSalePayment,
   type BillCreatePayType,
@@ -165,6 +166,7 @@ interface CashContextValue {
   updateHomePin: (pin: string) => void
   removeSale: (id: string, relatedSaleIds?: string[]) => void
   removeExpense: (id: string) => void
+  removeLoan: (id: string) => void
   cancelApprovedCheque: (id: string) => boolean
   cancelPurchaseCredit: (id: string) => void
   cancelSaleCredit: (id: string, relatedSaleIds?: string[]) => void
@@ -577,6 +579,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => deleteExpense(prev, id))
   }, [])
 
+  const removeLoan = useCallback((id: string) => {
+    setData((prev) => deleteLoan(prev, id))
+  }, [])
+
   const addSupplier = useCallback((name: string) => {
     setData((prev) => addSupplierToData(prev, name))
   }, [])
@@ -864,6 +870,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateHomePin,
       removeSale,
       removeExpense,
+      removeLoan,
       addSupplier,
       addSupplierItem,
       cancelApprovedCheque: cancelApprovedChequeSale,
@@ -912,6 +919,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateHomePin,
       removeSale,
       removeExpense,
+      removeLoan,
       addSupplier,
       addSupplierItem,
       cancelApprovedChequeSale,

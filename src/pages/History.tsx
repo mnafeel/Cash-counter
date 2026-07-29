@@ -90,6 +90,7 @@ function historyIcon(type: HistoryItemType): string {
   if (type === 'deposit') return '📥'
   if (type === 'transfer') return '🔄'
   if (type === 'purchase') return '🛒'
+  if (type === 'loan') return '🤝'
   return '📤'
 }
 
@@ -241,6 +242,7 @@ export default function History() {
       purchase: { sum: 0, count: 0 },
       deposit: { sum: 0, count: 0 },
       transfer: { sum: 0, count: 0 },
+      loan: { sum: 0, count: 0 },
     }
     const items = showPurchaseHistory ? combinedItems : normalItems
     for (const item of items) {
@@ -295,10 +297,16 @@ export default function History() {
   }
 
   function saveEdit(item: HistoryItem) {
-    const updateType =
-      item.type === 'purchase' || item.type === 'deposit' || item.type === 'transfer'
-        ? 'expense'
-        : item.type
+    if (item.type === 'loan' || (data.loans ?? []).some((loan) => loan.id === item.id)) {
+      cancelEdit()
+      return
+    }
+    const updateType: 'sale' | 'expense' | 'deposit' | 'transfer' =
+      item.type === 'sale'
+        ? 'sale'
+        : item.type === 'deposit' || item.type === 'transfer'
+          ? item.type
+          : 'expense'
     updateHistoryName(updateType, item.id, editValue, item.groupSaleIds)
     cancelEdit()
   }
@@ -312,6 +320,7 @@ export default function History() {
 
   function handleNameEditClick(item: HistoryItem, e: MouseEvent) {
     e.stopPropagation()
+    if (item.type === 'loan' || (data.loans ?? []).some((loan) => loan.id === item.id)) return
     startEdit(item)
   }
 

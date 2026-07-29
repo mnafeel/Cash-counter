@@ -332,13 +332,17 @@ export function mergeCloudAppData(local: AppData, remote: AppData): AppData {
 function cloudDataPreservedLocalRecords(local: AppData, remote: AppData, merged: AppData): boolean {
   const remoteExpenseIds = new Set(remote.expenses.map((e) => e.id))
   const remoteSaleIds = new Set(remote.sales.map((s) => s.id))
+  const remoteLoanIds = new Set((remote.loans ?? []).map((loan) => loan.id))
   const localOnlyExpenses = local.expenses.some((e) => !remoteExpenseIds.has(e.id))
   const localOnlySales = local.sales.some((s) => !remoteSaleIds.has(s.id))
+  const localOnlyLoans = (local.loans ?? []).some((loan) => !remoteLoanIds.has(loan.id))
   return (
     localOnlyExpenses ||
     localOnlySales ||
+    localOnlyLoans ||
     merged.expenses.length > remote.expenses.length ||
     merged.sales.length > remote.sales.length ||
+    (merged.loans?.length ?? 0) > (remote.loans?.length ?? 0) ||
     countPendingSales(merged) > countPendingSales(remote) ||
     countOpenPurchaseBalances(merged) > countOpenPurchaseBalances(remote)
   )
@@ -1099,6 +1103,13 @@ export function deleteSale(
 
 export function deleteExpense(data: AppData, id: string): AppData {
   const next = { ...data, expenses: data.expenses.filter((e) => e.id !== id) }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function deleteLoan(data: AppData, id: string): AppData {
+  if (!(data.loans ?? []).some((loan) => loan.id === id)) return data
+  const next = { ...data, loans: (data.loans ?? []).filter((loan) => loan.id !== id) }
   saveData(next, { cloudImmediate: true })
   return next
 }

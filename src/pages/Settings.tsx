@@ -487,9 +487,7 @@ export default function Settings() {
 
   function handleDownloadDataBackup() {
     const payload = downloadDataBackup(data)
-    setDataBackupStatus(
-      `Backup downloaded · ${payload.summary.salesCount} bills · ${payload.summary.expensesCount} records · ${payload.summary.pendingCount} pending`,
-    )
+    setDataBackupStatus(`Backup downloaded · ${formatBackupSummary(payload.data)}`)
     setTimeout(() => setDataBackupStatus(''), 5000)
   }
 
@@ -741,7 +739,9 @@ export default function Settings() {
   }
 
   function cloudDataSummary(snapshot: AppData): string {
-    return `${snapshot.sales.length} bills · ${snapshot.expenses.length} records · cash ${formatMoney(snapshot.openingBalance)} · bank ${formatMoney(snapshot.openingBankBalance ?? 0)}`
+    const loansPart =
+      (snapshot.loans?.length ?? 0) > 0 ? ` · ${snapshot.loans!.length} loans` : ''
+    return `${snapshot.sales.length} bills · ${snapshot.expenses.length} records${loansPart} · cash ${formatMoney(snapshot.openingBalance)} · bank ${formatMoney(snapshot.openingBankBalance ?? 0)}`
   }
 
   async function prepareLocalForCloudAuth() {
@@ -1335,6 +1335,9 @@ export default function Settings() {
                         <span>
                           {snapshot.salesCount} bills · {snapshot.expensesCount} records ·{' '}
                           {snapshot.pendingCount} pending
+                          {(snapshot.loansCount ?? 0) > 0
+                            ? ` · ${snapshot.loansCount} loans`
+                            : ''}
                         </span>
                       </div>
                       <button
