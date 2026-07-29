@@ -9,14 +9,18 @@ import { getLastCloudUsername } from '../firebase/cloudUser'
 import {
   createCloudAccount,
   clearLocalLastBackupTime,
+  cloudBackupTotals,
   fetchRemoteAppData,
   getCloudUsername,
   isAutoBackupEnabled,
   isAutoPullFromCloudEnabled,
+  isMainBillingDevice,
   loginCloud,
   logoutCloud,
+  remoteIsAheadOfLocal,
   setAutoBackupEnabled,
   setAutoPullFromCloudEnabled,
+  setMainBillingDevice,
   subscribeToAuth,
 } from '../firebase/backup'
 import {
@@ -212,6 +216,7 @@ export default function Settings() {
   const [cloudUser, setCloudUser] = useState<User | null>(null)
   const [autoBackup, setAutoBackup] = useState(isAutoBackupEnabled())
   const [autoPull, setAutoPull] = useState(isAutoPullFromCloudEnabled())
+  const [mainBillingDevice, setMainBillingDeviceState] = useState(isMainBillingDevice())
   const [backupStatus, setBackupStatus] = useState('')
   const [backupError, setBackupError] = useState(false)
   const [backupBusy, setBackupBusy] = useState(false)
@@ -765,7 +770,7 @@ export default function Settings() {
       if (isNewAccount) {
         setCloudLoginRestoreActive(false)
         const fresh = loadData()
-        await backupNow(fresh)
+        await backupNow()
         setBackupStatus(`Username created · ${cloudDataSummary(fresh)} saved to cloud`)
         setBackupError(false)
         return
@@ -816,8 +821,22 @@ export default function Settings() {
     setBackupBusy(true)
     setBackupError(false)
     try {
-      await backupNow(data)
+      const local = loadData()
+      const localTotals = cloudBackupTotals(local)
+      const remote = await fetchRemoteAppData()
+      if (remote && remoteIsAheadOfLocal(local, remote.data)) {
+        const remoteTotals = cloudBackupTotals(remote.data)
+        const ok = window.confirm(
+          `Cloud already has different data.\n\nCloud: ${remoteTotals.bills} bills · cash ${formatMoney(remoteTotals.cash)}\nThis device: ${localTotals.bills} bills · cash ${formatMoney(localTotals.cash)}\n\nSave anyway? This replaces cloud with this device.`,
+        )
+        if (!ok) return
+      }
+      await backupNow({ force: true })
       await refreshCloudRemoteSummaryState()
+      setBackupStatus(
+        `Saved to cloud · ${localTotals.bills} bills · cash ${formatMoney(localTotals.cash)} verified`,
+      )
+      setBackupError(false)
     } catch (err) {
       setBackupStatus(err instanceof Error ? err.message : 'Backup failed')
       setBackupError(true)
@@ -910,6 +929,18 @@ export default function Settings() {
     const next = !autoPull
     setAutoPull(next)
     setAutoPullFromCloudEnabled(next)
+  }
+
+  function toggleMainBillingDevice() {
+    const next = !mainBillingDevice
+    setMainBillingDeviceState(next)
+    setMainBillingDevice(next)
+    if (next) {
+      setAutoBackup(true)
+      setAutoBackupEnabled(true)
+    } else {
+      setAutoBackup(false)
+    }
   }
 
   function updatePineLabsField<K extends keyof PineLabsSettings>(key: K, value: PineLabsSettings[K]) {
@@ -1884,17 +1915,47 @@ export default function Settings() {
                   <p className="settings-backup-meta">Loading cloud backup info…</p>
                 )}
                 {cloudRemoteSummary &&
+                  mainBillingDevice &&
                   (cloudRemoteSummary.bills !== data.sales.length ||
                     cloudRemoteSummary.records !== data.expenses.length ||
                     cloudRemoteSummary.cash !== getCurrentBalance(data) ||
                     cloudRemoteSummary.bank !== getBankBalance(data)) && (
                     <p className="settings-backup-meta settings-backup-meta--warn">
-                      This device differs from cloud — Save to cloud here, or Load from cloud to
-                      match the last backup.
+                      This device differs from cloud — tap Save to cloud on this main device.
+                    </p>
+                  )}
+                {cloudRemoteSummary &&
+                  !mainBillingDevice &&
+                  (cloudRemoteSummary.bills !== data.sales.length ||
+                    cloudRemoteSummary.records !== data.expenses.length ||
+                    cloudRemoteSummary.cash !== getCurrentBalance(data) ||
+                    cloudRemoteSummary.bank !== getBankBalance(data)) && (
+                    <p className="settings-backup-meta settings-backup-meta--warn">
+                      This device differs from cloud — tap Load from cloud to match{' '}
+                      {formatMoney(cloudRemoteSummary.cash)} cash.
                     </p>
                   )}
                 <label className="settings-backup-toggle">
-                  <input type="checkbox" checked={autoBackup} onChange={toggleAutoBackup} />
+                  <input
+                    type="checkbox"
+                    checked={mainBillingDevice}
+                    onChange={toggleMainBillingDevice}
+                  />
+                  Main billing device (only this device saves to cloud)
+                </label>
+                {!mainBillingDevice && (
+                  <p className="settings-backup-meta">
+                    View-only device — cloud amount above is shared. Use Load from cloud. Do not save
+                    from here.
+                  </p>
+                )}
+                <label className="settings-backup-toggle">
+                  <input
+                    type="checkbox"
+                    checked={autoBackup}
+                    disabled={!mainBillingDevice}
+                    onChange={toggleAutoBackup}
+                  />
                   Auto backup on every change
                 </label>
                 <label className="settings-backup-toggle">
@@ -1911,7 +1972,7 @@ export default function Settings() {
                   <button
                     type="button"
                     className="btn btn-secondary"
-                    disabled={backupBusy || !firebaseBuilt}
+                    disabled={backupBusy || !firebaseBuilt || !mainBillingDevice}
                     onClick={() => void handleBackupNow()}
                   >
                     Save to cloud

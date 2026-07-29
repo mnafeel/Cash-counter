@@ -7,13 +7,19 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import type { AppData } from '../types'
-import { normalizeData } from '../storage/database'
+import {
+  getBankBalance,
+  getCurrentBalance,
+  loadData,
+  normalizeData,
+} from '../storage/database'
 import { authEmailToUsername, clearLastCloudUsername, saveLastCloudUsername, usernameToAuthEmail } from './cloudUser'
 import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from './config'
 import { formatFirebaseError, stripUndefined } from './utils'
 
 const AUTO_BACKUP_KEY = 'cash-counter-auto-backup'
 const AUTO_PULL_KEY = 'cash-counter-auto-pull'
+const MAIN_BILLING_DEVICE_KEY = 'cash-counter-main-billing-device'
 const LAST_BACKUP_KEY = 'cash-counter-last-backup'
 
 function latestDocRef(uid: string) {
@@ -46,6 +52,20 @@ export function isAutoPullFromCloudEnabled(): boolean {
 
 export function setAutoPullFromCloudEnabled(enabled: boolean): void {
   localStorage.setItem(AUTO_PULL_KEY, enabled ? 'true' : 'false')
+}
+
+/** Only the main billing device should write to cloud — prevents other devices overwriting correct cash. */
+export function isMainBillingDevice(): boolean {
+  try {
+    return localStorage.getItem(MAIN_BILLING_DEVICE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function setMainBillingDevice(enabled: boolean): void {
+  localStorage.setItem(MAIN_BILLING_DEVICE_KEY, enabled ? 'true' : 'false')
+  if (!enabled) setAutoBackupEnabled(false)
 }
 
 export function getLocalLastBackupTime(): string | null {
@@ -139,16 +159,55 @@ function requireCloudUser(): User {
   return user
 }
 
-export async function backupAppData(data: AppData): Promise<string> {
+export interface CloudBackupTotals {
+  bills: number
+  records: number
+  cash: number
+  bank: number
+}
+
+export function cloudBackupTotals(data: AppData): CloudBackupTotals {
+  const normalized = normalizeData(data)
+  return {
+    bills: normalized.sales.length,
+    records: normalized.expenses.length,
+    cash: getCurrentBalance(normalized),
+    bank: getBankBalance(normalized),
+  }
+}
+
+export function cloudTotalsMatch(a: CloudBackupTotals, b: CloudBackupTotals): boolean {
+  return (
+    a.bills === b.bills &&
+    a.records === b.records &&
+    Math.abs(a.cash - b.cash) < 0.01 &&
+    Math.abs(a.bank - b.bank) < 0.01
+  )
+}
+
+/** Cloud already has more bills/cash — auto-backup must not overwrite it. */
+export function remoteIsAheadOfLocal(local: AppData, remote: AppData): boolean {
+  const l = cloudBackupTotals(local)
+  const r = cloudBackupTotals(remote)
+  return (
+    r.bills > l.bills ||
+    r.records > l.records ||
+    r.cash > l.cash + 0.01 ||
+    r.bank > l.bank + 0.01
+  )
+}
+
+export async function backupAppData(source?: AppData): Promise<string> {
   const user = requireCloudUser()
 
   const backedUpAt = new Date().toISOString()
-  const cleanData = stripUndefined(normalizeData(data))
+  const cleanData = stripUndefined(normalizeData(source ?? loadData()))
 
   const payload = {
     ...cleanData,
     _backupAt: backedUpAt,
     _updatedAt: serverTimestamp(),
+    _totals: cloudBackupTotals(cleanData),
   }
 
   try {
@@ -157,9 +216,17 @@ export async function backupAppData(data: AppData): Promise<string> {
       ...cleanData,
       _backupAt: backedUpAt,
       _updatedAt: backedUpAt,
+      _totals: cloudBackupTotals(cleanData),
     })
   } catch (err) {
     throw new Error(formatFirebaseError(err))
+  }
+
+  const verified = await fetchRemoteAppData()
+  if (!verified || !cloudTotalsMatch(cloudBackupTotals(cleanData), cloudBackupTotals(verified.data))) {
+    throw new Error(
+      'Cloud verify failed — uploaded cash/bills did not match. Check internet and tap Save to cloud again.',
+    )
   }
 
   setLocalLastBackupTime(backedUpAt)
@@ -199,14 +266,15 @@ export async function getRemoteLastBackupTime(): Promise<string | null> {
   }
 }
 
-function cloudPayloadToAppData(raw: AppData & { _backupAt?: string; _updatedAt?: unknown }): {
+function cloudPayloadToAppData(raw: AppData & { _backupAt?: string; _updatedAt?: unknown; _totals?: unknown }): {
   data: AppData
   backupAt: string
 } | null {
   if (!raw._backupAt) return null
-  const { _backupAt: backupAt, _updatedAt: _ignoredUpdated, ...rest } = raw
+  const { _backupAt: backupAt, _updatedAt: _ignoredUpdated, _totals: _ignoredTotals, ...rest } = raw
   void _ignoredUpdated
-  return { data: rest as AppData, backupAt }
+  void _ignoredTotals
+  return { data: normalizeData(rest as AppData), backupAt }
 }
 
 /** Live listener — fires when another device backs up to cloud. */

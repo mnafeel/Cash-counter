@@ -17,13 +17,16 @@ import { isFirebaseConfigured } from './config'
 import {
   backupAppData,
   clearLocalLastBackupTime,
+  cloudBackupTotals,
   fetchRemoteAppData,
   getCloudUser,
   getLocalLastBackupTime,
   isAutoBackupEnabled,
   isAutoPullFromCloudEnabled,
   isCloudLoggedIn,
+  isMainBillingDevice,
   parseBackupTimestamp,
+  remoteIsAheadOfLocal,
   subscribeToAuth,
   subscribeToCloudData,
 } from './backup'
@@ -241,12 +244,11 @@ export function setCloudRemoteListener(listener: ((data: AppData) => void) | nul
 
 export function flushPendingBackup(): void {
   if (!pendingData || !isCloudLoggedIn()) return
-  const data = pendingData
   if (debounceTimer) {
     clearTimeout(debounceTimer)
     debounceTimer = null
   }
-  void runBackup(data)
+  void runBackup()
 }
 
 export function setBackupStatusListener(
@@ -343,6 +345,7 @@ export function initFirebaseSync(): () => void {
 
 function queueBackup(data: AppData): void {
   if (!isFirebaseConfigured() || !isAutoBackupEnabled() || !isCloudLoggedIn()) return
+  if (!isMainBillingDevice()) return
   if (applyingRemote || loginRestoreActive) return
   const user = getCloudUser()
   if (user && !isLocalDataOwnedByUser(user.uid)) return
@@ -351,15 +354,28 @@ function queueBackup(data: AppData): void {
   if (debounceTimer) clearTimeout(debounceTimer)
 
   debounceTimer = setTimeout(() => {
-    const latest = pendingData
-    if (latest) void runBackup(latest)
+    void runBackup()
   }, DEBOUNCE_MS)
 }
 
-async function runBackup(data: AppData): Promise<void> {
+async function runBackup(options?: { force?: boolean }): Promise<void> {
   if (!isCloudLoggedIn() || applyingRemote || backingUp || loginRestoreActive) return
   const user = getCloudUser()
   if (user && !isLocalDataOwnedByUser(user.uid)) return
+
+  const data = loadData()
+
+  if (!options?.force) {
+    const remote = await fetchRemoteAppData()
+    if (remote && remoteIsAheadOfLocal(data, remote.data)) {
+      const r = cloudBackupTotals(remote.data)
+      emitBackupStatus(
+        `Backup skipped — cloud has newer data (${r.bills} bills · cash ${r.cash}). Load from cloud on this device first.`,
+        true,
+      )
+      return
+    }
+  }
 
   backingUp = true
   debounceTimer = null
@@ -369,8 +385,11 @@ async function runBackup(data: AppData): Promise<void> {
     markLocalDataSynced(at)
     pendingData = null
     lastAppliedRemoteBackupAt = parseBackupTimestamp(at)
+    const totals = cloudBackupTotals(data)
     emitCloudRemoteSummary(data, at)
-    emitBackupStatus(`Backed up ${new Date(at).toLocaleString()}`)
+    emitBackupStatus(
+      `Backed up · ${totals.bills} bills · cash ${totals.cash} · bank ${totals.bank} · ${new Date(at).toLocaleString()}`,
+    )
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Backup failed'
     emitBackupStatus(message, true)
@@ -391,6 +410,7 @@ export function notifyDataChanged(data: AppData): void {
 /** Push full local snapshot to cloud right away — used after deletes so other devices match. */
 export function notifyDataChangedImmediate(data: AppData): void {
   if (!isFirebaseConfigured() || !isAutoBackupEnabled()) return
+  if (!isMainBillingDevice()) return
   pendingData = data
   if (!isCloudLoggedIn() || applyingRemote || loginRestoreActive) return
   const user = getCloudUser()
@@ -399,13 +419,26 @@ export function notifyDataChangedImmediate(data: AppData): void {
     clearTimeout(debounceTimer)
     debounceTimer = null
   }
-  void runBackup(data)
+  void runBackup({ force: true })
 }
 
-export async function backupNow(data: AppData): Promise<string> {
+export async function backupNow(options?: { force?: boolean }): Promise<string> {
+  if (!isMainBillingDevice()) {
+    throw new Error('This is not the main billing device. Turn on Main billing device to save, or use Load from cloud.')
+  }
   const user = getCloudUser()
   if (user && !isLocalDataOwnedByUser(user.uid)) {
     setLocalUserUid(user.uid)
+  }
+  flushPendingBackup()
+  const data = loadData()
+  if (!options?.force) {
+    const remote = await fetchRemoteAppData()
+    if (remote && remoteIsAheadOfLocal(data, remote.data)) {
+      throw new Error(
+        `Cloud already has more data (${remote.data.sales.length} bills). Load from cloud first, or save again to overwrite.`,
+      )
+    }
   }
   const at = await backupAppData(data)
   markLocalDataSynced(at)
@@ -415,7 +448,10 @@ export async function backupNow(data: AppData): Promise<string> {
     debounceTimer = null
   }
   lastAppliedRemoteBackupAt = parseBackupTimestamp(at)
+  const totals = cloudBackupTotals(data)
   emitCloudRemoteSummary(data, at)
-  emitBackupStatus(`Backed up ${new Date(at).toLocaleString()}`)
+  emitBackupStatus(
+    `Backed up · ${totals.bills} bills · cash ${totals.cash} · bank ${totals.bank} · ${new Date(at).toLocaleString()}`,
+  )
   return at
 }
