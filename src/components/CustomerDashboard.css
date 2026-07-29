@@ -336,3 +336,38 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+@media (max-width: 520px) {
+  .customer-filter-bar {
+    flex-wrap: wrap;
+  }
+
+  .customer-filter-chip {
+    flex: 1 1 calc(50% - 2px);
+    min-width: calc(50% - 2px);
+  }
+
+  .customer-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .customer-purchase-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+}
+
+html[data-screen='phone'] .customer-filter-chip {
+  font-size: 0.54rem;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .customer-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .customer-total-banner strong {
+    font-size: 0.88rem;
+  }
+}

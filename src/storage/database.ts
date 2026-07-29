@@ -1,4 +1,4 @@
-import type { AppData, AppTheme, Expense, ExpensePayType, PayType, ReminderAlertSettings, Sale, SupplierEntry, TransferDirection, CustomerReminderMap } from '../types'
+import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, SupplierEntry, TransferDirection, CustomerReminderMap } from '../types'
 import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
 import { collectSplitNameTargets } from '../utils/saleCustomerName'
 import { stripExpenseBillSuffix, isPurchaseExpense } from '../utils/expenseBillLabels'
@@ -26,6 +26,7 @@ import {
 import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
+import { loanBankToBalance, loanCashToDrawer } from '../utils/loanLedger'
 
 const defaultData: AppData = {
   openingBalance: 0,
@@ -35,6 +36,7 @@ const defaultData: AppData = {
   suppliers: [],
   sales: [],
   expenses: [],
+  loans: [],
 }
 
 function normalizeItemList(raw: unknown): string[] {
@@ -284,6 +286,22 @@ function mergeExpenseLists(local: Expense[], remote: Expense[]): Expense[] {
   return sortRecordsNewestFirst(Array.from(byId.values()))
 }
 
+function mergeLoanLists(local: Loan[], remote: Loan[]): Loan[] {
+  const byId = new Map<string, Loan>()
+  for (const item of remote) byId.set(item.id, item)
+  for (const item of local) {
+    const other = byId.get(item.id)
+    if (!other) {
+      byId.set(item.id, item)
+      continue
+    }
+    const localTime = new Date(item.settledAt ?? item.createdAt).getTime()
+    const remoteTime = new Date(other.settledAt ?? other.createdAt).getTime()
+    byId.set(item.id, localTime >= remoteTime ? item : other)
+  }
+  return sortRecordsNewestFirst(Array.from(byId.values()))
+}
+
 function countPendingSales(data: AppData): number {
   return data.sales.filter((sale) => sale.status === 'pending').length
 }
@@ -299,6 +317,7 @@ export function mergeCloudAppData(local: AppData, remote: AppData): AppData {
     ...normalizedRemote,
     sales: mergeSaleLists(normalizedLocal.sales, normalizedRemote.sales),
     expenses: mergeExpenseLists(normalizedLocal.expenses, normalizedRemote.expenses),
+    loans: mergeLoanLists(normalizedLocal.loans ?? [], normalizedRemote.loans ?? []),
     suppliers: normalizeSuppliers([
       ...(normalizedRemote.suppliers ?? []),
       ...(normalizedLocal.suppliers ?? []),
@@ -337,6 +356,7 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
     reminderAlerts: {
       creditDaysBefore: Math.max(0, alerts?.creditDaysBefore ?? DEFAULT_REMINDER_ALERTS.creditDaysBefore),
       chequeDaysBefore: Math.max(0, alerts?.chequeDaysBefore ?? DEFAULT_REMINDER_ALERTS.chequeDaysBefore),
+      loanDaysBefore: Math.max(0, alerts?.loanDaysBefore ?? DEFAULT_REMINDER_ALERTS.loanDaysBefore),
       alertIntervalDays: Math.max(1, alerts?.alertIntervalDays ?? DEFAULT_REMINDER_ALERTS.alertIntervalDays),
       notificationShowSeconds: Math.max(
         0,
@@ -348,6 +368,33 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
     customerReminders: normalizeCustomerReminders(parsed.customerReminders),
     sales: (parsed.sales ?? []).map((sale) => migrateSalePaymentEvents(sale)),
     expenses: normalizedExpenses,
+    loans: (parsed.loans ?? []).map((loan) => normalizeLoan(loan)),
+  }
+}
+
+function normalizeLoan(raw: Partial<Loan>): Loan {
+  const kind: LoanKind = raw.kind === 'borrow' ? 'borrow' : 'lend'
+  const paySource: LoanPaySource = raw.paySource === 'bank' ? 'bank' : 'cash'
+  const settlementPaySource =
+    raw.settlementPaySource === 'bank'
+      ? 'bank'
+      : raw.settlementPaySource === 'cash'
+        ? 'cash'
+        : undefined
+  return {
+    id: typeof raw.id === 'string' ? raw.id : crypto.randomUUID(),
+    kind,
+    personName: typeof raw.personName === 'string' ? raw.personName.trim() : 'Unknown',
+    amount: Math.max(0, Number(raw.amount) || 0),
+    paySource,
+    status: raw.status === 'settled' ? 'settled' : 'pending',
+    note: typeof raw.note === 'string' ? raw.note.trim() || undefined : undefined,
+    reminderAt: typeof raw.reminderAt === 'string' ? raw.reminderAt : undefined,
+    reminderNote: typeof raw.reminderNote === 'string' ? raw.reminderNote.trim() || undefined : undefined,
+    reminderUrgent: raw.reminderUrgent === true ? true : undefined,
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+    settledAt: typeof raw.settledAt === 'string' ? raw.settledAt : undefined,
+    settlementPaySource,
   }
 }
 
@@ -430,6 +477,7 @@ export function isLocalDataEmpty(data: AppData): boolean {
   return (
     data.sales.length === 0 &&
     data.expenses.length === 0 &&
+    (data.loans?.length ?? 0) === 0 &&
     (data.openingBalance ?? 0) === 0 &&
     (data.openingBankBalance ?? 0) === 0
   )
@@ -742,13 +790,15 @@ function expenseBankToBalance(expense: Expense): number {
 export function getBankBalance(data: AppData): number {
   const salesTotal = data.sales.reduce((sum, s) => sum + saleBankToBalance(s), 0)
   const expensesTotal = data.expenses.reduce((sum, e) => sum + expenseBankToBalance(e), 0)
-  return (data.openingBankBalance ?? 0) + salesTotal - expensesTotal
+  const loansTotal = (data.loans ?? []).reduce((sum, loan) => sum + loanBankToBalance(loan), 0)
+  return (data.openingBankBalance ?? 0) + salesTotal - expensesTotal + loansTotal
 }
 
 export function getCurrentBalance(data: AppData): number {
   const salesTotal = data.sales.reduce((sum, s) => sum + saleCashToDrawer(s), 0)
   const expensesTotal = data.expenses.reduce((sum, e) => sum + expenseCashToDrawer(e), 0)
-  return data.openingBalance + salesTotal - expensesTotal
+  const loansTotal = (data.loans ?? []).reduce((sum, loan) => sum + loanCashToDrawer(loan), 0)
+  return data.openingBalance + salesTotal - expensesTotal + loansTotal
 }
 
 export function addSale(
@@ -858,6 +908,99 @@ export function addExpense(data: AppData, expense: Omit<Expense, 'id' | 'created
     createdAt: new Date().toISOString(),
   }
   const next = { ...data, expenses: [newExpense, ...data.expenses] }
+  saveData(next)
+  return next
+}
+
+export function addLoan(
+  data: AppData,
+  loan: {
+    kind: LoanKind
+    personName: string
+    amount: number
+    paySource?: LoanPaySource
+    note?: string
+    reminderAt?: string
+    reminderNote?: string
+  },
+): AppData {
+  const amount = loan.amount
+  if (!(amount > 0)) return data
+  const personName = loan.personName.trim()
+  if (!personName) return data
+
+  const kind = loan.kind
+  const paySource: LoanPaySource =
+    kind === 'borrow' ? 'cash' : loan.paySource === 'bank' ? 'bank' : 'cash'
+
+  if (kind === 'lend') {
+    if (paySource === 'cash' && getCurrentBalance(data) < amount) return data
+    if (paySource === 'bank' && getBankBalance(data) < amount) return data
+  }
+
+  const newLoan: Loan = {
+    id: crypto.randomUUID(),
+    kind,
+    personName,
+    amount,
+    paySource,
+    status: 'pending',
+    note: loan.note?.trim() || undefined,
+    reminderAt: loan.reminderAt,
+    reminderNote: loan.reminderNote?.trim() || undefined,
+    createdAt: new Date().toISOString(),
+  }
+  const next = { ...data, loans: [newLoan, ...(data.loans ?? [])] }
+  saveData(next)
+  return next
+}
+
+export function settleLoan(
+  data: AppData,
+  id: string,
+  settlementPaySource: LoanPaySource,
+): AppData {
+  const loan = (data.loans ?? []).find((entry) => entry.id === id)
+  if (!loan || loan.status !== 'pending') return data
+
+  if (loan.kind === 'borrow') {
+    if (settlementPaySource === 'cash' && getCurrentBalance(data) < loan.amount) return data
+    if (settlementPaySource === 'bank' && getBankBalance(data) < loan.amount) return data
+  }
+
+  const now = new Date().toISOString()
+  const nextLoans = (data.loans ?? []).map((entry) =>
+    entry.id === id
+      ? {
+          ...entry,
+          status: 'settled' as const,
+          settledAt: now,
+          settlementPaySource,
+        }
+      : entry,
+  )
+  const next = { ...data, loans: nextLoans }
+  saveData(next)
+  return next
+}
+
+export function setLoanReminder(
+  data: AppData,
+  id: string,
+  reminderAt: string | null,
+  reminderNote?: string | null,
+  reminderUrgent?: boolean | null,
+): AppData {
+  const nextLoans = (data.loans ?? []).map((loan) => {
+    if (loan.id !== id) return loan
+    return {
+      ...loan,
+      reminderAt: reminderAt ?? undefined,
+      reminderNote: reminderNote?.trim() ? reminderNote.trim() : undefined,
+      reminderUrgent: reminderUrgent === true ? true : reminderUrgent === false ? undefined : loan.reminderUrgent,
+    }
+  })
+  const next = { ...data, loans: nextLoans }
   saveData(next)
   return next
 }
@@ -1200,6 +1343,7 @@ export function setReminderAlertSettings(
     reminderAlerts: {
       creditDaysBefore: Math.max(0, settings.creditDaysBefore),
       chequeDaysBefore: Math.max(0, settings.chequeDaysBefore),
+      loanDaysBefore: Math.max(0, settings.loanDaysBefore),
       alertIntervalDays: Math.max(1, settings.alertIntervalDays),
       notificationShowSeconds: Math.max(0, settings.notificationShowSeconds),
       notificationSoundEnabled: settings.notificationSoundEnabled,

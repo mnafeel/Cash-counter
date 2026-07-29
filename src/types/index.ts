@@ -78,12 +78,14 @@ export interface SupplierEntry {
   items?: string[]
 }
 
-/** Global alert timing for credit & cheque bill reminders. */
+/** Global alert timing for credit, cheque & loan reminders. */
 export interface ReminderAlertSettings {
   /** Days before reminder date/time to start credit alerts. */
   creditDaysBefore: number
   /** Days before reminder date/time to start cheque collect alerts. */
   chequeDaysBefore: number
+  /** Days before reminder date/time to start loan alerts. */
+  loanDaysBefore: number
   /** Repeat alert every N days while in the alert window (1 = daily). */
   alertIntervalDays: number
   /** Seconds to show top notification (0 = until manually closed). */
@@ -105,6 +107,7 @@ export type CustomerReminderMap = Record<string, CustomerReminderEntry>
 export const DEFAULT_REMINDER_ALERTS: ReminderAlertSettings = {
   creditDaysBefore: 3,
   chequeDaysBefore: 7,
+  loanDaysBefore: 3,
   alertIntervalDays: 1,
   notificationShowSeconds: 0,
   notificationSoundEnabled: true,
@@ -112,6 +115,30 @@ export const DEFAULT_REMINDER_ALERTS: ReminderAlertSettings = {
 
 /** Top notification auto-hide duration options (0 = manual close). */
 export const NOTIFICATION_SHOW_SECOND_OPTIONS = [0, 5, 10, 15, 30, 60, 120, 300] as const
+
+export type LoanKind = 'lend' | 'borrow'
+export type LoanStatus = 'pending' | 'settled'
+export type LoanPaySource = 'cash' | 'bank'
+
+/** Zero-interest loan — lend (receivable) or borrow (payable). */
+export interface Loan {
+  id: string
+  kind: LoanKind
+  personName: string
+  amount: number
+  /** Cash or bank used when giving a loan; borrow always adds to cash. */
+  paySource: LoanPaySource
+  status: LoanStatus
+  note?: string
+  reminderAt?: string
+  reminderNote?: string
+  /** Mark loan reminder as urgent — longer, stronger alert sound. */
+  reminderUrgent?: boolean
+  createdAt: string
+  settledAt?: string
+  /** Cash or bank used when settling / returning the loan. */
+  settlementPaySource?: LoanPaySource
+}
 
 export interface AppData {
   openingBalance: number
@@ -125,6 +152,7 @@ export interface AppData {
   customerReminders?: CustomerReminderMap
   sales: Sale[]
   expenses: Expense[]
+  loans?: Loan[]
 }
 
 export const STORAGE_KEY = 'cash-counter-data'

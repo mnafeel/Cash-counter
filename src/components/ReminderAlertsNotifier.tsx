@@ -8,11 +8,27 @@ import {
   getReminderAlertSettings,
   type BillReminderItem,
 } from '../utils/billReminders'
-import { playReminderNotificationSound } from '../utils/reminderNotificationSound'
+import { buildActiveLoanReminders, type LoanReminderItem } from '../utils/loanReminders'
+import { playReminderNotificationSound, type ReminderSoundStyle } from '../utils/reminderNotificationSound'
 import './ReminderAlertsNotifier.css'
 
 const MAX_VISIBLE = 3
 const DISMISSED_STORAGE_KEY = 'cash-counter-dismissed-reminder-alerts'
+
+type UnifiedReminderAlert = {
+  dismissKey: string
+  kind: 'credit' | 'cheque' | 'other' | 'loan'
+  title: string
+  amount: number
+  alertLabel: string
+  reminderDateLabel: string
+  reminderSortAt: string
+  reminderNote?: string
+  isDue: boolean
+  isOverdue: boolean
+  soundStyle: ReminderSoundStyle
+  onOpen: () => void
+}
 
 function useNow(tickMs = 1000) {
   const [now, setNow] = useState(() => new Date())
@@ -23,8 +39,38 @@ function useNow(tickMs = 1000) {
   return now
 }
 
-function alertDismissKey(item: BillReminderItem): string {
-  return `${item.saleId}|${item.reminderAt}`
+function billAlert(item: BillReminderItem, onOpen: () => void): UnifiedReminderAlert {
+  return {
+    dismissKey: `bill|${item.saleId}|${item.reminderAt}`,
+    kind: item.kind,
+    title: item.customerName,
+    amount: item.amount,
+    alertLabel: item.alertLabel,
+    reminderDateLabel: item.reminderDateLabel,
+    reminderSortAt: item.reminderAt,
+    reminderNote: item.reminderNote,
+    isDue: item.isDue,
+    isOverdue: item.isOverdue,
+    soundStyle: 'normal',
+    onOpen,
+  }
+}
+
+function loanAlert(item: LoanReminderItem, onOpen: () => void): UnifiedReminderAlert {
+  return {
+    dismissKey: `loan|${item.loanId}|${item.reminderAt}`,
+    kind: 'loan',
+    title: item.personName,
+    amount: item.amount,
+    alertLabel: item.alertLabel,
+    reminderDateLabel: item.reminderDateLabel,
+    reminderSortAt: item.reminderAt,
+    reminderNote: item.reminderNote,
+    isDue: item.isDue,
+    isOverdue: item.isOverdue,
+    soundStyle: item.soundStyle,
+    onOpen,
+  }
 }
 
 function readDismissedKeys(): Set<string> {
@@ -42,9 +88,10 @@ function writeDismissedKeys(keys: Set<string>) {
   sessionStorage.setItem(DISMISSED_STORAGE_KEY, JSON.stringify([...keys]))
 }
 
-function kindIcon(kind: BillReminderItem['kind']): string {
+function kindIcon(kind: UnifiedReminderAlert['kind']): string {
   if (kind === 'credit') return '💳'
   if (kind === 'cheque') return '🧾'
+  if (kind === 'loan') return '🤝'
   return '🔔'
 }
 
@@ -59,18 +106,25 @@ export default function ReminderAlertsNotifier() {
   const [shownAtByKey, setShownAtByKey] = useState<Record<string, number>>({})
   const prevAlertStateRef = useRef<Record<string, { visible: boolean; due: boolean }>>({})
 
-  const activeAlerts = useMemo(
-    () => buildActiveBillReminders(data, now),
-    [data, now],
-  )
+  const activeAlerts = useMemo(() => {
+    const bills = buildActiveBillReminders(data, now).map((item) =>
+      billAlert(item, () => navigate(`/counter?bill=${item.saleId}`)),
+    )
+    const loans = buildActiveLoanReminders(data, now).map((item) =>
+      loanAlert(item, () => navigate('/loan')),
+    )
+    return [...bills, ...loans].sort(
+      (a, b) => new Date(a.reminderSortAt).getTime() - new Date(b.reminderSortAt).getTime(),
+    )
+  }, [data, now, navigate])
 
   const visibleActiveAlerts = useMemo(
-    () => activeAlerts.filter((item) => !dismissedKeys.has(alertDismissKey(item))),
+    () => activeAlerts.filter((item) => !dismissedKeys.has(item.dismissKey)),
     [activeAlerts, dismissedKeys],
   )
 
   const visibleAlertKeys = useMemo(
-    () => visibleActiveAlerts.map((item) => alertDismissKey(item)).sort().join('|'),
+    () => visibleActiveAlerts.map((item) => item.dismissKey).sort().join('|'),
     [visibleActiveAlerts],
   )
 
@@ -84,8 +138,7 @@ export default function ReminderAlertsNotifier() {
     setShownAtByKey((prev) => {
       const next = { ...prev }
       for (const item of visibleActiveAlerts) {
-        const key = alertDismissKey(item)
-        if (!next[key]) next[key] = seenAt
+        if (!next[item.dismissKey]) next[item.dismissKey] = seenAt
       }
       return next
     })
@@ -98,17 +151,19 @@ export default function ReminderAlertsNotifier() {
     const nextState: Record<string, { visible: boolean; due: boolean }> = {}
 
     for (const item of visibleActiveAlerts) {
-      const key = alertDismissKey(item)
       const due = item.isDue || item.isOverdue
-      const prev = prevAlertStateRef.current[key]
-      nextState[key] = { visible: true, due }
+      const prev = prevAlertStateRef.current[item.dismissKey]
+      nextState[item.dismissKey] = { visible: true, due }
 
       if (!prev?.visible) shouldPlay = true
       else if (due && !prev.due) shouldPlay = true
     }
 
     prevAlertStateRef.current = nextState
-    if (shouldPlay) void playReminderNotificationSound()
+    if (shouldPlay) {
+      const useUrgent = visibleActiveAlerts.some((item) => item.soundStyle === 'urgent' || item.isOverdue)
+      void playReminderNotificationSound(useUrgent ? 'urgent' : 'normal')
+    }
   }, [visibleActiveAlerts, alertSettings.notificationSoundEnabled])
 
   useEffect(() => {
@@ -120,10 +175,9 @@ export default function ReminderAlertsNotifier() {
         let changed = false
         const next = new Set(prev)
         for (const item of visibleActiveAlerts) {
-          const key = alertDismissKey(item)
-          const shownAt = shownAtByKey[key]
+          const shownAt = shownAtByKey[item.dismissKey]
           if (shownAt && nowMs - shownAt >= showSeconds * 1000) {
-            next.add(key)
+            next.add(item.dismissKey)
             changed = true
           }
         }
@@ -138,7 +192,7 @@ export default function ReminderAlertsNotifier() {
     if (showSeconds <= 0 || visibleActiveAlerts.length === 0) return null
     let earliestShown: number | null = null
     for (const item of visibleActiveAlerts) {
-      const shownAt = shownAtByKey[alertDismissKey(item)]
+      const shownAt = shownAtByKey[item.dismissKey]
       if (shownAt != null && (earliestShown == null || shownAt < earliestShown)) {
         earliestShown = shownAt
       }
@@ -148,12 +202,12 @@ export default function ReminderAlertsNotifier() {
     return Math.max(0, showSeconds - elapsed)
   }, [showSeconds, visibleActiveAlerts, shownAtByKey, now])
 
-  function dismissAlert(item: BillReminderItem, event?: MouseEvent) {
+  function dismissAlert(item: UnifiedReminderAlert, event?: MouseEvent) {
     event?.stopPropagation()
     event?.preventDefault()
     setDismissedKeys((prev) => {
       const next = new Set(prev)
-      next.add(alertDismissKey(item))
+      next.add(item.dismissKey)
       return next
     })
   }
@@ -163,7 +217,7 @@ export default function ReminderAlertsNotifier() {
     event?.preventDefault()
     setDismissedKeys((prev) => {
       const next = new Set(prev)
-      for (const item of visibleActiveAlerts) next.add(alertDismissKey(item))
+      for (const item of visibleActiveAlerts) next.add(item.dismissKey)
       return next
     })
   }
@@ -177,7 +231,7 @@ export default function ReminderAlertsNotifier() {
     <aside
       className={`reminder-alerts-notifier ${collapsed ? 'reminder-alerts-notifier--collapsed' : ''}`}
       aria-live="polite"
-      aria-label="Active bill reminder alerts"
+      aria-label="Active reminder alerts"
     >
       <div className="reminder-alerts-notifier-shell">
         <div className="reminder-alerts-notifier-head">
@@ -222,20 +276,20 @@ export default function ReminderAlertsNotifier() {
 
             <ul className="reminder-alerts-notifier-list">
               {visibleAlerts.map((item) => (
-                <li key={item.saleId} className="reminder-alerts-notifier-row">
+                <li key={item.dismissKey} className="reminder-alerts-notifier-row">
                   <button
                     type="button"
                     className={`reminder-alerts-notifier-item reminder-alerts-notifier-item--${item.kind} ${
                       item.isOverdue ? 'reminder-alerts-notifier-item--overdue' : ''
                     }`}
-                    onClick={() => navigate(`/counter?bill=${item.saleId}`)}
+                    onClick={item.onOpen}
                   >
                     <span className="reminder-alerts-notifier-item-icon" aria-hidden="true">
                       {kindIcon(item.kind)}
                     </span>
                     <span className="reminder-alerts-notifier-item-copy">
                       <span className="reminder-alerts-notifier-item-top">
-                        <strong>{item.customerName}</strong>
+                        <strong>{item.title}</strong>
                         <span>{formatMoney(item.amount)}</span>
                       </span>
                       <span className="reminder-alerts-notifier-item-meta">
@@ -250,7 +304,7 @@ export default function ReminderAlertsNotifier() {
                     type="button"
                     className="reminder-alerts-notifier-item-close"
                     onClick={(event) => dismissAlert(item, event)}
-                    aria-label={`Close reminder for ${item.customerName}`}
+                    aria-label={`Close reminder for ${item.title}`}
                     title="Close"
                   >
                     ✕

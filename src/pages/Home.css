@@ -92,6 +92,14 @@
   background: linear-gradient(165deg, rgba(125, 223, 138, 0.16) 0%, var(--surface) 100%);
 }
 
+.home-launch-btn--loan {
+  min-height: 48px;
+  justify-content: flex-start;
+  text-decoration: none;
+  border-color: rgba(196, 160, 255, 0.35);
+  background: linear-gradient(165deg, rgba(196, 160, 255, 0.1) 0%, var(--surface) 100%);
+}
+
 .home-launch-copy {
   flex: 1;
   min-width: 0;
@@ -1587,6 +1595,17 @@ html[data-screen='desktop'] .home-card-text h2 {
 
 html[data-screen='desktop'] .home-card-text p {
   font-size: 0.68rem;
+}
+
+@media (max-width: 380px) {
+  .home-launch-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+html[data-screen='phone'] .home-today-grid,
+html[data-screen='phone'] .home-collect-grid {
+  grid-template-columns: 1fr 1fr;
 }
 
 @media (orientation: landscape) and (max-height: 520px) {

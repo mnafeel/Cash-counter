@@ -6,6 +6,8 @@ import {
   salePaymentEventsInRange,
   saleCollectedComponentBreakdown,
   getSalePaymentEvents,
+  salePaidCollectedBreakdown,
+  normalizeCollectedBreakdown,
 } from './salePayment'
 
 export type ReportPeriod = 'day' | 'week' | 'month'
@@ -16,6 +18,8 @@ export interface SalesReportFilter {
   fromDate?: string
   toDate?: string
   dateMode?: SaleDateMode
+  /** Collected mode: bill created and paid on the same day (within filter dates). */
+  sameDayCreatedAndPaid?: boolean
 }
 
 export interface SalesPeriodRow {
@@ -73,7 +77,7 @@ function emptyCollectedBreakdown(): SaleCollectedBreakdown {
 function sumPaymentEvents(
   events: ReturnType<typeof salePaymentEventsInRange>,
 ): SaleCollectedBreakdown {
-  return events.reduce(
+  const raw = events.reduce(
     (acc, event) => {
       acc.cash += event.cash ?? 0
       acc.bank += event.bank ?? 0
@@ -83,23 +87,55 @@ function sumPaymentEvents(
     },
     emptyCollectedBreakdown(),
   )
+  return normalizeCollectedBreakdown(raw)
+}
+
+/** Same-day sales: cash + bank only; approved cheques count as bank, pending cheques excluded. */
+function sumSameDaySalesCollectedEvents(
+  sale: Sale,
+  events: ReturnType<typeof getSalePaymentEvents>,
+): SaleCollectedBreakdown {
+  const raw = events.reduce(
+    (acc, event) => {
+      acc.cash += event.cash ?? 0
+      acc.bank += event.bank ?? 0
+      const eventCheque = event.cheque ?? 0
+      if (eventCheque > 0 && sale.chequeApproved) {
+        acc.bank += eventCheque
+      }
+      return acc
+    },
+    emptyCollectedBreakdown(),
+  )
+  raw.total = raw.cash + raw.bank
+  return raw
+}
+
+function sameDaySalesCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
+  return normalizeCollectedBreakdown(salePaidCollectedBreakdown(sale))
 }
 
 export function saleCollectedForFilter(
   sale: Sale,
   filter?: SalesReportFilter,
 ): SaleCollectedBreakdown {
-  const full = {
-    cash: saleCashCollected(sale),
-    bank: saleBankCollected(sale),
-    cheque: saleChequeToBankCollected(sale),
-    total: 0,
+  if (filter?.sameDayCreatedAndPaid) {
+    if (!isInDateRange(sale.createdAt, filter)) return emptyCollectedBreakdown()
+    const createdDay = localDayTimestamp(sale.createdAt)
+    const sameDayEvents = getSalePaymentEvents(sale).filter(
+      (event) => localDayTimestamp(event.at) === createdDay,
+    )
+    if (sameDayEvents.length > 0) return sumSameDaySalesCollectedEvents(sale, sameDayEvents)
+    if (sale.status !== 'pending') {
+      const paidAt = sale.updatedAt ?? sale.createdAt
+      if (localDayTimestamp(paidAt) === createdDay) return sameDaySalesCollectedBreakdown(sale)
+    }
+    return emptyCollectedBreakdown()
   }
-  full.total = full.cash + full.bank + full.cheque
 
   const mode = filter?.dateMode ?? 'collected'
   if (mode === 'created' || (!filter?.fromDate && !filter?.toDate)) {
-    return full
+    return saleCollectedComponentBreakdown(sale)
   }
 
   if (getSalePaymentEvents(sale).length > 0) {
@@ -111,7 +147,12 @@ export function saleCollectedForFilter(
     return emptyCollectedBreakdown()
   }
 
-  return full
+  return saleCollectedComponentBreakdown(sale)
+}
+
+/** Approved cheque → bank only for sales list / summary display. */
+function collectedForSalesDisplay(breakdown: SaleCollectedBreakdown): SaleCollectedBreakdown {
+  return normalizeCollectedBreakdown(breakdown)
 }
 
 export function toInputDate(d: Date = new Date()): string {
@@ -230,14 +271,19 @@ function buildSalesBillDetailLabel(sale: Sale): string {
 
 function salePayLabel(sale: Sale): string {
   if (sale.payType === 'bank') return '🏦 Bank'
-  if (sale.payType === 'cheque') return '🧾 Cheque'
+  if (sale.payType === 'cheque') {
+    if (sale.chequeApproved && sale.status !== 'pending') {
+      const collected = saleCollectedComponentBreakdown(sale)
+      return `🏦 Bank ${formatMoney(collected.bank)}`
+    }
+    return '🧾 Cheque'
+  }
   if (sale.payType === 'split') {
-    const base = `💵 ${formatMoney(sale.cashAmount ?? 0)} · 🏦 ${formatMoney(sale.bankAmount ?? 0)}`
-    const withCheque =
-      (sale.chequeAmount ?? 0) > 0 ? `${base} · 🧾 ${formatMoney(sale.chequeAmount ?? 0)}` : base
+    const collected = saleCollectedComponentBreakdown(sale)
+    const base = formatCollectedSalesBreakdown(collected.cash, collected.bank)
     return (sale.creditAmount ?? 0) > 0
-      ? `${withCheque} · 💳 ${formatMoney(sale.creditAmount ?? 0)}`
-      : withCheque
+      ? `${base} · 💳 ${formatMoney(sale.creditAmount ?? 0)}`
+      : base
   }
   return '💵 Cash'
 }
@@ -409,8 +455,29 @@ function buildChildrenMap(sales: Sale[]): Map<string, Sale[]> {
   return map
 }
 
+function saleHasSameDayCreatedAndPaid(sale: Sale, filter?: SalesReportFilter): boolean {
+  if (!filter?.sameDayCreatedAndPaid || !isInDateRange(sale.createdAt, filter)) return false
+  const createdDay = localDayTimestamp(sale.createdAt)
+  const sameDayEvents = getSalePaymentEvents(sale).filter(
+    (event) => localDayTimestamp(event.at) === createdDay,
+  )
+  if (sameDayEvents.length > 0) {
+    return sumSameDaySalesCollectedEvents(sale, sameDayEvents).total > 0
+  }
+  if (sale.status !== 'pending') {
+    const paidAt = sale.updatedAt ?? sale.createdAt
+    if (localDayTimestamp(paidAt) === createdDay) {
+      return sameDaySalesCollectedBreakdown(sale).total > 0
+    }
+  }
+  return false
+}
+
 function saleMatchesReportFilter(sale: Sale, filter?: SalesReportFilter): boolean {
   const mode = filter?.dateMode ?? 'collected'
+  if (filter?.sameDayCreatedAndPaid) {
+    return saleHasSameDayCreatedAndPaid(sale, filter)
+  }
   if (mode === 'created') {
     return isInDateRange(sale.createdAt, filter)
   }
@@ -472,12 +539,9 @@ function buildGroupedSalesBillDetailLabel(
 }
 
 function buildPeriodCollectedLabel(collected: SaleCollectedBreakdown): string {
-  if (collected.total <= 0) return 'Paid —'
-  const parts: string[] = [`Paid ${formatMoney(collected.total)}`]
-  if (collected.cash > 0) parts.push(`💵 ${formatMoney(collected.cash)}`)
-  if (collected.bank > 0) parts.push(`🏦 ${formatMoney(collected.bank)}`)
-  if (collected.cheque > 0) parts.push(`🧾 ${formatMoney(collected.cheque)}`)
-  return parts.join(' · ')
+  const display = collectedForSalesDisplay(collected)
+  if (display.total <= 0) return 'Paid —'
+  return `Paid ${formatMoney(display.total)} · ${formatCollectedSalesBreakdown(display.cash, display.bank)}`
 }
 
 function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesBillRow {
@@ -486,7 +550,7 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
   const events = filter ? salePaymentEventsInRange(sale, filter.fromDate, filter.toDate) : []
   const date =
     events.length > 0 ? events[events.length - 1].at : saleReportDate(sale, mode)
-  const collected = saleCollectedForFilter(sale, filter)
+  const collected = collectedForSalesDisplay(saleCollectedForFilter(sale, filter))
   const billAmount = saleOriginalBillAmount(sale)
   const creditPending = saleCreditPendingAmount(sale)
   const chequePending = saleChequePendingAmount(sale)
@@ -507,7 +571,7 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
     chequePending,
     cashTotal: collected.cash,
     bankTotal: collected.bank,
-    chequeTotal: collected.cheque,
+    chequeTotal: 0,
     customerName: sale.customerName,
     payLabel,
     detailLabel: `Bill ${formatMoney(billAmount)} · ${payLabel}`,
@@ -531,7 +595,13 @@ function buildGroupedSalesBillRow(
     (sum, member) => sum + saleCollectedForFilter(member, filter).cheque,
     0,
   )
-  const collectedTotal = cashTotal + bankTotal + chequeTotal
+  const collected = collectedForSalesDisplay({
+    cash: cashTotal,
+    bank: bankTotal,
+    cheque: chequeTotal,
+    total: cashTotal + bankTotal + chequeTotal,
+  })
+  const collectedTotal = collected.total
   const creditPending = groupCreditPending(parent, children)
   const chequePending = groupChequePending(parent, children)
   const date = inRange.reduce((latest, member) => {
@@ -550,9 +620,9 @@ function buildGroupedSalesBillRow(
     collectedTotal,
     creditPending,
     chequePending,
-    cashTotal,
-    bankTotal,
-    chequeTotal,
+    cashTotal: collected.cash,
+    bankTotal: collected.bank,
+    chequeTotal: 0,
     customerName: groupCustomerName(parent, children),
     payLabel: buildGroupedSalesBillDetailLabel(
       parent,
@@ -633,8 +703,7 @@ export function summarizeSalesBillRows(rows: SalesBillRow[]): SalesBillSummary {
     (acc, row) => {
       acc.totalBills += row.collectedTotal
       acc.cashTotal += row.cashTotal
-      acc.bankTotal += row.bankTotal
-      acc.chequeTotal += row.chequeTotal
+      acc.bankTotal += row.bankTotal + row.chequeTotal
       acc.creditPending += row.creditPending
       acc.chequePending += row.chequePending
       if (!seenGroups.has(row.groupId)) {
@@ -679,6 +748,17 @@ export function getTodaySalesSummary(data: AppData): SalesBillSummary {
   return summarizeSalesBillRows(buildSalesBillList(data, 'date-desc', filter))
 }
 
+export function getTodaySameDaySalesSummary(data: AppData): SalesBillSummary {
+  const today = toInputDate()
+  const filter: SalesReportFilter = {
+    fromDate: today,
+    toDate: today,
+    dateMode: 'collected',
+    sameDayCreatedAndPaid: true,
+  }
+  return summarizeSalesBillRows(buildSalesBillList(data, 'date-desc', filter))
+}
+
 export function formatSalesBreakdown(
   cash: number,
   bank: number,
@@ -694,15 +774,7 @@ export function formatSalesBreakdown(
   return parts.join(' · ')
 }
 
-/** Collected cash / bank / approved cheque only — excludes open credit & pending cheque. */
-export function formatCollectedSalesBreakdown(
-  cash: number,
-  bank: number,
-  chequeCollected = 0,
-): string {
-  return [
-    `💵 ${formatMoney(cash)}`,
-    `🏦 ${formatMoney(bank)}`,
-    `🧾 ${formatMoney(chequeCollected)}`,
-  ].join(' · ')
+/** Collected cash / bank only — approved cheques shown in bank, not as separate cheque. */
+export function formatCollectedSalesBreakdown(cash: number, bank: number): string {
+  return [`💵 ${formatMoney(cash)}`, `🏦 ${formatMoney(bank)}`].join(' · ')
 }

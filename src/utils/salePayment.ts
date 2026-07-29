@@ -109,6 +109,18 @@ export function appendSalePaymentEvent(
   }
 }
 
+export function normalizeCollectedBreakdown(breakdown: SaleCollectedBreakdown): SaleCollectedBreakdown {
+  const cash = breakdown.cash
+  let bank = breakdown.bank
+  const cheque = breakdown.cheque
+  if (cheque > 0) {
+    // Approved cheque is bank money — never show as a separate cheque bucket.
+    bank = bank >= cheque ? bank : bank + cheque
+    return { cash, bank, cheque: 0, total: cash + bank }
+  }
+  return { cash, bank, cheque: 0, total: cash + bank }
+}
+
 export function salePaidCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
   const cash = sale.cashAmount ?? 0
   const cheque =
@@ -117,12 +129,12 @@ export function salePaidCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
   if (cheque > 0) bank = Math.max(0, bank - cheque)
   const total = cash + bank + cheque
   if (total > 0) {
-    return {
+    return normalizeCollectedBreakdown({
       cash,
       bank,
       cheque,
       total,
-    }
+    })
   }
   if (sale.paidAmount > 0) {
     return { cash: sale.paidAmount, bank: 0, cheque: 0, total: sale.paidAmount }
@@ -238,7 +250,7 @@ export function saleCollectedAmount(sale: Sale): number {
 export function saleCollectedComponentBreakdown(sale: Sale): SaleCollectedBreakdown {
   const events = getSalePaymentEvents(sale)
   if (events.length > 0) {
-    return events.reduce(
+    const raw = events.reduce(
       (acc, event) => {
         acc.cash += event.cash ?? 0
         acc.bank += event.bank ?? 0
@@ -248,8 +260,9 @@ export function saleCollectedComponentBreakdown(sale: Sale): SaleCollectedBreakd
       },
       { cash: 0, bank: 0, cheque: 0, total: 0 },
     )
+    return normalizeCollectedBreakdown(raw)
   }
-  if (sale.status === 'pending') return salePendingCreditPaidBreakdown(sale)
+  if (sale.status === 'pending') return normalizeCollectedBreakdown(salePendingCreditPaidBreakdown(sale))
   return salePaidCollectedBreakdown(sale)
 }
 
@@ -268,7 +281,7 @@ export function salePendingCreditPaidBreakdown(sale: Sale): {
   const cheque =
     sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
   const total = cash + bank + cheque
-  if (total > 0) return { cash, bank, cheque, total }
+  if (total > 0) return normalizeCollectedBreakdown({ cash, bank, cheque, total })
 
   if (sale.paidAmount > 0) {
     return { cash: sale.paidAmount, bank: 0, cheque: 0, total: sale.paidAmount }

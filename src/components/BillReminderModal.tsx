@@ -15,6 +15,7 @@ import {
   getSuggestedReminderDateTime,
   type BillReminderKind,
 } from '../utils/billReminders'
+import { testReminderNotificationSound, type ReminderSoundStyle } from '../utils/reminderNotificationSound'
 import './BillReminderAlertsSettings.css'
 import './BillReminderModal.css'
 
@@ -29,8 +30,15 @@ export interface BillReminderModalProps {
   billKind: BillReminderKind
   reminderAt?: string
   reminderNote?: string
+  /** Loan only — mark reminder as urgent for stronger sound. */
+  reminderUrgent?: boolean
   alertSettings: ReminderAlertSettings
-  onSave: (reminderAt: string, alertSettings: ReminderAlertSettings, reminderNote?: string | null) => void
+  onSave: (
+    reminderAt: string,
+    alertSettings: ReminderAlertSettings,
+    reminderNote?: string | null,
+    loanExtras?: { reminderUrgent?: boolean },
+  ) => void
   onClear: () => void
 }
 
@@ -42,6 +50,7 @@ export default function BillReminderModal({
   billKind,
   reminderAt,
   reminderNote,
+  reminderUrgent,
   alertSettings,
   onSave,
   onClear,
@@ -51,9 +60,11 @@ export default function BillReminderModal({
   const [noteValue, setNoteValue] = useState('')
   const [creditDaysBefore, setCreditDaysBefore] = useState(alertSettings.creditDaysBefore)
   const [chequeDaysBefore, setChequeDaysBefore] = useState(alertSettings.chequeDaysBefore)
+  const [loanDaysBefore, setLoanDaysBefore] = useState(alertSettings.loanDaysBefore)
   const [alertIntervalDays, setAlertIntervalDays] = useState(alertSettings.alertIntervalDays)
   const [notificationShowSeconds, setNotificationShowSeconds] = useState(alertSettings.notificationShowSeconds)
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(alertSettings.notificationSoundEnabled)
+  const [loanUrgent, setLoanUrgent] = useState(reminderUrgent ?? false)
 
   const suggestedDefault = useMemo(
     () => (reminderAt ? null : getSuggestedReminderDateTime(billKind)),
@@ -75,20 +86,23 @@ export default function BillReminderModal({
     setNoteValue(reminderNote?.trim() ?? '')
     setCreditDaysBefore(alertSettings.creditDaysBefore)
     setChequeDaysBefore(alertSettings.chequeDaysBefore)
+    setLoanDaysBefore(alertSettings.loanDaysBefore)
     setAlertIntervalDays(alertSettings.alertIntervalDays)
     setNotificationShowSeconds(alertSettings.notificationShowSeconds)
     setNotificationSoundEnabled(alertSettings.notificationSoundEnabled)
-  }, [open, reminderAt, reminderNote, alertSettings, billKind])
+    setLoanUrgent(reminderUrgent ?? false)
+  }, [open, reminderAt, reminderNote, reminderUrgent, alertSettings, billKind])
 
   const draftSettings = useMemo(
     (): ReminderAlertSettings => ({
       creditDaysBefore,
       chequeDaysBefore,
+      loanDaysBefore,
       alertIntervalDays,
       notificationShowSeconds,
       notificationSoundEnabled,
     }),
-    [creditDaysBefore, chequeDaysBefore, alertIntervalDays, notificationShowSeconds, notificationSoundEnabled],
+    [creditDaysBefore, chequeDaysBefore, loanDaysBefore, alertIntervalDays, notificationShowSeconds, notificationSoundEnabled],
   )
 
   const preview = useMemo(() => {
@@ -100,13 +114,26 @@ export default function BillReminderModal({
 
   const daysBefore = daysBeforeForKind(billKind, draftSettings)
   const kindLabel =
-    billKind === 'credit' ? 'Credit' : billKind === 'cheque' ? 'Cheque' : 'Bill'
+    billKind === 'credit'
+      ? 'Credit'
+      : billKind === 'cheque'
+        ? 'Cheque'
+        : billKind === 'loan'
+          ? 'Loan'
+          : 'Bill'
+  const previewSoundStyle: ReminderSoundStyle =
+    billKind === 'loan' && loanUrgent ? 'urgent' : 'normal'
 
   function handleSave() {
     if (!dateValue) return
     const iso = dateTimeInputValuesToIso(dateValue, timeValue || '09:00')
     if (!iso) return
-    onSave(iso, draftSettings, noteValue.trim() || null)
+    onSave(
+      iso,
+      draftSettings,
+      noteValue.trim() || null,
+      billKind === 'loan' ? { reminderUrgent: loanUrgent } : undefined,
+    )
     onClose()
   }
 
@@ -200,6 +227,44 @@ export default function BillReminderModal({
 
           <section className="bill-reminder-modal-section">
             <span className="bill-reminder-modal-section-title">🔔 Alert before due</span>
+            {billKind === 'loan' ? (
+              <>
+                <div className="bill-alert-settings-row">
+                  <span className="bill-alert-settings-label">🤝 Loan alert before</span>
+                  <div className="bill-alert-settings-chips">
+                    {DAY_OPTIONS.map((days) => (
+                      <button
+                        key={`loan-${days}`}
+                        type="button"
+                        className={`bill-alert-settings-chip ${loanDaysBefore === days ? 'bill-alert-settings-chip--active' : ''}`}
+                        onClick={() => setLoanDaysBefore(days)}
+                      >
+                        {days === 0 ? 'Due day' : `${days}d`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="bill-alert-settings-row">
+                  <span className="bill-alert-settings-label">⚡ Importance</span>
+                  <div className="bill-alert-settings-chips">
+                    <button
+                      type="button"
+                      className={`bill-alert-settings-chip ${!loanUrgent ? 'bill-alert-settings-chip--active' : ''}`}
+                      onClick={() => setLoanUrgent(false)}
+                    >
+                      Normal
+                    </button>
+                    <button
+                      type="button"
+                      className={`bill-alert-settings-chip ${loanUrgent ? 'bill-alert-settings-chip--active' : ''}`}
+                      onClick={() => setLoanUrgent(true)}
+                    >
+                      Urgent
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : null}
             {(billKind === 'credit' || billKind === 'other') && (
               <div className="bill-alert-settings-row">
                 <span className="bill-alert-settings-label">💳 Credit alert before</span>
@@ -281,8 +346,20 @@ export default function BillReminderModal({
                 >
                   Off
                 </button>
+                <button
+                  type="button"
+                  className="bill-alert-settings-chip bill-alert-settings-chip--test"
+                  onClick={() => void testReminderNotificationSound(previewSoundStyle)}
+                >
+                  Test sound
+                </button>
               </div>
             </div>
+            {billKind === 'loan' && loanUrgent ? (
+              <p className="bill-reminder-modal-suggested">
+                Urgent uses a longer, stronger alert tone when this loan reminder is active.
+              </p>
+            ) : null}
           </section>
 
           {preview && dateValue ? (

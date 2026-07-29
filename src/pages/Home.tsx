@@ -66,6 +66,8 @@ import CreditDashboard, { type CreditListFilter } from '../components/CreditDash
 import ChequeDashboard, { type ChequeListFilter } from '../components/ChequeDashboard'
 import { buildCreditOverview } from '../utils/customerLedger'
 import { buildChequeOverview } from '../utils/chequeLedger'
+import { buildLoanOverview } from '../utils/loanLedger'
+import { countActiveLoanReminders } from '../utils/loanReminders'
 import {
   buildActiveChequeReminders,
   buildActiveCreditReminders,
@@ -242,6 +244,8 @@ export default function Home() {
   )
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
+  const loanOverview = useMemo(() => buildLoanOverview(data), [data])
+  const activeLoanAlerts = useMemo(() => countActiveLoanReminders(data), [data])
   const dueReminders = useMemo(() => countActiveBillReminders(data), [data])
   const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(data), [data])
   const activeChequeAlerts = useMemo(() => buildActiveChequeReminders(data), [data])
@@ -469,21 +473,20 @@ export default function Home() {
   return (
     <div className="home">
       <section className="home-launch" aria-label="Quick launch">
-        <Link to="/counter" className="home-launch-btn home-launch-btn--primary">
-          <span className="home-launch-icon" aria-hidden="true">
-            💵
-          </span>
-          <span className="home-launch-copy">
-            <strong>Cash Counter</strong>
-            <small>Bill amount · pay · change</small>
-          </span>
-          <span className="home-launch-arrow" aria-hidden="true">
-            →
-          </span>
-        </Link>
         <button type="button" className="home-launch-btn" onClick={() => openReports('today')}>
           📊 Reports
         </button>
+        <Link to="/loan" className="home-launch-btn home-launch-btn--loan">
+          <span className="home-launch-copy">
+            <strong>🤝 Loan</strong>
+            <small>
+              {loanOverview.receivableCount + loanOverview.payableCount > 0
+                ? `Collect ${formatMoney(loanOverview.receivableTotal)} · Return ${formatMoney(loanOverview.payableTotal)}`
+                : 'Lend & borrow · zero interest'}
+              {activeLoanAlerts > 0 ? ` · ${activeLoanAlerts} reminder${activeLoanAlerts === 1 ? '' : 's'}` : ''}
+            </small>
+          </span>
+        </Link>
       </section>
 
       <section className="home-section home-section--balances" aria-label="Balances">
@@ -676,7 +679,6 @@ export default function Home() {
               {formatCollectedSalesBreakdown(
                 salesSummary.cashTotal,
                 salesSummary.bankTotal,
-                salesSummary.chequeTotal,
               )}
             </span>
             <span className="stat-meta">
@@ -691,9 +693,15 @@ export default function Home() {
           >
             <span className="stat-label">Expenses</span>
             <span className="stat-value stat-value--orange">
-              {formatMoney(periodExpenseSummary.total)}
+              {formatMoney(periodExpenseSummary.total + periodPurchaseSummary.total)}
             </span>
-            <span className="stat-meta">{periodExpenseItems.length} items</span>
+            <span className="stat-meta">
+              Normal {formatMoney(periodExpenseSummary.total)} · {periodExpenseItems.length} items
+            </span>
+            <span className="stat-meta stat-meta--breakdown">
+              + Purchase {formatMoney(periodPurchaseSummary.total)} ·{' '}
+              {periodPurchaseItems.length} items
+            </span>
           </button>
           <button
             type="button"
@@ -723,8 +731,7 @@ export default function Home() {
             <span className="stat-value">{formatMoney(periodDailyTotals.netInflow)}</span>
             <span className="stat-meta stat-meta--breakdown">
               💵 {formatMoney(periodDailyTotals.cashCollected)} · 🏦{' '}
-              {formatMoney(periodDailyTotals.bankCollected)} · 🧾{' '}
-              {formatMoney(periodDailyTotals.chequeCollected)}
+              {formatMoney(periodDailyTotals.bankCollected)}
             </span>
             <span className="stat-meta">
               Credit+Cheque {formatMoney(periodDailyTotals.creditChequeAddedCombined)} · Added{' '}
@@ -754,7 +761,7 @@ export default function Home() {
             className="home-purchase-btn home-purchase-btn--history"
             onClick={openPurchaseHistory}
           >
-            📋 History · time order
+            📋 Purchase History
           </button>
         </div>
       </section>

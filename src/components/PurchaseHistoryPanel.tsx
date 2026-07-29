@@ -10,6 +10,7 @@ import {
   getTopPurchaseShop,
   groupPurchasesBySupplier,
   matchesPurchaseHistorySearch,
+  summarizePurchasePaymentBreakdown,
   summarizePurchases,
   type PurchaseDateFilter,
   type PurchaseHistoryItem,
@@ -30,7 +31,7 @@ interface PurchaseHistoryPanelProps {
   open: boolean
   onClose: () => void
   data: AppData
-  variant?: 'modal' | 'fullscreen'
+  variant?: 'modal' | 'fullscreen' | 'embedded'
   onOpenBill?: (expenseId: string) => void
   onUpdateBill?: (expenseId: string) => void
 }
@@ -51,6 +52,7 @@ export default function PurchaseHistoryPanel({
 }: PurchaseHistoryPanelProps) {
   const navigate = useNavigate()
   const fullscreen = variant === 'fullscreen'
+  const embedded = variant === 'embedded'
   const [dateFilter, setDateFilter] = useState<PurchaseDateFilter | 'range'>('today')
   const [selectedDate, setSelectedDate] = useState('')
   const [rangeFrom, setRangeFrom] = useState(() => toInputDate())
@@ -73,6 +75,14 @@ export default function PurchaseHistoryPanel({
   }, [dateFilteredItems, search])
   const supplierGroups = useMemo(() => groupPurchasesBySupplier(items), [items])
   const summary = useMemo(() => summarizePurchases(items), [items])
+  const paymentBreakdown = useMemo(
+    () => summarizePurchasePaymentBreakdown(data, dateFilteredItems),
+    [data, dateFilteredItems],
+  )
+  const paymentHistoryItems = useMemo(
+    () => [...dateFilteredItems].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    [dateFilteredItems],
+  )
   const topShop = useMemo(() => getTopPurchaseShop(items), [items])
   const selectedSupplier = useMemo((): PurchaseSupplierGroup | null => {
     if (!selectedSupplierKey) return null
@@ -150,6 +160,10 @@ export default function PurchaseHistoryPanel({
     if (selectedSupplierKey) {
       setSelectedSupplierKey(null)
       setExpandedItemId(null)
+      return
+    }
+    if (embedded) {
+      onClose()
       return
     }
     handleClose()
@@ -254,10 +268,10 @@ export default function PurchaseHistoryPanel({
 
   return (
     <div
-      className={`purchase-hist-overlay ${fullscreen ? 'purchase-hist-overlay--fullscreen' : ''}`}
+      className={`purchase-hist-overlay ${fullscreen ? 'purchase-hist-overlay--fullscreen' : ''} ${embedded ? 'purchase-hist-overlay--embedded' : ''}`}
       role="dialog"
-      aria-modal="true"
-      onClick={fullscreen ? undefined : handleClose}
+      aria-modal={embedded ? undefined : true}
+      onClick={fullscreen || embedded ? undefined : handleClose}
     >
       <div className="purchase-hist-panel" onClick={(e) => e.stopPropagation()}>
         <div className="purchase-hist-head">
@@ -345,11 +359,11 @@ export default function PurchaseHistoryPanel({
           <>
             <div className="purchase-hist-summary-top">
               <div className="purchase-hist-summary-row purchase-hist-summary-row--no1">
-                <span>{NO1_EXPENSE_LABEL}</span>
+                <span>{NO1_BILL_LABEL}</span>
                 <strong>{formatMoney(summary.gstTotal)}</strong>
               </div>
               <div className="purchase-hist-summary-row purchase-hist-summary-row--no2">
-                <span>{NO2_EXPENSE_LABEL}</span>
+                <span>{NO2_BILL_LABEL}</span>
                 <strong>{formatMoney(summary.noGstTotal)}</strong>
               </div>
               <div className="purchase-hist-summary-row purchase-hist-summary-row--total">
@@ -359,6 +373,49 @@ export default function PurchaseHistoryPanel({
               <span className="purchase-hist-summary-count">
                 {summary.count} purchases · {supplierGroups.length} suppliers
               </span>
+            </div>
+
+            <div className="purchase-hist-pay-breakdown">
+              <div className="purchase-hist-pay-block purchase-hist-pay-block--no1">
+                <h4>{NO1_BILL_LABEL} · payment split</h4>
+                <div className="purchase-hist-pay-row">
+                  <span>💵 Cash</span>
+                  <strong>{formatMoney(paymentBreakdown.no1.cash)}</strong>
+                </div>
+                <div className="purchase-hist-pay-row">
+                  <span>🏦 Bank</span>
+                  <strong>{formatMoney(paymentBreakdown.no1.bank)}</strong>
+                </div>
+                <div className="purchase-hist-pay-row purchase-hist-pay-row--total">
+                  <span>Paid total</span>
+                  <strong>{formatMoney(paymentBreakdown.no1.total)}</strong>
+                </div>
+              </div>
+              <div className="purchase-hist-pay-block purchase-hist-pay-block--no2">
+                <h4>{NO2_BILL_LABEL} · payment split</h4>
+                <div className="purchase-hist-pay-row">
+                  <span>💵 Cash</span>
+                  <strong>{formatMoney(paymentBreakdown.no2.cash)}</strong>
+                </div>
+                <div className="purchase-hist-pay-row">
+                  <span>🏦 Bank</span>
+                  <strong>{formatMoney(paymentBreakdown.no2.bank)}</strong>
+                </div>
+                <div className="purchase-hist-pay-row">
+                  <span>🧾 Cheque</span>
+                  <strong>{formatMoney(paymentBreakdown.no2.cheque)}</strong>
+                </div>
+                <div className="purchase-hist-pay-row">
+                  <span>💳 Credit / other</span>
+                  <strong>
+                    {formatMoney(paymentBreakdown.no2.credit + paymentBreakdown.no2.other)}
+                  </strong>
+                </div>
+                <div className="purchase-hist-pay-row purchase-hist-pay-row--total">
+                  <span>Paid total</span>
+                  <strong>{formatMoney(paymentBreakdown.no2.total)}</strong>
+                </div>
+              </div>
             </div>
 
             {topShop ? (
@@ -430,13 +487,38 @@ export default function PurchaseHistoryPanel({
           <ul className="purchase-hist-list">{selectedSupplier.items.map(renderPurchaseItem)}</ul>
         )}
 
+        {!selectedSupplier && paymentHistoryItems.length > 0 ? (
+          <section className="purchase-hist-payments" aria-label="Payment history">
+            <h4 className="purchase-hist-payments-title">Payment history</h4>
+            <ul className="purchase-hist-list purchase-hist-list--payments">
+              {paymentHistoryItems.map((item) => (
+                <li key={`pay-${item.id}`} className="purchase-hist-payment-row">
+                  <div className="purchase-hist-payment-main">
+                    <span className="purchase-hist-payment-shop">{item.shopName}</span>
+                    <span className="purchase-hist-payment-amount">-{formatMoney(item.paidAmount)}</span>
+                  </div>
+                  <span className="purchase-hist-payment-meta">
+                    {formatDate(item.date)} · {NO1_BILL_LABEL} {formatMoney(item.paidNo1Amount)} ·{' '}
+                    {NO2_BILL_LABEL} {formatMoney(item.paidNo2Amount)} · {item.payLabel}
+                  </span>
+                  <span className="purchase-hist-payment-detail">{item.payDetail}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         <div className="purchase-hist-footer">
           <button type="button" className="purchase-hist-back" onClick={handleBack}>
-            {selectedSupplierKey ? '← Suppliers' : fullscreen ? '✕ Close' : '← Back'}
+            {selectedSupplierKey ? '← Suppliers' : fullscreen || embedded ? '← Back' : '← Back'}
           </button>
-          {!fullscreen ? (
+          {!fullscreen && !embedded ? (
             <button type="button" className="purchase-hist-home" onClick={handleGoHome}>
               🏠 Home
+            </button>
+          ) : embedded ? (
+            <button type="button" className="purchase-hist-home" onClick={() => navigate('/purchase')}>
+              🛒 Open Purchase
             </button>
           ) : (
             <button type="button" className="purchase-hist-home" onClick={() => navigate('/purchase')}>

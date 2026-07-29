@@ -322,17 +322,28 @@ export function salesRowsForPreset(
   return buildSalesReport(data, period, 'date-desc', filter)
 }
 
+export interface SalesPresetOptions {
+  sameDayCreatedAndPaid?: boolean
+}
+
 export function salesFilterForPreset(
   preset: ReportDatePreset,
   selectedDate: string,
   rangeTo?: string,
   dateMode: SaleDateMode = 'collected',
+  options?: SalesPresetOptions,
 ): SalesReportFilter | undefined {
   const base = presetToSalesFilter(preset, selectedDate, rangeTo)
+  const sameDayCreatedAndPaid =
+    options?.sameDayCreatedAndPaid === true && dateMode === 'collected' && Boolean(base)
   if (!base) {
     return dateMode === 'collected' ? undefined : { dateMode }
   }
-  return { ...base, dateMode }
+  return {
+    ...base,
+    dateMode,
+    sameDayCreatedAndPaid: sameDayCreatedAndPaid ? true : undefined,
+  }
 }
 
 export function salesBillsForPreset(
@@ -342,8 +353,9 @@ export function salesBillsForPreset(
   sort: ReportSort = 'date-desc',
   rangeTo?: string,
   dateMode: SaleDateMode = 'collected',
+  options?: SalesPresetOptions,
 ) {
-  const filter = salesFilterForPreset(preset, selectedDate, rangeTo, dateMode)
+  const filter = salesFilterForPreset(preset, selectedDate, rangeTo, dateMode, options)
   return buildSalesBillList(data, sort, filter)
 }
 
@@ -353,10 +365,53 @@ export function salesSummaryForPreset(
   selectedDate: string,
   rangeTo?: string,
   dateMode: SaleDateMode = 'collected',
+  options?: SalesPresetOptions,
 ) {
   return summarizeSalesBillRows(
-    salesBillsForPreset(data, preset, selectedDate, 'date-desc', rangeTo, dateMode),
+    salesBillsForPreset(data, preset, selectedDate, 'date-desc', rangeTo, dateMode, options),
   )
+}
+
+export function salesSameDaySummaryForPreset(
+  data: AppData,
+  preset: ReportDatePreset,
+  selectedDate: string,
+  rangeTo?: string,
+) {
+  return salesSummaryForPreset(data, preset, selectedDate, rangeTo, 'collected', {
+    sameDayCreatedAndPaid: true,
+  })
+}
+
+/** @deprecated Use salesSameDaySummaryForPreset with the active date preset. */
+export function getTodaySameDaySalesSummaryForPreset(data: AppData) {
+  const today = toInputDate()
+  return salesSameDaySummaryForPreset(data, 'today', today)
+}
+
+export function isSingleDaySalesPreset(
+  preset: ReportDatePreset,
+  selectedDate: string,
+  rangeTo?: string,
+): boolean {
+  if (preset === 'today' || preset === 'yesterday') return true
+  if (preset === 'date' && selectedDate) return true
+  if (preset === 'range' && selectedDate && rangeTo) {
+    const from = selectedDate <= rangeTo ? selectedDate : rangeTo
+    const to = selectedDate <= rangeTo ? rangeTo : selectedDate
+    return from === to
+  }
+  return false
+}
+
+export function sameDaySalesCollectedLabel(
+  preset: ReportDatePreset,
+  selectedDate: string,
+  rangeTo?: string,
+): string {
+  if (preset === 'today') return "Today's Sales Collected"
+  if (preset === 'yesterday') return "Yesterday's Sales Collected"
+  return `${formatReportPresetLabel(preset, selectedDate, rangeTo)} · same day sales`
 }
 
 export function presetToSalesFilter(

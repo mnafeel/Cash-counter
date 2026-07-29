@@ -11,6 +11,7 @@ import type {
   AppData,
   ExpenseKind,
   ExpensePayType,
+  LoanPaySource,
   PayType,
   ReminderAlertSettings,
   Sale,
@@ -23,6 +24,7 @@ import {
   addSale,
   addSupplier as addSupplierToData,
   addSupplierItem as addSupplierItemToData,
+  addLoan,
   addTransfer,
   applyPartialBalanceSaleCollection,
   applyPurchaseCreditPayment,
@@ -46,8 +48,10 @@ import {
   setHomePin,
   setOpeningBalance,
   setOpeningBankBalance,
+  setLoanReminder,
   setReminderAlertSettings,
   setSaleReminder,
+  settleLoan,
   setCustomerReminder,
   updateExpenseName,
   updateExpense,
@@ -260,6 +264,28 @@ interface CashContextValue {
   saveTallyApiUrl: (url: string) => void
   saveTallyDateScope: (scope: TallyDateScope) => void
   syncTallyBills: () => Promise<{ connected: boolean; billCount: number; imported: number }>
+  giveLoan: (input: {
+    personName: string
+    amount: number
+    paySource: LoanPaySource
+    note?: string
+    reminderAt?: string
+    reminderNote?: string
+  }) => boolean
+  takeLoan: (input: {
+    personName: string
+    amount: number
+    note?: string
+    reminderAt?: string
+    reminderNote?: string
+  }) => boolean
+  settleLoanRecord: (id: string, settlementPaySource: LoanPaySource) => boolean
+  setLoanReminder: (
+    id: string,
+    reminderAt: string | null,
+    reminderNote?: string | null,
+    reminderUrgent?: boolean | null,
+  ) => void
 }
 
 const CashContext = createContext<CashContextValue | null>(null)
@@ -604,6 +630,70 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => setReminderAlertSettings(prev, settings))
   }, [])
 
+  const giveLoanHandler = useCallback(
+    (input: {
+      personName: string
+      amount: number
+      paySource: LoanPaySource
+      note?: string
+      reminderAt?: string
+      reminderNote?: string
+    }): boolean => {
+      let success = false
+      setData((prev) => {
+        const next = addLoan(prev, { ...input, kind: 'lend' })
+        success = next !== prev
+        return next
+      })
+      return success
+    },
+    [],
+  )
+
+  const takeLoanHandler = useCallback(
+    (input: {
+      personName: string
+      amount: number
+      note?: string
+      reminderAt?: string
+      reminderNote?: string
+    }): boolean => {
+      let success = false
+      setData((prev) => {
+        const next = addLoan(prev, { ...input, kind: 'borrow' })
+        success = next !== prev
+        return next
+      })
+      return success
+    },
+    [],
+  )
+
+  const settleLoanRecordHandler = useCallback(
+    (id: string, settlementPaySource: LoanPaySource): boolean => {
+      let success = false
+      setData((prev) => {
+        const next = settleLoan(prev, id, settlementPaySource)
+        success = next !== prev
+        return next
+      })
+      return success
+    },
+    [],
+  )
+
+  const setLoanReminderHandler = useCallback(
+    (
+      id: string,
+      reminderAt: string | null,
+      reminderNote?: string | null,
+      reminderUrgent?: boolean | null,
+    ) => {
+      setData((prev) => setLoanReminder(prev, id, reminderAt, reminderNote, reminderUrgent))
+    },
+    [],
+  )
+
   const applyPurchaseCreditPaymentHandler = useCallback(
     (
       id: string,
@@ -798,6 +888,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       saveTallyApiUrl: saveTallyApiUrlHandler,
       saveTallyDateScope: saveTallyDateScopeHandler,
       syncTallyBills,
+      giveLoan: giveLoanHandler,
+      takeLoan: takeLoanHandler,
+      settleLoanRecord: settleLoanRecordHandler,
+      setLoanReminder: setLoanReminderHandler,
     }),
     [
       data,
@@ -839,6 +933,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       saveTallyApiUrlHandler,
       saveTallyDateScopeHandler,
       syncTallyBills,
+      giveLoanHandler,
+      takeLoanHandler,
+      settleLoanRecordHandler,
+      setLoanReminderHandler,
     ],
   )
 

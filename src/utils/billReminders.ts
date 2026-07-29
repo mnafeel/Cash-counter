@@ -5,7 +5,7 @@ import { getSaleCustomerName } from './saleCustomerName'
 import { getEffectiveSaleReminderAt, getEffectiveSaleReminderNote } from './customerReminders'
 import { UNNAMED_CREDIT_CUSTOMER } from './customerLedger'
 
-export type BillReminderKind = 'credit' | 'cheque' | 'other'
+export type BillReminderKind = 'credit' | 'cheque' | 'loan' | 'other'
 export type BillReminderPhase = 'upcoming' | 'due' | 'overdue'
 
 export interface BillReminderItem {
@@ -57,7 +57,7 @@ export function getSuggestedReminderDateTime(
   kind: BillReminderKind = 'other',
   now = new Date(),
 ): { dateValue: string; timeValue: string; iso: string; label: string } {
-  const dayOffset = kind === 'cheque' ? 7 : kind === 'credit' ? 7 : 3
+  const dayOffset = kind === 'cheque' ? 7 : kind === 'credit' ? 7 : kind === 'loan' ? 7 : 3
   const suggested = new Date(now)
   suggested.setDate(suggested.getDate() + dayOffset)
   suggested.setHours(DEFAULT_REMINDER_HOUR, DEFAULT_REMINDER_MINUTE, 0, 0)
@@ -117,6 +117,7 @@ export function getReminderAlertSettings(data: AppData): ReminderAlertSettings {
   return {
     creditDaysBefore: Math.max(0, data.reminderAlerts?.creditDaysBefore ?? DEFAULT_REMINDER_ALERTS.creditDaysBefore),
     chequeDaysBefore: Math.max(0, data.reminderAlerts?.chequeDaysBefore ?? DEFAULT_REMINDER_ALERTS.chequeDaysBefore),
+    loanDaysBefore: Math.max(0, data.reminderAlerts?.loanDaysBefore ?? DEFAULT_REMINDER_ALERTS.loanDaysBefore),
     alertIntervalDays: Math.max(1, data.reminderAlerts?.alertIntervalDays ?? DEFAULT_REMINDER_ALERTS.alertIntervalDays),
     notificationShowSeconds: Math.max(
       0,
@@ -130,6 +131,7 @@ export function getReminderAlertSettings(data: AppData): ReminderAlertSettings {
 export function daysBeforeForKind(kind: BillReminderKind, settings: ReminderAlertSettings): number {
   if (kind === 'cheque') return settings.chequeDaysBefore
   if (kind === 'credit') return settings.creditDaysBefore
+  if (kind === 'loan') return settings.loanDaysBefore
   return settings.creditDaysBefore
 }
 

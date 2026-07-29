@@ -19,6 +19,7 @@ export default function BillReminderAlertsSettings({
 }: BillReminderAlertsSettingsProps) {
   const [creditDaysBefore, setCreditDaysBefore] = useState(settings.creditDaysBefore)
   const [chequeDaysBefore, setChequeDaysBefore] = useState(settings.chequeDaysBefore)
+  const [loanDaysBefore, setLoanDaysBefore] = useState(settings.loanDaysBefore)
   const [alertIntervalDays, setAlertIntervalDays] = useState(settings.alertIntervalDays)
   const [notificationShowSeconds, setNotificationShowSeconds] = useState(settings.notificationShowSeconds)
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(settings.notificationSoundEnabled)
@@ -26,6 +27,7 @@ export default function BillReminderAlertsSettings({
   useEffect(() => {
     setCreditDaysBefore(settings.creditDaysBefore)
     setChequeDaysBefore(settings.chequeDaysBefore)
+    setLoanDaysBefore(settings.loanDaysBefore)
     setAlertIntervalDays(settings.alertIntervalDays)
     setNotificationShowSeconds(settings.notificationShowSeconds)
     setNotificationSoundEnabled(settings.notificationSoundEnabled)
@@ -35,6 +37,7 @@ export default function BillReminderAlertsSettings({
     onSave({
       creditDaysBefore,
       chequeDaysBefore,
+      loanDaysBefore,
       alertIntervalDays,
       notificationShowSeconds,
       notificationSoundEnabled,
@@ -44,6 +47,7 @@ export default function BillReminderAlertsSettings({
   function handleReset() {
     setCreditDaysBefore(DEFAULT_REMINDER_ALERTS.creditDaysBefore)
     setChequeDaysBefore(DEFAULT_REMINDER_ALERTS.chequeDaysBefore)
+    setLoanDaysBefore(DEFAULT_REMINDER_ALERTS.loanDaysBefore)
     setAlertIntervalDays(DEFAULT_REMINDER_ALERTS.alertIntervalDays)
     setNotificationShowSeconds(DEFAULT_REMINDER_ALERTS.notificationShowSeconds)
     setNotificationSoundEnabled(DEFAULT_REMINDER_ALERTS.notificationSoundEnabled)
@@ -77,6 +81,22 @@ export default function BillReminderAlertsSettings({
               type="button"
               className={`bill-alert-settings-chip ${chequeDaysBefore === days ? 'bill-alert-settings-chip--active' : ''}`}
               onClick={() => setChequeDaysBefore(days)}
+            >
+              {days === 0 ? 'Due day' : `${days}d`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="bill-alert-settings-row">
+        <span className="bill-alert-settings-label">🤝 Loan alert before</span>
+        <div className="bill-alert-settings-chips">
+          {DAY_OPTIONS.map((days) => (
+            <button
+              key={`loan-${days}`}
+              type="button"
+              className={`bill-alert-settings-chip ${loanDaysBefore === days ? 'bill-alert-settings-chip--active' : ''}`}
+              onClick={() => setLoanDaysBefore(days)}
             >
               {days === 0 ? 'Due day' : `${days}d`}
             </button>
@@ -159,7 +179,8 @@ export default function BillReminderAlertsSettings({
           : `${formatNotificationShowLabel(notificationShowSeconds)}.`}{' '}
         Sound {notificationSoundEnabled ? 'on' : 'off'}. Credit default{' '}
         {DEFAULT_REMINDER_ALERTS.creditDaysBefore} days · Cheque default{' '}
-        {DEFAULT_REMINDER_ALERTS.chequeDaysBefore} days.
+        {DEFAULT_REMINDER_ALERTS.chequeDaysBefore} days · Loan default{' '}
+        {DEFAULT_REMINDER_ALERTS.loanDaysBefore} days.
       </p>
     </div>
   )

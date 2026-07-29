@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
+import PurchaseHistoryPanel from '../components/PurchaseHistoryPanel'
 import { formatDate, formatMoney } from '../utils/format'
 import { buildPurchaseCreditItems } from '../utils/purchaseHistory'
 import { counterBillPath, resolveHistoryItemBillId } from '../utils/counterBillRoute'
@@ -125,6 +126,7 @@ export default function History() {
   const [highlightedPurchaseCreditIndex, setHighlightedPurchaseCreditIndex] = useState(-1)
   const [billEditMode, setBillEditMode] = useState(() => readBillEditMode())
   const [showPurchaseHistory, setShowPurchaseHistory] = useState(false)
+  const [purchaseOnlyMode, setPurchaseOnlyMode] = useState(false)
   const editInputRef = useRef<HTMLInputElement>(null)
   const purchaseCreditBarRef = useRef<HTMLDivElement>(null)
 
@@ -134,7 +136,10 @@ export default function History() {
     const fromState = Boolean(
       (location.state as { showPurchaseHistory?: boolean } | null)?.showPurchaseHistory,
     )
-    if (fromQuery || fromState) setShowPurchaseHistory(true)
+    if (fromQuery || fromState) {
+      setShowPurchaseHistory(true)
+      setPurchaseOnlyMode(true)
+    }
   }, [location.key, location.search, location.state])
 
   useEffect(() => {
@@ -207,7 +212,9 @@ export default function History() {
 
   const purchaseItems = useMemo(() => {
     if (!showPurchaseHistory) return []
-    if (filter !== 'all' && filter !== 'purchase') return []
+    const includePurchases =
+      filter === 'all' || filter === 'purchase' || (filter === 'expense' && showPurchaseHistory)
+    if (!includePurchases) return []
     let next = allItems.filter(
       (item) => item.type === 'purchase' && (item.paidAmount ?? 0) > 0,
     )
@@ -512,6 +519,19 @@ export default function History() {
           )
         })}
       </ul>
+    )
+  }
+
+  if (purchaseOnlyMode) {
+    return (
+      <div className="history-page history-page--purchase-only">
+        <PurchaseHistoryPanel
+          open
+          variant="embedded"
+          data={data}
+          onClose={() => navigate('/')}
+        />
+      </div>
     )
   }
 

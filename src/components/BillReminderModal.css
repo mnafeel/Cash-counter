@@ -224,6 +224,23 @@
   background: var(--surface);
 }
 
+@media (max-width: 520px) {
+  .bill-reminder-modal-overlay {
+    padding: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .bill-reminder-modal-panel {
+    max-width: 100%;
+    max-height: min(94dvh, calc(var(--app-height, 100dvh) - 8px));
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  }
+
+  .bill-reminder-modal-datetime {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (min-width: 520px) {
   .bill-reminder-modal-overlay {
     align-items: center;

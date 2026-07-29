@@ -7,6 +7,14 @@
   overflow: hidden;
 }
 
+.history-page--purchase-only {
+  overflow: hidden;
+}
+
+.history-page--purchase-only .purchase-hist-overlay--embedded {
+  height: 100%;
+}
+
 .history-header h2 {
   font-size: 1.1rem;
   margin-bottom: 2px;
@@ -929,6 +937,34 @@
   color: var(--success-text);
 }
 
+@media (max-width: 520px) {
+  .history-toolbar-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .history-toolbar-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .history-toolbar-label {
+    flex: none;
+  }
+
+  .history-summary--full {
+    grid-template-columns: 1fr;
+  }
+
+  .history-item-main {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .history-item-amount {
+    margin-left: auto;
+  }
+}
+
 @media (min-width: 768px) {
   .history-header h2 {
     font-size: 1.25rem;
@@ -940,6 +976,21 @@
 
   .history-item-amount {
     font-size: 1.1rem;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .history-header p {
+    display: none;
+  }
+
+  .history-mode-tabs {
+    gap: 4px;
+  }
+
+  .history-mode-tab {
+    padding: 6px 8px;
+    font-size: 0.68rem;
   }
 }
 

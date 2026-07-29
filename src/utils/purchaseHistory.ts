@@ -58,6 +58,87 @@ export interface PurchaseSummary {
   creditCount: number
 }
 
+export interface PurchaseBillPaymentBreakdown {
+  cash: number
+  bank: number
+  cheque: number
+  credit: number
+  other: number
+  total: number
+}
+
+export interface PurchasePaymentBreakdown {
+  no1: Pick<PurchaseBillPaymentBreakdown, 'cash' | 'bank' | 'total'>
+  no2: PurchaseBillPaymentBreakdown
+}
+
+function emptyPurchasePaymentBreakdown(): PurchasePaymentBreakdown {
+  return {
+    no1: { cash: 0, bank: 0, total: 0 },
+    no2: { cash: 0, bank: 0, cheque: 0, credit: 0, other: 0, total: 0 },
+  }
+}
+
+function purchaseExpensesForHistoryItems(data: AppData, items: PurchaseHistoryItem[]): Expense[] {
+  const purchases = data.expenses.filter((expense) => isPurchaseExpense(expense))
+  const byId = new Map(purchases.map((expense) => [expense.id, expense]))
+  const consumed = new Set<string>()
+  const result: Expense[] = []
+
+  for (const item of items) {
+    const expense = byId.get(item.id)
+    if (!expense || consumed.has(expense.id)) continue
+
+    if (item.billType === 'both') {
+      const paired = expense.pairedExpenseId ? byId.get(expense.pairedExpenseId) : undefined
+      if (paired && !consumed.has(paired.id)) {
+        consumed.add(expense.id)
+        consumed.add(paired.id)
+        const no1 = isGstExpense(expense.name, expense.billNumber) ? expense : paired
+        const no2 = no1.id === expense.id ? paired : expense
+        result.push(no1, no2)
+        continue
+      }
+    }
+
+    consumed.add(expense.id)
+    result.push(expense)
+  }
+
+  return result
+}
+
+export function summarizePurchasePaymentBreakdown(
+  data: AppData,
+  items: PurchaseHistoryItem[],
+): PurchasePaymentBreakdown {
+  const breakdown = emptyPurchasePaymentBreakdown()
+
+  for (const expense of purchaseExpensesForHistoryItems(data, items)) {
+    const paid = purchasePaidComponents(expense)
+    const openCredit = purchaseCreditAmount(expense)
+    const isNo1 = isGstExpense(expense.name, expense.billNumber)
+
+    if (isNo1) {
+      breakdown.no1.cash += paid.cash
+      breakdown.no1.bank += paid.bank
+      breakdown.no1.total += paid.cash + paid.bank + paid.cheque
+      continue
+    }
+
+    breakdown.no2.cash += paid.cash
+    breakdown.no2.bank += paid.bank
+    breakdown.no2.cheque += paid.cheque
+    breakdown.no2.credit += openCredit
+    if (expense.payType === 'credit' && openCredit <= 0 && paid.cash + paid.bank + paid.cheque <= 0) {
+      breakdown.no2.other += expense.amount
+    }
+    breakdown.no2.total += paid.cash + paid.bank + paid.cheque + openCredit
+  }
+
+  return breakdown
+}
+
 export interface TopPurchaseShop {
   shopName: string
   total: number

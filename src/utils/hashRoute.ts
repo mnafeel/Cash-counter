@@ -15,7 +15,16 @@ export function normalizeRoutePath(pathname: string): string {
   return path || '/'
 }
 
-const KNOWN_ROUTES = new Set(['/', '/counter', '/purchase', '/expenses', '/history', '/settings'])
+const KNOWN_ROUTES = new Set([
+  '/',
+  '/counter',
+  '/purchase',
+  '/expenses',
+  '/history',
+  '/loan',
+  '/reports',
+  '/settings',
+])
 
 export function isKnownRoute(pathname: string): boolean {
   const clean = normalizeRoutePath(pathname)

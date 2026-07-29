@@ -104,11 +104,9 @@ export function buildDailyTotals(
 
   let cashCollected = 0
   let bankCollected = 0
-  let chequeCollected = 0
   for (const row of salesRows) {
     cashCollected += row.cashTotal
-    bankCollected += row.bankTotal
-    chequeCollected += row.chequeTotal
+    bankCollected += row.bankTotal + row.chequeTotal
   }
 
   let creditAddedInPeriod = 0
@@ -153,7 +151,7 @@ export function buildDailyTotals(
     salesBillCount: salesTotals.billCount,
     cashCollected,
     bankCollected,
-    chequeCollected,
+    chequeCollected: 0,
     creditAddedInPeriod,
     chequeAddedInPeriod,
     creditChequeAddedCombined: creditAddedInPeriod + chequeAddedInPeriod,

@@ -1,5 +1,7 @@
+export type ReminderSoundStyle = 'normal' | 'urgent'
+
 let audioContext: AudioContext | null = null
-let htmlAudio: HTMLAudioElement | null = null
+let htmlAudioByStyle = new Map<ReminderSoundStyle, HTMLAudioElement>()
 let listenersAttached = false
 let audioUnlocked = false
 
@@ -53,37 +55,55 @@ function encodeWav(samples: Float32Array, sampleRate: number): string {
   return `data:audio/wav;base64,${btoa(binary)}`
 }
 
-function buildTriToneWavDataUri(): string {
+function synthesizeToneBuffer(
+  tones: { freq: number; start: number; len: number; volume?: number }[],
+  totalDuration: number,
+): Float32Array {
   const sampleRate = 44100
-  const tones = [
-    { freq: 698.46, start: 0, len: 0.11 },
-    { freq: 880, start: 0.12, len: 0.11 },
-    { freq: 987.77, start: 0.24, len: 0.14 },
-  ]
-  const totalDuration = 0.45
   const numSamples = Math.floor(sampleRate * totalDuration)
   const buffer = new Float32Array(numSamples)
 
   for (const tone of tones) {
     const startSample = Math.floor(tone.start * sampleRate)
     const endSample = Math.min(numSamples, startSample + Math.floor(tone.len * sampleRate))
+    const vol = tone.volume ?? 0.35
     for (let i = startSample; i < endSample; i += 1) {
       const t = (i - startSample) / sampleRate
       const attack = Math.min(1, t / 0.012)
       const release = Math.max(0.0001, 1 - t / tone.len)
-      buffer[i] += Math.sin((2 * Math.PI * tone.freq * t)) * attack * release * 0.35
+      buffer[i] += Math.sin((2 * Math.PI * tone.freq * t)) * attack * release * vol
     }
   }
 
-  return encodeWav(buffer, sampleRate)
+  return buffer
 }
 
-function getHtmlAudio(): HTMLAudioElement {
-  if (!htmlAudio) {
-    htmlAudio = new Audio(buildTriToneWavDataUri())
-    htmlAudio.preload = 'auto'
-  }
-  return htmlAudio
+function buildWavDataUri(style: ReminderSoundStyle): string {
+  const tones =
+    style === 'urgent'
+      ? [
+          { freq: 523.25, start: 0, len: 0.16, volume: 0.42 },
+          { freq: 659.25, start: 0.18, len: 0.16, volume: 0.42 },
+          { freq: 783.99, start: 0.36, len: 0.18, volume: 0.45 },
+          { freq: 987.77, start: 0.58, len: 0.2, volume: 0.48 },
+          { freq: 1174.66, start: 0.82, len: 0.24, volume: 0.5 },
+        ]
+      : [
+          { freq: 698.46, start: 0, len: 0.11, volume: 0.35 },
+          { freq: 880, start: 0.12, len: 0.11, volume: 0.35 },
+          { freq: 987.77, start: 0.24, len: 0.14, volume: 0.35 },
+        ]
+  const totalDuration = style === 'urgent' ? 1.15 : 0.45
+  return encodeWav(synthesizeToneBuffer(tones, totalDuration), 44100)
+}
+
+function getHtmlAudio(style: ReminderSoundStyle): HTMLAudioElement {
+  const cached = htmlAudioByStyle.get(style)
+  if (cached) return cached
+  const audio = new Audio(buildWavDataUri(style))
+  audio.preload = 'auto'
+  htmlAudioByStyle.set(style, audio)
+  return audio
 }
 
 async function unlockAudioContext(): Promise<boolean> {
@@ -104,7 +124,7 @@ async function unlockAudioContext(): Promise<boolean> {
   }
 
   try {
-    const audio = getHtmlAudio()
+    const audio = getHtmlAudio('normal')
     audio.volume = 0.01
     audio.currentTime = 0
     await audio.play()
@@ -150,23 +170,32 @@ function playTone(
   osc.stop(startTime + duration + 0.03)
 }
 
-async function playViaWebAudio(): Promise<boolean> {
+async function playViaWebAudio(style: ReminderSoundStyle): Promise<boolean> {
   const ctx = getAudioContext()
   if (!ctx) return false
   const unlocked = audioUnlocked || (await unlockAudioContext())
   if (!unlocked || (ctx.state as string) !== 'running') return false
 
   const t = ctx.currentTime
-  const vol = 0.22
-  playTone(ctx, 698.46, t, 0.11, vol)
-  playTone(ctx, 880, t + 0.12, 0.11, vol)
-  playTone(ctx, 987.77, t + 0.24, 0.14, vol)
+  if (style === 'urgent') {
+    const vol = 0.28
+    playTone(ctx, 523.25, t, 0.16, vol)
+    playTone(ctx, 659.25, t + 0.18, 0.16, vol)
+    playTone(ctx, 783.99, t + 0.36, 0.18, vol + 0.03)
+    playTone(ctx, 987.77, t + 0.58, 0.2, vol + 0.06)
+    playTone(ctx, 1174.66, t + 0.82, 0.24, vol + 0.08)
+  } else {
+    const vol = 0.22
+    playTone(ctx, 698.46, t, 0.11, vol)
+    playTone(ctx, 880, t + 0.12, 0.11, vol)
+    playTone(ctx, 987.77, t + 0.24, 0.14, vol)
+  }
   return true
 }
 
-async function playViaHtmlAudio(): Promise<boolean> {
+async function playViaHtmlAudio(style: ReminderSoundStyle): Promise<boolean> {
   try {
-    const audio = getHtmlAudio()
+    const audio = getHtmlAudio(style)
     audio.volume = 1
     audio.currentTime = 0
     await audio.play()
@@ -176,14 +205,14 @@ async function playViaHtmlAudio(): Promise<boolean> {
   }
 }
 
-/** Short tri-tone ping for reminder alerts. */
-export async function playReminderNotificationSound(): Promise<void> {
-  if (await playViaWebAudio()) return
-  await playViaHtmlAudio()
+/** Short notification ping — normal (3 tones) or urgent (5 longer tones). */
+export async function playReminderNotificationSound(style: ReminderSoundStyle = 'normal'): Promise<void> {
+  if (await playViaWebAudio(style)) return
+  await playViaHtmlAudio(style)
 }
 
 /** Play from a button tap — always unlocks audio first. */
-export async function testReminderNotificationSound(): Promise<void> {
+export async function testReminderNotificationSound(style: ReminderSoundStyle = 'normal'): Promise<void> {
   await unlockAudioContext()
-  await playReminderNotificationSound()
+  await playReminderNotificationSound(style)
 }
