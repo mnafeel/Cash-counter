@@ -388,6 +388,8 @@ export function loadData(): AppData {
     })
     if (salesMigrated || expensesMigrated) {
       saveLocalData(normalized)
+      localStorage.setItem(LOCAL_UPDATED_AT_KEY, new Date().toISOString())
+      notifyDataChanged(normalized)
     }
     return normalized
   } catch {

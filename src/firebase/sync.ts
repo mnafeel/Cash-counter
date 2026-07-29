@@ -42,7 +42,10 @@ let backingUp = false
 let loginRestoreActive = false
 let lastAppliedRemoteBackupAt = 0
 
-const DEBOUNCE_MS = 400
+const MAIN_DEVICE_BACKUP_MS = 300
+const PERIODIC_MAIN_BACKUP_MS = 2 * 60 * 1000
+
+let periodicBackupTimer: ReturnType<typeof setInterval> | null = null
 
 export interface CloudRemoteSummary {
   bills: number
@@ -224,6 +227,32 @@ async function onCloudUserSignedIn(uid: string): Promise<void> {
   }
 }
 
+function stopPeriodicMainDeviceBackup(): void {
+  if (periodicBackupTimer) {
+    clearInterval(periodicBackupTimer)
+    periodicBackupTimer = null
+  }
+}
+
+function startPeriodicMainDeviceBackup(): void {
+  stopPeriodicMainDeviceBackup()
+  if (!isMainBillingDevice() || !isAutoBackupEnabled()) return
+  periodicBackupTimer = setInterval(() => {
+    backupMainDeviceIfNeeded()
+  }, PERIODIC_MAIN_BACKUP_MS)
+}
+
+/** Push unsynced local data from the main billing device — source of truth for cloud. */
+export function backupMainDeviceIfNeeded(): void {
+  if (!isFirebaseConfigured() || !isAutoBackupEnabled() || !isCloudLoggedIn()) return
+  if (!isMainBillingDevice()) return
+  if (applyingRemote || loginRestoreActive || backingUp) return
+  const user = getCloudUser()
+  if (user && !isLocalDataOwnedByUser(user.uid)) return
+  if (!hasUnsyncedLocalChanges()) return
+  queueBackup(loadData())
+}
+
 function getEffectiveLocalTimestamp(): number {
   return Math.max(
     parseBackupTimestamp(getLocalDataUpdatedAt()),
@@ -328,9 +357,13 @@ export function initFirebaseSync(): () => void {
 
   return subscribeToAuth((user) => {
     stopCloudListener()
+    stopPeriodicMainDeviceBackup()
     if (user) {
       startCloudListener()
-      void onCloudUserSignedIn(user.uid)
+      void onCloudUserSignedIn(user.uid).finally(() => {
+        backupMainDeviceIfNeeded()
+        startPeriodicMainDeviceBackup()
+      })
       return
     }
     lastAppliedRemoteBackupAt = 0
@@ -343,6 +376,14 @@ export function initFirebaseSync(): () => void {
   })
 }
 
+function scheduleMainDeviceBackup(): void {
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null
+    void runBackup({ force: true })
+  }, MAIN_DEVICE_BACKUP_MS)
+}
+
 function queueBackup(data: AppData): void {
   if (!isFirebaseConfigured() || !isAutoBackupEnabled() || !isCloudLoggedIn()) return
   if (!isMainBillingDevice()) return
@@ -351,21 +392,22 @@ function queueBackup(data: AppData): void {
   if (user && !isLocalDataOwnedByUser(user.uid)) return
 
   pendingData = data
-  if (debounceTimer) clearTimeout(debounceTimer)
-
-  debounceTimer = setTimeout(() => {
-    void runBackup()
-  }, DEBOUNCE_MS)
+  scheduleMainDeviceBackup()
 }
 
 async function runBackup(options?: { force?: boolean }): Promise<void> {
-  if (!isCloudLoggedIn() || applyingRemote || backingUp || loginRestoreActive) return
+  if (!isCloudLoggedIn() || applyingRemote || loginRestoreActive) return
+  if (backingUp) {
+    scheduleMainDeviceBackup()
+    return
+  }
   const user = getCloudUser()
   if (user && !isLocalDataOwnedByUser(user.uid)) return
 
   const data = loadData()
+  const force = options?.force ?? isMainBillingDevice()
 
-  if (!options?.force) {
+  if (!force) {
     const remote = await fetchRemoteAppData()
     if (remote && remoteIsAheadOfLocal(data, remote.data)) {
       const r = cloudBackupTotals(remote.data)
@@ -378,7 +420,6 @@ async function runBackup(options?: { force?: boolean }): Promise<void> {
   }
 
   backingUp = true
-  debounceTimer = null
   try {
     emitBackupStatus('Backing up to Firebase…')
     const at = await backupAppData(data)
@@ -395,11 +436,19 @@ async function runBackup(options?: { force?: boolean }): Promise<void> {
     emitBackupStatus(message, true)
   } finally {
     backingUp = false
+    if (
+      isMainBillingDevice() &&
+      isAutoBackupEnabled() &&
+      isCloudLoggedIn() &&
+      hasUnsyncedLocalChanges()
+    ) {
+      scheduleMainDeviceBackup()
+    }
   }
 }
 
 export function notifyDataChanged(data: AppData): void {
-  if (!isFirebaseConfigured() || !isAutoBackupEnabled()) return
+  if (!isFirebaseConfigured() || !isAutoBackupEnabled() || !isMainBillingDevice()) return
   pendingData = data
   if (!isCloudLoggedIn() || applyingRemote || loginRestoreActive) return
   const user = getCloudUser()
@@ -409,8 +458,7 @@ export function notifyDataChanged(data: AppData): void {
 
 /** Push full local snapshot to cloud right away — used after deletes so other devices match. */
 export function notifyDataChangedImmediate(data: AppData): void {
-  if (!isFirebaseConfigured() || !isAutoBackupEnabled()) return
-  if (!isMainBillingDevice()) return
+  if (!isFirebaseConfigured() || !isAutoBackupEnabled() || !isMainBillingDevice()) return
   pendingData = data
   if (!isCloudLoggedIn() || applyingRemote || loginRestoreActive) return
   const user = getCloudUser()

@@ -768,9 +768,13 @@ export default function Settings() {
         return
       }
       if (isNewAccount) {
+        setMainBillingDevice(true)
+        setAutoBackupEnabled(true)
+        setMainBillingDeviceState(true)
+        setAutoBackup(true)
         setCloudLoginRestoreActive(false)
         const fresh = loadData()
-        await backupNow()
+        await backupNow({ force: true })
         setBackupStatus(`Username created · ${cloudDataSummary(fresh)} saved to cloud`)
         setBackupError(false)
         return
@@ -938,6 +942,14 @@ export default function Settings() {
     if (next) {
       setAutoBackup(true)
       setAutoBackupEnabled(true)
+      if (cloudUser) {
+        void backupNow({ force: true })
+          .then(() => refreshCloudRemoteSummaryState())
+          .catch((err) => {
+            setBackupStatus(err instanceof Error ? err.message : 'Backup failed')
+            setBackupError(true)
+          })
+      }
     } else {
       setAutoBackup(false)
     }
@@ -1956,7 +1968,7 @@ export default function Settings() {
                     disabled={!mainBillingDevice}
                     onChange={toggleAutoBackup}
                   />
-                  Auto backup on every change
+                  Auto backup all data on every change
                 </label>
                 <label className="settings-backup-toggle">
                   <input type="checkbox" checked={autoPull} onChange={toggleAutoPull} />

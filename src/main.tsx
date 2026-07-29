@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { applyDeviceSize } from './hooks/useDeviceSize'
-import { initFirebaseSync, flushPendingBackup, pullCloudIfNewer, refreshCloudRemoteSummary } from './firebase/sync'
+import { initFirebaseSync, flushPendingBackup, pullCloudIfNewer, refreshCloudRemoteSummary, backupMainDeviceIfNeeded } from './firebase/sync'
 import { isAutoPullFromCloudEnabled, isCloudLoggedIn } from './firebase/backup'
 import { flushLocalBackupSnapshot, queueLocalBackupSnapshot } from './storage/localBackup'
 import { loadData } from './storage/database'
@@ -21,6 +21,7 @@ document.addEventListener('visibilitychange', () => {
   } else if (document.visibilityState === 'visible') {
     if (isCloudLoggedIn()) void refreshCloudRemoteSummary()
     if (isAutoPullFromCloudEnabled()) void pullCloudIfNewer()
+    backupMainDeviceIfNeeded()
   }
 })
 window.addEventListener('pagehide', () => {
