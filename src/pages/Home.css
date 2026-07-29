@@ -34,6 +34,26 @@
   color: var(--cream-dim);
 }
 
+.home-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.home-section-head .home-section-title {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.home-cash-dates--section {
+  margin-top: 0;
+  justify-content: flex-end;
+  flex: 0 1 auto;
+}
+
 .home-launch {
   display: flex;
   flex-direction: column;

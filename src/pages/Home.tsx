@@ -45,22 +45,27 @@ import {
   type ReportDatePreset,
 } from '../utils/reportsHub'
 import {
-  isPurchaseExpense,
   NO1_BILL_LABEL,
   NO2_BILL_LABEL,
 } from '../utils/expenseBillLabels'
 import {
+  buildNormalExpenseHistoryItems,
+  filterNormalExpenseHistoryItems,
+  summarizeNormalExpenses,
+} from '../utils/normalExpenseHistory'
+import {
   buildPurchaseHistoryItems,
+  filterPurchaseHistoryItems,
   getTopPurchaseShop,
   summarizePurchases,
 } from '../utils/purchaseHistory'
+import { buildDailyTotalsForPreset } from '../utils/dailyTotals'
 import ReportsPanel, { type ReportSection } from '../components/ReportsPanel'
 import CustomerDashboard, { type CustomerListFilter } from '../components/CustomerDashboard'
 import CreditDashboard, { type CreditListFilter } from '../components/CreditDashboard'
 import ChequeDashboard, { type ChequeListFilter } from '../components/ChequeDashboard'
 import { buildCreditOverview } from '../utils/customerLedger'
 import { buildChequeOverview } from '../utils/chequeLedger'
-import { getTodayDailyTotals } from '../utils/dailyTotals'
 import {
   buildActiveChequeReminders,
   buildActiveCreditReminders,
@@ -78,12 +83,20 @@ const BALANCE_DATE_OPTIONS: { id: CashDateFilter; label: string }[] = [
   { id: 'week', label: 'Week' },
 ]
 
-type HomeSalesDateFilter = 'today' | 'yesterday' | 'date'
+type HomeDayFilter = 'today' | 'yesterday' | 'date'
 
-const HOME_SALES_DATE_OPTIONS: { id: HomeSalesDateFilter; label: string }[] = [
+const HOME_DAY_OPTIONS: { id: HomeDayFilter; label: string }[] = [
   { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
 ]
+
+function homeDayReportPreset(filter: HomeDayFilter): ReportDatePreset {
+  return filter === 'date' ? 'date' : filter
+}
+
+function homeDaySelectedDate(filter: HomeDayFilter, selectedDate: string): string {
+  return filter === 'date' ? selectedDate || toInputDate() : toInputDate()
+}
 
 export default function Home() {
   const navigate = useNavigate()
@@ -120,8 +133,8 @@ export default function Home() {
   const [reportPreset, setReportPreset] = useState<ReportDatePreset>('today')
   const [reportSelectedDate, setReportSelectedDate] = useState('')
   const [reportSection, setReportSection] = useState<ReportSection | undefined>()
-  const [salesDateFilter, setSalesDateFilter] = useState<HomeSalesDateFilter>('today')
-  const [salesSelectedDate, setSalesSelectedDate] = useState('')
+  const [homeDayFilter, setHomeDayFilter] = useState<HomeDayFilter>('today')
+  const [homeSelectedDate, setHomeSelectedDate] = useState('')
   const noteInputRef = useRef<HTMLInputElement>(null)
 
   function openPurchaseHistory() {
@@ -139,11 +152,10 @@ export default function Home() {
     setShowReports(true)
   }
 
-  function openSalesReports() {
-    const preset: ReportDatePreset = salesDateFilter === 'date' ? 'date' : salesDateFilter
-    const selectedDate =
-      salesDateFilter === 'date' ? salesSelectedDate || toInputDate() : toInputDate()
-    openReports(preset, 'sales', salesDateFilter === 'date' ? selectedDate : undefined)
+  function openHomeDayReports(section?: ReportSection) {
+    const preset = homeDayReportPreset(homeDayFilter)
+    const selectedDate = homeDaySelectedDate(homeDayFilter, homeSelectedDate)
+    openReports(preset, section, homeDayFilter === 'date' ? selectedDate : undefined)
   }
 
   function openCustomers(filter: CustomerListFilter = 'all', customerName?: string) {
@@ -193,47 +205,46 @@ export default function Home() {
     if (addTarget || transferDirection) noteInputRef.current?.focus()
   }, [addTarget, transferDirection])
 
-  const today = new Date().toDateString()
-  const salesSummary = useMemo(() => {
-    const preset: ReportDatePreset = salesDateFilter === 'date' ? 'date' : salesDateFilter
-    const selectedDate =
-      salesDateFilter === 'date' ? salesSelectedDate || toInputDate() : toInputDate()
-    return salesSummaryForPreset(data, preset, selectedDate)
-  }, [data, salesDateFilter, salesSelectedDate])
-  const salesPeriodLabel = useMemo(() => {
-    const preset: ReportDatePreset = salesDateFilter === 'date' ? 'date' : salesDateFilter
-    const selectedDate =
-      salesDateFilter === 'date' ? salesSelectedDate || toInputDate() : toInputDate()
-    return formatReportPresetLabel(preset, selectedDate)
-  }, [salesDateFilter, salesSelectedDate])
+  const homeDayPreset = homeDayReportPreset(homeDayFilter)
+  const homeDayDate = homeDaySelectedDate(homeDayFilter, homeSelectedDate)
+  const homePeriodLabel = useMemo(
+    () => formatReportPresetLabel(homeDayPreset, homeDayDate),
+    [homeDayPreset, homeDayDate],
+  )
+
+  const salesSummary = useMemo(
+    () => salesSummaryForPreset(data, homeDayPreset, homeDayDate),
+    [data, homeDayPreset, homeDayDate],
+  )
+  const periodDailyTotals = useMemo(
+    () => buildDailyTotalsForPreset(data, homeDayPreset, homeDayDate),
+    [data, homeDayPreset, homeDayDate],
+  )
+  const periodExpenseItems = useMemo(() => {
+    const items = buildNormalExpenseHistoryItems(data)
+    return filterNormalExpenseHistoryItems(items, homeDayPreset, homeDayDate)
+  }, [data, homeDayPreset, homeDayDate])
+  const periodExpenseSummary = useMemo(
+    () => summarizeNormalExpenses(periodExpenseItems),
+    [periodExpenseItems],
+  )
+  const periodPurchaseItems = useMemo(() => {
+    const items = buildPurchaseHistoryItems(data)
+    return filterPurchaseHistoryItems(items, homeDayPreset, homeDayDate)
+  }, [data, homeDayPreset, homeDayDate])
+  const periodPurchaseSummary = useMemo(
+    () => summarizePurchases(periodPurchaseItems),
+    [periodPurchaseItems],
+  )
+  const periodTopShop = useMemo(
+    () => getTopPurchaseShop(periodPurchaseItems),
+    [periodPurchaseItems],
+  )
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
-  const todayDailyTotals = useMemo(() => getTodayDailyTotals(data), [data])
   const dueReminders = useMemo(() => countActiveBillReminders(data), [data])
   const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(data), [data])
   const activeChequeAlerts = useMemo(() => buildActiveChequeReminders(data), [data])
-  const todayRegularExpenses = data.expenses.filter(
-    (e) =>
-      new Date(e.createdAt).toDateString() === today &&
-      (!e.kind || e.kind === 'expense') &&
-      !isPurchaseExpense(e),
-  )
-  const todayRegularExpensesTotal = todayRegularExpenses.reduce((sum, e) => sum + e.amount, 0)
-  const todayPurchases = data.expenses.filter(
-    (e) => new Date(e.createdAt).toDateString() === today && isPurchaseExpense(e),
-  )
-  const todayPurchaseItems = useMemo(
-    () =>
-      buildPurchaseHistoryItems(data).filter(
-        (item) => new Date(item.date).toDateString() === today,
-      ),
-    [data, today],
-  )
-  const todayPurchaseSummary = useMemo(
-    () => summarizePurchases(todayPurchaseItems),
-    [todayPurchaseItems],
-  )
-  const todayTopShop = useMemo(() => getTopPurchaseShop(todayPurchaseItems), [todayPurchaseItems])
 
   const cashActivityItems = useMemo(() => {
     return buildCashActivityItems(data).filter((item) =>
@@ -618,45 +629,46 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="home-section" aria-label="Today">
-        <h2 className="home-section-title">Today</h2>
+      <section className="home-section" aria-label="Day summary">
+        <div className="home-section-head">
+          <h2 className="home-section-title">{homePeriodLabel}</h2>
+          <div
+            className="home-cash-dates home-cash-dates--section"
+            role="group"
+            aria-label="Day filter"
+          >
+            {HOME_DAY_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={`home-cash-date-chip ${homeDayFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                onClick={() => {
+                  setHomeDayFilter(opt.id)
+                  setHomeSelectedDate('')
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+            <input
+              type="date"
+              className={`home-cash-date-input ${homeDayFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+              value={homeSelectedDate}
+              onChange={(e) => {
+                setHomeSelectedDate(e.target.value)
+                if (e.target.value) setHomeDayFilter('date')
+              }}
+              aria-label="Pick day for summary"
+            />
+          </div>
+        </div>
         <div className="home-today-grid">
           <button
             type="button"
             className="stat-card stat-card--action stat-card--sales"
-            onClick={openSalesReports}
+            onClick={() => openHomeDayReports('sales')}
           >
-            <div
-              className="home-cash-dates home-cash-dates--stat"
-              role="group"
-              aria-label="Sales date"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {HOME_SALES_DATE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className={`home-cash-date-chip ${salesDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
-                  onClick={() => {
-                    setSalesDateFilter(opt.id)
-                    setSalesSelectedDate('')
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-              <input
-                type="date"
-                className={`home-cash-date-input ${salesDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
-                value={salesSelectedDate}
-                onChange={(e) => {
-                  setSalesSelectedDate(e.target.value)
-                  if (e.target.value) setSalesDateFilter('date')
-                }}
-                aria-label="Pick date for sales"
-              />
-            </div>
-            <span className="stat-label">Sales collected · {salesPeriodLabel}</span>
+            <span className="stat-label">Sales collected</span>
             <span className="stat-value stat-value--green">
               {formatMoney(salesSummary.totalBills)}
             </span>
@@ -675,48 +687,48 @@ export default function Home() {
           <button
             type="button"
             className="stat-card stat-card--action"
-            onClick={() => navigate('/expenses')}
+            onClick={() => openHomeDayReports('expense')}
           >
             <span className="stat-label">Expenses</span>
             <span className="stat-value stat-value--orange">
-              {formatMoney(todayRegularExpensesTotal)}
+              {formatMoney(periodExpenseSummary.total)}
             </span>
-            <span className="stat-meta">{todayRegularExpenses.length} items today</span>
+            <span className="stat-meta">{periodExpenseItems.length} items</span>
           </button>
           <button
             type="button"
             className="stat-card stat-card--action"
-            onClick={() => openReports('today', 'purchase')}
+            onClick={() => openHomeDayReports('purchase')}
           >
             <span className="stat-label">Purchases</span>
             <span className="stat-value stat-value--orange">
-              {formatMoney(todayPurchaseSummary.total)}
+              {formatMoney(periodPurchaseSummary.total)}
             </span>
             <span className="stat-meta stat-meta--breakdown">
-              {NO1_BILL_LABEL} {formatMoney(todayPurchaseSummary.gstTotal)} · {NO2_BILL_LABEL}{' '}
-              {formatMoney(todayPurchaseSummary.noGstTotal)}
+              {NO1_BILL_LABEL} {formatMoney(periodPurchaseSummary.gstTotal)} · {NO2_BILL_LABEL}{' '}
+              {formatMoney(periodPurchaseSummary.noGstTotal)}
             </span>
-            {todayTopShop ? (
-              <span className="stat-meta">Top: {todayTopShop.shopName}</span>
+            {periodTopShop ? (
+              <span className="stat-meta">Top: {periodTopShop.shopName}</span>
             ) : (
-              <span className="stat-meta">{todayPurchases.length} items today</span>
+              <span className="stat-meta">{periodPurchaseItems.length} items</span>
             )}
           </button>
           <button
             type="button"
             className="stat-card stat-card--action"
-            onClick={() => openReports('today')}
+            onClick={() => openHomeDayReports()}
           >
             <span className="stat-label">Net inflow</span>
-            <span className="stat-value">{formatMoney(todayDailyTotals.netInflow)}</span>
+            <span className="stat-value">{formatMoney(periodDailyTotals.netInflow)}</span>
             <span className="stat-meta stat-meta--breakdown">
-              💵 {formatMoney(todayDailyTotals.cashCollected)} · 🏦{' '}
-              {formatMoney(todayDailyTotals.bankCollected)} · 🧾{' '}
-              {formatMoney(todayDailyTotals.chequeCollected)}
+              💵 {formatMoney(periodDailyTotals.cashCollected)} · 🏦{' '}
+              {formatMoney(periodDailyTotals.bankCollected)} · 🧾{' '}
+              {formatMoney(periodDailyTotals.chequeCollected)}
             </span>
             <span className="stat-meta">
-              Credit+Cheque {formatMoney(todayDailyTotals.creditChequeAddedCombined)} · Added{' '}
-              {formatMoney(todayDailyTotals.moneyAddedTotal)}
+              Credit+Cheque {formatMoney(periodDailyTotals.creditChequeAddedCombined)} · Added{' '}
+              {formatMoney(periodDailyTotals.moneyAddedTotal)}
             </span>
           </button>
         </div>
@@ -725,7 +737,9 @@ export default function Home() {
       <section className="home-purchases" aria-label="Purchase">
         <div className="home-purchases-head">
           <p className="home-purchases-label">Purchase</p>
-          <span className="home-purchases-total">{formatMoney(todayPurchaseSummary.total)} today</span>
+          <span className="home-purchases-total">
+            {formatMoney(periodPurchaseSummary.total)} · {homePeriodLabel}
+          </span>
         </div>
         <div className="home-purchases-row">
           <button
