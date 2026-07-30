@@ -127,79 +127,82 @@ export default function ExpenseHistoryPanel({ open, onClose, data }: ExpenseHist
   return (
     <div className="purchase-hist-overlay" role="dialog" aria-modal="true">
       <div className="purchase-hist-panel">
-        <div className="purchase-hist-head">
-          <h3>Expense History</h3>
-          <button type="button" className="purchase-hist-close" onClick={handleClose} aria-label="Close">
-            ✕
-          </button>
-        </div>
-
-        <div className="purchase-hist-range-section">
-          <span className="purchase-hist-range-title">From date → To date</span>
-          <div className="purchase-hist-range-pick purchase-hist-range-pick--primary">
-            <label className="purchase-hist-date-pick">
-              <span>From</span>
-              <input
-                type="date"
-                className="purchase-hist-date-input purchase-hist-date-input--active"
-                value={rangeFrom}
-                onChange={(e) => setRangeFrom(e.target.value)}
-                aria-label="Expense from date"
-              />
-            </label>
-            <label className="purchase-hist-date-pick">
-              <span>To</span>
-              <input
-                type="date"
-                className="purchase-hist-date-input purchase-hist-date-input--active"
-                value={rangeTo}
-                onChange={(e) => setRangeTo(e.target.value)}
-                aria-label="Expense to date"
-              />
-            </label>
+        <div className="purchase-hist-top">
+          <div className="purchase-hist-head">
+            <h3>Expense History</h3>
+            <button type="button" className="purchase-hist-close" onClick={handleClose} aria-label="Close">
+              ✕
+            </button>
           </div>
+
+          <div className="purchase-hist-range-section">
+            <span className="purchase-hist-range-title">From date → To date</span>
+            <div className="purchase-hist-range-pick purchase-hist-range-pick--primary">
+              <label className="purchase-hist-date-pick">
+                <span>From</span>
+                <input
+                  type="date"
+                  className="purchase-hist-date-input purchase-hist-date-input--active"
+                  value={rangeFrom}
+                  onChange={(e) => setRangeFrom(e.target.value)}
+                  aria-label="Expense from date"
+                />
+              </label>
+              <label className="purchase-hist-date-pick">
+                <span>To</span>
+                <input
+                  type="date"
+                  className="purchase-hist-date-input purchase-hist-date-input--active"
+                  value={rangeTo}
+                  onChange={(e) => setRangeTo(e.target.value)}
+                  aria-label="Expense to date"
+                />
+              </label>
+            </div>
+            <div className="purchase-hist-dates">
+              <button
+                type="button"
+                className={`purchase-hist-date-chip ${rangeFrom === today && rangeTo === today ? 'purchase-hist-date-chip--active' : ''}`}
+                onClick={setToday}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                className={`purchase-hist-date-chip ${rangeFrom === yesterday && rangeTo === yesterday ? 'purchase-hist-date-chip--active' : ''}`}
+                onClick={setYesterday}
+              >
+                Yesterday
+              </button>
+              <button type="button" className="purchase-hist-date-chip" onClick={setThisWeek}>
+                Week
+              </button>
+            </div>
+          </div>
+
           <div className="purchase-hist-dates">
-            <button
-              type="button"
-              className={`purchase-hist-date-chip ${rangeFrom === today && rangeTo === today ? 'purchase-hist-date-chip--active' : ''}`}
-              onClick={setToday}
-            >
-              Today
+            <span className="purchase-hist-range-title">Sort by time</span>
+            {SORT_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={`purchase-hist-date-chip ${sort === opt.id ? 'purchase-hist-date-chip--active' : ''}`}
+                onClick={() => setSort(opt.id)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="purchase-hist-export-bar">
+            <button type="button" className="purchase-hist-export-btn" onClick={handleDownloadSpreadsheet}>
+              Download Excel
             </button>
-            <button
-              type="button"
-              className={`purchase-hist-date-chip ${rangeFrom === yesterday && rangeTo === yesterday ? 'purchase-hist-date-chip--active' : ''}`}
-              onClick={setYesterday}
-            >
-              Yesterday
-            </button>
-            <button type="button" className="purchase-hist-date-chip" onClick={setThisWeek}>
-              Week
-            </button>
+            {exportStatus ? <span className="purchase-hist-export-status">{exportStatus}</span> : null}
           </div>
         </div>
 
-        <div className="purchase-hist-dates">
-          <span className="purchase-hist-range-title">Sort by time</span>
-          {SORT_OPTIONS.map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              className={`purchase-hist-date-chip ${sort === opt.id ? 'purchase-hist-date-chip--active' : ''}`}
-              onClick={() => setSort(opt.id)}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="purchase-hist-export-bar">
-          <button type="button" className="purchase-hist-export-btn" onClick={handleDownloadSpreadsheet}>
-            Download Excel
-          </button>
-          {exportStatus ? <span className="purchase-hist-export-status">{exportStatus}</span> : null}
-        </div>
-
+        <div className="purchase-hist-body">
         <div className="purchase-hist-summary-top">
           <div className="purchase-hist-summary-row purchase-hist-summary-row--total">
             <span>Total · {periodLabel}</span>
@@ -267,6 +270,7 @@ export default function ExpenseHistoryPanel({ open, onClose, data }: ExpenseHist
             })}
           </ul>
         )}
+        </div>
       </div>
     </div>
   )

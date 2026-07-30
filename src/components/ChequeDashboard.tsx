@@ -12,7 +12,11 @@ import {
 import { getCustomerReminderAt } from '../utils/customerReminders'
 import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/billReminders'
 import CustomerReminderControl from './CustomerReminderControl'
+import DetailDateFilter, { type DetailDateFilterMode } from './DetailDateFilter'
+import { filterByDetailDate } from '../utils/detailDateFilter'
+import { toInputDate } from '../utils/salesReport'
 import './CustomerDashboard.css'
+import Portal from './Portal'
 
 export type ChequeListFilter = 'all' | 'cheque'
 
@@ -42,13 +46,26 @@ export default function ChequeDashboard({
   const [query, setQuery] = useState('')
   const [listFilter, setListFilter] = useState<ChequeListFilter>(initialFilter)
   const [selectedName, setSelectedName] = useState<string | null>(initialCustomer ?? null)
+  const [detailDateMode, setDetailDateMode] = useState<DetailDateFilterMode>('all')
+  const [detailSelectedDate, setDetailSelectedDate] = useState('')
+  const [detailRangeTo, setDetailRangeTo] = useState(() => toInputDate())
 
   useEffect(() => {
     if (!open) return
     setListFilter(initialFilter)
     setSelectedName(initialCustomer ?? null)
     if (!initialCustomer) setQuery('')
+    setDetailDateMode('all')
+    setDetailSelectedDate('')
+    setDetailRangeTo(toInputDate())
   }, [open, initialFilter, initialCustomer])
+
+  useEffect(() => {
+    if (!selectedName) return
+    setDetailDateMode('all')
+    setDetailSelectedDate('')
+    setDetailRangeTo(toInputDate())
+  }, [selectedName])
 
   const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
   const summaries = useMemo(() => buildChequeCustomerSummaries(data), [data])
@@ -61,19 +78,54 @@ export default function ChequeDashboard({
     () => (selectedName ? getChequeCustomerSummary(summaries, selectedName) : undefined),
     [summaries, selectedName],
   )
+  const filteredSelected = useMemo(() => {
+    if (!selected) return undefined
+    const purchases = filterByDetailDate(
+      selected.purchases,
+      detailDateMode,
+      detailSelectedDate,
+      detailRangeTo,
+    )
+    const chequeBills = filterByDetailDate(
+      selected.chequeBills,
+      detailDateMode,
+      detailSelectedDate,
+      detailRangeTo,
+    )
+    return {
+      ...selected,
+      purchases,
+      chequeBills,
+      purchaseCount: purchases.length,
+      openChequeCount: chequeBills.length,
+    }
+  }, [selected, detailDateMode, detailSelectedDate, detailRangeTo])
 
   if (!open) return null
 
   return (
+    <Portal>
     <div className="customer-overlay" role="dialog" aria-modal="true" aria-label="Cheques">
       <div className="customer-panel">
         <header className="customer-head">
-          <h1 className="customer-title">Cheque Dashboard</h1>
+          {selected ? (
+            <button
+              type="button"
+              className="customer-head-back"
+              onClick={() => setSelectedName(null)}
+              aria-label="Back to customers"
+            >
+              ←
+            </button>
+          ) : null}
+          <h1 className="customer-title">{selected?.name ?? 'Cheque Dashboard'}</h1>
           <button type="button" className="customer-close" onClick={onClose}>
             ✕
           </button>
         </header>
 
+        {!selected ? (
+          <>
         <div className="customer-total-banner customer-total-banner--cheque">
           <span>Total cheque open</span>
           <strong>{formatMoney(chequeOverview.totalPending)}</strong>
@@ -83,8 +135,6 @@ export default function ChequeDashboard({
           </small>
         </div>
 
-        {!selected ? (
-          <>
             <div className="customer-filter-bar">
               <button
                 type="button"
@@ -138,17 +188,29 @@ export default function ChequeDashboard({
               )}
             </div>
           </>
-        ) : (
-          <ChequeCustomerDetail
-            summary={selected}
-            data={data}
-            onBack={() => setSelectedName(null)}
-            onSetCustomerReminder={onSetCustomerReminder}
-            onSaveAlertSettings={onSaveAlertSettings}
-          />
-        )}
+        ) : filteredSelected ? (
+          <>
+            <DetailDateFilter
+              mode={detailDateMode}
+              selectedDate={detailSelectedDate}
+              rangeTo={detailRangeTo}
+              onModeChange={setDetailDateMode}
+              onSelectedDateChange={setDetailSelectedDate}
+              onRangeToChange={setDetailRangeTo}
+            />
+            <div className="customer-detail-scroll">
+              <ChequeCustomerDetail
+                summary={filteredSelected}
+                data={data}
+                onSetCustomerReminder={onSetCustomerReminder}
+                onSaveAlertSettings={onSaveAlertSettings}
+              />
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
+    </Portal>
   )
 }
 
@@ -212,13 +274,11 @@ function ChequeListItem({
 function ChequeCustomerDetail({
   summary,
   data,
-  onBack,
   onSetCustomerReminder,
   onSaveAlertSettings,
 }: {
   summary: ChequeCustomerSummary
   data: AppData
-  onBack: () => void
   onSetCustomerReminder: ChequeDashboardProps['onSetCustomerReminder']
   onSaveAlertSettings?: ChequeDashboardProps['onSaveAlertSettings']
 }) {
@@ -226,14 +286,10 @@ function ChequeCustomerDetail({
 
   return (
     <>
-      <button type="button" className="customer-back-btn" onClick={onBack}>
-        ← All customers
-      </button>
-
       <div className="customer-detail-head">
         <h2>{summary.name}</h2>
         <p>
-          {summary.purchaseCount} purchases · {summary.chequeTimes} cheque bills · Last visit{' '}
+          {summary.purchaseCount} purchases in period · {summary.chequeTimes} cheque bills · Last visit{' '}
           {summary.lastPurchaseLabel}
         </p>
       </div>

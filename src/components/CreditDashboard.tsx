@@ -12,7 +12,11 @@ import {
 import { getCustomerReminderAt } from '../utils/customerReminders'
 import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/billReminders'
 import CustomerReminderControl from './CustomerReminderControl'
+import DetailDateFilter, { type DetailDateFilterMode } from './DetailDateFilter'
+import { filterByDetailDate } from '../utils/detailDateFilter'
+import { toInputDate } from '../utils/salesReport'
 import './CustomerDashboard.css'
+import Portal from './Portal'
 
 export type CreditListFilter = 'all' | 'credit'
 
@@ -43,13 +47,26 @@ export default function CreditDashboard({
   const [query, setQuery] = useState('')
   const [listFilter, setListFilter] = useState<CreditListFilter>(initialFilter)
   const [selectedName, setSelectedName] = useState<string | null>(initialCustomer ?? null)
+  const [detailDateMode, setDetailDateMode] = useState<DetailDateFilterMode>('all')
+  const [detailSelectedDate, setDetailSelectedDate] = useState('')
+  const [detailRangeTo, setDetailRangeTo] = useState(() => toInputDate())
 
   useEffect(() => {
     if (!open) return
     setListFilter(initialFilter)
     setSelectedName(initialCustomer ?? null)
     if (!initialCustomer) setQuery('')
+    setDetailDateMode('all')
+    setDetailSelectedDate('')
+    setDetailRangeTo(toInputDate())
   }, [open, initialFilter, initialCustomer])
+
+  useEffect(() => {
+    if (!selectedName) return
+    setDetailDateMode('all')
+    setDetailSelectedDate('')
+    setDetailRangeTo(toInputDate())
+  }, [selectedName])
 
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const summaries = useMemo(() => buildCustomerSummaries(data), [data])
@@ -62,30 +79,63 @@ export default function CreditDashboard({
     () => (selectedName ? getCustomerSummary(summaries, selectedName) : undefined),
     [summaries, selectedName],
   )
+  const filteredSelected = useMemo(() => {
+    if (!selected) return undefined
+    const purchases = filterByDetailDate(
+      selected.purchases,
+      detailDateMode,
+      detailSelectedDate,
+      detailRangeTo,
+    )
+    const creditBills = filterByDetailDate(
+      selected.creditBills,
+      detailDateMode,
+      detailSelectedDate,
+      detailRangeTo,
+    )
+    return {
+      ...selected,
+      purchases,
+      creditBills,
+      purchaseCount: purchases.length,
+      openCreditCount: creditBills.length,
+    }
+  }, [selected, detailDateMode, detailSelectedDate, detailRangeTo])
 
   if (!open) return null
 
   return (
+    <Portal>
     <div className="customer-overlay" role="dialog" aria-modal="true" aria-label="Credit">
       <div className="customer-panel">
         <header className="customer-head">
-          <h1 className="customer-title">Credit Dashboard</h1>
+          {selected ? (
+            <button
+              type="button"
+              className="customer-head-back"
+              onClick={() => setSelectedName(null)}
+              aria-label="Back to customers"
+            >
+              ←
+            </button>
+          ) : null}
+          <h1 className="customer-title">{selected?.name ?? 'Credit Dashboard'}</h1>
           <button type="button" className="customer-close" onClick={onClose}>
             ✕
           </button>
         </header>
 
-        <div className="customer-total-banner customer-total-banner--credit">
-          <span>Total credit open</span>
-          <strong>{formatMoney(creditOverview.totalPending)}</strong>
-          <small>
-            {creditOverview.customerCount} customers · {creditOverview.openBillCount} unpaid bills
-            · Set date &amp; time reminder on each customer below
-          </small>
-        </div>
-
         {!selected ? (
           <>
+            <div className="customer-total-banner customer-total-banner--credit">
+              <span>Total credit open</span>
+              <strong>{formatMoney(creditOverview.totalPending)}</strong>
+              <small>
+                {creditOverview.customerCount} customers · {creditOverview.openBillCount} unpaid bills
+                · Set date &amp; time reminder on each customer below
+              </small>
+            </div>
+
             <div className="customer-filter-bar">
               <button
                 type="button"
@@ -139,17 +189,29 @@ export default function CreditDashboard({
               )}
             </div>
           </>
-        ) : (
-          <CreditCustomerDetail
-            summary={selected}
-            data={data}
-            onBack={() => setSelectedName(null)}
-            onSetCustomerReminder={onSetCustomerReminder}
-            onSaveAlertSettings={onSaveAlertSettings}
-          />
-        )}
+        ) : filteredSelected ? (
+          <>
+            <DetailDateFilter
+              mode={detailDateMode}
+              selectedDate={detailSelectedDate}
+              rangeTo={detailRangeTo}
+              onModeChange={setDetailDateMode}
+              onSelectedDateChange={setDetailSelectedDate}
+              onRangeToChange={setDetailRangeTo}
+            />
+            <div className="customer-detail-scroll">
+              <CreditCustomerDetail
+                summary={filteredSelected}
+                data={data}
+                onSetCustomerReminder={onSetCustomerReminder}
+                onSaveAlertSettings={onSaveAlertSettings}
+              />
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
+    </Portal>
   )
 }
 
@@ -213,13 +275,11 @@ function CreditListItem({
 function CreditCustomerDetail({
   summary,
   data,
-  onBack,
   onSetCustomerReminder,
   onSaveAlertSettings,
 }: {
   summary: CustomerSummary
   data: AppData
-  onBack: () => void
   onSetCustomerReminder: CreditDashboardProps['onSetCustomerReminder']
   onSaveAlertSettings?: CreditDashboardProps['onSaveAlertSettings']
 }) {
@@ -227,14 +287,10 @@ function CreditCustomerDetail({
 
   return (
     <>
-      <button type="button" className="customer-back-btn" onClick={onBack}>
-        ← All customers
-      </button>
-
       <div className="customer-detail-head">
         <h2>{summary.name}</h2>
         <p>
-          {summary.purchaseCount} purchases · {summary.creditTimes} credit bills · Last visit{' '}
+          {summary.purchaseCount} purchases in period · {summary.creditTimes} credit bills · Last visit{' '}
           {summary.lastPurchaseLabel}
         </p>
       </div>

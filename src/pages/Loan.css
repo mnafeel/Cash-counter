@@ -367,6 +367,8 @@
   min-height: 0;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
 }
 
 .loan-page-empty {
@@ -386,10 +388,55 @@
 }
 
 .loan-page-row {
-  padding: 8px 10px;
+  padding: 0;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface);
+  overflow: hidden;
+}
+
+.loan-page-row--expanded {
+  border-color: var(--cream-dim);
+}
+
+.loan-page-row-toggle {
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.loan-page-row-detail {
+  padding: 4px 10px 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(40vh, 260px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+.loan-page-row-detail-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.58rem;
+  color: var(--text-muted);
+}
+
+.loan-page-row-detail-row strong {
+  color: var(--cream);
+  font-size: 0.64rem;
+  text-align: right;
+  max-width: 62%;
+  word-break: break-word;
 }
 
 .loan-page-row--lend {
@@ -442,7 +489,7 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
-  margin-top: 8px;
+  margin: 0 10px 8px;
 }
 
 .loan-page-row-actions button {

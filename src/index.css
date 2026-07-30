@@ -179,6 +179,33 @@ body {
   width: 100%;
 }
 
+/* Themed scrollbars — match active theme on all scrollable areas */
+html,
+body,
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--cream-dim);
+}
+
 input,
 button {
   font: inherit;

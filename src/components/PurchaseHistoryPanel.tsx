@@ -18,6 +18,7 @@ import {
 } from '../utils/purchaseHistory'
 import { toInputDate } from '../utils/salesReport'
 import './PurchaseHistoryPanel.css'
+import Portal from './Portal'
 
 const DATE_OPTIONS: { id: PurchaseDateFilter | 'range'; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -266,7 +267,7 @@ export default function PurchaseHistoryPanel({
     )
   }
 
-  return (
+  const panel = (
     <div
       className={`purchase-hist-overlay ${fullscreen ? 'purchase-hist-overlay--fullscreen' : ''} ${embedded ? 'purchase-hist-overlay--embedded' : ''}`}
       role="dialog"
@@ -274,23 +275,35 @@ export default function PurchaseHistoryPanel({
       onClick={fullscreen || embedded ? undefined : handleClose}
     >
       <div className="purchase-hist-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="purchase-hist-head">
-          <h3>{selectedSupplier ? selectedSupplier.shopName : 'Purchase History'}</h3>
-          <button type="button" className="purchase-hist-close" onClick={handleClose} aria-label="Close">
-            ✕
-          </button>
-        </div>
+        <div className="purchase-hist-top">
+          <div className="purchase-hist-head">
+            {(selectedSupplierKey || embedded || fullscreen) && (
+              <button
+                type="button"
+                className="purchase-hist-head-back"
+                onClick={handleBack}
+                aria-label={selectedSupplierKey ? 'Back to suppliers' : 'Back'}
+              >
+                ←
+              </button>
+            )}
+            <h3>{selectedSupplier ? selectedSupplier.shopName : 'Purchase History'}</h3>
+            <button type="button" className="purchase-hist-close" onClick={handleClose} aria-label="Close">
+              ✕
+            </button>
+          </div>
 
-        <input
-          type="search"
-          className="purchase-hist-search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search supplier, item, amount…"
-          aria-label="Search purchase history"
-        />
+          <input
+            type="search"
+            className="purchase-hist-search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={
+              selectedSupplier ? 'Search item, amount…' : 'Search supplier, item, amount…'
+            }
+            aria-label="Search purchase history"
+          />
 
-        {!selectedSupplier ? (
           <div className="purchase-hist-dates">
             {DATE_OPTIONS.map((opt) => (
               <button
@@ -321,40 +334,41 @@ export default function PurchaseHistoryPanel({
               />
             </label>
           </div>
-        ) : null}
 
-        {!selectedSupplier && dateFilter === 'range' ? (
-          <div className="purchase-hist-range-pick">
-            <label className="purchase-hist-date-pick">
-              <span>From</span>
-              <input
-                type="date"
-                className="purchase-hist-date-input purchase-hist-date-input--active"
-                value={rangeFrom}
-                onChange={(e) => setRangeFrom(e.target.value)}
-                aria-label="Purchase range from date"
-              />
-            </label>
-            <label className="purchase-hist-date-pick">
-              <span>To</span>
-              <input
-                type="date"
-                className="purchase-hist-date-input purchase-hist-date-input--active"
-                value={rangeTo}
-                onChange={(e) => setRangeTo(e.target.value)}
-                aria-label="Purchase range to date"
-              />
-            </label>
+          {dateFilter === 'range' ? (
+            <div className="purchase-hist-range-pick">
+              <label className="purchase-hist-date-pick">
+                <span>From</span>
+                <input
+                  type="date"
+                  className="purchase-hist-date-input purchase-hist-date-input--active"
+                  value={rangeFrom}
+                  onChange={(e) => setRangeFrom(e.target.value)}
+                  aria-label="Purchase range from date"
+                />
+              </label>
+              <label className="purchase-hist-date-pick">
+                <span>To</span>
+                <input
+                  type="date"
+                  className="purchase-hist-date-input purchase-hist-date-input--active"
+                  value={rangeTo}
+                  onChange={(e) => setRangeTo(e.target.value)}
+                  aria-label="Purchase range to date"
+                />
+              </label>
+            </div>
+          ) : null}
+
+          <div className="purchase-hist-export-bar">
+            <button type="button" className="purchase-hist-export-btn" onClick={handleDownloadSpreadsheet}>
+              Download Excel
+            </button>
+            {exportStatus ? <span className="purchase-hist-export-status">{exportStatus}</span> : null}
           </div>
-        ) : null}
-
-        <div className="purchase-hist-export-bar">
-          <button type="button" className="purchase-hist-export-btn" onClick={handleDownloadSpreadsheet}>
-            Download Excel
-          </button>
-          {exportStatus ? <span className="purchase-hist-export-status">{exportStatus}</span> : null}
         </div>
 
+        <div className="purchase-hist-body">
         {!selectedSupplier ? (
           <>
             <div className="purchase-hist-summary-top">
@@ -444,7 +458,7 @@ export default function PurchaseHistoryPanel({
               <strong>{formatMoney(selectedSupplier.noGstTotal)}</strong>
             </div>
             <span className="purchase-hist-supplier-summary-count">
-              {selectedSupplier.count} purchases · tap row for details
+              {selectedSupplier.count} purchases · {purchasePeriodLabel()} · tap row for details
             </span>
           </div>
         )}
@@ -508,6 +522,8 @@ export default function PurchaseHistoryPanel({
           </section>
         ) : null}
 
+        </div>
+
         <div className="purchase-hist-footer">
           <button type="button" className="purchase-hist-back" onClick={handleBack}>
             {selectedSupplierKey ? '← Suppliers' : fullscreen || embedded ? '← Back' : '← Back'}
@@ -529,4 +545,7 @@ export default function PurchaseHistoryPanel({
       </div>
     </div>
   )
+
+  if (embedded) return panel
+  return <Portal>{panel}</Portal>
 }

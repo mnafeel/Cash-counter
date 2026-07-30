@@ -26,12 +26,19 @@ import {
 import {
   buildPurchaseHistoryItems,
   filterPurchaseHistoryItems,
+  groupPurchasesBySupplier,
+  type PurchaseHistoryItem,
 } from '../utils/purchaseHistory'
+import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
+import Portal from './Portal'
+import type { CreditReportItem, ChequeReportItem } from '../utils/reportsHub'
+import type { NormalExpenseHistoryItem } from '../utils/normalExpenseHistory'
 import { buildCreditOverview } from '../utils/customerLedger'
 import {
   buildLoanReportItems,
   filterLoanReportItems,
   summarizeLoanReportItems,
+  type LoanListItem,
 } from '../utils/loanLedger'
 import {
   buildActiveChequeReminders,
@@ -128,6 +135,8 @@ export default function ReportsPanel({
   const [creditSort, setCreditSort] = useState<CreditSort>('date-desc')
   const [loanSort, setLoanSort] = useState<LoanSort>('date-desc')
   const [expandedSalesPanel, setExpandedSalesPanel] = useState<SalesExpandPanel | null>('collected')
+  const [selectedPurchaseSupplierKey, setSelectedPurchaseSupplierKey] = useState<string | null>(null)
+  const [expandedReportKey, setExpandedReportKey] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -214,6 +223,14 @@ export default function ReportsPanel({
     return filterPurchaseHistoryItems(items, datePreset, selectedDate, rangeTo)
   }, [data, datePreset, selectedDate, rangeTo])
   const purchaseTotals = useMemo(() => summarizePurchases(purchaseItems), [purchaseItems])
+  const purchaseSupplierGroups = useMemo(
+    () => groupPurchasesBySupplier(purchaseItems),
+    [purchaseItems],
+  )
+  const selectedPurchaseSupplier = useMemo(() => {
+    if (!selectedPurchaseSupplierKey) return null
+    return purchaseSupplierGroups.find((group) => group.shopKey === selectedPurchaseSupplierKey) ?? null
+  }, [selectedPurchaseSupplierKey, purchaseSupplierGroups])
 
   const expenseItems = useMemo(() => {
     const items = buildNormalExpenseHistoryItems(data)
@@ -285,7 +302,33 @@ export default function ReportsPanel({
 
   function selectSection(section: ReportSection) {
     setActiveSection(section)
+    setSelectedPurchaseSupplierKey(null)
+    setExpandedReportKey(null)
     bodyRef.current?.scrollTo({ top: 0 })
+  }
+
+  function handleReportsBack() {
+    if (selectedPurchaseSupplierKey) {
+      setSelectedPurchaseSupplierKey(null)
+      setExpandedReportKey(null)
+      bodyRef.current?.scrollTo({ top: 0 })
+      return
+    }
+    onClose()
+  }
+
+  function toggleReportExpand(key: string) {
+    setExpandedReportKey((current) => {
+      const next = current === key ? null : key
+      if (next) {
+        requestAnimationFrame(() => {
+          bodyRef.current
+            ?.querySelector(`[data-report-key="${CSS.escape(next)}"]`)
+            ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+        })
+      }
+      return next
+    })
   }
 
   if (!open) return null
@@ -300,21 +343,34 @@ export default function ReportsPanel({
   }
 
   return (
+    <Portal>
     <div className="reports-overlay" role="dialog" aria-modal="true" aria-label="Reports">
       <div className="reports-page reports-panel">
         <div className="reports-top">
           <header className="reports-head">
+            <button
+              type="button"
+              className="reports-back-btn"
+              onClick={handleReportsBack}
+              aria-label={selectedPurchaseSupplierKey ? 'Back to suppliers' : 'Back'}
+            >
+              ←
+            </button>
             <div className="reports-head-text">
               <h1 className="reports-title">
-                {focusSection
-                  ? SECTION_TABS.find((tab) => tab.id === visibleSection)?.label ?? 'Report'
-                  : 'Reports'}
+                {selectedPurchaseSupplier
+                  ? selectedPurchaseSupplier.shopName
+                  : focusSection
+                    ? SECTION_TABS.find((tab) => tab.id === visibleSection)?.label ?? 'Report'
+                    : 'Reports'}
               </h1>
               <p className="reports-sub">{periodLabel}</p>
             </div>
-            <button type="button" className="reports-home-btn" onClick={onClose} aria-label="Close reports">
-              ✕
-            </button>
+            <div className="reports-head-actions">
+              <button type="button" className="reports-home-btn" onClick={onClose} aria-label="Close reports">
+                ✕
+              </button>
+            </div>
           </header>
 
           <div className="reports-toolbar">
@@ -594,25 +650,66 @@ export default function ReportsPanel({
 
           {activeSection === 'purchase' && (
             <section className="reports-section">
-              <p className="reports-list-meta">
-                {purchaseItems.length} purchase{purchaseItems.length === 1 ? '' : 's'}
-              </p>
-              {purchaseItems.length === 0 ? (
-                <p className="reports-empty">No purchases for this period.</p>
+              {!selectedPurchaseSupplier ? (
+                <>
+                  <p className="reports-list-meta">
+                    {purchaseSupplierGroups.length} supplier
+                    {purchaseSupplierGroups.length === 1 ? '' : 's'} · {purchaseItems.length} purchase
+                    {purchaseItems.length === 1 ? '' : 's'}
+                  </p>
+                  {purchaseSupplierGroups.length === 0 ? (
+                    <p className="reports-empty">No purchases for this period.</p>
+                  ) : (
+                    <ul className="reports-list">
+                      {purchaseSupplierGroups.map((group) => (
+                        <li key={group.shopKey} className="reports-item reports-item--tap">
+                          <button
+                            type="button"
+                            className="reports-supplier-btn"
+                            onClick={() => {
+                              setSelectedPurchaseSupplierKey(group.shopKey)
+                              setExpandedReportKey(null)
+                              bodyRef.current?.scrollTo({ top: 0 })
+                            }}
+                          >
+                            <div className="reports-item-head">
+                              <span className="reports-item-title">{group.shopName}</span>
+                              <span className="reports-item-amount">{formatMoney(group.total)}</span>
+                            </div>
+                            <div className="reports-item-meta">
+                              {group.count} purchase{group.count === 1 ? '' : 's'} · {NO1_BILL_LABEL}{' '}
+                              {formatMoney(group.gstTotal)} · {NO2_BILL_LABEL} {formatMoney(group.noGstTotal)}
+                              {group.creditCount > 0
+                                ? ` · Credit ${formatMoney(group.creditTotal)}`
+                                : ''}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
               ) : (
-                <ul className="reports-list">
-                  {purchaseItems.map((row) => (
-                    <li key={row.id} className="reports-item">
-                      <div className="reports-item-head">
-                        <span className="reports-item-title">{row.shopName}</span>
-                        <span className="reports-item-amount">{formatMoney(row.amount)}</span>
-                      </div>
-                      <div className="reports-item-meta">
-                        {formatDate(row.date)} · {row.billLabel} · {row.payDetail}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <div className="reports-supplier-summary">
+                    <span>
+                      {selectedPurchaseSupplier.count} purchase
+                      {selectedPurchaseSupplier.count === 1 ? '' : 's'} · tap a row for full details
+                    </span>
+                    <strong>{formatMoney(selectedPurchaseSupplier.total)}</strong>
+                  </div>
+                  <ul className="reports-list">
+                    {selectedPurchaseSupplier.items.map((row, index) => (
+                      <PurchaseReportRow
+                        key={row.id}
+                        row={row}
+                        index={index + 1}
+                        expanded={expandedReportKey === `purchase:${row.id}`}
+                        onToggle={() => toggleReportExpand(`purchase:${row.id}`)}
+                      />
+                    ))}
+                  </ul>
+                </>
               )}
             </section>
           )}
@@ -620,22 +717,20 @@ export default function ReportsPanel({
           {activeSection === 'expense' && (
             <section className="reports-section">
               <p className="reports-list-meta">
-                {expenseItems.length} normal expense{expenseItems.length === 1 ? '' : 's'}
+                {expenseItems.length} normal expense{expenseItems.length === 1 ? '' : 's'} · tap for details
               </p>
               {expenseItems.length === 0 ? (
                 <p className="reports-empty">No expenses for this period.</p>
               ) : (
                 <ul className="reports-list">
-                  {expenseItems.map((row) => (
-                    <li key={row.id} className="reports-item">
-                      <div className="reports-item-head">
-                        <span className="reports-item-title">{row.name}</span>
-                        <span className="reports-item-amount">{formatMoney(row.amount)}</span>
-                      </div>
-                      <div className="reports-item-meta">
-                        {formatDate(row.date)} · {row.payDetail}
-                      </div>
-                    </li>
+                  {expenseItems.map((row, index) => (
+                    <ExpenseReportRow
+                      key={row.id}
+                      row={row}
+                      index={index + 1}
+                      expanded={expandedReportKey === `expense:${row.id}`}
+                      onToggle={() => toggleReportExpand(`expense:${row.id}`)}
+                    />
                   ))}
                 </ul>
               )}
@@ -695,23 +790,20 @@ export default function ReportsPanel({
               ) : null}
               <section className="reports-section">
                 <p className="reports-list-meta">
-                  {creditItems.length} credit record{creditItems.length === 1 ? '' : 's'}
+                  {creditItems.length} credit record{creditItems.length === 1 ? '' : 's'} · tap for details
                 </p>
                 {creditItems.length === 0 ? (
                   <p className="reports-empty">No credit records for this period.</p>
                 ) : (
                   <ul className="reports-list">
                     {creditItems.map((row) => (
-                      <li key={row.id} className="reports-item">
-                        <div className="reports-item-head">
-                          <span className="reports-item-title">{row.name}</span>
-                          <span className="reports-item-amount">{formatMoney(row.pendingAmount)}</span>
-                        </div>
-                        <div className="reports-item-meta">
-                          {formatDate(row.date)} · {row.kind === 'sale' ? 'Sale' : 'Purchase'} · {row.status}
-                        </div>
-                        <div className="reports-item-meta reports-item-meta--detail">{row.payDetail}</div>
-                      </li>
+                      <CreditReportRow
+                        key={row.id}
+                        row={row}
+                        expanded={expandedReportKey === `credit:${row.id}`}
+                        onToggle={() => toggleReportExpand(`credit:${row.id}`)}
+                        onOpenCustomer={onOpenCustomer}
+                      />
                     ))}
                   </ul>
                 )}
@@ -741,23 +833,19 @@ export default function ReportsPanel({
               ) : null}
               <section className="reports-section">
                 <p className="reports-list-meta">
-                  {chequeItems.length} cheque{chequeItems.length === 1 ? '' : 's'}
+                  {chequeItems.length} cheque{chequeItems.length === 1 ? '' : 's'} · tap for full breakdown
                 </p>
                 {chequeItems.length === 0 ? (
                   <p className="reports-empty">No cheque records for this period.</p>
                 ) : (
                   <ul className="reports-list">
                     {chequeItems.map((row) => (
-                      <li key={row.id} className="reports-item">
-                        <div className="reports-item-head">
-                          <span className="reports-item-title">{row.name}</span>
-                          <span className="reports-item-amount">{formatMoney(row.amount)}</span>
-                        </div>
-                        <div className="reports-item-meta">
-                          {formatDate(row.date)} · {row.kind} · {row.approved ? 'Approved' : 'Pending'} ·{' '}
-                          {row.payDetail}
-                        </div>
-                      </li>
+                      <ChequeReportRow
+                        key={row.id}
+                        row={row}
+                        expanded={expandedReportKey === `cheque:${row.id}`}
+                        onToggle={() => toggleReportExpand(`cheque:${row.id}`)}
+                      />
                     ))}
                   </ul>
                 )}
@@ -768,29 +856,20 @@ export default function ReportsPanel({
           {activeSection === 'loan' && (
             <section className="reports-section">
               <p className="reports-list-meta">
-                {loanItems.length} loan{loanItems.length === 1 ? '' : 's'} · by date given
+                {loanItems.length} loan{loanItems.length === 1 ? '' : 's'} · tap for full details
               </p>
               {loanItems.length === 0 ? (
                 <p className="reports-empty">No loans for this period.</p>
               ) : (
                 <ul className="reports-list">
-                  {loanItems.map((loan) => (
-                    <li
+                  {loanItems.map((loan, index) => (
+                    <LoanReportRow
                       key={loan.id}
-                      className={`reports-item reports-item--loan reports-item--loan-${loan.kind}`}
-                    >
-                      <div className="reports-item-head">
-                        <span className="reports-item-title">{loan.personName}</span>
-                        <span className="reports-item-amount">{formatMoney(loan.amount)}</span>
-                      </div>
-                      <div className="reports-item-meta">
-                        {loan.dateLabel} · {loan.kindLabel} · {loan.paySourceLabel} · {loan.statusLabel}
-                        {loan.settledDateLabel ? ` · Settled ${loan.settledDateLabel}` : ''}
-                      </div>
-                      {loan.note ? (
-                        <div className="reports-item-meta reports-item-meta--detail">{loan.note}</div>
-                      ) : null}
-                    </li>
+                      loan={loan}
+                      index={index + 1}
+                      expanded={expandedReportKey === `loan:${loan.id}`}
+                      onToggle={() => toggleReportExpand(`loan:${loan.id}`)}
+                    />
                   ))}
                 </ul>
               )}
@@ -799,6 +878,7 @@ export default function ReportsPanel({
         </div>
       </div>
     </div>
+    </Portal>
   )
 }
 
@@ -1024,5 +1104,251 @@ function ReminderAlertsBlock({
         </>
       ) : null}
     </section>
+  )
+}
+
+function ReportDetailGrid({ rows }: { rows: { label: string; value: string }[] }) {
+  return (
+    <div className="reports-item-detail">
+      {rows.map((row) => (
+        <div key={row.label} className="reports-item-detail-row">
+          <span>{row.label}</span>
+          <strong>{row.value}</strong>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function PurchaseReportRow({
+  row,
+  index,
+  expanded,
+  onToggle,
+}: {
+  row: PurchaseHistoryItem
+  index: number
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <li
+      className={`reports-item reports-item--tap ${expanded ? 'reports-item--expanded' : ''}`}
+      data-report-key={`purchase:${row.id}`}
+    >
+      <button type="button" className="reports-item-btn" onClick={onToggle}>
+        <div className="reports-item-head">
+          <span className="reports-item-title">
+            Purchase #{index} · {row.billLabel}
+            {row.description ? ` · ${row.description}` : ''}
+          </span>
+          <span className="reports-item-amount">{formatMoney(row.amount)}</span>
+        </div>
+        <div className="reports-item-meta">
+          {formatDate(row.date)} · {row.payLabel}
+        </div>
+      </button>
+      {expanded ? (
+        <ReportDetailGrid
+          rows={[
+            { label: 'Supplier', value: row.shopName },
+            { label: 'Date', value: formatDate(row.date) },
+            { label: NO1_BILL_LABEL, value: formatMoney(row.no1Amount) },
+            { label: NO2_BILL_LABEL, value: formatMoney(row.no2Amount) },
+            { label: 'Total', value: formatMoney(row.amount) },
+            ...(row.paidAmount > 0 && row.paidAmount !== row.amount
+              ? [{ label: 'Paid', value: formatMoney(row.paidAmount) }]
+              : []),
+            { label: 'Payment', value: row.payDetail },
+          ]}
+        />
+      ) : null}
+    </li>
+  )
+}
+
+function ExpenseReportRow({
+  row,
+  index,
+  expanded,
+  onToggle,
+}: {
+  row: NormalExpenseHistoryItem
+  index: number
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <li
+      className={`reports-item reports-item--tap ${expanded ? 'reports-item--expanded' : ''}`}
+      data-report-key={`expense:${row.id}`}
+    >
+      <button type="button" className="reports-item-btn" onClick={onToggle}>
+        <div className="reports-item-head">
+          <span className="reports-item-title">
+            Expense #{index} · {row.name}
+          </span>
+          <span className="reports-item-amount">{formatMoney(row.amount)}</span>
+        </div>
+        <div className="reports-item-meta">
+          {formatDate(row.date)} · {row.payLabel}
+        </div>
+      </button>
+      {expanded ? (
+        <ReportDetailGrid
+          rows={[
+            { label: 'Name', value: row.name },
+            { label: 'Date', value: formatDate(row.date) },
+            { label: 'Amount', value: formatMoney(row.amount) },
+            { label: 'Payment', value: row.payDetail },
+          ]}
+        />
+      ) : null}
+    </li>
+  )
+}
+
+function CreditReportRow({
+  row,
+  expanded,
+  onToggle,
+  onOpenCustomer,
+}: {
+  row: CreditReportItem
+  expanded: boolean
+  onToggle: () => void
+  onOpenCustomer?: (customerName: string) => void
+}) {
+  return (
+    <li
+      className={`reports-item reports-item--tap ${expanded ? 'reports-item--expanded' : ''}`}
+      data-report-key={`credit:${row.id}`}
+    >
+      <button type="button" className="reports-item-btn" onClick={onToggle}>
+        <div className="reports-item-head">
+          <span className="reports-item-title">{row.name}</span>
+          <span className="reports-item-amount">{formatMoney(row.pendingAmount)}</span>
+        </div>
+        <div className="reports-item-meta">
+          {formatDate(row.date)} · {row.kind === 'sale' ? 'Sale credit' : 'Purchase credit'} · {row.status}
+        </div>
+        <div className="reports-item-meta reports-item-meta--detail">{row.payDetail}</div>
+      </button>
+      {expanded ? (
+        <>
+          <ReportDetailGrid
+            rows={[
+              { label: 'Name', value: row.name },
+              { label: 'Type', value: row.kind === 'sale' ? 'Customer credit (sale)' : 'Supplier credit (purchase)' },
+              { label: 'Bill total', value: formatMoney(row.totalBill) },
+              { label: 'Paid', value: formatMoney(row.paidAmount) },
+              { label: 'Open balance', value: formatMoney(row.pendingAmount) },
+              { label: 'Status', value: row.status === 'pending' ? 'Open' : 'Settled' },
+              { label: 'Date', value: formatDate(row.date) },
+              { label: 'Payment detail', value: row.payDetail },
+            ]}
+          />
+          {row.kind === 'sale' && onOpenCustomer ? (
+            <button type="button" className="reports-item-action" onClick={() => onOpenCustomer(row.name)}>
+              Open customer credit
+            </button>
+          ) : null}
+        </>
+      ) : null}
+    </li>
+  )
+}
+
+function ChequeReportRow({
+  row,
+  expanded,
+  onToggle,
+}: {
+  row: ChequeReportItem
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <li
+      className={`reports-item reports-item--tap ${expanded ? 'reports-item--expanded' : ''}`}
+      data-report-key={`cheque:${row.id}`}
+    >
+      <button type="button" className="reports-item-btn" onClick={onToggle}>
+        <div className="reports-item-head">
+          <span className="reports-item-title">{row.name}</span>
+          <span className="reports-item-amount">{formatMoney(row.amount)}</span>
+        </div>
+        <div className="reports-item-meta">
+          {formatDate(row.date)} · {row.kind} · {row.approved ? 'Approved → Bank' : 'Pending'}
+        </div>
+      </button>
+      {expanded ? (
+        <ReportDetailGrid
+          rows={[
+            { label: 'Name', value: row.name },
+            { label: 'Type', value: row.kind },
+            { label: 'Amount', value: formatMoney(row.amount) },
+            { label: 'Status', value: row.approved ? 'Approved — counted in bank' : 'Pending — not in bank yet' },
+            { label: 'Date', value: formatDate(row.date) },
+            { label: 'Payment detail', value: row.payDetail },
+          ]}
+        />
+      ) : null}
+    </li>
+  )
+}
+
+function LoanReportRow({
+  loan,
+  index,
+  expanded,
+  onToggle,
+}: {
+  loan: LoanListItem
+  index: number
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <li
+      className={`reports-item reports-item--tap reports-item--loan reports-item--loan-${loan.kind} ${expanded ? 'reports-item--expanded' : ''}`}
+      data-report-key={`loan:${loan.id}`}
+    >
+      <button type="button" className="reports-item-btn" onClick={onToggle}>
+        <div className="reports-item-head">
+          <span className="reports-item-title">
+            Loan #{index} · {loan.personName}
+          </span>
+          <span className="reports-item-amount">{formatMoney(loan.amount)}</span>
+        </div>
+        <div className="reports-item-meta">
+          {loan.dateLabel} · {loan.kindLabel} · {loan.paySourceLabel} · {loan.statusLabel}
+          {loan.settledDateLabel ? ` · Settled ${loan.settledDateLabel}` : ''}
+        </div>
+        {loan.note ? (
+          <div className="reports-item-meta reports-item-meta--detail">{loan.note}</div>
+        ) : null}
+      </button>
+      {expanded ? (
+        <ReportDetailGrid
+          rows={[
+            { label: 'Person', value: loan.personName },
+            { label: 'Type', value: loan.kind === 'lend' ? 'Given (receivable)' : 'Taken (payable)' },
+            { label: 'Amount', value: formatMoney(loan.amount) },
+            { label: 'Paid from', value: loan.paySourceLabel },
+            { label: 'Status', value: loan.statusLabel },
+            { label: 'Date given', value: loan.dateLabel },
+            ...(loan.settledDateLabel
+              ? [{ label: 'Settled on', value: loan.settledDateLabel }]
+              : []),
+            ...(loan.settlementPaySource
+              ? [{ label: 'Settled via', value: loan.settlementPaySource === 'bank' ? '🏦 Bank' : '💵 Cash' }]
+              : []),
+            ...(loan.reminderAt ? [{ label: 'Reminder', value: formatDate(loan.reminderAt) }] : []),
+            ...(loan.note ? [{ label: 'Note', value: loan.note }] : []),
+          ]}
+        />
+      ) : null}
+    </li>
   )
 }

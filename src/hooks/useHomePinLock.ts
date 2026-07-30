@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import { normalizeRoutePath } from '../utils/hashRoute'
 
-/** Lock Home when leaving it, except Home ↔ Purchase / Loan (no PIN when returning). */
+/** Lock Home when leaving it, except Home ↔ Purchase / Loan / History (no PIN when returning). */
 export function useHomePinLock() {
   const location = useLocation()
   const { lockHome } = useCash()
@@ -17,7 +17,7 @@ export function useHomePinLock() {
 
     const wasHome = prev === '/'
     const isHome = curr === '/'
-    const noPinWhenReturning = ['/purchase', '/loan']
+    const noPinWhenReturning = ['/purchase', '/loan', '/history']
 
     if (wasHome && noPinWhenReturning.includes(curr)) return
     if (isHome && noPinWhenReturning.includes(prev)) return

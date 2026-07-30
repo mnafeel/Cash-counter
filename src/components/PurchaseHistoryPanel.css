@@ -79,11 +79,9 @@
 
 .purchase-hist-payments {
   margin-top: 8px;
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  gap: 4px;
 }
 
 .purchase-hist-payments-title {
@@ -95,9 +93,9 @@
 }
 
 .purchase-hist-list--payments {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .purchase-hist-payment-row {
@@ -136,15 +134,19 @@
   line-height: 1.35;
 }
 
+.purchase-hist-overlay--fullscreen {
+  padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
+    max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+}
+
 .purchase-hist-overlay--fullscreen .purchase-hist-panel {
   width: 100%;
   max-width: 100%;
   height: 100%;
   max-height: 100%;
-  border-radius: 0;
-  border: none;
-  padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
-    max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  padding: 8px;
 }
 
 .purchase-hist-date-pick {
@@ -265,26 +267,48 @@
 .purchase-hist-overlay {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: 500;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: rgba(20, 10, 6, 0.72);
+  align-items: stretch;
+  justify-content: stretch;
+  padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
+    max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  background: var(--bg, var(--brown));
 }
 
 .purchase-hist-panel {
-  width: min(100%, 360px);
-  max-height: min(78vh, 520px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px;
+  gap: 4px;
+  padding: 8px;
   background: var(--brown);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
+}
+
+.purchase-hist-top {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.purchase-hist-body {
+  flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
 }
 
 .purchase-hist-head {
@@ -293,6 +317,32 @@
   justify-content: space-between;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.purchase-hist-head-back {
+  flex-shrink: 0;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.purchase-hist-head h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--cream);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .purchase-hist-paid-toggle {
@@ -324,12 +374,6 @@
 .purchase-hist-paid-toggle:has(input:checked) {
   border-color: rgba(64, 145, 108, 0.45);
   background: rgba(64, 145, 108, 0.12);
-}
-
-.purchase-hist-head h3 {
-  margin: 0;
-  font-size: 0.9rem;
-  color: var(--cream);
 }
 
 .purchase-hist-search {
@@ -545,15 +589,11 @@
 
 .purchase-hist-list {
   list-style: none;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin: 0;
   padding: 0;
-  -webkit-overflow-scrolling: touch;
 }
 
 .purchase-hist-item {
@@ -955,14 +995,10 @@
   .purchase-hist-overlay {
     padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
       max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
-    align-items: stretch;
   }
 
   .purchase-hist-panel {
-    width: 100%;
-    max-width: 100%;
-    max-height: 100%;
-    border-radius: 0;
+    border-radius: var(--radius-sm);
   }
 
   .purchase-hist-pay-breakdown {
@@ -970,7 +1006,7 @@
   }
 
   .purchase-hist-summary-top {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 
   .purchase-hist-item-actions {
@@ -983,8 +1019,16 @@ html[data-screen='phone'] .purchase-hist-item-actions {
 }
 
 @media (orientation: landscape) and (max-height: 520px) {
-  .purchase-hist-panel {
-    max-height: 100%;
+  .purchase-hist-summary-top {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .purchase-hist-summary-row--total {
+    grid-column: auto;
+  }
+
+  .purchase-hist-summary-count {
+    grid-column: 1 / -1;
   }
 
   .purchase-hist-item-actions {

@@ -45,6 +45,7 @@ export default function Loan() {
   const [settlingId, setSettlingId] = useState<string | null>(null)
   const [settlementSource, setSettlementSource] = useState<LoanPaySource>('cash')
   const [reminderLoanId, setReminderLoanId] = useState<string | null>(null)
+  const [expandedLoanId, setExpandedLoanId] = useState<string | null>(null)
   const [formField, setFormField] = useState<FormField>('amount')
   const nameInputRef = useRef<HTMLInputElement>(null)
 
@@ -368,10 +369,15 @@ export default function Loan() {
                       key={loan.id}
                       loan={loan}
                       data={data}
+                      expanded={expandedLoanId === loan.id}
+                      onToggle={() =>
+                        setExpandedLoanId((current) => (current === loan.id ? null : loan.id))
+                      }
                       onSettle={() => {
                         setFormError('')
                         setSettlementSource('cash')
                         setSettlingId(loan.id)
+                        setExpandedLoanId(null)
                       }}
                       onSetReminder={() => setReminderLoanId(loan.id)}
                     />
@@ -412,11 +418,15 @@ export default function Loan() {
 function LoanRow({
   loan,
   data,
+  expanded,
+  onToggle,
   onSettle,
   onSetReminder,
 }: {
   loan: LoanListItem
   data: AppData
+  expanded: boolean
+  onToggle: () => void
   onSettle: () => void
   onSetReminder: () => void
 }) {
@@ -425,23 +435,67 @@ function LoanRow({
     : null
 
   return (
-    <li className={`loan-page-row loan-page-row--${loan.kind}`}>
-      <div className="loan-page-row-main">
-        <div className="loan-page-row-copy">
-          <strong>{loan.personName}</strong>
-          <small>
-            {loan.kindLabel} · {loan.dateLabel}
-            {loan.reminderUrgent ? ' · ⚡ Urgent' : ''}
-            {loan.note ? ` · ${loan.note}` : ''}
-            {alertInfo?.isAlertActive
-              ? ` · 🔔 ${alertInfo.alertLabel}`
-              : loan.reminderAt
-                ? ` · 🔔 ${formatDate(loan.reminderAt)}`
-                : ''}
-          </small>
+    <li className={`loan-page-row loan-page-row--${loan.kind} ${expanded ? 'loan-page-row--expanded' : ''}`}>
+      <button type="button" className="loan-page-row-toggle" onClick={onToggle}>
+        <div className="loan-page-row-main">
+          <div className="loan-page-row-copy">
+            <strong>{loan.personName}</strong>
+            <small>
+              {loan.kindLabel} · {loan.dateLabel}
+              {loan.reminderUrgent ? ' · ⚡ Urgent' : ''}
+              {loan.note ? ` · ${loan.note}` : ''}
+              {alertInfo?.isAlertActive
+                ? ` · 🔔 ${alertInfo.alertLabel}`
+                : loan.reminderAt
+                  ? ` · 🔔 ${formatDate(loan.reminderAt)}`
+                  : ''}
+            </small>
+          </div>
+          <span className="loan-page-row-amount">{formatMoney(loan.amount)}</span>
         </div>
-        <span className="loan-page-row-amount">{formatMoney(loan.amount)}</span>
-      </div>
+      </button>
+      {expanded ? (
+        <div className="loan-page-row-detail">
+          <div className="loan-page-row-detail-row">
+            <span>Person</span>
+            <strong>{loan.personName}</strong>
+          </div>
+          <div className="loan-page-row-detail-row">
+            <span>Type</span>
+            <strong>{loan.kind === 'lend' ? 'Given (receivable)' : 'Taken (payable)'}</strong>
+          </div>
+          <div className="loan-page-row-detail-row">
+            <span>Amount</span>
+            <strong>{formatMoney(loan.amount)}</strong>
+          </div>
+          <div className="loan-page-row-detail-row">
+            <span>Paid from</span>
+            <strong>{loan.paySourceLabel}</strong>
+          </div>
+          <div className="loan-page-row-detail-row">
+            <span>Status</span>
+            <strong>{loan.statusLabel}</strong>
+          </div>
+          {loan.settledDateLabel ? (
+            <div className="loan-page-row-detail-row">
+              <span>Settled on</span>
+              <strong>{loan.settledDateLabel}</strong>
+            </div>
+          ) : null}
+          {loan.reminderAt ? (
+            <div className="loan-page-row-detail-row">
+              <span>Reminder</span>
+              <strong>{formatDate(loan.reminderAt)}</strong>
+            </div>
+          ) : null}
+          {loan.note ? (
+            <div className="loan-page-row-detail-row">
+              <span>Note</span>
+              <strong>{loan.note}</strong>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {loan.status === 'pending' ? (
         <div className="loan-page-row-actions">
           <button type="button" onClick={onSetReminder}>

@@ -18,6 +18,8 @@ import {
   buildIncrementalPaymentEvent,
   getSalePaymentEvents,
   migrateSalePaymentEvents,
+  normalizeCollectedBreakdown,
+  normalizePaymentEvent,
   priorPaymentEventsFromSale,
   saleCollectedAmount,
   saleCollectedComponentBreakdown,
@@ -548,14 +550,19 @@ function paymentEventFromCollected(
   bank: number,
   cheque: number,
 ): SalePaymentEvent {
-  const amount = cash + bank + cheque
-  return {
+  const normalized = normalizeCollectedBreakdown({
+    cash,
+    bank,
+    cheque,
+    total: cash + bank + cheque,
+  })
+  return normalizePaymentEvent({
     at,
-    amount,
-    cash: cash > 0 ? cash : undefined,
-    bank: bank > 0 ? bank : undefined,
-    cheque: cheque > 0 ? cheque : undefined,
-  }
+    amount: normalized.total,
+    cash: normalized.cash > 0 ? normalized.cash : undefined,
+    bank: normalized.bank > 0 ? normalized.bank : undefined,
+    cheque: normalized.cheque > 0 ? normalized.cheque : undefined,
+  })
 }
 
 export interface PaidSalePaymentEdit {
@@ -592,7 +599,12 @@ export function editPaidSalePayment(
   const bank = payment.bankAmount ?? 0
   const cheque =
     payment.chequeApproved && (payment.chequeAmount ?? 0) > 0 ? payment.chequeAmount ?? 0 : 0
-  const collectedTotal = cash + bank + cheque
+  const collectedTotal = normalizeCollectedBreakdown({
+    cash,
+    bank,
+    cheque,
+    total: cash + bank + cheque,
+  }).total
   const correctedEvent = paymentEventFromCollected(collectionAt, cash, bank, cheque)
   const isSplit = payment.payType === 'split'
 
@@ -1744,14 +1756,19 @@ export function applyPartialBalanceSaleCollection(
   const totalCash = prevCash + addCash
   const totalBank = prevBank + addBank
   const totalCheque = prevCheque + addCheque
-  const totalPaid = totalCash + totalBank + totalCheque
-  const paymentEvent = {
+  const totalPaid = normalizeCollectedBreakdown({
+    cash: totalCash,
+    bank: totalBank,
+    cheque: totalCheque,
+    total: totalCash + totalBank + totalCheque,
+  }).total
+  const paymentEvent = normalizePaymentEvent({
     at: now,
     amount: collected,
     cash: addCash,
     bank: addBank,
     cheque: addCheque,
-  }
+  })
 
   if (remaining <= 0) {
     const originalBillAmount = sale.originalBillAmount ?? due + (totalPaid - collected)

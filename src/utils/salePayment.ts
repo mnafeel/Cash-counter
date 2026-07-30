@@ -63,33 +63,30 @@ export function buildIncrementalPaymentEvent(
 ): SalePaymentEvent {
   const prev = original ? salePendingCreditPaidBreakdown(original) : { cash: 0, bank: 0, cheque: 0, total: 0 }
   const nextCash = collected.cashAmount ?? 0
-  const nextBank = collected.bankAmount ?? 0
+  let nextBank = collected.bankAmount ?? 0
   const nextCheque =
     collected.chequeApproved && (collected.chequeAmount ?? 0) > 0 ? collected.chequeAmount ?? 0 : 0
+  if (nextCheque > 0) nextBank = Math.max(0, nextBank - nextCheque)
 
   if (!original || original.status !== 'pending') {
-    const amount = collected.paidAmount
-    return {
-      at,
-      amount,
-      cash: nextCash > 0 ? nextCash : undefined,
-      bank: nextBank > 0 ? nextBank : undefined,
-      cheque: nextCheque > 0 ? nextCheque : undefined,
-    }
+    return paymentEventFromNormalizedBreakdown(at, {
+      cash: nextCash,
+      bank: nextBank,
+      cheque: nextCheque,
+      total: collected.paidAmount,
+    })
   }
 
   const addCash = Math.max(0, nextCash - prev.cash)
   const addBank = Math.max(0, nextBank - prev.bank)
   const addCheque = Math.max(0, nextCheque - prev.cheque)
-  const amount = addCash + addBank + addCheque
 
-  return {
-    at,
-    amount,
-    cash: addCash > 0 ? addCash : undefined,
-    bank: addBank > 0 ? addBank : undefined,
-    cheque: addCheque > 0 ? addCheque : undefined,
-  }
+  return paymentEventFromNormalizedBreakdown(at, {
+    cash: addCash,
+    bank: addBank,
+    cheque: addCheque,
+    total: addCash + addBank + addCheque,
+  })
 }
 
 export function appendSalePaymentEvent(
@@ -121,6 +118,43 @@ export function normalizeCollectedBreakdown(breakdown: SaleCollectedBreakdown): 
   return { cash, bank, cheque: 0, total: cash + bank }
 }
 
+/** Approved cheque in payment events / history rows → bank only. */
+export function normalizePaymentEvent(event: SalePaymentEvent): SalePaymentEvent {
+  const cash = event.cash ?? 0
+  const bank = event.bank ?? 0
+  const cheque = event.cheque ?? 0
+  if (cash === 0 && bank === 0 && cheque === 0) {
+    return event
+  }
+  const normalized = normalizeCollectedBreakdown({
+    cash,
+    bank,
+    cheque,
+    total: event.amount > 0 ? event.amount : cash + bank + cheque,
+  })
+  return {
+    at: event.at,
+    amount: normalized.total,
+    cash: normalized.cash > 0 ? normalized.cash : undefined,
+    bank: normalized.bank > 0 ? normalized.bank : undefined,
+    cheque: normalized.cheque > 0 ? normalized.cheque : undefined,
+  }
+}
+
+function paymentEventFromNormalizedBreakdown(
+  at: string,
+  breakdown: SaleCollectedBreakdown,
+): SalePaymentEvent {
+  const normalized = normalizeCollectedBreakdown(breakdown)
+  return {
+    at,
+    amount: normalized.total,
+    cash: normalized.cash > 0 ? normalized.cash : undefined,
+    bank: normalized.bank > 0 ? normalized.bank : undefined,
+    cheque: normalized.cheque > 0 ? normalized.cheque : undefined,
+  }
+}
+
 export function salePaidCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
   const cash = sale.cashAmount ?? 0
   const cheque =
@@ -146,13 +180,7 @@ export function salePaidCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
 }
 
 function paymentEventFromBreakdown(at: string, breakdown: SaleCollectedBreakdown): SalePaymentEvent {
-  return {
-    at,
-    amount: breakdown.total,
-    cash: breakdown.cash > 0 ? breakdown.cash : undefined,
-    bank: breakdown.bank > 0 ? breakdown.bank : undefined,
-    cheque: breakdown.cheque > 0 ? breakdown.cheque : undefined,
-  }
+  return paymentEventFromNormalizedBreakdown(at, breakdown)
 }
 
 /** Rebuild payment events for sales saved before paymentEvents existed. */
@@ -172,10 +200,11 @@ export function inferLegacyPaymentEvents(sale: Sale): SalePaymentEvent[] {
 }
 
 export function getSalePaymentEvents(sale: Sale): SalePaymentEvent[] {
-  if (sale.paymentEvents && sale.paymentEvents.length > 0) {
-    return repairSalePaymentEvents(sale).paymentEvents ?? []
-  }
-  return inferLegacyPaymentEvents(sale)
+  const raw =
+    sale.paymentEvents && sale.paymentEvents.length > 0
+      ? repairSalePaymentEvents(sale).paymentEvents ?? []
+      : inferLegacyPaymentEvents(sale)
+  return raw.map(normalizePaymentEvent)
 }
 
 export function migrateSalePaymentEvents(sale: Sale): Sale {
@@ -238,9 +267,14 @@ export function saleCollectedAmount(sale: Sale): number {
   }
 
   const cash = sale.cashAmount ?? 0
-  const cheque = sale.chequeAmount ?? 0
+  const cheque =
+    sale.chequeApproved && (sale.chequeAmount ?? 0) > 0
+      ? sale.chequeAmount ?? 0
+      : sale.status === 'paid' && sale.payType === 'cheque'
+        ? sale.chequeAmount ?? sale.billAmount
+        : 0
   let bank = sale.bankAmount ?? 0
-  if (sale.chequeApproved && cheque > 0) bank = Math.max(0, bank - cheque)
+  if (cheque > 0) bank = Math.max(0, bank - cheque)
   const componentTotal = cash + bank + cheque
   if (componentTotal > 0) return componentTotal
   if (sale.paidAmount > 0) return sale.paidAmount

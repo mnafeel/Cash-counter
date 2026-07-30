@@ -12,6 +12,10 @@ import {
 import { getCustomerReminderAt } from '../utils/customerReminders'
 import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/billReminders'
 import CustomerReminderControl from './CustomerReminderControl'
+import DetailDateFilter, { type DetailDateFilterMode } from './DetailDateFilter'
+import { filterByDetailDate } from '../utils/detailDateFilter'
+import { toInputDate } from '../utils/salesReport'
+import Portal from './Portal'
 import './CustomerDashboard.css'
 
 export type CustomerListFilter = 'all' | 'credit'
@@ -42,13 +46,26 @@ export default function CustomerDashboard({
   const [query, setQuery] = useState('')
   const [listFilter, setListFilter] = useState<CustomerListFilter>(initialFilter)
   const [selectedName, setSelectedName] = useState<string | null>(initialCustomer ?? null)
+  const [detailDateMode, setDetailDateMode] = useState<DetailDateFilterMode>('all')
+  const [detailSelectedDate, setDetailSelectedDate] = useState('')
+  const [detailRangeTo, setDetailRangeTo] = useState(() => toInputDate())
 
   useEffect(() => {
     if (!open) return
     setListFilter(initialFilter)
     setSelectedName(initialCustomer ?? null)
     if (!initialCustomer) setQuery('')
+    setDetailDateMode('all')
+    setDetailSelectedDate('')
+    setDetailRangeTo(toInputDate())
   }, [open, initialFilter, initialCustomer])
+
+  useEffect(() => {
+    if (!selectedName) return
+    setDetailDateMode('all')
+    setDetailSelectedDate('')
+    setDetailRangeTo(toInputDate())
+  }, [selectedName])
 
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const summaries = useMemo(() => buildCustomerSummaries(data), [data])
@@ -61,21 +78,56 @@ export default function CustomerDashboard({
     () => (selectedName ? getCustomerSummary(summaries, selectedName) : undefined),
     [summaries, selectedName],
   )
+  const filteredSelected = useMemo(() => {
+    if (!selected) return undefined
+    const purchases = filterByDetailDate(
+      selected.purchases,
+      detailDateMode,
+      detailSelectedDate,
+      detailRangeTo,
+    )
+    const creditBills = filterByDetailDate(
+      selected.creditBills,
+      detailDateMode,
+      detailSelectedDate,
+      detailRangeTo,
+    )
+    return {
+      ...selected,
+      purchases,
+      creditBills,
+      purchaseCount: purchases.length,
+      openCreditCount: creditBills.length,
+    }
+  }, [selected, detailDateMode, detailSelectedDate, detailRangeTo])
 
   if (!open) return null
 
   const title = listFilter === 'credit' ? 'Credit Dashboard' : 'Customer Dashboard'
 
   return (
+    <Portal>
     <div className="customer-overlay" role="dialog" aria-modal="true" aria-label="Customers">
       <div className="customer-panel">
         <header className="customer-head">
-          <h1 className="customer-title">{title}</h1>
+          {selected ? (
+            <button
+              type="button"
+              className="customer-head-back"
+              onClick={() => setSelectedName(null)}
+              aria-label="Back to customers"
+            >
+              ←
+            </button>
+          ) : null}
+          <h1 className="customer-title">{selected?.name ?? title}</h1>
           <button type="button" className="customer-close" onClick={onClose}>
             ✕
           </button>
         </header>
 
+        {!selected ? (
+          <>
         {listFilter === 'credit' ? (
           <div className="customer-total-banner customer-total-banner--credit">
             <span>Total credit open</span>
@@ -86,9 +138,6 @@ export default function CustomerDashboard({
             </small>
           </div>
         ) : null}
-
-        {!selected ? (
-          <>
             <div className="customer-filter-bar">
               <button
                 type="button"
@@ -143,17 +192,29 @@ export default function CustomerDashboard({
               )}
             </div>
           </>
-        ) : (
-          <CustomerDetail
-            summary={selected}
-            data={data}
-            onBack={() => setSelectedName(null)}
-            onSetCustomerReminder={onSetCustomerReminder}
-            onSaveAlertSettings={onSaveAlertSettings}
-          />
-        )}
+        ) : filteredSelected ? (
+          <>
+            <DetailDateFilter
+              mode={detailDateMode}
+              selectedDate={detailSelectedDate}
+              rangeTo={detailRangeTo}
+              onModeChange={setDetailDateMode}
+              onSelectedDateChange={setDetailSelectedDate}
+              onRangeToChange={setDetailRangeTo}
+            />
+            <div className="customer-detail-scroll">
+              <CustomerDetail
+                summary={filteredSelected}
+                data={data}
+                onSetCustomerReminder={onSetCustomerReminder}
+                onSaveAlertSettings={onSaveAlertSettings}
+              />
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
+    </Portal>
   )
 }
 
@@ -216,13 +277,11 @@ function CustomerListItem({
 function CustomerDetail({
   summary,
   data,
-  onBack,
   onSetCustomerReminder,
   onSaveAlertSettings,
 }: {
   summary: CustomerSummary
   data: AppData
-  onBack: () => void
   onSetCustomerReminder: CustomerDashboardProps['onSetCustomerReminder']
   onSaveAlertSettings?: CustomerDashboardProps['onSaveAlertSettings']
 }) {
@@ -230,14 +289,10 @@ function CustomerDetail({
 
   return (
     <>
-      <button type="button" className="customer-back-btn" onClick={onBack}>
-        ← All customers
-      </button>
-
       <div className="customer-detail-head">
         <h2>{summary.name}</h2>
         <p>
-          {summary.purchaseCount} purchases · {summary.creditTimes} credit bills · Last visit{' '}
+          {summary.purchaseCount} purchases in period · {summary.creditTimes} credit bills · Last visit{' '}
           {summary.lastPurchaseLabel}
         </p>
       </div>

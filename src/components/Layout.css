@@ -203,6 +203,15 @@
   padding-right: max(var(--ui-pad), env(safe-area-inset-right));
 }
 
+html[data-screen='phone'] .layout--fit .header--compact .nav-link {
+  min-width: 48px;
+  padding: 6px 8px 8px;
+}
+
+html[data-screen='phone'] .layout--fit .header--compact .nav-shortcut-hint {
+  display: none;
+}
+
 @media (min-width: 768px) {
   html[data-screen='desktop'] .layout--fit .header--compact {
     padding: 8px 16px 0;

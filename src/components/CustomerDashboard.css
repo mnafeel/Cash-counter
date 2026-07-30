@@ -1,9 +1,9 @@
 .customer-overlay {
   position: fixed;
   inset: 0;
-  z-index: 120;
+  z-index: 500;
   display: flex;
-  background: var(--brown);
+  background: var(--bg, var(--brown));
   padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
     max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
 }
@@ -23,13 +23,34 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+.customer-head-back {
+  flex-shrink: 0;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 .customer-title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: clamp(0.88rem, calc(var(--app-height, 800px) * 0.022), 1rem);
   font-weight: 800;
   color: var(--cream);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .customer-close {
@@ -189,6 +210,66 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  gap: 4px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+.customer-detail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+.customer-detail-scroll .customer-body {
+  flex: none;
+  min-height: 0;
+  overflow: visible;
+}
+
+.detail-date-filter {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-date-filter-bar {
+  flex-wrap: wrap;
+}
+
+.detail-date-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.58rem;
+  color: var(--cream-dim);
+}
+
+.detail-date-pick input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.68rem;
+}
+
+.detail-date-range {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 4px;
 }
 
