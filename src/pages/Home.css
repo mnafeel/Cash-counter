@@ -54,6 +54,65 @@
   flex: 0 1 auto;
 }
 
+.home-access {
+  flex-shrink: 0;
+}
+
+.home-access-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.home-access-btn {
+  min-height: 56px;
+  padding: 8px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream);
+  font-family: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.home-access-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.home-access-label {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.home-access-btn--reports {
+  border-color: rgba(125, 223, 138, 0.4);
+  background: linear-gradient(165deg, rgba(125, 223, 138, 0.14) 0%, var(--surface) 100%);
+}
+
+.home-access-btn--loan {
+  border-color: rgba(196, 160, 255, 0.35);
+  background: linear-gradient(165deg, rgba(196, 160, 255, 0.1) 0%, var(--surface) 100%);
+}
+
+.home-access-btn--staff {
+  border-color: rgba(126, 200, 227, 0.35);
+  background: linear-gradient(165deg, rgba(126, 200, 227, 0.1) 0%, var(--surface) 100%);
+}
+
+.home-access-btn:active {
+  transform: scale(0.98);
+  border-color: var(--cream-dim);
+}
+
 .home-launch {
   display: flex;
   flex-direction: column;
@@ -98,6 +157,14 @@
   text-decoration: none;
   border-color: rgba(196, 160, 255, 0.35);
   background: linear-gradient(165deg, rgba(196, 160, 255, 0.1) 0%, var(--surface) 100%);
+}
+
+.home-launch-btn--staff {
+  min-height: 48px;
+  justify-content: flex-start;
+  text-decoration: none;
+  border-color: rgba(126, 200, 227, 0.35);
+  background: linear-gradient(165deg, rgba(126, 200, 227, 0.1) 0%, var(--surface) 100%);
 }
 
 .home-launch-copy {
@@ -1500,6 +1567,16 @@ html[data-screen='desktop'] .home-pin-digit {
   margin-left: auto;
   font-size: 0.9rem;
   color: var(--cream-dim);
+}
+
+html[data-screen='tablet'] .home-access-btn,
+html[data-screen='desktop'] .home-access-btn {
+  min-height: 64px;
+}
+
+html[data-screen='tablet'] .home-access-icon,
+html[data-screen='desktop'] .home-access-icon {
+  font-size: 1.35rem;
 }
 
 html[data-screen='tablet'] .home-launch-btn--primary,

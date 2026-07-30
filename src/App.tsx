@@ -8,6 +8,7 @@ import PurchaseExpense from './pages/PurchaseExpense'
 import Expenses from './pages/Expenses'
 import History from './pages/History'
 import Loan from './pages/Loan'
+import Staff from './pages/Staff'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 
@@ -24,6 +25,7 @@ export default function App() {
             <Route path="expenses" element={<Expenses />} />
             <Route path="history" element={<History />} />
             <Route path="loan" element={<Loan />} />
+            <Route path="staff" element={<Staff />} />
             <Route path="reports" element={<Reports />} />
             <Route path="settings" element={<Settings />} />
             </Route>

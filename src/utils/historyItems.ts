@@ -1,8 +1,9 @@
-import type { AppData, Sale } from '../types'
+import type { AppData, Expense, Sale } from '../types'
 import { expenseBillTag, isPurchaseExpense } from './expenseBillLabels'
 import { formatDate, formatMoney } from './format'
 import { decorateLoan } from './loanLedger'
 import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, type PurchaseHistoryItem } from './purchaseHistory'
+import { getSaleCustomerName } from './saleCustomerName'
 
 export type HistoryItemType = 'sale' | 'expense' | 'purchase' | 'deposit' | 'transfer' | 'loan'
 
@@ -760,7 +761,7 @@ function findOrphanSplitGroups(sales: Sale[], consumedIds: Set<string>): Sale[][
   return groups
 }
 
-function buildSplitGroupItem(parent: Sale, children: Sale[]): HistoryItem {
+function buildSplitGroupItem(parent: Sale, children: Sale[], sales: Sale[]): HistoryItem {
   const receiptLines = buildSplitReceiptLines(parent, children)
   const receiptTimeline = buildSplitTimeline(parent, children)
   const fullBill =
@@ -789,7 +790,9 @@ function buildSplitGroupItem(parent: Sale, children: Sale[]): HistoryItem {
     id: parent.id,
     amount: displayAmount,
     sub: formatSplitSub(parent, children, receiptLines, fullBill),
-    name: parent.customerName ?? children.find((c) => c.customerName)?.customerName,
+    name:
+      getSaleCustomerName(parent, sales) ??
+      children.map((child) => getSaleCustomerName(child, sales)).find(Boolean),
     date: date || parent.createdAt,
     isSplitGroup: true,
     receiptLines,
@@ -929,7 +932,7 @@ function buildSalePaymentCollections(sale: Sale): HistoryItem['paymentCollection
     })
 }
 
-function buildSaleHistoryItem(sale: Sale): HistoryItem {
+function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
   const collected = collectedPaymentAmount(sale)
   const breakdown = saleCollectionBreakdown(sale)
   const paymentModes = saleCollectionPaymentModes(sale)
@@ -1002,7 +1005,7 @@ function buildSaleHistoryItem(sale: Sale): HistoryItem {
         ? { cash: breakdown.cash, bank: breakdown.bank, cheque: breakdown.cheque }
         : undefined,
     sub,
-    name: sale.customerName,
+    name: getSaleCustomerName(sale, sales),
     date: lastCollectionAt ?? sale.createdAt,
     paymentCollections,
     receiptLines: buildSaleReceiptLines(sale),
@@ -1113,6 +1116,175 @@ function buildPurchaseTimeline(item: PurchaseHistoryItem): HistoryReceiptEvent[]
   return events
 }
 
+export interface HistoryListPaymentPart {
+  mode: 'cash' | 'bank' | 'credit' | 'cheque'
+  amount: number
+  status: 'paid' | 'pending'
+}
+
+const LIST_PAYMENT_PART_ORDER: HistoryListPaymentPart['mode'][] = [
+  'cash',
+  'bank',
+  'cheque',
+  'credit',
+]
+
+const LIST_PAYMENT_PART_LABELS: Record<HistoryListPaymentPart['mode'], string> = {
+  cash: 'Cash',
+  bank: 'Bank',
+  credit: 'Credit',
+  cheque: 'Cheque',
+}
+
+export function getHistoryListPaymentPartLabel(mode: HistoryListPaymentPart['mode']): string {
+  return LIST_PAYMENT_PART_LABELS[mode]
+}
+
+export function getHistoryListPaymentPartIcon(mode: HistoryListPaymentPart['mode']): string {
+  if (mode === 'cash') return '💵'
+  if (mode === 'bank') return '🏦'
+  if (mode === 'credit') return '💳'
+  return '🧾'
+}
+
+function receiptLinePaymentMode(label: string): HistoryListPaymentPart['mode'] | null {
+  if (label === 'Cash') return 'cash'
+  if (label === 'Bank') return 'bank'
+  if (label === 'Cheque') return 'cheque'
+  if (label === 'Credit' || label === 'Credit balance') return 'credit'
+  return null
+}
+
+function mergeListPaymentPart(
+  bucket: Map<string, HistoryListPaymentPart>,
+  mode: HistoryListPaymentPart['mode'],
+  amount: number,
+  status: HistoryListPaymentPart['status'],
+) {
+  if (amount <= 0) return
+  const key = `${mode}:${status}`
+  const existing = bucket.get(key)
+  if (existing) existing.amount += amount
+  else bucket.set(key, { mode, amount, status })
+}
+
+export function getHistoryItemListPaymentParts(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter = 'all',
+  selectedDate = '',
+): HistoryListPaymentPart[] {
+  const bucket = new Map<string, HistoryListPaymentPart>()
+
+  if (item.receiptLines?.length) {
+    for (const line of item.receiptLines) {
+      if (line.label === 'Paid' || line.label === 'Bill total' || line.label === 'Purchase') {
+        continue
+      }
+      const mode = receiptLinePaymentMode(line.label)
+      if (mode) mergeListPaymentPart(bucket, mode, line.amount, line.status)
+    }
+  }
+
+  const breakdown = historyItemCollectionBreakdownForDateFilter(item, dateFilter, selectedDate)
+  if (breakdown && bucket.size === 0) {
+    mergeListPaymentPart(bucket, 'cash', breakdown.cash, 'paid')
+    mergeListPaymentPart(bucket, 'bank', breakdown.bank, 'paid')
+    mergeListPaymentPart(bucket, 'cheque', breakdown.cheque, 'paid')
+  }
+
+  if (bucket.size === 0 && item.paymentMode) {
+    const amount = historyItemAmountForDateFilter(item, dateFilter, selectedDate, item.type === 'purchase')
+    const pendingFromLines =
+      item.receiptLines?.some((line) => line.status === 'pending') ?? false
+    if (item.paymentMode === 'cash') mergeListPaymentPart(bucket, 'cash', amount, 'paid')
+    else if (item.paymentMode === 'bank') mergeListPaymentPart(bucket, 'bank', amount, 'paid')
+    else if (item.paymentMode === 'cheque') {
+      mergeListPaymentPart(bucket, 'cheque', amount, pendingFromLines ? 'pending' : 'paid')
+    } else if (item.paymentMode === 'credit') {
+      mergeListPaymentPart(bucket, 'credit', amount, pendingFromLines ? 'pending' : 'paid')
+    } else if (item.paymentMode === 'pending') {
+      mergeListPaymentPart(bucket, 'credit', amount, 'pending')
+    }
+  }
+
+  if (item.type === 'transfer') {
+    return []
+  }
+
+  const ordered: HistoryListPaymentPart[] = []
+  for (const mode of LIST_PAYMENT_PART_ORDER) {
+    const paid = bucket.get(`${mode}:paid`)
+    const pending = bucket.get(`${mode}:pending`)
+    if (paid) ordered.push(paid)
+    if (pending) ordered.push(pending)
+  }
+  return ordered
+}
+
+export function historyItemListPaymentTypeText(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter = 'all',
+  selectedDate = '',
+): string | undefined {
+  const parts = getHistoryItemListPaymentParts(item, dateFilter, selectedDate)
+  if (parts.length > 0) {
+    return parts
+      .map((part) => {
+        const icon = getHistoryListPaymentPartIcon(part.mode)
+        const pending = part.status === 'pending' ? ' pending' : ''
+        return `${icon} ${formatMoney(part.amount)}${pending}`
+      })
+      .join(' · ')
+  }
+
+  if (item.type === 'purchase') {
+    if (item.paySummary) return item.paySummary
+    if (item.paymentMode) return getHistoryPaymentLabel(item.paymentMode)
+    return undefined
+  }
+
+  if (item.type === 'sale') {
+    if (item.paySummary) return item.paySummary
+    if (item.isSplitGroup) {
+      const modes = (item.paymentModes ?? []).filter((mode) => mode !== 'split' && mode !== 'pending')
+      if (modes.length > 0) return modes.map(getHistoryPaymentLabel).join(' + ')
+      return 'Split'
+    }
+    if (item.paymentModes && item.paymentModes.length > 1) {
+      const modes = item.paymentModes.filter((mode) => mode !== 'split')
+      if (modes.length > 1) return modes.map(getHistoryPaymentLabel).join(' + ')
+    }
+    if (item.paymentMode) return getHistoryPaymentLabel(item.paymentMode)
+    return undefined
+  }
+
+  if (item.paymentMode) return getHistoryPaymentLabel(item.paymentMode)
+  return undefined
+}
+
+/** Second line on History list — bill amount / short detail without payment time noise. */
+export function historyItemListRowSub(item: HistoryItem): string {
+  if (item.type === 'sale' || item.type === 'purchase') {
+    return historyItemListSubtitle(item)
+  }
+  return item.sub
+}
+
+export function historyItemListSubtitle(item: HistoryItem): string {
+  if (item.type === 'sale') {
+    const bill = item.originalBillAmount ?? item.amount
+    if (item.isSplitGroup) return `Split bill · ${formatMoney(bill)}`
+    return `Bill ${formatMoney(bill)}`
+  }
+  if (item.type === 'purchase') {
+    const bill = item.originalBillAmount ?? item.amount
+    return `Purchase · ${formatMoney(bill)}`
+  }
+  if (item.type === 'transfer') return item.sub
+  const first = item.sub.split(' · ')[0]
+  return first || item.sub
+}
+
 export function historyItemActivityLabel(item: HistoryItem): string {
   if (item.billCreatedAt && item.date !== item.billCreatedAt) {
     return `Updated ${formatDate(item.date)}`
@@ -1132,12 +1304,90 @@ export function historyItemListDateLabel(item: HistoryItem): string {
   return formatDate(item.date)
 }
 
+function buildExpenseReceiptLines(expense: Expense): HistoryReceiptLine[] | undefined {
+  if (expense.kind === 'transfer') return undefined
+
+  const lines: HistoryReceiptLine[] = []
+  if (expense.payType === 'split') {
+    if ((expense.cashAmount ?? 0) > 0) {
+      lines.push({
+        label: 'Cash',
+        amount: expense.cashAmount ?? 0,
+        status: 'paid',
+      })
+    }
+    if ((expense.bankAmount ?? 0) > 0) {
+      lines.push({
+        label: 'Bank',
+        amount: expense.bankAmount ?? 0,
+        status: 'paid',
+      })
+    }
+    if ((expense.chequeAmount ?? 0) > 0) {
+      lines.push({
+        label: 'Cheque',
+        amount: expense.chequeAmount ?? 0,
+        status: expense.chequeApproved ? 'paid' : 'pending',
+      })
+    }
+    if ((expense.creditAmount ?? 0) > 0) {
+      lines.push({
+        label: 'Credit',
+        amount: expense.creditAmount ?? 0,
+        status: 'paid',
+      })
+    }
+  } else if (expense.payType === 'bank') {
+    lines.push({ label: 'Bank', amount: expense.amount, status: 'paid' })
+  } else if (expense.payType === 'cheque') {
+    lines.push({
+      label: 'Cheque',
+      amount: expense.amount,
+      status: expense.chequeApproved ? 'paid' : 'pending',
+    })
+  } else if (expense.payType === 'credit') {
+    lines.push({ label: 'Credit', amount: expense.amount, status: 'paid' })
+  } else {
+    lines.push({ label: 'Cash', amount: expense.amount, status: 'paid' })
+  }
+
+  return lines.length > 0 ? lines : undefined
+}
+
+function buildPurchaseListReceiptLines(
+  item: PurchaseHistoryItem,
+  expense?: Expense,
+  paired?: Expense,
+): HistoryReceiptLine[] {
+  const lines: HistoryReceiptLine[] = []
+
+  const addExpenseLines = (entry: Expense) => {
+    for (const line of buildExpenseReceiptLines(entry) ?? []) {
+      if (line.status === 'paid') lines.push(line)
+    }
+  }
+
+  if (expense) addExpenseLines(expense)
+  if (paired) addExpenseLines(paired)
+
+  if (item.hasOpenCredit && item.openCreditAmount) {
+    lines.push({
+      label: 'Credit balance',
+      amount: item.openCreditAmount,
+      status: 'pending',
+    })
+  }
+
+  return lines.length > 0 ? lines : buildPurchaseReceiptLines(item)
+}
+
 export function buildHistoryItems(data: AppData): HistoryItem[] {
-  const childrenByParent = buildChildrenMap(data.sales)
+  const sales = data.sales
+  const childrenByParent = buildChildrenMap(sales)
   const consumedChildIds = new Set<string>()
   const saleItems: HistoryItem[] = []
 
-  for (const sale of data.sales) {
+  for (const sale of sales) {
     if (sale.parentSplitId) continue
 
     const children = childrenByParent.get(sale.id) ?? []
@@ -1145,21 +1395,21 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
 
     if (isSplitGroup) {
       for (const child of children) consumedChildIds.add(child.id)
-      saleItems.push(buildSplitGroupItem(sale, children))
+      saleItems.push(buildSplitGroupItem(sale, children, sales))
       continue
     }
 
-    saleItems.push(buildSaleHistoryItem(sale))
+    saleItems.push(buildSaleHistoryItem(sale, sales))
   }
 
-  for (const group of findOrphanSplitGroups(data.sales, consumedChildIds)) {
+  for (const group of findOrphanSplitGroups(sales, consumedChildIds)) {
     for (const child of group) consumedChildIds.add(child.id)
-    saleItems.push(buildSplitGroupItem(buildSyntheticSplitParent(group), group))
+    saleItems.push(buildSplitGroupItem(buildSyntheticSplitParent(group), group, sales))
   }
 
-  for (const sale of data.sales) {
+  for (const sale of sales) {
     if (!sale.parentSplitId || consumedChildIds.has(sale.id)) continue
-    saleItems.push(buildSaleHistoryItem(sale))
+    saleItems.push(buildSaleHistoryItem(sale, sales))
   }
 
   const expenseItems = data.expenses
@@ -1220,6 +1470,7 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
               ? (['cash', 'bank', 'cheque', 'split'] as HistoryPaymentMode[])
               : (['cash', 'bank', 'split'] as HistoryPaymentMode[]))
           : [payMode],
+      receiptLines: buildExpenseReceiptLines(e),
     }
   })
 
@@ -1256,7 +1507,7 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
       billCreatedAt: item.createdAt,
       completedAt: item.paidAmount > 0 ? item.date : item.createdAt,
       originalBillAmount: item.amount,
-      receiptLines: buildPurchaseReceiptLines(item),
+      receiptLines: buildPurchaseListReceiptLines(item, expense, paired),
       receiptTimeline: buildPurchaseTimeline(item),
       paymentMode,
       paymentModes,

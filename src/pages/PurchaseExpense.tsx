@@ -17,6 +17,7 @@ import {
   purchasePaidAmount,
 } from '../utils/purchaseHistory'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { PageBackButton, PageCorners } from '../components/PageCorners'
 import './PurchaseExpense.css'
 
 type BillSlot = 1 | 2
@@ -1266,33 +1267,25 @@ export default function PurchaseExpense() {
   }
 
   return (
-    <div className="purchase-page expenses-page">
-      <div className="purchase-page-corners">
-        <button
-          type="button"
-          className="purchase-corner-btn purchase-corner-btn--home"
-          onClick={() => navigate('/')}
-          aria-label="Close and go to Home"
-        >
-          <span className="purchase-corner-btn-icon" aria-hidden="true">
-            🏠
-          </span>
-          <span>Home</span>
-        </button>
-        <button
-          type="button"
-          className="purchase-corner-btn purchase-corner-btn--history"
-          onClick={() => setShowPurchaseHistory(true)}
-          aria-label="Purchase history"
-        >
-          <span className="purchase-corner-btn-icon" aria-hidden="true">
-            📋
-          </span>
-          <span>History</span>
-        </button>
-      </div>
+    <div className="purchase-page expenses-page page-shell">
+      <PageCorners
+        left={<PageBackButton onClick={() => navigate('/')} ariaLabel="Back" />}
+        right={
+          <button
+            type="button"
+            className="purchase-corner-btn"
+            onClick={() => setShowPurchaseHistory(true)}
+            aria-label="Purchase history"
+          >
+            <span className="purchase-corner-btn-icon" aria-hidden="true">
+              📋
+            </span>
+            <span>History</span>
+          </button>
+        }
+      />
 
-      <header className="purchase-page-head">
+      <header className="purchase-page-head page-head--corners">
         <h1 className="purchase-page-title">Purchase Expense</h1>
         <p className="purchase-page-sub">
           Purchases only · {GST_BILL_LABEL} · {NO_GST_BILL_LABEL} · cash, bank, cheque, split

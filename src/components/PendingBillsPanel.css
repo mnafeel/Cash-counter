@@ -236,8 +236,9 @@ html[data-screen='desktop'] .pending-bills {
 }
 
 html[data-screen='phone'] .pending-bills {
-  width: clamp(100px, 32vw, 130px);
-  padding: 6px;
+  width: clamp(92px, 28vw, 120px);
+  padding: 4px;
+  gap: 4px;
 }
 
 html[data-screen='phone'] .pending-bills-title {

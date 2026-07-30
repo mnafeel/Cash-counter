@@ -1,4 +1,4 @@
-import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, SupplierEntry, TransferDirection, CustomerReminderMap } from '../types'
+import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, StaffMember, SupplierEntry, TransferDirection, CustomerReminderMap } from '../types'
 import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
 import { collectSplitNameTargets } from '../utils/saleCustomerName'
 import { stripExpenseBillSuffix, isPurchaseExpense } from '../utils/expenseBillLabels'
@@ -29,6 +29,7 @@ import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
 import { loanBankToBalance, loanCashToDrawer } from '../utils/loanLedger'
+import { isStaffLinkableExpense, salaryMonthFromDate } from '../utils/staffLedger'
 
 const defaultData: AppData = {
   openingBalance: 0,
@@ -39,6 +40,7 @@ const defaultData: AppData = {
   sales: [],
   expenses: [],
   loans: [],
+  staff: [],
 }
 
 function normalizeItemList(raw: unknown): string[] {
@@ -304,6 +306,22 @@ function mergeLoanLists(local: Loan[], remote: Loan[]): Loan[] {
   return sortRecordsNewestFirst(Array.from(byId.values()))
 }
 
+function mergeStaffLists(local: StaffMember[], remote: StaffMember[]): StaffMember[] {
+  const byId = new Map<string, StaffMember>()
+  for (const item of remote) byId.set(item.id, item)
+  for (const item of local) {
+    const other = byId.get(item.id)
+    if (!other) {
+      byId.set(item.id, item)
+      continue
+    }
+    const localTime = new Date(item.createdAt).getTime()
+    const remoteTime = new Date(other.createdAt).getTime()
+    byId.set(item.id, localTime >= remoteTime ? item : other)
+  }
+  return sortRecordsNewestFirst(Array.from(byId.values()))
+}
+
 function countPendingSales(data: AppData): number {
   return data.sales.filter((sale) => sale.status === 'pending').length
 }
@@ -320,6 +338,7 @@ export function mergeCloudAppData(local: AppData, remote: AppData): AppData {
     sales: mergeSaleLists(normalizedLocal.sales, normalizedRemote.sales),
     expenses: mergeExpenseLists(normalizedLocal.expenses, normalizedRemote.expenses),
     loans: mergeLoanLists(normalizedLocal.loans ?? [], normalizedRemote.loans ?? []),
+    staff: mergeStaffLists(normalizedLocal.staff ?? [], normalizedRemote.staff ?? []),
     suppliers: normalizeSuppliers([
       ...(normalizedRemote.suppliers ?? []),
       ...(normalizedLocal.suppliers ?? []),
@@ -335,16 +354,20 @@ function cloudDataPreservedLocalRecords(local: AppData, remote: AppData, merged:
   const remoteExpenseIds = new Set(remote.expenses.map((e) => e.id))
   const remoteSaleIds = new Set(remote.sales.map((s) => s.id))
   const remoteLoanIds = new Set((remote.loans ?? []).map((loan) => loan.id))
+  const remoteStaffIds = new Set((remote.staff ?? []).map((member) => member.id))
   const localOnlyExpenses = local.expenses.some((e) => !remoteExpenseIds.has(e.id))
   const localOnlySales = local.sales.some((s) => !remoteSaleIds.has(s.id))
   const localOnlyLoans = (local.loans ?? []).some((loan) => !remoteLoanIds.has(loan.id))
+  const localOnlyStaff = (local.staff ?? []).some((member) => !remoteStaffIds.has(member.id))
   return (
     localOnlyExpenses ||
     localOnlySales ||
     localOnlyLoans ||
+    localOnlyStaff ||
     merged.expenses.length > remote.expenses.length ||
     merged.sales.length > remote.sales.length ||
     (merged.loans?.length ?? 0) > (remote.loans?.length ?? 0) ||
+    (merged.staff?.length ?? 0) > (remote.staff?.length ?? 0) ||
     countPendingSales(merged) > countPendingSales(remote) ||
     countOpenPurchaseBalances(merged) > countOpenPurchaseBalances(remote)
   )
@@ -375,6 +398,16 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
     sales: (parsed.sales ?? []).map((sale) => migrateSalePaymentEvents(sale)),
     expenses: normalizedExpenses,
     loans: (parsed.loans ?? []).map((loan) => normalizeLoan(loan)),
+    staff: (parsed.staff ?? []).map((member) => normalizeStaffMember(member)),
+  }
+}
+
+function normalizeStaffMember(raw: Partial<StaffMember>): StaffMember {
+  return {
+    id: raw.id ?? crypto.randomUUID(),
+    name: (raw.name ?? 'Staff').trim() || 'Staff',
+    monthlySalary: Math.max(0, Number(raw.monthlySalary) || 0),
+    createdAt: raw.createdAt ?? new Date().toISOString(),
   }
 }
 
@@ -1122,6 +1155,185 @@ export function deleteExpense(data: AppData, id: string): AppData {
 export function deleteLoan(data: AppData, id: string): AppData {
   if (!(data.loans ?? []).some((loan) => loan.id === id)) return data
   const next = { ...data, loans: (data.loans ?? []).filter((loan) => loan.id !== id) }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function ensureStaffMember(
+  data: AppData,
+  name: string,
+  monthlySalary = 0,
+): { data: AppData; staffId: string | null } {
+  const key = name.trim().toLowerCase()
+  if (!key) return { data, staffId: null }
+  const existing = (data.staff ?? []).find((member) => member.name.trim().toLowerCase() === key)
+  if (existing) return { data, staffId: existing.id }
+  const next = addStaffMember(data, { name: name.trim(), monthlySalary, linkExisting: true })
+  if (next === data) return { data, staffId: null }
+  const created = (next.staff ?? []).find((member) => member.name.trim().toLowerCase() === key)
+  return { data: next, staffId: created?.id ?? null }
+}
+
+export function addExpenseWithOptionalStaff(
+  data: AppData,
+  expense: Omit<Expense, 'id' | 'createdAt'>,
+  options?: {
+    staffId?: string
+    staffSalaryMonth?: string
+    staffSalaryLink?: boolean
+    createStaffIfMissing?: boolean
+  },
+): { data: AppData; ok: boolean } {
+  let next = data
+  let staffId = options?.staffId
+  const linkSalary = options?.staffSalaryLink === true
+
+  if (linkSalary) {
+    if (!staffId) {
+      const key = expense.name.trim().toLowerCase()
+      const existing = (next.staff ?? []).find((member) => member.name.trim().toLowerCase() === key)
+      if (existing) {
+        staffId = existing.id
+      } else if (options?.createStaffIfMissing) {
+        const ensured = ensureStaffMember(next, expense.name, 0)
+        next = ensured.data
+        staffId = ensured.staffId ?? undefined
+      }
+    }
+    if (!staffId) return { data, ok: false }
+    const newExpense: Expense = {
+      ...expense,
+      staffId,
+      staffSalaryMonth: options?.staffSalaryMonth,
+      staffSalaryLink: true,
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+    }
+    next = { ...next, expenses: [newExpense, ...next.expenses] }
+    saveData(next, { cloudImmediate: true })
+    return { data: next, ok: true }
+  }
+
+  next = addExpense(next, {
+    ...expense,
+    staffId: staffId || undefined,
+    staffSalaryMonth: undefined,
+    staffSalaryLink: options?.staffSalaryLink,
+  })
+  return { data: next, ok: true }
+}
+
+export function linkExistingExpensesToStaff(
+  data: AppData,
+  staffId: string,
+  staffName: string,
+): AppData {
+  const key = staffName.trim().toLowerCase()
+  if (!key) return data
+  let changed = false
+  const expenses = data.expenses.map((expense) => {
+    if (!isStaffLinkableExpense(expense)) return expense
+    if (expense.staffId) return expense
+    if (expense.name.trim().toLowerCase() !== key) return expense
+    changed = true
+    return {
+      ...expense,
+      staffId,
+      staffSalaryLink: true,
+      staffSalaryMonth: salaryMonthFromDate(expense.createdAt),
+    }
+  })
+  if (!changed) return data
+  const next = { ...data, expenses }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function addStaffMember(
+  data: AppData,
+  input: { name: string; monthlySalary: number; linkExisting?: boolean },
+): AppData {
+  const name = input.name.trim()
+  if (!name) return data
+  const exists = (data.staff ?? []).some((member) => member.name.trim().toLowerCase() === name.toLowerCase())
+  if (exists) return data
+  const member: StaffMember = {
+    id: crypto.randomUUID(),
+    name,
+    monthlySalary: Math.max(0, input.monthlySalary),
+    createdAt: new Date().toISOString(),
+  }
+  let next: AppData = { ...data, staff: [member, ...(data.staff ?? [])] }
+  if (input.linkExisting !== false) {
+    next = linkExistingExpensesToStaff(next, member.id, member.name)
+  }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function updateStaffMember(
+  data: AppData,
+  id: string,
+  updates: { name?: string; monthlySalary?: number },
+): AppData {
+  const current = (data.staff ?? []).find((member) => member.id === id)
+  if (!current) return data
+  const nextName = updates.name !== undefined ? updates.name.trim() : current.name
+  if (!nextName) return data
+  const nextSalary =
+    updates.monthlySalary !== undefined ? Math.max(0, updates.monthlySalary) : current.monthlySalary
+  const nextStaff = (data.staff ?? []).map((member) =>
+    member.id === id ? { ...member, name: nextName, monthlySalary: nextSalary } : member,
+  )
+  let next: AppData = { ...data, staff: nextStaff }
+  if (nextName.toLowerCase() !== current.name.trim().toLowerCase()) {
+    next = linkExistingExpensesToStaff(next, id, nextName)
+  }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function updateExpenseStaffSalaryMonth(
+  data: AppData,
+  expenseId: string,
+  staffSalaryMonth: string,
+): AppData {
+  const existing = data.expenses.find((expense) => expense.id === expenseId)
+  if (!existing?.staffId) return data
+  const next = {
+    ...data,
+    expenses: data.expenses.map((expense) =>
+      expense.id === expenseId
+        ? {
+            ...expense,
+            staffSalaryMonth,
+            staffSalaryLink: true,
+            updatedAt: new Date().toISOString(),
+          }
+        : expense,
+    ),
+  }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function deleteStaffMember(data: AppData, id: string): AppData {
+  if (!(data.staff ?? []).some((member) => member.id === id)) return data
+  const expenses = data.expenses.map((expense) =>
+    expense.staffId === id
+      ? {
+          ...expense,
+          staffId: undefined,
+          staffSalaryMonth: undefined,
+          staffSalaryLink: undefined,
+        }
+      : expense,
+  )
+  const next = {
+    ...data,
+    staff: (data.staff ?? []).filter((member) => member.id !== id),
+    expenses,
+  }
   saveData(next, { cloudImmediate: true })
   return next
 }

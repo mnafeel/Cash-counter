@@ -63,28 +63,28 @@
 }
 
 .round-type-chips--compact {
-  gap: 3px;
-}
-
-.round-type-chips--compact .round-type-chips-label {
-  font-size: 0.55rem;
-  line-height: 1.1;
-}
-
-.round-type-chips--compact .round-type-chips-row {
   gap: 4px;
 }
 
+.round-type-chips--compact .round-type-chips-label {
+  font-size: 0.62rem;
+  line-height: 1.2;
+}
+
+.round-type-chips--compact .round-type-chips-row {
+  gap: 6px;
+}
+
 .round-type-chips--compact .round-chip {
-  padding: 4px 8px;
-  min-height: 24px;
-  border-radius: 5px;
+  padding: 6px 10px;
+  min-height: 32px;
+  border-radius: 6px;
 }
 
 .round-type-chips--compact .round-chip-amount {
-  font-size: 0.68rem;
+  font-size: 0.82rem;
 }
 
 .round-type-chips--compact .round-chip-type {
-  font-size: 0.5rem;
+  font-size: 0.58rem;
 }

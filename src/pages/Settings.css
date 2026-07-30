@@ -7,6 +7,11 @@
   overflow: hidden;
 }
 
+.settings-tabs.page-head--corners {
+  padding-left: 72px;
+  padding-right: 72px;
+}
+
 .settings-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

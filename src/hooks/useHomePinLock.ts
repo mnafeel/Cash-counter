@@ -17,7 +17,7 @@ export function useHomePinLock() {
 
     const wasHome = prev === '/'
     const isHome = curr === '/'
-    const noPinWhenReturning = ['/purchase', '/loan', '/history']
+    const noPinWhenReturning = ['/purchase', '/loan', '/history', '/staff']
 
     if (wasHome && noPinWhenReturning.includes(curr)) return
     if (isHome && noPinWhenReturning.includes(prev)) return

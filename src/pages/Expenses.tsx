@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
-import ExpenseHistoryPanel from '../components/ExpenseHistoryPanel'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
 import type { ExpensePayType } from '../types'
@@ -9,6 +8,15 @@ import { isPurchaseExpense } from '../utils/expenseBillLabels'
 import { formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import {
+  currentSalaryMonth,
+  findStaffByName,
+  formatSalaryMonthLabel,
+  listSalaryMonthPickerOptions,
+  salaryMonthChoiceHint,
+  shouldPromptSalaryMonthChoice,
+  suggestDefaultSalaryMonth,
+} from '../utils/staffLedger'
 import './Expenses.css'
 
 type ExpenseField = 'name' | 'amount' | 'cashSplit' | 'bankSplit' | 'pay'
@@ -36,9 +44,11 @@ export default function Expenses() {
   const [payType, setPayType] = useState<ExpensePayType>('cash')
   const [activeField, setActiveField] = useState<ExpenseField>('name')
   const [saved, setSaved] = useState(false)
-  const [showExpenseHistory, setShowExpenseHistory] = useState(false)
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
   const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
+  const [linkToSalary, setLinkToSalary] = useState(true)
+  const [staffSalaryMonth, setStaffSalaryMonth] = useState(currentSalaryMonth())
+  const salaryMonthOptions = useMemo(() => listSalaryMonthPickerOptions(), [])
   const nameInputRef = useRef<HTMLInputElement>(null)
   const paySectionRef = useRef<HTMLDivElement>(null)
   const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
@@ -48,6 +58,11 @@ export default function Expenses() {
 
   const expenseNameSuggestions = useMemo(() => {
     const seen = new Map<string, string>()
+    for (const member of data.staff ?? []) {
+      const raw = member.name.trim()
+      if (!raw) continue
+      seen.set(raw.toLowerCase(), raw)
+    }
     for (let i = data.expenses.length - 1; i >= 0; i--) {
       const item = data.expenses[i]
       if (item?.kind && item.kind !== 'expense') continue
@@ -58,7 +73,20 @@ export default function Expenses() {
       if (!seen.has(key)) seen.set(key, raw)
     }
     return Array.from(seen.values())
-  }, [data.expenses])
+  }, [data.expenses, data.staff])
+
+  const matchedStaff = useMemo(() => findStaffByName(data, name), [data, name])
+  const showStaffOptions = Boolean(matchedStaff)
+  const salaryMonthHint = useMemo(
+    () => (showStaffOptions && shouldPromptSalaryMonthChoice() ? salaryMonthChoiceHint() : ''),
+    [showStaffOptions],
+  )
+
+  useEffect(() => {
+    if (!matchedStaff) return
+    setLinkToSalary(true)
+    setStaffSalaryMonth(suggestDefaultSalaryMonth())
+  }, [matchedStaff?.id])
 
   const filteredNameSuggestions = useMemo(() => {
     const query = name.trim().toLowerCase()
@@ -112,16 +140,47 @@ export default function Expenses() {
     }
   }
 
+  function resetStaffFields() {
+    setLinkToSalary(true)
+    setStaffSalaryMonth(suggestDefaultSalaryMonth())
+  }
+
   function handleSave() {
     if (!isValid || saved) return
-    recordExpense({
-      amount,
-      name: name.trim(),
-      payType,
-      cashAmount: splitMode ? cashSplitAmount : undefined,
-      bankAmount: splitMode ? bankSplitAmount : undefined,
-      kind: 'expense',
-    })
+
+    if (matchedStaff && linkToSalary) {
+      recordExpense({
+        amount,
+        name: name.trim(),
+        payType,
+        cashAmount: splitMode ? cashSplitAmount : undefined,
+        bankAmount: splitMode ? bankSplitAmount : undefined,
+        kind: 'expense',
+        staffId: matchedStaff.id,
+        staffSalaryMonth,
+        staffSalaryLink: true,
+      })
+    } else if (matchedStaff && !linkToSalary) {
+      recordExpense({
+        amount,
+        name: name.trim(),
+        payType,
+        cashAmount: splitMode ? cashSplitAmount : undefined,
+        bankAmount: splitMode ? bankSplitAmount : undefined,
+        kind: 'expense',
+        staffSalaryLink: false,
+      })
+    } else {
+      recordExpense({
+        amount,
+        name: name.trim(),
+        payType,
+        cashAmount: splitMode ? cashSplitAmount : undefined,
+        bankAmount: splitMode ? bankSplitAmount : undefined,
+        kind: 'expense',
+      })
+    }
+
     setSaved(true)
     setTimeout(() => {
       setAmountStr('')
@@ -130,6 +189,7 @@ export default function Expenses() {
       setName('')
       setPayType('cash')
       setActiveField('name')
+      resetStaffFields()
       setSaved(false)
     }, 900)
   }
@@ -217,6 +277,7 @@ export default function Expenses() {
     setName('')
     setPayType('cash')
     setActiveField('name')
+    resetStaffFields()
     setSaved(false)
   }
 
@@ -236,19 +297,12 @@ export default function Expenses() {
 
   return (
     <div className="expenses-page">
-      <button
-        type="button"
-        className="expense-history-btn expense-history-btn--corner"
-        onClick={() => setShowExpenseHistory(true)}
-      >
-        History
-      </button>
-
       <header className="expenses-page-head">
         <h1 className="expenses-page-title">Expenses</h1>
         <p className="expenses-page-sub">Normal cash or bank expenses only · not purchases</p>
       </header>
 
+      <div className="expenses-form">
       <div className={`expenses-top ${splitMode ? 'expenses-top--split' : ''}`}>
         <label className="expense-name">
           <span className="expense-name-label">Expense Name</span>
@@ -301,7 +355,7 @@ export default function Expenses() {
                 handleEnter()
               }
             }}
-            placeholder="Required — e.g. Supplies, Rent"
+            placeholder="e.g. Supplies, Rent"
             autoComplete="off"
           />
           {nameDropdownOpen && filteredNameSuggestions.length > 0 && (
@@ -390,6 +444,45 @@ export default function Expenses() {
         />
       </div>
 
+      {showStaffOptions && matchedStaff ? (
+        <div className="expenses-staff expenses-staff--active">
+          <p className="expenses-staff-linked">
+            Staff match · <strong>{matchedStaff.name}</strong>
+          </p>
+
+          {salaryMonthHint ? <p className="expenses-staff-prompt">{salaryMonthHint}</p> : null}
+
+          <label className="expenses-staff-toggle expenses-staff-toggle--inline">
+            <input
+              type="checkbox"
+              checked={linkToSalary}
+              onChange={(e) => setLinkToSalary(e.target.checked)}
+            />
+            <span>Link to salary balance</span>
+          </label>
+
+          {linkToSalary ? (
+            <label className="expenses-staff-field">
+              <span>Credit to salary month</span>
+              <select
+                value={staffSalaryMonth}
+                onChange={(e) => setStaffSalaryMonth(e.target.value || suggestDefaultSalaryMonth())}
+              >
+                {salaryMonthOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <small>Payment will count toward {formatSalaryMonthLabel(staffSalaryMonth)}</small>
+            </label>
+          ) : (
+            <p className="expenses-staff-note">Recorded as a general expense only — salary balance will not change.</p>
+          )}
+        </div>
+      ) : null}
+      </div>
+
       <div className="expenses-keyboard">
         <NumberKeyboard onPress={handleNumpad} />
       </div>
@@ -408,12 +501,6 @@ export default function Expenses() {
           {!saved ? <span className="btn-shortcut">Alt+S</span> : null}
         </button>
       </div>
-
-      <ExpenseHistoryPanel
-        open={showExpenseHistory}
-        onClose={() => setShowExpenseHistory(false)}
-        data={data}
-      />
     </div>
   )
 }

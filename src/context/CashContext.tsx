@@ -19,12 +19,13 @@ import type {
   TransferDirection,
 } from '../types'
 import {
-  addExpense,
   addExpenseBatch,
+  addExpenseWithOptionalStaff,
   addSale,
   addSupplier as addSupplierToData,
   addSupplierItem as addSupplierItemToData,
   addLoan,
+  addStaffMember,
   addTransfer,
   applyPartialBalanceSaleCollection,
   applyPurchaseCreditPayment,
@@ -36,6 +37,7 @@ import {
   clearAllLocalData,
   deleteExpense,
   deleteLoan,
+  deleteStaffMember,
   deleteSale,
   editPaidSalePayment,
   type BillCreatePayType,
@@ -56,6 +58,8 @@ import {
   setCustomerReminder,
   updateExpenseName,
   updateExpense,
+  updateStaffMember,
+  updateExpenseStaffSalaryMonth,
   updatePendingBill,
   updateSaleBill,
   updateSaleCustomerName,
@@ -139,7 +143,11 @@ interface CashContextValue {
     giveAmount?: number
     changeAmount?: number
     kind?: ExpenseKind
-  }) => void
+    staffId?: string
+    staffSalaryMonth?: string
+    staffSalaryLink?: boolean
+    createStaffIfMissing?: boolean
+  }) => boolean
   recordExpenses: (
     expenses: {
       amount: number
@@ -167,6 +175,10 @@ interface CashContextValue {
   removeSale: (id: string, relatedSaleIds?: string[]) => void
   removeExpense: (id: string) => void
   removeLoan: (id: string) => void
+  addStaff: (input: { name: string; monthlySalary: number; linkExisting?: boolean }) => boolean
+  updateStaff: (id: string, updates: { name?: string; monthlySalary?: number }) => void
+  removeStaff: (id: string) => void
+  updateExpenseStaffSalaryMonth: (expenseId: string, staffSalaryMonth: string) => void
   cancelApprovedCheque: (id: string) => boolean
   cancelPurchaseCredit: (id: string) => void
   cancelSaleCredit: (id: string, relatedSaleIds?: string[]) => void
@@ -469,27 +481,45 @@ export function CashProvider({ children }: { children: ReactNode }) {
       giveAmount?: number
       changeAmount?: number
       kind?: ExpenseKind
+      staffId?: string
+      staffSalaryMonth?: string
+      staffSalaryLink?: boolean
+      createStaffIfMissing?: boolean
     }) => {
-      setData((prev) =>
-        addExpense(prev, {
-          amount: expense.amount,
-          name: expense.name.trim(),
-          payType: expense.payType,
-          cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
-          bankAmount:
-            expense.payType === 'split' || expense.payType === 'bank'
-              ? expense.bankAmount ?? (expense.payType === 'bank' ? expense.amount : undefined)
-              : undefined,
-          chequeAmount:
-            expense.payType === 'split' || expense.payType === 'cheque'
-              ? expense.chequeAmount ?? (expense.payType === 'cheque' ? expense.amount : undefined)
-              : undefined,
-          chequeApproved: expense.chequeApproved,
-          giveAmount: expense.giveAmount,
-          changeAmount: expense.changeAmount,
-          kind: expense.kind ?? 'expense',
-        }),
-      )
+      let ok = false
+      setData((prev) => {
+        const result = addExpenseWithOptionalStaff(
+          prev,
+          {
+            amount: expense.amount,
+            name: expense.name.trim(),
+            payType: expense.payType,
+            cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
+            bankAmount:
+              expense.payType === 'split' || expense.payType === 'bank'
+                ? expense.bankAmount ?? (expense.payType === 'bank' ? expense.amount : undefined)
+                : undefined,
+            chequeAmount:
+              expense.payType === 'split' || expense.payType === 'cheque'
+                ? expense.chequeAmount ?? (expense.payType === 'cheque' ? expense.amount : undefined)
+                : undefined,
+            chequeApproved: expense.chequeApproved,
+            giveAmount: expense.giveAmount,
+            changeAmount: expense.changeAmount,
+            kind: expense.kind ?? 'expense',
+          },
+          {
+            staffId: expense.staffId,
+            staffSalaryMonth: expense.staffSalaryMonth,
+            staffSalaryLink: expense.staffSalaryLink,
+            createStaffIfMissing: expense.createStaffIfMissing,
+          },
+        )
+        if (!result.ok) return prev
+        ok = true
+        return result.data
+      })
+      return ok
     },
     [],
   )
@@ -581,6 +611,34 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const removeLoan = useCallback((id: string) => {
     setData((prev) => deleteLoan(prev, id))
+  }, [])
+
+  const addStaff = useCallback(
+    (input: { name: string; monthlySalary: number; linkExisting?: boolean }): boolean => {
+      let success = false
+      setData((prev) => {
+        const next = addStaffMember(prev, input)
+        success = next !== prev
+        return next
+      })
+      return success
+    },
+    [],
+  )
+
+  const updateStaff = useCallback(
+    (id: string, updates: { name?: string; monthlySalary?: number }) => {
+      setData((prev) => updateStaffMember(prev, id, updates))
+    },
+    [],
+  )
+
+  const removeStaff = useCallback((id: string) => {
+    setData((prev) => deleteStaffMember(prev, id))
+  }, [])
+
+  const updateExpenseStaffSalaryMonthHandler = useCallback((expenseId: string, staffSalaryMonth: string) => {
+    setData((prev) => updateExpenseStaffSalaryMonth(prev, expenseId, staffSalaryMonth))
   }, [])
 
   const addSupplier = useCallback((name: string) => {
@@ -871,6 +929,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeSale,
       removeExpense,
       removeLoan,
+      addStaff,
+      updateStaff,
+      removeStaff,
+      updateExpenseStaffSalaryMonth: updateExpenseStaffSalaryMonthHandler,
       addSupplier,
       addSupplierItem,
       cancelApprovedCheque: cancelApprovedChequeSale,
@@ -920,6 +982,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeSale,
       removeExpense,
       removeLoan,
+      addStaff,
+      updateStaff,
+      removeStaff,
+      updateExpenseStaffSalaryMonthHandler,
       addSupplier,
       addSupplierItem,
       cancelApprovedChequeSale,

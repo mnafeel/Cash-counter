@@ -10,12 +10,17 @@ import {
   buildHistoryItems,
   getHistoryPaymentLabel,
   getHistoryPaymentSortKey,
+  getHistoryItemListPaymentParts,
+  getHistoryListPaymentPartIcon,
+  getHistoryListPaymentPartLabel,
   getHistoryTypeLabel,
   historyItemAmountForDateFilter,
   historyItemCreatedTime,
   historyItemSortTime,
   historyItemActivityLabel,
   historyItemListDateLabel,
+  historyItemListPaymentTypeText,
+  historyItemListRowSub,
   matchesHistoryDateFilter,
   matchesHistoryPaymentFilter,
   matchesHistorySearch,
@@ -391,6 +396,7 @@ export default function History() {
             purchasePaidRows && item.type === 'purchase',
           )
           const dateEditable = canEditBillFromHistory(item)
+          const paymentDetail = historyItemListPaymentTypeText(item, dateFilter, selectedDate)
 
           return (
             <li
@@ -484,14 +490,10 @@ export default function History() {
                       </div>
                     )}
                   </div>
-                  <span className="history-item-sub">{item.sub}</span>
+                  <span className="history-item-sub">{historyItemListRowSub(item)}</span>
                   <span className="history-item-meta">
-                    {item.paySummary && item.type !== 'purchase' ? (
-                      <span className="history-item-payment">{item.paySummary}</span>
-                    ) : item.paymentMode ? (
-                      <span className="history-item-payment">
-                        {getHistoryPaymentLabel(item.paymentMode)}
-                      </span>
+                    {paymentDetail ? (
+                      <span className="history-item-payment">{paymentDetail}</span>
                     ) : null}
                     {dateEditable ? (
                       <button
@@ -547,33 +549,45 @@ export default function History() {
   return (
     <div className="history-page">
       <div className="history-top">
-      <div className="history-header">
-        <h2>History</h2>
-        <p>
-          {showPurchaseHistory
-            ? `${combinedItems.length} records · time order · ${purchaseItems.length} paid purchases (${formatMoney(purchasePaidTotal)})`
-            : `${normalItems.length} records`}
-          {' · '}tap row for receipt · tap name to rename
+      <header className="history-header">
+        <div className="history-header-main">
+          <h2>History</h2>
+          <span className="history-header-badge">
+            {showPurchaseHistory ? combinedItems.length : normalItems.length} records
+          </span>
+        </div>
+        {showPurchaseHistory && purchaseItems.length > 0 ? (
+          <p className="history-header-meta">
+            {purchaseItems.length} paid purchases · {formatMoney(purchasePaidTotal)}
+          </p>
+        ) : null}
+        <p className="history-header-hints">
+          Tap row for receipt · tap name to rename
           {billEditMode ? ' · tap date to edit bill' : ''}
         </p>
-      </div>
+      </header>
 
       <div className="history-toolbar">
-        <input
-          type="search"
-          className="history-search"
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value)
-            setPurchaseCreditListOpen(false)
-          }}
-          onFocus={() => setPurchaseCreditListOpen(false)}
-          placeholder={searchHint}
-          autoComplete="off"
-        />
+        <div
+          className={`history-toolbar-primary${showPaymentFilters ? '' : ' history-toolbar-primary--no-payment'}`}
+        >
+          <label className="history-filter-field history-filter-field--search">
+            <span className="history-filter-label">Search</span>
+            <input
+              type="search"
+              className="history-search"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value)
+                setPurchaseCreditListOpen(false)
+              }}
+              onFocus={() => setPurchaseCreditListOpen(false)}
+              placeholder={searchHint}
+              autoComplete="off"
+            />
+          </label>
 
-        <div className="history-toolbar-filters">
-          <label className="history-filter-field">
+          <label className="history-filter-field history-filter-field--type">
             <span className="history-filter-label">Type</span>
             <select
               className="history-select"
@@ -600,7 +614,7 @@ export default function History() {
           </label>
 
           {showPaymentFilters ? (
-            <label className="history-filter-field">
+            <label className="history-filter-field history-filter-field--payment">
               <span className="history-filter-label">Payment</span>
               <select
                 className="history-select"
@@ -619,8 +633,10 @@ export default function History() {
               </select>
             </label>
           ) : null}
+        </div>
 
-          <label className="history-filter-field">
+        <div className="history-toolbar-secondary">
+          <label className="history-filter-field history-filter-field--sort">
             <span className="history-filter-label">Sort</span>
             <select
               className="history-select"
@@ -639,7 +655,7 @@ export default function History() {
             </select>
           </label>
 
-          <label className="history-filter-field">
+          <label className="history-filter-field history-filter-field--date">
             <span className="history-filter-label">Date</span>
             <select
               className="history-select"
@@ -677,7 +693,10 @@ export default function History() {
       </div>
 
       <label className="history-paid-toggle">
-        <span className="history-paid-toggle-label">Show purchase history (time order)</span>
+        <span className="history-paid-toggle-copy">
+          <span className="history-paid-toggle-label">Paid purchases</span>
+          <span className="history-paid-toggle-hint">Mix in time order</span>
+        </span>
         <input
           type="checkbox"
           checked={showPurchaseHistory}
@@ -685,17 +704,13 @@ export default function History() {
             setShowPurchaseHistory(e.target.checked)
             setPurchaseCreditListOpen(false)
           }}
-          aria-label="Show purchase history below"
+          aria-label="Include paid purchases in time order"
         />
       </label>
       </div>
 
       <div className="history-scroll">
         <section className="history-section">
-          <h3 className="history-section-title">
-            {showPurchaseHistory ? '📋 History + Purchases · time order' : '📋 History'}
-          </h3>
-
           {purchaseCreditItems.length > 0 ? (
             <div className="history-purchase-credit-bar" ref={purchaseCreditBarRef}>
               <button
@@ -762,7 +777,7 @@ export default function History() {
           ) : null}
 
           {summaryTypes.length > 0 ? (
-            <div className="history-summary">
+            <div className="history-summary history-summary--grid">
               {summaryTypes.map((t) => (
                 <div key={t.id} className={`history-summary-item history-summary-item--${t.id}`}>
                   <span className="history-summary-label">
@@ -800,13 +815,14 @@ export default function History() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="history-receipt-head">
-              <h3>
-                {receiptItem.type === 'purchase'
-                  ? 'Purchase Receipt'
-                  : receiptItem.isSplitGroup
-                    ? 'Split Bill Receipt'
-                    : 'Bill Receipt'}
-              </h3>
+              <div className="history-receipt-head-main">
+                <span className={`history-receipt-type history-receipt-type--${receiptItem.type}`}>
+                  {getHistoryTypeLabel(receiptItem.type)}
+                </span>
+                <h3>
+                  {receiptItem.isSplitGroup ? 'Split bill' : 'Receipt'}
+                </h3>
+              </div>
               <button
                 type="button"
                 className="history-receipt-close"
@@ -817,11 +833,44 @@ export default function History() {
               </button>
             </div>
 
+            {(() => {
+              const receiptPaymentParts = getHistoryItemListPaymentParts(receiptItem, 'all', '')
+              return (
+                <div className="history-receipt-top">
+                  <h4 className="history-receipt-top-name">{receiptItem.name || 'No name'}</h4>
+                  <div className="history-receipt-top-total">
+                    <span>Total</span>
+                    <strong>
+                      {formatMoney(receiptItem.originalBillAmount ?? receiptItem.amount)}
+                    </strong>
+                  </div>
+                  {receiptPaymentParts.length > 0 ? (
+                    <div className="history-receipt-split">
+                      <div className="history-receipt-split-grid">
+                        {receiptPaymentParts.map((part, partIndex) => (
+                          <div
+                            key={`${part.mode}-${part.status}-${partIndex}`}
+                            className={`history-receipt-split-item history-receipt-split-item--${part.mode} history-receipt-split-item--${part.status}`}
+                          >
+                            <span className="history-receipt-split-item-label">
+                              {getHistoryListPaymentPartIcon(part.mode)}{' '}
+                              {getHistoryListPaymentPartLabel(part.mode)}
+                              {part.status === 'pending' ? ' · pending' : ''}
+                            </span>
+                            <strong className="history-receipt-split-item-amount">
+                              {formatMoney(part.amount)}
+                            </strong>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })()}
+
+            <div className="history-receipt-body">
             <div className="history-receipt-meta">
-              <div className="history-receipt-row">
-                <span>{receiptItem.type === 'purchase' ? 'Supplier' : 'Customer'}</span>
-                <strong>{receiptItem.name || '—'}</strong>
-              </div>
               {receiptItem.billCreatedAt ? (
                 <div className="history-receipt-row">
                   <span>Bill created</span>
@@ -873,27 +922,11 @@ export default function History() {
                 <span>Last activity</span>
                 <strong>{historyItemActivityLabel(receiptItem)}</strong>
               </div>
-              <div className="history-receipt-row history-receipt-row--total">
-                <span>Bill Total</span>
-                <strong>{formatMoney(receiptItem.originalBillAmount ?? receiptItem.amount)}</strong>
-              </div>
-              {receiptItem.isSplitGroup && receiptItem.receiptLines ? (
-                <div className="history-receipt-row">
-                  <span>Collected</span>
-                  <strong>
-                    {formatMoney(
-                      receiptItem.receiptLines
-                        .filter((line) => line.status === 'paid')
-                        .reduce((sum, line) => sum + line.amount, 0),
-                    )}
-                  </strong>
-                </div>
-              ) : null}
             </div>
 
             {receiptItem.receiptTimeline && receiptItem.receiptTimeline.length > 0 ? (
               <div className="history-receipt-timeline">
-                <h4 className="history-receipt-section-title">Timeline</h4>
+                <h4 className="history-receipt-section-title">Payment timeline</h4>
                 <ul className="history-receipt-timeline-list">
                   {receiptItem.receiptTimeline.map((event, idx) => (
                     <li
@@ -921,55 +954,66 @@ export default function History() {
               </div>
             ) : null}
 
-            <h4 className="history-receipt-section-title">Payment details</h4>
-            {(() => {
-              const lines =
-                receiptItem.receiptLines && receiptItem.receiptLines.length > 0
-                  ? receiptItem.receiptLines
-                  : [
-                      {
-                        label: getHistoryTypeLabel(receiptItem.type),
-                        amount: receiptItem.amount,
-                        status: 'paid' as const,
-                        detail: receiptItem.sub,
-                        date: receiptItem.date,
-                      },
-                    ]
-              return (
-              <ul className="history-receipt-lines">
-                {lines.map((line, idx) => (
-                  <li
-                    key={`${line.label}-${idx}`}
-                    className={`history-receipt-line history-receipt-line--${line.status}`}
-                  >
-                    <div className="history-receipt-line-top">
-                      <span className="history-receipt-line-label">
-                        {line.status === 'paid' ? '✓' : '⏳'} {line.label}
-                      </span>
-                      <span className="history-receipt-line-amount">{formatMoney(line.amount)}</span>
-                    </div>
-                    {line.detail ? (
-                      <span className="history-receipt-line-detail">{line.detail}</span>
-                    ) : null}
-                    {line.createdAt ? (
-                      <span className="history-receipt-line-date">
-                        Created {formatDate(line.createdAt)}
-                      </span>
-                    ) : null}
-                    {line.paidAt && line.status === 'paid' ? (
-                      <span className="history-receipt-line-date history-receipt-line-date--paid">
-                        Paid {formatDate(line.paidAt)}
-                      </span>
-                    ) : line.status === 'pending' ? (
-                      <span className="history-receipt-line-date history-receipt-line-date--pending">
-                        Awaiting payment
-                      </span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-              )
-            })()}
+            {!(receiptItem.receiptTimeline && receiptItem.receiptTimeline.length > 0) ? (
+              <>
+                <h4 className="history-receipt-section-title">Details</h4>
+                {(() => {
+                  const lines =
+                    receiptItem.receiptLines && receiptItem.receiptLines.length > 0
+                      ? receiptItem.receiptLines.filter(
+                          (line) =>
+                            line.label !== 'Bill total' &&
+                            line.label !== 'Purchase' &&
+                            line.label !== 'Paid',
+                        )
+                      : [
+                          {
+                            label: getHistoryTypeLabel(receiptItem.type),
+                            amount: receiptItem.amount,
+                            status: 'paid' as const,
+                            detail: receiptItem.sub,
+                            date: receiptItem.date,
+                          },
+                        ]
+                  const displayLines =
+                    lines.length > 0
+                      ? lines
+                      : receiptItem.receiptLines && receiptItem.receiptLines.length > 0
+                        ? receiptItem.receiptLines
+                        : [
+                            {
+                              label: getHistoryTypeLabel(receiptItem.type),
+                              amount: receiptItem.amount,
+                              status: 'paid' as const,
+                              detail: receiptItem.sub,
+                              date: receiptItem.date,
+                            },
+                          ]
+                  return (
+                    <ul className="history-receipt-lines">
+                      {displayLines.map((line, idx) => (
+                        <li
+                          key={`${line.label}-${idx}`}
+                          className={`history-receipt-line history-receipt-line--${line.status}`}
+                        >
+                          <div className="history-receipt-line-top">
+                            <span className="history-receipt-line-label">
+                              {line.status === 'paid' ? '✓' : '⏳'} {line.label}
+                            </span>
+                            <span className="history-receipt-line-amount">
+                              {formatMoney(line.amount)}
+                            </span>
+                          </div>
+                          {line.detail ? (
+                            <span className="history-receipt-line-detail">{line.detail}</span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                })()}
+              </>
+            ) : null}
 
             {receiptItem.type === 'sale' && billEditMode ? (
               <button
@@ -980,6 +1024,7 @@ export default function History() {
                 Edit bill on Counter
               </button>
             ) : null}
+            </div>
 
             <div className="history-receipt-foot">
               <span>{getHistoryTypeLabel(receiptItem.type)}</span>

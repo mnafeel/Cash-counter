@@ -66,8 +66,6 @@ import CreditDashboard, { type CreditListFilter } from '../components/CreditDash
 import ChequeDashboard, { type ChequeListFilter } from '../components/ChequeDashboard'
 import { buildCreditOverview } from '../utils/customerLedger'
 import { buildChequeOverview } from '../utils/chequeLedger'
-import { buildLoanOverview } from '../utils/loanLedger'
-import { countActiveLoanReminders } from '../utils/loanReminders'
 import {
   buildActiveChequeReminders,
   buildActiveCreditReminders,
@@ -244,8 +242,6 @@ export default function Home() {
   )
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
-  const loanOverview = useMemo(() => buildLoanOverview(data), [data])
-  const activeLoanAlerts = useMemo(() => countActiveLoanReminders(data), [data])
   const dueReminders = useMemo(() => countActiveBillReminders(data), [data])
   const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(data), [data])
   const activeChequeAlerts = useMemo(() => buildActiveChequeReminders(data), [data])
@@ -473,21 +469,31 @@ export default function Home() {
 
   return (
     <div className="home">
-      <section className="home-launch" aria-label="Quick launch">
-        <button type="button" className="home-launch-btn" onClick={() => openReports('today')}>
-          📊 Reports
-        </button>
-        <Link to="/loan" className="home-launch-btn home-launch-btn--loan">
-          <span className="home-launch-copy">
-            <strong>🤝 Loan</strong>
-            <small>
-              {loanOverview.receivableCount + loanOverview.payableCount > 0
-                ? `Collect ${formatMoney(loanOverview.receivableTotal)} · Return ${formatMoney(loanOverview.payableTotal)}`
-                : 'Lend & borrow · zero interest'}
-              {activeLoanAlerts > 0 ? ` · ${activeLoanAlerts} reminder${activeLoanAlerts === 1 ? '' : 's'}` : ''}
-            </small>
-          </span>
-        </Link>
+      <section className="home-access" aria-label="Quick access">
+        <div className="home-access-grid">
+          <button
+            type="button"
+            className="home-access-btn home-access-btn--reports"
+            onClick={() => openReports('today')}
+          >
+            <span className="home-access-icon" aria-hidden="true">
+              📊
+            </span>
+            <span className="home-access-label">Reports</span>
+          </button>
+          <Link to="/loan" className="home-access-btn home-access-btn--loan">
+            <span className="home-access-icon" aria-hidden="true">
+              🤝
+            </span>
+            <span className="home-access-label">Loan</span>
+          </Link>
+          <Link to="/staff" className="home-access-btn home-access-btn--staff">
+            <span className="home-access-icon" aria-hidden="true">
+              👥
+            </span>
+            <span className="home-access-label">Staff</span>
+          </Link>
+        </div>
       </section>
 
       <section className="home-section home-section--balances" aria-label="Balances">

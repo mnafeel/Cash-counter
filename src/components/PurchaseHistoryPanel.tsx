@@ -19,6 +19,7 @@ import {
 import { toInputDate } from '../utils/salesReport'
 import './PurchaseHistoryPanel.css'
 import Portal from './Portal'
+import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
 
 const DATE_OPTIONS: { id: PurchaseDateFilter | 'range'; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -274,23 +275,19 @@ export default function PurchaseHistoryPanel({
       aria-modal={embedded ? undefined : true}
       onClick={fullscreen || embedded ? undefined : handleClose}
     >
-      <div className="purchase-hist-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="purchase-hist-panel page-shell" onClick={(e) => e.stopPropagation()}>
+        <PageCorners
+        left={
+          <PageBackButton
+            onClick={handleBack}
+            ariaLabel={selectedSupplierKey ? 'Back to suppliers' : 'Back'}
+          />
+        }
+          right={<PageCloseButton onClick={handleClose} />}
+        />
         <div className="purchase-hist-top">
-          <div className="purchase-hist-head">
-            {(selectedSupplierKey || embedded || fullscreen) && (
-              <button
-                type="button"
-                className="purchase-hist-head-back"
-                onClick={handleBack}
-                aria-label={selectedSupplierKey ? 'Back to suppliers' : 'Back'}
-              >
-                ←
-              </button>
-            )}
+          <div className="purchase-hist-head page-head--corners">
             <h3>{selectedSupplier ? selectedSupplier.shopName : 'Purchase History'}</h3>
-            <button type="button" className="purchase-hist-close" onClick={handleClose} aria-label="Close">
-              ✕
-            </button>
           </div>
 
           <input

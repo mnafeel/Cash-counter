@@ -15,6 +15,7 @@ import {
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
+import { PageBackButton, PageCorners } from '../components/PageCorners'
 import './Loan.css'
 
 type LoanTab = 'pending' | 'settled'
@@ -168,20 +169,21 @@ export default function Loan() {
   }
 
   return (
-    <div className="loan-page">
-      <header className="loan-page-head">
+    <div className="loan-page page-shell">
+      <PageCorners
+        left={
+          <PageBackButton
+            onClick={handleClose}
+            ariaLabel={formMode || settlingId ? 'Go back' : 'Back'}
+          />
+        }
+      />
+
+      <header className="loan-page-head page-head--corners">
         <div className="loan-page-head-text">
           <h1>Loan</h1>
           <p>Zero interest · lend and borrow</p>
         </div>
-        <button
-          type="button"
-          className="loan-page-close"
-          onClick={handleClose}
-          aria-label={formMode || settlingId ? 'Go back' : 'Back to home'}
-        >
-          ←
-        </button>
       </header>
 
       <div className="loan-page-summary">

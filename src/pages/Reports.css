@@ -265,38 +265,17 @@
 .reports-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
   flex-shrink: 0;
   padding-bottom: 2px;
   background: var(--bg, var(--brown));
 }
 
-.reports-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.reports-back-btn {
-  flex-shrink: 0;
-  min-width: 36px;
-  min-height: 36px;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--cream);
-  font-size: 1rem;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
-}
-
 .reports-head-text {
   min-width: 0;
   flex: 1;
+  text-align: center;
 }
 
 .reports-title {

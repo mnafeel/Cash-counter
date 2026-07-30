@@ -1,0 +1,73 @@
+.page-shell {
+  position: relative;
+}
+
+.page-corners {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.page-corners-start,
+.page-corners-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+.page-back-btn,
+.page-close-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  min-height: 30px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cream-dim);
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  font-family: inherit;
+  text-decoration: none;
+}
+
+.page-back-btn--icon,
+.page-close-btn {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  justify-content: center;
+}
+
+.page-close-btn {
+  font-size: 0.9rem;
+}
+
+.page-back-btn:active,
+.page-close-btn:active {
+  border-color: var(--cream);
+  color: var(--cream);
+}
+
+.page-head--corners {
+  padding-top: 34px;
+  padding-left: 72px;
+  padding-right: 72px;
+}

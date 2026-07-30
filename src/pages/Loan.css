@@ -15,33 +15,11 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 2px 2px 0;
 }
 
 .loan-page-head-text {
   min-width: 0;
   flex: 1;
-}
-
-.loan-page-close {
-  flex-shrink: 0;
-  min-height: 30px;
-  min-width: 30px;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--brown-dark);
-  color: var(--cream);
-  font-size: 0.9rem;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.loan-page-close:active {
-  transform: scale(0.97);
-  border-color: var(--cream-dim);
 }
 
 .loan-page-head h1 {

@@ -22,6 +22,7 @@ const KNOWN_ROUTES = new Set([
   '/expenses',
   '/history',
   '/loan',
+  '/staff',
   '/reports',
   '/settings',
 ])

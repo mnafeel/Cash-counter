@@ -31,6 +31,7 @@ import {
 } from '../utils/purchaseHistory'
 import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
 import Portal from './Portal'
+import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
 import type { CreditReportItem, ChequeReportItem } from '../utils/reportsHub'
 import type { NormalExpenseHistoryItem } from '../utils/normalExpenseHistory'
 import { buildCreditOverview } from '../utils/customerLedger'
@@ -345,17 +346,18 @@ export default function ReportsPanel({
   return (
     <Portal>
     <div className="reports-overlay" role="dialog" aria-modal="true" aria-label="Reports">
-      <div className="reports-page reports-panel">
-        <div className="reports-top">
-          <header className="reports-head">
-            <button
-              type="button"
-              className="reports-back-btn"
+      <div className="reports-page reports-panel page-shell">
+        <PageCorners
+          left={
+            <PageBackButton
               onClick={handleReportsBack}
-              aria-label={selectedPurchaseSupplierKey ? 'Back to suppliers' : 'Back'}
-            >
-              ←
-            </button>
+              ariaLabel={selectedPurchaseSupplierKey ? 'Back to suppliers' : 'Back'}
+            />
+          }
+          right={<PageCloseButton onClick={onClose} ariaLabel="Close reports" />}
+        />
+        <div className="reports-top">
+          <header className="reports-head page-head--corners">
             <div className="reports-head-text">
               <h1 className="reports-title">
                 {selectedPurchaseSupplier
@@ -365,11 +367,6 @@ export default function ReportsPanel({
                     : 'Reports'}
               </h1>
               <p className="reports-sub">{periodLabel}</p>
-            </div>
-            <div className="reports-head-actions">
-              <button type="button" className="reports-home-btn" onClick={onClose} aria-label="Close reports">
-                ✕
-              </button>
             </div>
           </header>
 

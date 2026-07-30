@@ -1,21 +1,5 @@
 .purchase-page-head {
   flex-shrink: 0;
-  padding: 4px 2px 2px;
-  padding-left: 72px;
-  padding-right: 72px;
-}
-
-.purchase-page-corners {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  right: 6px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  pointer-events: none;
 }
 
 .purchase-corner-btn {

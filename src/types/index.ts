@@ -71,6 +71,12 @@ export interface Expense {
   createdAt: string
   /** Set when bill or credit balance is updated (e.g. partial credit payment). */
   updatedAt?: string
+  /** Links general expense to a staff member's salary record. */
+  staffId?: string
+  /** YYYY-MM — which salary month this payment applies to. */
+  staffSalaryMonth?: string
+  /** When false, expense is recorded but does not reduce salary balance. */
+  staffSalaryLink?: boolean
 }
 
 export interface SupplierEntry {
@@ -140,6 +146,14 @@ export interface Loan {
   settlementPaySource?: LoanPaySource
 }
 
+/** Staff member with a fixed monthly salary. */
+export interface StaffMember {
+  id: string
+  name: string
+  monthlySalary: number
+  createdAt: string
+}
+
 export interface AppData {
   openingBalance: number
   openingBankBalance?: number
@@ -153,6 +167,7 @@ export interface AppData {
   sales: Sale[]
   expenses: Expense[]
   loans?: Loan[]
+  staff?: StaffMember[]
 }
 
 export const STORAGE_KEY = 'cash-counter-data'

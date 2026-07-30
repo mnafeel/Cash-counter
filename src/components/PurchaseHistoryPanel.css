@@ -314,24 +314,9 @@
 .purchase-hist-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
   flex-shrink: 0;
-}
-
-.purchase-hist-head-back {
-  flex-shrink: 0;
-  min-width: 36px;
-  min-height: 36px;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--cream);
-  font-size: 1rem;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
 }
 
 .purchase-hist-head h3 {
@@ -343,6 +328,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
 }
 
 .purchase-hist-paid-toggle {

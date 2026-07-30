@@ -95,6 +95,7 @@ import { getReminderAlertSettings, getSaleReminderKind } from '../utils/billRemi
 import { getEffectiveSaleReminderAt, getEffectiveSaleReminderNote } from '../utils/customerReminders'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { PageBackButton, PageCorners } from '../components/PageCorners'
 import './Settings.css'
 
 type SettingsField = 'openingCash' | 'openingBank' | 'pin' | 'pinConfirm'
@@ -1052,8 +1053,9 @@ export default function Settings() {
   }
 
   return (
-    <div className="settings-page">
-      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
+    <div className="settings-page page-shell">
+      <PageCorners left={<PageBackButton to="/" />} />
+      <div className="settings-tabs page-head--corners" role="tablist" aria-label="Settings sections">
         {SETTINGS_TABS.map((item) => (
           <button
             key={item.id}

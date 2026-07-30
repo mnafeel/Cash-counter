@@ -21,24 +21,9 @@
 .customer-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 8px;
   flex-shrink: 0;
-}
-
-.customer-head-back {
-  flex-shrink: 0;
-  min-width: 36px;
-  min-height: 36px;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--cream);
-  font-size: 1rem;
-  font-weight: 700;
-  cursor: pointer;
-  font-family: inherit;
 }
 
 .customer-title {
@@ -51,18 +36,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.customer-close {
-  min-height: 30px;
-  padding: 4px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--brown-dark);
-  color: var(--cream);
-  font-size: 0.62rem;
-  font-weight: 700;
-  cursor: pointer;
+  text-align: center;
 }
 
 .customer-filter-bar {

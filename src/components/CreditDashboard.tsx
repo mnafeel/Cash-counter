@@ -17,6 +17,7 @@ import { filterByDetailDate } from '../utils/detailDateFilter'
 import { toInputDate } from '../utils/salesReport'
 import './CustomerDashboard.css'
 import Portal from './Portal'
+import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
 
 export type CreditListFilter = 'all' | 'credit'
 
@@ -107,22 +108,19 @@ export default function CreditDashboard({
   return (
     <Portal>
     <div className="customer-overlay" role="dialog" aria-modal="true" aria-label="Credit">
-      <div className="customer-panel">
-        <header className="customer-head">
-          {selected ? (
-            <button
-              type="button"
-              className="customer-head-back"
-              onClick={() => setSelectedName(null)}
-              aria-label="Back to customers"
-            >
-              ←
-            </button>
-          ) : null}
+      <div className="customer-panel page-shell">
+        <PageCorners
+        left={
+          selected ? (
+            <PageBackButton onClick={() => setSelectedName(null)} ariaLabel="Back to customers" />
+          ) : (
+            <PageBackButton onClick={onClose} ariaLabel="Back" />
+          )
+        }
+          right={<PageCloseButton onClick={onClose} />}
+        />
+        <header className="customer-head page-head--corners">
           <h1 className="customer-title">{selected?.name ?? 'Credit Dashboard'}</h1>
-          <button type="button" className="customer-close" onClick={onClose}>
-            ✕
-          </button>
         </header>
 
         {!selected ? (
