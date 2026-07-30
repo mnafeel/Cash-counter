@@ -546,6 +546,7 @@ export default function History() {
 
   return (
     <div className="history-page">
+      <div className="history-top">
       <div className="history-header">
         <h2>History</h2>
         <p>
@@ -687,6 +688,7 @@ export default function History() {
           aria-label="Show purchase history below"
         />
       </label>
+      </div>
 
       <div className="history-scroll">
         <section className="history-section">
