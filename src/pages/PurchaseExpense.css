@@ -597,7 +597,11 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--cream-dim);
-  text-align: center;
+  text-align: left;
+}
+
+.purchase-page .pay-type-chips-head {
+  justify-content: flex-start;
 }
 
 .purchase-amount-side {
@@ -655,6 +659,14 @@
   width: 100%;
   min-height: 48px;
   justify-content: center;
+  align-items: flex-start;
+  text-align: left;
+}
+
+.purchase-amount-panel .amount-display-label {
+  align-self: flex-start;
+  align-items: flex-start;
+  text-align: left;
 }
 
 .purchase-field-panel .purchase-field-input-row {
@@ -711,6 +723,17 @@
 
 .purchase-amount-side .amount-display--compact .amount-display-value {
   font-size: clamp(1rem, calc(var(--app-height, 800px) * 0.034), 1.85rem);
+}
+
+.purchase-split-row .amount-display--compact {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.purchase-split-row .amount-display--compact .amount-display-label {
+  align-self: flex-start;
+  align-items: flex-start;
+  text-align: left;
 }
 
 .purchase-split-row {
@@ -806,8 +829,13 @@
   font-size: 0.48rem;
 }
 
+.purchase-controls .pay-type-chips-head {
+  justify-content: flex-start;
+}
+
 .purchase-controls .pay-type-chips-label {
   font-size: 0.44rem;
+  text-align: left;
 }
 
 .purchase-keyboard {

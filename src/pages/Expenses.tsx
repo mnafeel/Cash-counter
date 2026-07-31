@@ -4,8 +4,8 @@ import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
 import type { ExpensePayType } from '../types'
-import { isPurchaseExpense } from '../utils/expenseBillLabels'
 import { formatMoney, parseAmount } from '../utils/format'
+import { buildExpenseNamePickerOptions, findRecentExpenseNameOption, type ExpenseNamePickerOption } from '../utils/normalExpenseHistory'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import {
@@ -14,6 +14,7 @@ import {
   formatSalaryMonthLabel,
   listSalaryMonthPickerOptions,
   salaryMonthChoiceHint,
+  searchStaffNames,
   shouldPromptSalaryMonthChoice,
   suggestDefaultSalaryMonth,
 } from '../utils/staffLedger'
@@ -45,6 +46,7 @@ export default function Expenses() {
   const [activeField, setActiveField] = useState<ExpenseField>('name')
   const [saved, setSaved] = useState(false)
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
+  const [nameDropdownExpanded, setNameDropdownExpanded] = useState(false)
   const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
   const [linkToSalary, setLinkToSalary] = useState(true)
   const [staffSalaryMonth, setStaffSalaryMonth] = useState(currentSalaryMonth())
@@ -53,27 +55,43 @@ export default function Expenses() {
   const paySectionRef = useRef<HTMLDivElement>(null)
   const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
   const nameSuggestionsListRef = useRef<HTMLUListElement>(null)
+  const nameInputPointerRef = useRef(false)
 
   const splitMode = payType === 'split'
 
-  const expenseNameSuggestions = useMemo(() => {
-    const seen = new Map<string, string>()
-    for (const member of data.staff ?? []) {
-      const raw = member.name.trim()
-      if (!raw) continue
-      seen.set(raw.toLowerCase(), raw)
+  const recentExpenseOptions = useMemo(() => buildExpenseNamePickerOptions(data, 12), [data.expenses, data.staff])
+
+  const visibleNameSuggestions = useMemo((): ExpenseNamePickerOption[] => {
+    const query = name.trim().toLowerCase()
+    if (!query) {
+      if (nameDropdownExpanded) return recentExpenseOptions
+      return recentExpenseOptions.slice(0, 1)
     }
-    for (let i = data.expenses.length - 1; i >= 0; i--) {
-      const item = data.expenses[i]
-      if (item?.kind && item.kind !== 'expense') continue
-      if (isPurchaseExpense(item)) continue
-      const raw = item?.name?.trim()
-      if (!raw) continue
-      const key = raw.toLowerCase()
-      if (!seen.has(key)) seen.set(key, raw)
+
+    const matches = recentExpenseOptions.filter((option) => {
+      const lower = option.name.toLowerCase()
+      return lower.includes(query) && lower !== query
+    })
+
+    const seen = new Set(matches.map((option) => option.name.toLowerCase()))
+    for (const staffName of searchStaffNames(data, query)) {
+      const lower = staffName.toLowerCase()
+      if (seen.has(lower)) continue
+      seen.add(lower)
+      const fromHistory = findRecentExpenseNameOption(data, staffName)
+      matches.push(
+        fromHistory ?? {
+          key: `staff-${lower}`,
+          name: staffName,
+          payLabel: 'Cash',
+          timeLabel: '',
+          isStaff: true,
+        },
+      )
     }
-    return Array.from(seen.values())
-  }, [data.expenses, data.staff])
+
+    return matches.slice(0, 12)
+  }, [name, recentExpenseOptions, data, nameDropdownExpanded])
 
   const matchedStaff = useMemo(() => findStaffByName(data, name), [data, name])
   const showStaffOptions = Boolean(matchedStaff)
@@ -87,17 +105,6 @@ export default function Expenses() {
     setLinkToSalary(true)
     setStaffSalaryMonth(suggestDefaultSalaryMonth())
   }, [matchedStaff?.id])
-
-  const filteredNameSuggestions = useMemo(() => {
-    const query = name.trim().toLowerCase()
-    if (!query) return expenseNameSuggestions.slice(0, 8)
-    return expenseNameSuggestions
-      .filter((item) => {
-        const lower = item.toLowerCase()
-        return lower.includes(query) && lower !== query
-      })
-      .slice(0, 8)
-  }, [name, expenseNameSuggestions])
 
   const amount = parseAmount(amountStr)
   const cashSplitAmount = parseAmount(cashSplitStr)
@@ -191,7 +198,23 @@ export default function Expenses() {
       setActiveField('name')
       resetStaffFields()
       setSaved(false)
+      setNameDropdownExpanded(false)
+      setNameDropdownOpen(false)
+      setHighlightedNameIndex(-1)
+      nameInputPointerRef.current = false
+      nameInputRef.current?.focus()
     }, 900)
+  }
+
+  function openNameDropdown(preselectRecent = !name.trim()) {
+    setNameDropdownOpen(true)
+    if (!name.trim()) setNameDropdownExpanded(false)
+    setHighlightedNameIndex(preselectRecent && recentExpenseOptions.length > 0 ? 0 : -1)
+  }
+
+  function openNameDropdownFromPointer() {
+    nameInputPointerRef.current = true
+    openNameDropdown()
   }
 
   function focusField(field: ExpenseField) {
@@ -304,7 +327,14 @@ export default function Expenses() {
 
       <div className="expenses-form">
       <div className={`expenses-top ${splitMode ? 'expenses-top--split' : ''}`}>
-        <label className="expense-name">
+        <label
+          className="expense-name"
+          onPointerDown={(e) => {
+            if (e.pointerType === 'mouse' || e.pointerType === 'pen' || e.pointerType === 'touch') {
+              openNameDropdownFromPointer()
+            }
+          }}
+        >
           <span className="expense-name-label">Expense Name</span>
           <input
             ref={nameInputRef}
@@ -312,39 +342,66 @@ export default function Expenses() {
             className={`expense-name-input ${activeField === 'name' ? 'expense-name-input--active' : ''}`}
             value={name}
             onChange={(e) => {
-              setName(e.target.value)
-              setNameDropdownOpen(true)
+              const next = e.target.value
+              setName(next)
+              setNameDropdownExpanded(false)
+              if (next.trim()) {
+                setNameDropdownOpen(true)
+                setHighlightedNameIndex(-1)
+                return
+              }
+              if (nameInputPointerRef.current) {
+                openNameDropdown()
+                return
+              }
+              setNameDropdownOpen(false)
               setHighlightedNameIndex(-1)
             }}
             onFocus={() => {
               setActiveField('name')
-              setNameDropdownOpen(true)
-              setHighlightedNameIndex(-1)
             }}
-            onBlur={() => setNameDropdownOpen(false)}
+            onBlur={() => {
+              setNameDropdownOpen(false)
+              setNameDropdownExpanded(false)
+              nameInputPointerRef.current = false
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 setNameDropdownOpen(false)
+                setNameDropdownExpanded(false)
                 setHighlightedNameIndex(-1)
                 return
               }
-              if (nameDropdownOpen && filteredNameSuggestions.length > 0) {
+              if (nameDropdownOpen && visibleNameSuggestions.length > 0) {
                 if (e.key === 'ArrowDown') {
                   e.preventDefault()
-                  setHighlightedNameIndex((prev) => (prev + 1) % filteredNameSuggestions.length)
+                  if (!name.trim() && !nameDropdownExpanded && recentExpenseOptions.length > 1) {
+                    setNameDropdownExpanded(true)
+                    setHighlightedNameIndex(1)
+                    return
+                  }
+                  setHighlightedNameIndex((prev) =>
+                    prev < 0 ? 0 : (prev + 1) % visibleNameSuggestions.length,
+                  )
                   return
                 }
                 if (e.key === 'ArrowUp') {
                   e.preventDefault()
+                  if (!name.trim() && nameDropdownExpanded && highlightedNameIndex <= 1) {
+                    setNameDropdownExpanded(false)
+                    setHighlightedNameIndex(0)
+                    return
+                  }
                   setHighlightedNameIndex((prev) =>
-                    prev <= 0 ? filteredNameSuggestions.length - 1 : prev - 1,
+                    prev <= 0 ? visibleNameSuggestions.length - 1 : prev - 1,
                   )
                   return
                 }
                 if (e.key === 'Enter' && highlightedNameIndex >= 0) {
                   e.preventDefault()
-                  setName(filteredNameSuggestions[highlightedNameIndex])
+                  setName(visibleNameSuggestions[highlightedNameIndex].name)
                   setNameDropdownOpen(false)
+                  setNameDropdownExpanded(false)
                   setHighlightedNameIndex(-1)
                   return
                 }
@@ -352,29 +409,39 @@ export default function Expenses() {
               if (e.key === 'Enter' || e.key === 'Tab') {
                 e.preventDefault()
                 setNameDropdownOpen(false)
+                setNameDropdownExpanded(false)
                 handleEnter()
               }
             }}
             placeholder="e.g. Supplies, Rent"
             autoComplete="off"
           />
-          {nameDropdownOpen && filteredNameSuggestions.length > 0 && (
-            <ul ref={nameSuggestionsListRef} className="expense-name-suggestions" role="listbox">
-              {filteredNameSuggestions.map((item, index) => (
-                <li key={item}>
+          {nameDropdownOpen && visibleNameSuggestions.length > 0 && (
+            <ul
+              ref={nameSuggestionsListRef}
+              className="expense-name-suggestions"
+              role="listbox"
+              onMouseDown={(e) => e.preventDefault()}
+              onWheel={(e) => e.preventDefault()}
+              onTouchMove={(e) => e.preventDefault()}
+            >
+              {visibleNameSuggestions.map((item, index) => (
+                <li key={item.key}>
                   <button
                     type="button"
                     ref={index === highlightedNameIndex ? activeNameSuggestionRef : null}
                     className={`expense-name-suggestion ${index === highlightedNameIndex ? 'expense-name-suggestion--active' : ''}`}
-                    onMouseEnter={() => setHighlightedNameIndex(index)}
+                    role="option"
+                    aria-selected={index === highlightedNameIndex}
                     onMouseDown={(e) => {
                       e.preventDefault()
-                      setName(item)
+                      setName(item.name)
                       setNameDropdownOpen(false)
+                      setNameDropdownExpanded(false)
                       setHighlightedNameIndex(-1)
                     }}
                   >
-                    {item}
+                    <span className="expense-name-suggestion-text">{item.name}</span>
                   </button>
                 </li>
               ))}
@@ -446,10 +513,6 @@ export default function Expenses() {
 
       {showStaffOptions && matchedStaff ? (
         <div className="expenses-staff expenses-staff--active">
-          <p className="expenses-staff-linked">
-            Staff match · <strong>{matchedStaff.name}</strong>
-          </p>
-
           {salaryMonthHint ? <p className="expenses-staff-prompt">{salaryMonthHint}</p> : null}
 
           <label className="expenses-staff-toggle expenses-staff-toggle--inline">

@@ -126,6 +126,18 @@ export function findStaffByName(data: AppData, name: string): StaffMember | unde
   return (data.staff ?? []).find((member) => member.name.trim().toLowerCase() === key)
 }
 
+export function isStaffRosterName(data: AppData, name: string): boolean {
+  return Boolean(findStaffByName(data, name))
+}
+
+export function searchStaffNames(data: AppData, query: string): string[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+  return (data.staff ?? [])
+    .map((member) => member.name.trim())
+    .filter((raw) => raw && raw.toLowerCase().includes(q) && raw.toLowerCase() !== q)
+}
+
 export function getStaffMember(data: AppData, staffId: string): StaffMember | undefined {
   return (data.staff ?? []).find((member) => member.id === staffId)
 }

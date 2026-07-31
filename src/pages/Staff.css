@@ -303,6 +303,42 @@
   scrollbar-color: var(--border) var(--bg);
 }
 
+.staff-page-list-head {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.staff-page-download-btn {
+  padding: 6px 10px;
+  border: 1px solid rgba(64, 145, 108, 0.45);
+  border-radius: var(--radius-sm);
+  background: rgba(64, 145, 108, 0.18);
+  color: var(--cream);
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.staff-page-download-btn:active {
+  border-color: var(--cream);
+  background: rgba(64, 145, 108, 0.28);
+}
+
+.staff-page-list-title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--cream);
+  text-align: left;
+  letter-spacing: 0.02em;
+}
+
 .staff-page-list {
   list-style: none;
   margin: 0;

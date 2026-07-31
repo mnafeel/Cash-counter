@@ -18,6 +18,7 @@ import {
   STAFF_MIN_YEAR,
   type SalaryMonthKey,
 } from '../utils/staffLedger'
+import { printStaffSalaryReport } from '../utils/staffSalaryReport'
 import './Staff.css'
 
 export default function Staff() {
@@ -156,6 +157,10 @@ export default function Staff() {
     }
     setPendingRemoveStaffId(null)
     setFormError('')
+  }
+
+  function handleDownloadSalaryReport() {
+    printStaffSalaryReport(data, monthKey)
   }
 
   return (
@@ -348,6 +353,17 @@ export default function Staff() {
           summaries.length === 0 ? (
             <p className="staff-page-empty">No staff yet. Add a staff member to track salary.</p>
           ) : (
+            <>
+              <div className="staff-page-list-head">
+                <button
+                  type="button"
+                  className="staff-page-download-btn"
+                  onClick={handleDownloadSalaryReport}
+                >
+                  Download PDF
+                </button>
+                <h2 className="staff-page-list-title">Salaried Staff</h2>
+              </div>
             <ul className="staff-page-list">
               {summaries.map((row) => (
                 <li key={row.staffId}>
@@ -429,6 +445,7 @@ export default function Staff() {
                 </li>
               ))}
             </ul>
+            </>
           )
         ) : selectedSummary ? (
           <section className="staff-page-detail">

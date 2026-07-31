@@ -82,7 +82,8 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
+  align-items: stretch;
   gap: 4px;
   min-width: 0;
   min-height: clamp(52px, calc(var(--counter-height, 560px) * 0.095), 68px);
@@ -116,7 +117,7 @@
   line-height: 1.3;
   letter-spacing: 0.01em;
   color: var(--cream);
-  text-align: center;
+  text-align: left;
   outline: none;
   box-sizing: border-box;
 }
@@ -125,7 +126,7 @@
   color: var(--text-muted);
   font-weight: 600;
   font-size: 0.82rem;
-  text-align: center;
+  text-align: left;
 }
 
 .expense-name-input:focus,
@@ -135,8 +136,8 @@
 
 .expense-name-suggestions {
   position: absolute;
-  left: 8px;
-  right: 8px;
+  left: 0;
+  right: 0;
   top: calc(100% + 4px);
   z-index: 30;
   margin: 0;
@@ -145,15 +146,32 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: min(160px, 28vh);
+  max-height: min(132px, 22vh);
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
   background: var(--brown-dark);
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
+.expense-name-suggestions::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.expense-name-suggestions li {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+}
+
 .expense-name-suggestion {
+  display: block;
   width: 100%;
   text-align: left;
   padding: 8px 10px;
@@ -161,11 +179,61 @@
   border: none;
   border-radius: 4px;
   color: var(--cream);
-  font-size: 0.85rem;
+  font-family: var(--font);
   cursor: pointer;
-  white-space: nowrap;
+}
+
+.expense-name-suggestion-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  width: 100%;
+}
+
+.expense-name-suggestion-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.expense-name-suggestion-meta {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+  line-height: 1.2;
+}
+
+.expense-name-suggestion-tag {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(64, 145, 108, 0.22);
+  border: 1px solid rgba(64, 145, 108, 0.4);
+  color: #9ed4b6;
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.expense-name-suggestion-tag--staff {
+  background: rgba(120, 140, 200, 0.2);
+  border-color: rgba(140, 160, 220, 0.4);
+  color: #b8c8ef;
+}
+
+.expense-name-suggestion-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .expense-name-suggestion:hover,
@@ -216,6 +284,10 @@
 
 .expenses-pay .pay-type-chips {
   gap: 2px;
+}
+
+.expenses-pay .pay-type-chips-head {
+  justify-content: flex-start;
 }
 
 .expenses-pay .pay-type-chips-label {
@@ -448,7 +520,22 @@
 }
 
 .expenses-page .amount-display--compact {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   min-height: clamp(52px, calc(var(--counter-height, 560px) * 0.095), 68px);
+}
+
+.expenses-page .amount-display--compact .amount-display-label {
+  align-self: center;
+  align-items: center;
+  text-align: center;
+  width: 100%;
+}
+
+.expenses-page .amount-display--compact .amount-display-value {
+  width: 100%;
+  text-align: center;
 }
 
 html[data-screen='tablet'] .expenses-form {
