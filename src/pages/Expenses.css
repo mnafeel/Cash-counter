@@ -134,6 +134,15 @@
   border-color: var(--cream);
 }
 
+.expense-amount {
+  position: relative;
+  min-width: 0;
+}
+
+.expense-amount-suggestions {
+  z-index: 31;
+}
+
 .expense-name-suggestions {
   position: absolute;
   left: 0;
@@ -208,6 +217,19 @@
 
 .expenses-staff-heading strong {
   color: var(--cream);
+}
+
+.expenses-staff-remaining {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+  line-height: 1.35;
+}
+
+.expenses-staff-remaining strong {
+  color: #9ed4b6;
+  font-weight: 800;
 }
 
 .expense-name-suggestion-row {

@@ -2,7 +2,16 @@ import type { AppData, Expense } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import { formatMoney, formatTime } from './format'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
-import { expenseCountsTowardStaffSalary, isStaffRosterName } from './staffLedger'
+import {
+  buildStaffMonthSummaries,
+  expenseCountsTowardStaffSalary,
+  formatSalaryMonthLabel,
+  getStaffMonthSummary,
+  isStaffRosterName,
+  shouldPromptSalaryMonthChoice,
+  suggestDefaultSalaryMonth,
+  type SalaryMonthKey,
+} from './staffLedger'
 
 export type NormalExpenseDateFilter = CashDateFilter
 
@@ -26,6 +35,23 @@ export interface ExpenseNamePickerOption {
   payLabel: string
   timeLabel: string
   isStaff: boolean
+  /** Credit staff salary payment to this month. */
+  staffSalaryMonth?: SalaryMonthKey
+  /** Secondary line under the name (no amount — use amount picker). */
+  metaLabel?: string
+}
+
+export interface ExpenseAmountPickerOption {
+  key: string
+  amount: number
+  label: string
+  metaLabel?: string
+}
+
+export interface ExpenseAmountPickerContext {
+  staffId?: string
+  staffSalaryMonth?: SalaryMonthKey
+  linkToSalary?: boolean
 }
 
 function isStaffExpenseName(data: AppData, expense: Expense): boolean {
@@ -89,10 +115,57 @@ export function buildLastExpenseNamePickerOption(data: AppData): ExpenseNamePick
   return null
 }
 
+/** Staff with unpaid salary from last month — shown early in a new month. */
+export function buildPendingStaffSalaryPickerOptions(
+  data: AppData,
+  date = new Date(),
+  limit = 8,
+): ExpenseNamePickerOption[] {
+  if (!shouldPromptSalaryMonthChoice(date)) return []
+
+  const monthKey = suggestDefaultSalaryMonth(date)
+  return buildStaffMonthSummaries(data, monthKey)
+    .filter((row) => row.remaining > 0 && !row.canApplyToNextMonth)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .slice(0, limit)
+    .map((row) => ({
+      key: `staff-pending-${row.staffId}-${monthKey}`,
+      name: row.name,
+      payLabel: 'Salary',
+      timeLabel: '',
+      isStaff: true,
+      staffSalaryMonth: monthKey,
+      metaLabel: `${formatSalaryMonthLabel(monthKey)} remaining`,
+    }))
+}
+
+/** Staff salary remaining only — shown on the expense amount field. */
+export function buildExpenseAmountPickerOptions(
+  data: AppData,
+  context: ExpenseAmountPickerContext = {},
+  date = new Date(),
+): ExpenseAmountPickerOption[] {
+  if (context.linkToSalary === false || !context.staffId) return []
+
+  const monthKey = context.staffSalaryMonth ?? suggestDefaultSalaryMonth(date)
+  const summary = getStaffMonthSummary(data, context.staffId, monthKey)
+  if (!summary || summary.remaining <= 0 || summary.canApplyToNextMonth) return []
+
+  return [
+    {
+      key: `staff-remaining-${summary.staffId}-${monthKey}`,
+      amount: summary.remaining,
+      label: formatMoney(summary.remaining),
+      metaLabel: `${formatSalaryMonthLabel(monthKey)} remaining`,
+    },
+  ]
+}
+
 /** Recent unique normal expenses for the picker (newest first). */
-export function buildExpenseNamePickerOptions(data: AppData, limit = 8): ExpenseNamePickerOption[] {
-  const options: ExpenseNamePickerOption[] = []
-  const seen = new Set<string>()
+export function buildExpenseNamePickerOptions(data: AppData, limit = 8, date = new Date()): ExpenseNamePickerOption[] {
+  const pendingStaff = buildPendingStaffSalaryPickerOptions(data, date, limit)
+  const options: ExpenseNamePickerOption[] = [...pendingStaff]
+  const seen = new Set(pendingStaff.map((option) => option.name.trim().toLowerCase()))
 
   for (let i = 0; i < data.expenses.length; i++) {
     const expense = data.expenses[i]

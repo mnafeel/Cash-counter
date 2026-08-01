@@ -5,13 +5,20 @@ import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
 import type { ExpensePayType } from '../types'
 import { formatMoney, parseAmount } from '../utils/format'
-import { buildExpenseNamePickerOptions, findRecentExpenseNameOption, type ExpenseNamePickerOption } from '../utils/normalExpenseHistory'
+import {
+  buildExpenseAmountPickerOptions,
+  buildExpenseNamePickerOptions,
+  findRecentExpenseNameOption,
+  type ExpenseAmountPickerOption,
+  type ExpenseNamePickerOption,
+} from '../utils/normalExpenseHistory'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import {
   currentSalaryMonth,
   findStaffByName,
   formatSalaryMonthLabel,
+  getStaffMonthSummary,
   listSalaryMonthPickerOptions,
   salaryMonthChoiceHint,
   searchStaffNames,
@@ -46,8 +53,9 @@ export default function Expenses() {
   const [activeField, setActiveField] = useState<ExpenseField>('name')
   const [saved, setSaved] = useState(false)
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
-  const [nameDropdownExpanded, setNameDropdownExpanded] = useState(false)
   const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
+  const [amountDropdownOpen, setAmountDropdownOpen] = useState(false)
+  const [highlightedAmountIndex, setHighlightedAmountIndex] = useState(-1)
   const [linkToSalary, setLinkToSalary] = useState(true)
   const [staffSalaryMonth, setStaffSalaryMonth] = useState(currentSalaryMonth())
   const salaryMonthOptions = useMemo(() => listSalaryMonthPickerOptions(), [])
@@ -55,6 +63,8 @@ export default function Expenses() {
   const paySectionRef = useRef<HTMLDivElement>(null)
   const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
   const nameSuggestionsListRef = useRef<HTMLUListElement>(null)
+  const activeAmountSuggestionRef = useRef<HTMLButtonElement>(null)
+  const amountSuggestionsListRef = useRef<HTMLUListElement>(null)
   const nameInputPointerRef = useRef(false)
   const staffPanelRef = useRef<HTMLDivElement>(null)
 
@@ -64,10 +74,7 @@ export default function Expenses() {
 
   const visibleNameSuggestions = useMemo((): ExpenseNamePickerOption[] => {
     const query = name.trim().toLowerCase()
-    if (!query) {
-      if (nameDropdownExpanded) return recentExpenseOptions
-      return recentExpenseOptions.slice(0, 1)
-    }
+    if (!query) return recentExpenseOptions
 
     const matches = recentExpenseOptions.filter((option) => {
       const lower = option.name.toLowerCase()
@@ -92,9 +99,33 @@ export default function Expenses() {
     }
 
     return matches.slice(0, 12)
-  }, [name, recentExpenseOptions, data, nameDropdownExpanded])
+  }, [name, recentExpenseOptions, data])
 
   const matchedStaff = useMemo(() => findStaffByName(data, name), [data, name])
+
+  const amountSuggestions = useMemo(
+    () =>
+      buildExpenseAmountPickerOptions(data, {
+        staffId: matchedStaff?.id,
+        staffSalaryMonth,
+        linkToSalary,
+      }),
+    [data, matchedStaff?.id, staffSalaryMonth, linkToSalary],
+  )
+
+  const staffSalarySummary = useMemo(() => {
+    if (!matchedStaff || !linkToSalary) return null
+    return getStaffMonthSummary(data, matchedStaff.id, staffSalaryMonth)
+  }, [data, matchedStaff, linkToSalary, staffSalaryMonth])
+
+  const staffRemainingAmount =
+    staffSalarySummary && staffSalarySummary.remaining > 0 && !staffSalarySummary.canApplyToNextMonth
+      ? staffSalarySummary.remaining
+      : undefined
+
+  const staffRemainingCaption = staffRemainingAmount
+    ? `${formatSalaryMonthLabel(staffSalaryMonth)} remaining`
+    : undefined
   const showStaffOptions = Boolean(matchedStaff)
   const salaryMonthHint = useMemo(
     () => (showStaffOptions && shouldPromptSalaryMonthChoice() ? salaryMonthChoiceHint() : ''),
@@ -158,6 +189,27 @@ export default function Expenses() {
     setStaffSalaryMonth(suggestDefaultSalaryMonth())
   }
 
+  function applyNameSuggestion(option: ExpenseNamePickerOption) {
+    setName(option.name)
+    if (option.staffSalaryMonth) {
+      setLinkToSalary(true)
+      setStaffSalaryMonth(option.staffSalaryMonth)
+    }
+    setNameDropdownOpen(false)
+    setHighlightedNameIndex(-1)
+  }
+
+  function applyAmountSuggestion(option: ExpenseAmountPickerOption) {
+    syncSplitFromTotal(String(option.amount))
+    setAmountDropdownOpen(false)
+    setHighlightedAmountIndex(-1)
+  }
+
+  function openAmountDropdown(preselect = true) {
+    setAmountDropdownOpen(true)
+    setHighlightedAmountIndex(preselect && amountSuggestions.length > 0 ? 0 : -1)
+  }
+
   function handleSave() {
     if (!isValid || saved) return
 
@@ -204,9 +256,10 @@ export default function Expenses() {
       setActiveField('name')
       resetStaffFields()
       setSaved(false)
-      setNameDropdownExpanded(false)
       setNameDropdownOpen(false)
       setHighlightedNameIndex(-1)
+      setAmountDropdownOpen(false)
+      setHighlightedAmountIndex(-1)
       nameInputPointerRef.current = false
       nameInputRef.current?.focus()
     }, 900)
@@ -214,7 +267,6 @@ export default function Expenses() {
 
   function openNameDropdown(preselectRecent = !name.trim()) {
     setNameDropdownOpen(true)
-    if (!name.trim()) setNameDropdownExpanded(false)
     setHighlightedNameIndex(preselectRecent && recentExpenseOptions.length > 0 ? 0 : -1)
   }
 
@@ -225,8 +277,18 @@ export default function Expenses() {
 
   function focusField(field: ExpenseField) {
     setActiveField(field)
-    if (field === 'name') nameInputRef.current?.focus()
-    else nameInputRef.current?.blur()
+    if (field === 'name') {
+      nameInputRef.current?.focus()
+      setAmountDropdownOpen(false)
+      return
+    }
+    nameInputRef.current?.blur()
+    setNameDropdownOpen(false)
+    if (field === 'amount') {
+      openAmountDropdown()
+      return
+    }
+    setAmountDropdownOpen(false)
   }
 
   useEffect(() => {
@@ -252,6 +314,54 @@ export default function Expenses() {
     }
   }, [highlightedNameIndex])
 
+  useEffect(() => {
+    if (highlightedAmountIndex < 0) return
+    const item = activeAmountSuggestionRef.current
+    const list = amountSuggestionsListRef.current
+    if (!item || !list) return
+    const itemTop = item.offsetTop
+    const itemBottom = itemTop + item.offsetHeight
+    if (itemTop < list.scrollTop) {
+      list.scrollTop = itemTop
+    } else if (itemBottom > list.scrollTop + list.clientHeight) {
+      list.scrollTop = itemBottom - list.clientHeight
+    }
+  }, [highlightedAmountIndex])
+
+  useEffect(() => {
+    if (activeField !== 'amount' || !amountDropdownOpen || amountSuggestions.length === 0) return
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setAmountDropdownOpen(false)
+        setHighlightedAmountIndex(-1)
+        return
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setHighlightedAmountIndex((prev) =>
+          prev < 0 ? 0 : (prev + 1) % amountSuggestions.length,
+        )
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setHighlightedAmountIndex((prev) =>
+          prev <= 0 ? amountSuggestions.length - 1 : prev - 1,
+        )
+        return
+      }
+      if (e.key === 'Enter' && highlightedAmountIndex >= 0) {
+        e.preventDefault()
+        applyAmountSuggestion(amountSuggestions[highlightedAmountIndex])
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [activeField, amountDropdownOpen, amountSuggestions, highlightedAmountIndex])
+
   function handleEnter() {
     focusField(nextExpenseField(activeField, splitMode))
   }
@@ -263,6 +373,7 @@ export default function Expenses() {
     }
 
     if (activeField === 'amount') {
+      setAmountDropdownOpen(false)
       syncSplitFromTotal(applyNumpadAction(amountStr, action))
       return
     }
@@ -308,6 +419,8 @@ export default function Expenses() {
     setActiveField('name')
     resetStaffFields()
     setSaved(false)
+    setAmountDropdownOpen(false)
+    setHighlightedAmountIndex(-1)
   }
 
   function handlePayTypeChange(type: ExpensePayType) {
@@ -350,42 +463,30 @@ export default function Expenses() {
             onChange={(e) => {
               const next = e.target.value
               setName(next)
-              setNameDropdownExpanded(false)
               if (next.trim()) {
                 setNameDropdownOpen(true)
                 setHighlightedNameIndex(-1)
                 return
               }
-              if (nameInputPointerRef.current) {
-                openNameDropdown()
-                return
-              }
-              setNameDropdownOpen(false)
-              setHighlightedNameIndex(-1)
+              openNameDropdown()
             }}
             onFocus={() => {
               setActiveField('name')
+              openNameDropdown()
             }}
             onBlur={() => {
               setNameDropdownOpen(false)
-              setNameDropdownExpanded(false)
               nameInputPointerRef.current = false
             }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
                 setNameDropdownOpen(false)
-                setNameDropdownExpanded(false)
                 setHighlightedNameIndex(-1)
                 return
               }
               if (nameDropdownOpen && visibleNameSuggestions.length > 0) {
                 if (e.key === 'ArrowDown') {
                   e.preventDefault()
-                  if (!name.trim() && !nameDropdownExpanded && recentExpenseOptions.length > 1) {
-                    setNameDropdownExpanded(true)
-                    setHighlightedNameIndex(1)
-                    return
-                  }
                   setHighlightedNameIndex((prev) =>
                     prev < 0 ? 0 : (prev + 1) % visibleNameSuggestions.length,
                   )
@@ -393,11 +494,6 @@ export default function Expenses() {
                 }
                 if (e.key === 'ArrowUp') {
                   e.preventDefault()
-                  if (!name.trim() && nameDropdownExpanded && highlightedNameIndex <= 1) {
-                    setNameDropdownExpanded(false)
-                    setHighlightedNameIndex(0)
-                    return
-                  }
                   setHighlightedNameIndex((prev) =>
                     prev <= 0 ? visibleNameSuggestions.length - 1 : prev - 1,
                   )
@@ -405,17 +501,13 @@ export default function Expenses() {
                 }
                 if (e.key === 'Enter' && highlightedNameIndex >= 0) {
                   e.preventDefault()
-                  setName(visibleNameSuggestions[highlightedNameIndex].name)
-                  setNameDropdownOpen(false)
-                  setNameDropdownExpanded(false)
-                  setHighlightedNameIndex(-1)
+                  applyNameSuggestion(visibleNameSuggestions[highlightedNameIndex])
                   return
                 }
               }
               if (e.key === 'Enter' || e.key === 'Tab') {
                 e.preventDefault()
                 setNameDropdownOpen(false)
-                setNameDropdownExpanded(false)
                 handleEnter()
               }
             }}
@@ -441,14 +533,27 @@ export default function Expenses() {
                     aria-selected={index === highlightedNameIndex}
                     onMouseDown={(e) => {
                       e.preventDefault()
-                      setName(item.name)
-                      setNameDropdownOpen(false)
-                      setNameDropdownExpanded(false)
-                      setHighlightedNameIndex(-1)
+                      applyNameSuggestion(item)
                     }}
                   >
-                    <span className="expense-name-suggestion-text">{item.name}</span>
-                    {item.isStaff ? <span className="expense-name-suggestion-staff">Staff</span> : null}
+                    <span className="expense-name-suggestion-row">
+                      <span className="expense-name-suggestion-main">
+                        <span className="expense-name-suggestion-text">{item.name}</span>
+                        {item.isStaff ? (
+                          <span className="expense-name-suggestion-tag expense-name-suggestion-tag--staff">
+                            Staff
+                          </span>
+                        ) : null}
+                      </span>
+                      {item.metaLabel ? (
+                        <span className="expense-name-suggestion-meta">{item.metaLabel}</span>
+                      ) : item.timeLabel ? (
+                        <span className="expense-name-suggestion-meta">
+                          {item.payLabel}
+                          {item.timeLabel ? ` · ${item.timeLabel}` : ''}
+                        </span>
+                      ) : null}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -456,13 +561,59 @@ export default function Expenses() {
           )}
         </label>
 
-        <AmountDisplay
-          label={splitMode ? 'Total Amount' : 'Expense Amount'}
-          value={amountStr}
-          active={activeField === 'amount'}
-          onSelect={() => focusField('amount')}
-          compact
-        />
+        <div
+          className="expense-amount"
+          onPointerDown={(e) => {
+            if (e.pointerType === 'mouse' || e.pointerType === 'pen' || e.pointerType === 'touch') {
+              focusField('amount')
+            }
+          }}
+        >
+          <AmountDisplay
+            label={splitMode ? 'Total Amount' : 'Expense Amount'}
+            value={amountStr}
+            active={activeField === 'amount'}
+            onSelect={() => focusField('amount')}
+            remainingAmount={staffRemainingAmount}
+            remainingCaption={staffRemainingCaption}
+            compact
+          />
+          {amountDropdownOpen && amountSuggestions.length > 0 ? (
+            <ul
+              ref={amountSuggestionsListRef}
+              className="expense-name-suggestions expense-amount-suggestions"
+              role="listbox"
+              onMouseDown={(e) => e.preventDefault()}
+              onWheel={(e) => e.preventDefault()}
+              onTouchMove={(e) => e.preventDefault()}
+            >
+              {amountSuggestions.map((item, index) => (
+                <li key={item.key}>
+                  <button
+                    type="button"
+                    ref={index === highlightedAmountIndex ? activeAmountSuggestionRef : null}
+                    className={`expense-name-suggestion ${index === highlightedAmountIndex ? 'expense-name-suggestion--active' : ''}`}
+                    role="option"
+                    aria-selected={index === highlightedAmountIndex}
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      applyAmountSuggestion(item)
+                    }}
+                  >
+                    <span className="expense-name-suggestion-row">
+                      <span className="expense-name-suggestion-main">
+                        <span className="expense-name-suggestion-text">{item.label}</span>
+                      </span>
+                      {item.metaLabel ? (
+                        <span className="expense-name-suggestion-meta">{item.metaLabel}</span>
+                      ) : null}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
 
         {splitMode ? (
           <>
@@ -489,6 +640,12 @@ export default function Expenses() {
           <p className="expenses-staff-heading">
             Staff salary · <strong>{matchedStaff.name}</strong>
           </p>
+          {staffRemainingAmount ? (
+            <p className="expenses-staff-remaining">
+              Remaining <strong>{formatMoney(staffRemainingAmount)}</strong> for{' '}
+              {formatSalaryMonthLabel(staffSalaryMonth)}
+            </p>
+          ) : null}
           {salaryMonthHint ? <p className="expenses-staff-prompt">{salaryMonthHint}</p> : null}
 
           <label className="expenses-staff-toggle expenses-staff-toggle--inline">
