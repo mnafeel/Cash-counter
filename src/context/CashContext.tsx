@@ -16,8 +16,10 @@ import type {
   ReminderAlertSettings,
   Sale,
   SaleStatus,
+  StaffLeaveType,
   TransferDirection,
 } from '../types'
+import type { SalaryMonthKey } from '../utils/staffLedger'
 import {
   addExpenseBatch,
   addExpenseWithOptionalStaff,
@@ -26,6 +28,9 @@ import {
   addSupplierItem as addSupplierItemToData,
   addLoan,
   addStaffMember,
+  addStaffLeave,
+  setStaffAttendance,
+  applyStaffSalaryAdvance,
   addTransfer,
   applyPartialBalanceSaleCollection,
   applyPurchaseCreditPayment,
@@ -38,6 +43,7 @@ import {
   deleteExpense,
   deleteLoan,
   deleteStaffMember,
+  deleteStaffLeave,
   deleteSale,
   editPaidSalePayment,
   type BillCreatePayType,
@@ -178,6 +184,14 @@ interface CashContextValue {
   addStaff: (input: { name: string; monthlySalary: number; linkExisting?: boolean }) => boolean
   updateStaff: (id: string, updates: { name?: string; monthlySalary?: number }) => void
   removeStaff: (id: string) => void
+  addStaffLeave: (input: { staffId: string; date: string; type: StaffLeaveType }) => string | null
+  setStaffAttendance: (input: {
+    staffId: string
+    date: string
+    status: 'leave' | 'half' | 'present' | 'off'
+  }) => string | null
+  removeStaffLeave: (leaveId: string) => void
+  applyStaffSalaryAdvance: (input: { staffId: string; fromMonth: string }) => string | null
   updateExpenseStaffSalaryMonth: (expenseId: string, staffSalaryMonth: string) => void
   cancelApprovedCheque: (id: string) => boolean
   cancelPurchaseCredit: (id: string) => void
@@ -637,6 +651,68 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => deleteStaffMember(prev, id))
   }, [])
 
+  const addStaffLeaveHandler = useCallback(
+    (input: { staffId: string; date: string; type: StaffLeaveType }): string | null => {
+      let error: string | null = 'Could not save leave.'
+      setData((prev) => {
+        const result = addStaffLeave(prev, input)
+        if (result.ok) {
+          error = null
+          return result.data
+        }
+        error = result.error ?? error
+        return prev
+      })
+      return error
+    },
+    [],
+  )
+
+  const removeStaffLeaveHandler = useCallback((leaveId: string) => {
+    setData((prev) => deleteStaffLeave(prev, leaveId))
+  }, [])
+
+  const setStaffAttendanceHandler = useCallback(
+    (input: {
+      staffId: string
+      date: string
+      status: 'leave' | 'half' | 'present' | 'off'
+    }): string | null => {
+      let error: string | null = 'Could not save attendance.'
+      setData((prev) => {
+        const result = setStaffAttendance(prev, input)
+        if (result.ok) {
+          error = null
+          return result.data
+        }
+        error = result.error ?? error
+        return prev
+      })
+      return error
+    },
+    [],
+  )
+
+  const applyStaffSalaryAdvanceHandler = useCallback(
+    (input: { staffId: string; fromMonth: string }): string | null => {
+      let error: string | null = 'Could not apply to next month.'
+      setData((prev) => {
+        const result = applyStaffSalaryAdvance(prev, {
+          staffId: input.staffId,
+          fromMonth: input.fromMonth as SalaryMonthKey,
+        })
+        if (result.ok) {
+          error = null
+          return result.data
+        }
+        error = result.error ?? error
+        return prev
+      })
+      return error
+    },
+    [],
+  )
+
   const updateExpenseStaffSalaryMonthHandler = useCallback((expenseId: string, staffSalaryMonth: string) => {
     setData((prev) => updateExpenseStaffSalaryMonth(prev, expenseId, staffSalaryMonth))
   }, [])
@@ -932,6 +1008,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       addStaff,
       updateStaff,
       removeStaff,
+      addStaffLeave: addStaffLeaveHandler,
+      setStaffAttendance: setStaffAttendanceHandler,
+      removeStaffLeave: removeStaffLeaveHandler,
+      applyStaffSalaryAdvance: applyStaffSalaryAdvanceHandler,
       updateExpenseStaffSalaryMonth: updateExpenseStaffSalaryMonthHandler,
       addSupplier,
       addSupplierItem,
@@ -985,6 +1065,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       addStaff,
       updateStaff,
       removeStaff,
+      addStaffLeaveHandler,
+      setStaffAttendanceHandler,
+      removeStaffLeaveHandler,
+      applyStaffSalaryAdvanceHandler,
       updateExpenseStaffSalaryMonthHandler,
       addSupplier,
       addSupplierItem,

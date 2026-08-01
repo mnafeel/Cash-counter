@@ -154,6 +154,18 @@ export interface StaffMember {
   createdAt: string
 }
 
+export type StaffLeaveType = 'full' | 'half' | 'off'
+
+/** Attendance / leave on a calendar day. Off = paid day off (no deduction). */
+export interface StaffLeave {
+  id: string
+  staffId: string
+  /** Local calendar date YYYY-MM-DD */
+  date: string
+  type: StaffLeaveType
+  createdAt: string
+}
+
 export interface AppData {
   openingBalance: number
   openingBankBalance?: number
@@ -168,6 +180,19 @@ export interface AppData {
   expenses: Expense[]
   loans?: Loan[]
   staff?: StaffMember[]
+  staffLeaves?: StaffLeave[]
+  /** Overpaid salary moved from one month to count as paid in the next. */
+  staffSalaryAdvances?: StaffSalaryAdvance[]
+}
+
+/** Carry-forward when a month is overpaid — counts as paid in `toMonth`. */
+export interface StaffSalaryAdvance {
+  id: string
+  staffId: string
+  fromMonth: string
+  toMonth: string
+  amount: number
+  createdAt: string
 }
 
 export const STORAGE_KEY = 'cash-counter-data'

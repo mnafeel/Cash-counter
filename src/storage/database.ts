@@ -1,4 +1,4 @@
-import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, StaffMember, SupplierEntry, TransferDirection, CustomerReminderMap } from '../types'
+import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap } from '../types'
 import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
 import { collectSplitNameTargets } from '../utils/saleCustomerName'
 import { stripExpenseBillSuffix, isPurchaseExpense } from '../utils/expenseBillLabels'
@@ -29,7 +29,8 @@ import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
 import { loanBankToBalance, loanCashToDrawer } from '../utils/loanLedger'
-import { isStaffLinkableExpense, salaryMonthFromDate } from '../utils/staffLedger'
+import { getStaffMonthSummary, isStaffLinkableExpense, salaryMonthFromDate, type SalaryMonthKey } from '../utils/staffLedger'
+import { validateStaffLeaveInput } from '../utils/staffAttendance'
 
 const defaultData: AppData = {
   openingBalance: 0,
@@ -41,6 +42,8 @@ const defaultData: AppData = {
   expenses: [],
   loans: [],
   staff: [],
+  staffLeaves: [],
+  staffSalaryAdvances: [],
 }
 
 function normalizeItemList(raw: unknown): string[] {
@@ -322,6 +325,41 @@ function mergeStaffLists(local: StaffMember[], remote: StaffMember[]): StaffMemb
   return sortRecordsNewestFirst(Array.from(byId.values()))
 }
 
+function mergeStaffSalaryAdvanceLists(
+  local: StaffSalaryAdvance[],
+  remote: StaffSalaryAdvance[],
+): StaffSalaryAdvance[] {
+  const byId = new Map<string, StaffSalaryAdvance>()
+  for (const item of remote) byId.set(item.id, item)
+  for (const item of local) {
+    const other = byId.get(item.id)
+    if (!other) {
+      byId.set(item.id, item)
+      continue
+    }
+    const localTime = new Date(item.createdAt).getTime()
+    const remoteTime = new Date(other.createdAt).getTime()
+    byId.set(item.id, localTime >= remoteTime ? item : other)
+  }
+  return sortRecordsNewestFirst(Array.from(byId.values()))
+}
+
+function mergeStaffLeaveLists(local: StaffLeave[], remote: StaffLeave[]): StaffLeave[] {
+  const byId = new Map<string, StaffLeave>()
+  for (const item of remote) byId.set(item.id, item)
+  for (const item of local) {
+    const other = byId.get(item.id)
+    if (!other) {
+      byId.set(item.id, item)
+      continue
+    }
+    const localTime = new Date(item.createdAt).getTime()
+    const remoteTime = new Date(other.createdAt).getTime()
+    byId.set(item.id, localTime >= remoteTime ? item : other)
+  }
+  return sortRecordsNewestFirst(Array.from(byId.values()))
+}
+
 function countPendingSales(data: AppData): number {
   return data.sales.filter((sale) => sale.status === 'pending').length
 }
@@ -339,6 +377,11 @@ export function mergeCloudAppData(local: AppData, remote: AppData): AppData {
     expenses: mergeExpenseLists(normalizedLocal.expenses, normalizedRemote.expenses),
     loans: mergeLoanLists(normalizedLocal.loans ?? [], normalizedRemote.loans ?? []),
     staff: mergeStaffLists(normalizedLocal.staff ?? [], normalizedRemote.staff ?? []),
+    staffLeaves: mergeStaffLeaveLists(normalizedLocal.staffLeaves ?? [], normalizedRemote.staffLeaves ?? []),
+    staffSalaryAdvances: mergeStaffSalaryAdvanceLists(
+      normalizedLocal.staffSalaryAdvances ?? [],
+      normalizedRemote.staffSalaryAdvances ?? [],
+    ),
     suppliers: normalizeSuppliers([
       ...(normalizedRemote.suppliers ?? []),
       ...(normalizedLocal.suppliers ?? []),
@@ -355,19 +398,29 @@ function cloudDataPreservedLocalRecords(local: AppData, remote: AppData, merged:
   const remoteSaleIds = new Set(remote.sales.map((s) => s.id))
   const remoteLoanIds = new Set((remote.loans ?? []).map((loan) => loan.id))
   const remoteStaffIds = new Set((remote.staff ?? []).map((member) => member.id))
+  const remoteStaffLeaveIds = new Set((remote.staffLeaves ?? []).map((leave) => leave.id))
+  const remoteStaffSalaryAdvanceIds = new Set((remote.staffSalaryAdvances ?? []).map((row) => row.id))
   const localOnlyExpenses = local.expenses.some((e) => !remoteExpenseIds.has(e.id))
   const localOnlySales = local.sales.some((s) => !remoteSaleIds.has(s.id))
   const localOnlyLoans = (local.loans ?? []).some((loan) => !remoteLoanIds.has(loan.id))
   const localOnlyStaff = (local.staff ?? []).some((member) => !remoteStaffIds.has(member.id))
+  const localOnlyStaffLeaves = (local.staffLeaves ?? []).some((leave) => !remoteStaffLeaveIds.has(leave.id))
+  const localOnlyStaffSalaryAdvances = (local.staffSalaryAdvances ?? []).some(
+    (row) => !remoteStaffSalaryAdvanceIds.has(row.id),
+  )
   return (
     localOnlyExpenses ||
     localOnlySales ||
     localOnlyLoans ||
     localOnlyStaff ||
+    localOnlyStaffLeaves ||
+    localOnlyStaffSalaryAdvances ||
     merged.expenses.length > remote.expenses.length ||
     merged.sales.length > remote.sales.length ||
     (merged.loans?.length ?? 0) > (remote.loans?.length ?? 0) ||
     (merged.staff?.length ?? 0) > (remote.staff?.length ?? 0) ||
+    (merged.staffLeaves?.length ?? 0) > (remote.staffLeaves?.length ?? 0) ||
+    (merged.staffSalaryAdvances?.length ?? 0) > (remote.staffSalaryAdvances?.length ?? 0) ||
     countPendingSales(merged) > countPendingSales(remote) ||
     countOpenPurchaseBalances(merged) > countOpenPurchaseBalances(remote)
   )
@@ -399,6 +452,36 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
     expenses: normalizedExpenses,
     loans: (parsed.loans ?? []).map((loan) => normalizeLoan(loan)),
     staff: (parsed.staff ?? []).map((member) => normalizeStaffMember(member)),
+    staffLeaves: (parsed.staffLeaves ?? []).map((leave) => normalizeStaffLeave(leave)),
+    staffSalaryAdvances: (parsed.staffSalaryAdvances ?? []).map((row) => normalizeStaffSalaryAdvance(row)),
+  }
+}
+
+function normalizeStaffSalaryAdvance(raw: Partial<StaffSalaryAdvance>): StaffSalaryAdvance {
+  return {
+    id: raw.id ?? crypto.randomUUID(),
+    staffId: raw.staffId ?? '',
+    fromMonth: typeof raw.fromMonth === 'string' ? raw.fromMonth.trim().slice(0, 7) : '',
+    toMonth: typeof raw.toMonth === 'string' ? raw.toMonth.trim().slice(0, 7) : '',
+    amount: Math.max(0, Number(raw.amount) || 0),
+    createdAt: raw.createdAt ?? new Date().toISOString(),
+  }
+}
+
+function normalizeStaffLeaveType(raw: unknown): StaffLeaveType {
+  if (raw === 'half') return 'half'
+  if (raw === 'off') return 'off'
+  return 'full'
+}
+
+function normalizeStaffLeave(raw: Partial<StaffLeave>): StaffLeave {
+  const date = typeof raw.date === 'string' ? raw.date.trim().slice(0, 10) : ''
+  return {
+    id: raw.id ?? crypto.randomUUID(),
+    staffId: raw.staffId ?? '',
+    date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : new Date().toISOString().slice(0, 10),
+    type: normalizeStaffLeaveType(raw.type),
+    createdAt: raw.createdAt ?? new Date().toISOString(),
   }
 }
 
@@ -1332,10 +1415,118 @@ export function deleteStaffMember(data: AppData, id: string): AppData {
   const next = {
     ...data,
     staff: (data.staff ?? []).filter((member) => member.id !== id),
+    staffLeaves: (data.staffLeaves ?? []).filter((leave) => leave.staffId !== id),
+    staffSalaryAdvances: (data.staffSalaryAdvances ?? []).filter((row) => row.staffId !== id),
     expenses,
   }
   saveData(next, { cloudImmediate: true })
   return next
+}
+
+export function applyStaffSalaryAdvance(
+  data: AppData,
+  input: { staffId: string; fromMonth: SalaryMonthKey },
+): { data: AppData; ok: boolean; error?: string } {
+  const summary = getStaffMonthSummary(data, input.staffId, input.fromMonth)
+  if (!summary) return { data, ok: false, error: 'Staff not found.' }
+  if (!summary.canApplyToNextMonth || summary.overpaidAmount <= 0) {
+    return { data, ok: false, error: 'Nothing to apply to next month.' }
+  }
+  const alreadyApplied = (data.staffSalaryAdvances ?? []).some(
+    (row) => row.staffId === input.staffId && row.fromMonth === input.fromMonth,
+  )
+  if (alreadyApplied) {
+    return { data, ok: false, error: 'Already applied to next month.' }
+  }
+
+  const advance: StaffSalaryAdvance = {
+    id: crypto.randomUUID(),
+    staffId: input.staffId,
+    fromMonth: input.fromMonth,
+    toMonth: summary.nextMonthKey,
+    amount: summary.overpaidAmount,
+    createdAt: new Date().toISOString(),
+  }
+  const next = {
+    ...data,
+    staffSalaryAdvances: [advance, ...(data.staffSalaryAdvances ?? [])],
+  }
+  saveData(next, { cloudImmediate: true })
+  return { data: next, ok: true }
+}
+
+export function addStaffLeave(
+  data: AppData,
+  input: { staffId: string; date: string; type: StaffLeaveType },
+): { data: AppData; ok: boolean; error?: string } {
+  if (!(data.staff ?? []).some((member) => member.id === input.staffId)) {
+    return { data, ok: false, error: 'Staff not found.' }
+  }
+  const date = input.date.trim().slice(0, 10)
+  const error = validateStaffLeaveInput(data, input.staffId, date)
+  if (error) return { data, ok: false, error }
+  const leave: StaffLeave = {
+    id: crypto.randomUUID(),
+    staffId: input.staffId,
+    date,
+    type: normalizeStaffLeaveType(input.type),
+    createdAt: new Date().toISOString(),
+  }
+  const next = { ...data, staffLeaves: [leave, ...(data.staffLeaves ?? [])] }
+  saveData(next, { cloudImmediate: true })
+  return { data: next, ok: true }
+}
+
+export function deleteStaffLeave(data: AppData, leaveId: string): AppData {
+  if (!(data.staffLeaves ?? []).some((leave) => leave.id === leaveId)) return data
+  const next = {
+    ...data,
+    staffLeaves: (data.staffLeaves ?? []).filter((leave) => leave.id !== leaveId),
+  }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export type StaffAttendanceSetStatus = 'leave' | 'half' | 'present' | 'off'
+
+export function setStaffAttendance(
+  data: AppData,
+  input: { staffId: string; date: string; status: StaffAttendanceSetStatus },
+): { data: AppData; ok: boolean; error?: string } {
+  if (!(data.staff ?? []).some((member) => member.id === input.staffId)) {
+    return { data, ok: false, error: 'Staff not found.' }
+  }
+
+  const date = input.date.trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { data, ok: false, error: 'Pick a valid date.' }
+  }
+
+  const existing = (data.staffLeaves ?? []).find(
+    (leave) => leave.staffId === input.staffId && leave.date === date,
+  )
+
+  if (input.status === 'present') {
+    if (!existing) return { data, ok: true }
+    return { data: deleteStaffLeave(data, existing.id), ok: true }
+  }
+
+  const leaveType: StaffLeaveType =
+    input.status === 'off' ? 'off' : input.status === 'half' ? 'half' : 'full'
+
+  if (existing) {
+    if (existing.type === leaveType) return { data, ok: true }
+    const next = {
+      ...data,
+      staffLeaves: (data.staffLeaves ?? []).map((leave) =>
+        leave.id === existing.id ? { ...leave, type: leaveType } : leave,
+      ),
+    }
+    saveData(next, { cloudImmediate: true })
+    return { data: next, ok: true }
+  }
+
+  return addStaffLeave(data, { staffId: input.staffId, date, type: leaveType })
 }
 
 export function updateSaleCustomerName(

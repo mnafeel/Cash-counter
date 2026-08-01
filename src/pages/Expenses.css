@@ -171,7 +171,10 @@
 }
 
 .expense-name-suggestion {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   width: 100%;
   text-align: left;
   padding: 8px 10px;
@@ -181,6 +184,30 @@
   color: var(--cream);
   font-family: var(--font);
   cursor: pointer;
+}
+
+.expense-name-suggestion-staff {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(120, 140, 200, 0.2);
+  border: 1px solid rgba(140, 160, 220, 0.4);
+  color: #b8c8ef;
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.expenses-staff-heading {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+}
+
+.expenses-staff-heading strong {
+  color: var(--cream);
 }
 
 .expense-name-suggestion-row {

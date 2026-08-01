@@ -56,6 +56,7 @@ export default function Expenses() {
   const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
   const nameSuggestionsListRef = useRef<HTMLUListElement>(null)
   const nameInputPointerRef = useRef(false)
+  const staffPanelRef = useRef<HTMLDivElement>(null)
 
   const splitMode = payType === 'split'
 
@@ -70,7 +71,7 @@ export default function Expenses() {
 
     const matches = recentExpenseOptions.filter((option) => {
       const lower = option.name.toLowerCase()
-      return lower.includes(query) && lower !== query
+      return lower.includes(query)
     })
 
     const seen = new Set(matches.map((option) => option.name.toLowerCase()))
@@ -105,6 +106,11 @@ export default function Expenses() {
     setLinkToSalary(true)
     setStaffSalaryMonth(suggestDefaultSalaryMonth())
   }, [matchedStaff?.id])
+
+  useEffect(() => {
+    if (!matchedStaff) return
+    staffPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [matchedStaff?.id, linkToSalary])
 
   const amount = parseAmount(amountStr)
   const cashSplitAmount = parseAmount(cashSplitStr)
@@ -442,6 +448,7 @@ export default function Expenses() {
                     }}
                   >
                     <span className="expense-name-suggestion-text">{item.name}</span>
+                    {item.isStaff ? <span className="expense-name-suggestion-staff">Staff</span> : null}
                   </button>
                 </li>
               ))}
@@ -477,6 +484,43 @@ export default function Expenses() {
         ) : null}
       </div>
 
+      {showStaffOptions && matchedStaff ? (
+        <div ref={staffPanelRef} className="expenses-staff expenses-staff--active">
+          <p className="expenses-staff-heading">
+            Staff salary · <strong>{matchedStaff.name}</strong>
+          </p>
+          {salaryMonthHint ? <p className="expenses-staff-prompt">{salaryMonthHint}</p> : null}
+
+          <label className="expenses-staff-toggle expenses-staff-toggle--inline">
+            <input
+              type="checkbox"
+              checked={linkToSalary}
+              onChange={(e) => setLinkToSalary(e.target.checked)}
+            />
+            <span>Link to salary balance</span>
+          </label>
+
+          {linkToSalary ? (
+            <label className="expenses-staff-field">
+              <span>Credit to salary month</span>
+              <select
+                value={staffSalaryMonth}
+                onChange={(e) => setStaffSalaryMonth(e.target.value || suggestDefaultSalaryMonth())}
+              >
+                {salaryMonthOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <small>Payment will count toward {formatSalaryMonthLabel(staffSalaryMonth)}</small>
+            </label>
+          ) : (
+            <p className="expenses-staff-note">Recorded as a general expense only — salary balance will not change.</p>
+          )}
+        </div>
+      ) : null}
+
       {splitMode && amount > 0 ? (
         <div
           className={`expenses-split-total ${splitShortfall > 0 || splitExcess > 0 ? 'expenses-split-total--warn' : ''}`}
@@ -511,39 +555,6 @@ export default function Expenses() {
         />
       </div>
 
-      {showStaffOptions && matchedStaff ? (
-        <div className="expenses-staff expenses-staff--active">
-          {salaryMonthHint ? <p className="expenses-staff-prompt">{salaryMonthHint}</p> : null}
-
-          <label className="expenses-staff-toggle expenses-staff-toggle--inline">
-            <input
-              type="checkbox"
-              checked={linkToSalary}
-              onChange={(e) => setLinkToSalary(e.target.checked)}
-            />
-            <span>Link to salary balance</span>
-          </label>
-
-          {linkToSalary ? (
-            <label className="expenses-staff-field">
-              <span>Credit to salary month</span>
-              <select
-                value={staffSalaryMonth}
-                onChange={(e) => setStaffSalaryMonth(e.target.value || suggestDefaultSalaryMonth())}
-              >
-                {salaryMonthOptions.map((option) => (
-                  <option key={option.key} value={option.key}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <small>Payment will count toward {formatSalaryMonthLabel(staffSalaryMonth)}</small>
-            </label>
-          ) : (
-            <p className="expenses-staff-note">Recorded as a general expense only — salary balance will not change.</p>
-          )}
-        </div>
-      ) : null}
       </div>
 
       <div className="expenses-keyboard">

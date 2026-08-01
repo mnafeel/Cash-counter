@@ -27,7 +27,7 @@ const REPORT_STYLES = `
   .meta { margin: 0 0 14px; color: #555; font-size: 10px; }
   .summary {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 10px;
     margin: 0 0 16px;
   }
@@ -122,6 +122,9 @@ function staffTableRows(summaries: StaffMonthSummary[]): string {
       (row, index) => `<tr>
         <td class="num">${index + 1}</td>
         <td>${escapeHtml(row.name)}</td>
+        <td class="num">${escapeHtml(formatMoney(row.monthlySalary))}</td>
+        <td class="num">${escapeHtml(formatMoney(row.leaveDeductionTotal))}</td>
+        <td class="num">${escapeHtml(formatMoney(row.netSalary))}</td>
         <td class="num">${escapeHtml(formatMoney(row.paidTotal))}</td>
         <td class="num">${escapeHtml(formatMoney(row.remaining))}</td>
       </tr>`,
@@ -143,32 +146,40 @@ function buildStaffSalaryReportHtml(
   <p class="meta">Generated ${escapeHtml(exportedAt)} · ${escapeHtml(monthLabel)}</p>
   <div class="summary">
     <div class="summary-card">
-      <span>Total Salary</span>
+      <span>Gross Salary</span>
       <strong>${escapeHtml(formatMoney(overview.totalSalary))}</strong>
     </div>
     <div class="summary-card">
-      <span>Amount Paid (Already Paid)</span>
+      <span>Leave Deductions</span>
+      <strong>${escapeHtml(formatMoney(overview.totalLeaveDeductions))}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Amount Paid</span>
       <strong>${escapeHtml(formatMoney(overview.totalPaid))}</strong>
     </div>
     <div class="summary-card">
-      <span>Pending / Remaining Amount</span>
+      <span>Pending / Remaining</span>
       <strong>${escapeHtml(formatMoney(overview.totalRemaining))}</strong>
     </div>
   </div>
+  <p class="meta">Daily rate = monthly salary ÷ 30 · Sundays are paid off days</p>
   <h2>Salaried Staff</h2>
   <table>
     <thead>
       <tr>
         <th class="num">#</th>
         <th>Staff Name</th>
-        <th class="num">Amount Paid</th>
+        <th class="num">Gross</th>
+        <th class="num">Leave Ded.</th>
+        <th class="num">Net</th>
+        <th class="num">Paid</th>
         <th class="num">Remaining</th>
       </tr>
     </thead>
     <tbody>
       ${
         staffTableRows(summaries) ||
-        '<tr><td colspan="4">No staff on record for this month.</td></tr>'
+        '<tr><td colspan="7">No staff on record for this month.</td></tr>'
       }
     </tbody>
   </table>`

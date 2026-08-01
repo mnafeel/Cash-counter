@@ -1,7 +1,15 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCash } from '../context/CashContext'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
+import {
+  SALARY_DAYS_PER_MONTH,
+  buildMonthCalendarGrid,
+  formatLeaveDateLabel,
+  staffAttendanceStatusForDate,
+  weekdayLabelsForCalendar,
+  type StaffAttendanceStatus,
+} from '../utils/staffAttendance'
 import {
   buildStaffMonthSummaries,
   buildStaffOverview,
@@ -21,8 +29,24 @@ import {
 import { printStaffSalaryReport } from '../utils/staffSalaryReport'
 import './Staff.css'
 
+const ATTENDANCE_MENU_OPTIONS: { status: StaffAttendanceStatus; label: string }[] = [
+  { status: 'leave', label: 'Leave' },
+  { status: 'half', label: 'Half Day' },
+  { status: 'present', label: 'Full Day' },
+  { status: 'off', label: 'Off' },
+]
+
 export default function Staff() {
-  const { data, addStaff, updateStaff, removeStaff, updateExpenseStaffSalaryMonth } = useCash()
+  const {
+    data,
+    addStaff,
+    updateStaff,
+    removeStaff,
+    setStaffAttendance,
+    removeStaffLeave,
+    applyStaffSalaryAdvance,
+    updateExpenseStaffSalaryMonth,
+  } = useCash()
   const now = new Date()
   const [year, setYear] = useState(staffDefaultYear(now))
   const [monthKey, setMonthKey] = useState<SalaryMonthKey>(currentSalaryMonth())
@@ -38,6 +62,12 @@ export default function Staff() {
   const [inlineEditStaffId, setInlineEditStaffId] = useState<string | null>(null)
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
   const [editingPaymentMonth, setEditingPaymentMonth] = useState<SalaryMonthKey>(currentSalaryMonth())
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false)
+  const [attendanceMenuDate, setAttendanceMenuDate] = useState<string | null>(null)
+  const attendanceModalRef = useRef<HTMLDivElement>(null)
+
+  const calendarGrid = useMemo(() => buildMonthCalendarGrid(monthKey), [monthKey])
+  const weekdayLabels = useMemo(() => weekdayLabelsForCalendar(), [])
 
   const monthOptions = useMemo(() => listMonthOptionsForYear(year), [year])
   const salaryMonthPickerOptions = useMemo(() => listSalaryMonthPickerOptions(), [])
@@ -54,6 +84,34 @@ export default function Staff() {
     () => (selectedStaffId ? getStaffSalaryPayments(data, selectedStaffId, monthKey) : []),
     [data, selectedStaffId, monthKey],
   )
+  const selectedAdvanceFromMonth = useMemo(() => {
+    if (!selectedStaffId || !selectedSummary?.advanceIn) return null
+    const row = (data.staffSalaryAdvances ?? []).find(
+      (advance) => advance.staffId === selectedStaffId && advance.toMonth === monthKey,
+    )
+    return row ? formatSalaryMonthLabel(row.fromMonth as SalaryMonthKey) : null
+  }, [data.staffSalaryAdvances, selectedStaffId, monthKey, selectedSummary?.advanceIn])
+
+  useEffect(() => {
+    setAttendanceMenuDate(null)
+  }, [monthKey, selectedStaffId])
+
+  useEffect(() => {
+    if (!showAttendanceModal) setAttendanceMenuDate(null)
+  }, [showAttendanceModal])
+
+  useEffect(() => {
+    if (!showAttendanceModal) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowAttendanceModal(false)
+        setAttendanceMenuDate(null)
+        setFormError('')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showAttendanceModal])
 
   function handleMonthPick(nextKey: SalaryMonthKey) {
     setMonthKey(nextKey)
@@ -72,6 +130,12 @@ export default function Staff() {
     updateExpenseStaffSalaryMonth(expenseId, editingPaymentMonth)
     setEditingPaymentId(null)
     setFormError('')
+  }
+
+  function handleApplyToNextMonth() {
+    if (!selectedStaffId) return
+    const error = applyStaffSalaryAdvance({ staffId: selectedStaffId, fromMonth: monthKey })
+    setFormError(error ?? '')
   }
 
   function handleCreateStaff() {
@@ -163,6 +227,41 @@ export default function Staff() {
     printStaffSalaryReport(data, monthKey)
   }
 
+  function closeAttendanceModal() {
+    setShowAttendanceModal(false)
+    setAttendanceMenuDate(null)
+    setFormError('')
+  }
+
+  function openAttendanceModal() {
+    setShowAttendanceModal(true)
+    setAttendanceMenuDate(null)
+    setFormError('')
+  }
+
+  function handleAttendanceDateClick(date: string) {
+    setFormError('')
+    setAttendanceMenuDate((current) => (current === date ? null : date))
+  }
+
+  function handleAttendancePick(date: string, status: StaffAttendanceStatus) {
+    if (!selectedStaffId) return
+    const error = setStaffAttendance({ staffId: selectedStaffId, date, status })
+    if (error) {
+      setFormError(error)
+      return
+    }
+    setFormError('')
+    setAttendanceMenuDate(null)
+  }
+
+  function attendanceCellLabel(status: StaffAttendanceStatus): string {
+    if (status === 'off') return 'Off'
+    if (status === 'half') return 'Half'
+    if (status === 'leave') return 'Leave'
+    return ''
+  }
+
   return (
     <div className="staff-page page-shell">
       <PageCorners
@@ -170,6 +269,14 @@ export default function Staff() {
         right={
           selectedStaffId ? (
             <>
+              <button
+                type="button"
+                className={`staff-page-corner-btn staff-page-corner-btn--attendance ${showAttendanceModal ? 'staff-page-corner-btn--active' : ''}`}
+                onClick={openAttendanceModal}
+              >
+                <span aria-hidden="true">📅</span>
+                <span>Attendance</span>
+              </button>
               <button
                 type="button"
                 className={`staff-page-corner-btn staff-page-corner-btn--salary ${showSalaryEdit ? 'staff-page-corner-btn--active' : ''}`}
@@ -259,9 +366,14 @@ export default function Staff() {
 
       <div className="staff-page-summary">
         <div className="staff-page-summary-card">
-          <span>Total salary</span>
+          <span>Gross salary</span>
           <strong>{formatMoney(overview.totalSalary)}</strong>
           <small>{overview.staffCount} staff</small>
+        </div>
+        <div className="staff-page-summary-card staff-page-summary-card--leave">
+          <span>Leave deductions</span>
+          <strong>{formatMoney(overview.totalLeaveDeductions)}</strong>
+          <small>Net {formatMoney(overview.totalNetSalary)}</small>
         </div>
         <div className="staff-page-summary-card">
           <span>Paid</span>
@@ -383,8 +495,20 @@ export default function Staff() {
                       <div className="staff-page-row-copy">
                         <strong>{row.name}</strong>
                         <small>
-                          Paid {formatMoney(row.paidTotal)} · Remaining {formatMoney(row.remaining)} ·{' '}
-                          {row.paymentCount} payment{row.paymentCount === 1 ? '' : 's'}
+                          Paid {formatMoney(row.paidTotal)}
+                          {row.advanceIn > 0 ? ` (incl. ${formatMoney(row.advanceIn)} prev.)` : ''}
+                          {row.leaveDeductionTotal > 0
+                            ? ` · Leave −${formatMoney(row.leaveDeductionTotal)}`
+                            : ''}{' '}
+                          ·{' '}
+                          {row.canApplyToNextMonth
+                            ? `Overpaid ${formatMoney(row.overpaidAmount)}`
+                            : `Remaining ${formatMoney(row.remaining)}`}
+                          {row.advanceOut > 0
+                            ? ` · Applied ${formatMoney(row.advanceOut)} to ${formatSalaryMonthLabel(row.nextMonthKey)}`
+                            : ''}{' '}
+                          · {row.paymentCount} payment
+                          {row.paymentCount === 1 ? '' : 's'}
                         </small>
                       </div>
                       {inlineEditStaffId === row.staffId ? (
@@ -459,20 +583,91 @@ export default function Staff() {
                 <strong>{formatMoney(selectedSummary.monthlySalary)}</strong>
               </div>
               <div>
+                <span>Daily rate</span>
+                <strong>{formatMoney(selectedSummary.dailyRate)}</strong>
+                <small>÷ {SALARY_DAYS_PER_MONTH} days</small>
+              </div>
+              <div>
+                <span>Leave deductions</span>
+                <strong>{formatMoney(selectedSummary.leaveDeductionTotal)}</strong>
+                <small>
+                  {selectedSummary.fullDayLeaveCount} full · {selectedSummary.halfDayLeaveCount} half
+                </small>
+              </div>
+              <div>
+                <span>Net salary</span>
+                <strong>{formatMoney(selectedSummary.netSalary)}</strong>
+              </div>
+              <div>
                 <span>Paid</span>
                 <strong>{formatMoney(selectedSummary.paidTotal)}</strong>
+                {selectedSummary.advanceIn > 0 ? (
+                  <small>
+                    {formatMoney(selectedSummary.expensePaid)} expenses +{' '}
+                    {formatMoney(selectedSummary.advanceIn)} from {selectedAdvanceFromMonth ?? 'prev. month'}
+                  </small>
+                ) : selectedSummary.expensePaid !== selectedSummary.paidTotal ? (
+                  <small>{formatMoney(selectedSummary.expensePaid)} from expenses</small>
+                ) : null}
               </div>
               <div>
                 <span>Remaining</span>
-                <strong>{formatMoney(selectedSummary.remaining)}</strong>
+                <strong
+                  className={
+                    selectedSummary.remaining < 0 ? 'staff-page-remaining--overpaid' : undefined
+                  }
+                >
+                  {formatMoney(selectedSummary.remaining)}
+                </strong>
               </div>
             </div>
-            {formError && !showSalaryEdit ? <p className="staff-page-error">{formError}</p> : null}
+            {selectedSummary.canApplyToNextMonth ? (
+              <div className="staff-page-overpaid">
+                <p>
+                  Overpaid by {formatMoney(selectedSummary.overpaidAmount)}. Apply to{' '}
+                  {formatSalaryMonthLabel(selectedSummary.nextMonthKey)} so it counts as paid there.
+                </p>
+                <button
+                  type="button"
+                  className="staff-page-btn staff-page-btn--primary"
+                  onClick={handleApplyToNextMonth}
+                >
+                  Apply {formatMoney(selectedSummary.overpaidAmount)} to next month
+                </button>
+              </div>
+            ) : null}
+            {selectedSummary.advanceOut > 0 ? (
+              <p className="staff-page-advance-note">
+                {formatMoney(selectedSummary.advanceOut)} applied to{' '}
+                {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}.
+              </p>
+            ) : null}
+            {formError && !showSalaryEdit && !showAttendanceModal ? (
+              <p className="staff-page-error">{formError}</p>
+            ) : null}
+
+            <div className="staff-page-detail-actions">
+              <button type="button" className="staff-page-btn staff-page-btn--primary" onClick={openAttendanceModal}>
+                Attendance
+              </button>
+            </div>
+
             <h3 className="staff-page-payments-title">Salary payments · {formatSalaryMonthLabel(monthKey)}</h3>
-            {selectedPayments.length === 0 ? (
+            {selectedPayments.length === 0 && selectedSummary.advanceIn <= 0 ? (
               <p className="staff-page-empty staff-page-empty--inline">No linked salary payments for this month.</p>
             ) : (
               <ul className="staff-page-payments">
+                {selectedSummary.advanceIn > 0 ? (
+                  <li className="staff-page-payment staff-page-payment--advance">
+                    <div className="staff-page-payment-main">
+                      <strong>From {selectedAdvanceFromMonth ?? 'previous month'}</strong>
+                      <span>{formatMoney(selectedSummary.advanceIn)}</span>
+                    </div>
+                    <div className="staff-page-payment-meta">
+                      <small>Overpaid amount applied to this month</small>
+                    </div>
+                  </li>
+                ) : null}
                 {selectedPayments.map((expense) => {
                   const countedMonth =
                     expense.staffSalaryMonth ?? salaryMonthFromDate(expense.createdAt)
@@ -535,6 +730,162 @@ export default function Staff() {
           </section>
         ) : null}
       </div>
+
+      {showAttendanceModal && selectedSummary && selectedStaffId ? (
+        <div
+          className="staff-attendance-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="staff-attendance-title"
+        >
+          <button
+            type="button"
+            className="staff-attendance-backdrop"
+            aria-label="Close attendance"
+            onClick={closeAttendanceModal}
+          />
+          <div ref={attendanceModalRef} className="staff-attendance-panel">
+            <div className="staff-attendance-panel-head">
+              <div>
+                <h2 id="staff-attendance-title">Attendance</h2>
+                <p>
+                  {selectedSummary.name} · {formatSalaryMonthLabel(monthKey)}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="staff-attendance-panel-close"
+                aria-label="Close attendance"
+                onClick={closeAttendanceModal}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="staff-attendance-panel-note">
+              Daily rate = monthly salary ÷ {SALARY_DAYS_PER_MONTH}. Tap a date, then choose Leave, Half Day,
+              Full Day, or Off. Off is a paid day off on any day — no salary deduction.
+            </p>
+
+            {formError ? <p className="staff-page-error staff-page-error--modal">{formError}</p> : null}
+
+            <div className="staff-attendance-calendar">
+              <div className="staff-attendance-calendar-weekdays">
+                {weekdayLabels.map((label) => (
+                  <span key={label} className="staff-attendance-calendar-weekday">
+                    {label}
+                  </span>
+                ))}
+              </div>
+              <div className="staff-attendance-calendar-grid">
+                {calendarGrid.map((cell, index) => {
+                  if (!cell.date || cell.day == null) {
+                    return (
+                      <div
+                        key={`pad-${index}`}
+                        className="staff-attendance-calendar-cell staff-attendance-calendar-cell--empty"
+                        aria-hidden="true"
+                      />
+                    )
+                  }
+
+                  const status = staffAttendanceStatusForDate(data, selectedStaffId, cell.date)
+                  const menuOpen = attendanceMenuDate === cell.date
+
+                  return (
+                    <div
+                      key={cell.date}
+                      className={`staff-attendance-calendar-cell ${cell.isSunday ? 'staff-attendance-calendar-cell--sun' : ''} staff-attendance-calendar-cell--${status} ${menuOpen ? 'staff-attendance-calendar-cell--menu-open' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        className="staff-attendance-calendar-day"
+                        onClick={() => handleAttendanceDateClick(cell.date!)}
+                        aria-expanded={menuOpen}
+                        aria-haspopup="menu"
+                      >
+                        <span className="staff-attendance-calendar-day-num">{cell.day}</span>
+                        {status !== 'present' ? (
+                          <span className="staff-attendance-calendar-day-tag">
+                            {attendanceCellLabel(status)}
+                          </span>
+                        ) : null}
+                      </button>
+                      {menuOpen ? (
+                        <ul className="staff-attendance-menu" role="menu">
+                          {ATTENDANCE_MENU_OPTIONS.map((option) => (
+                            <li key={option.status} role="none">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className={`staff-attendance-menu-item staff-attendance-menu-item--${option.status} ${status === option.status ? 'staff-attendance-menu-item--active' : ''}`}
+                                onClick={() => handleAttendancePick(cell.date!, option.status)}
+                              >
+                                {option.label}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="staff-attendance-summary">
+              <div>
+                <span>Leave deductions</span>
+                <strong>{formatMoney(selectedSummary.leaveDeductionTotal)}</strong>
+              </div>
+              <div>
+                <span>Net salary</span>
+                <strong>{formatMoney(selectedSummary.netSalary)}</strong>
+              </div>
+            </div>
+
+            {selectedSummary.leaves.length === 0 ? (
+              <p className="staff-page-empty staff-page-empty--inline">No leave recorded for this month.</p>
+            ) : (
+              <ul className="staff-page-leave-list staff-page-leave-list--modal">
+                {selectedSummary.leaves.map((leave) => (
+                  <li key={leave.leaveId} className="staff-page-leave-row">
+                    <div className="staff-page-leave-row-main">
+                      <strong>{formatLeaveDateLabel(leave.date)}</strong>
+                      <span>
+                        {leave.type === 'off'
+                          ? 'Off · Paid'
+                          : leave.type === 'full'
+                            ? 'Leave'
+                            : 'Half Day'}
+                        {leave.deduction <= 0 && leave.type !== 'off' ? ' · Paid (Off)' : ''}
+                      </span>
+                    </div>
+                    <div className="staff-page-leave-row-meta">
+                      {leave.deduction > 0 ? <span>−{formatMoney(leave.deduction)}</span> : null}
+                      {leave.type === 'off' ? <span className="staff-page-leave-paid">Paid</span> : null}
+                      <button
+                        type="button"
+                        className="staff-page-leave-remove"
+                        aria-label={`Remove leave on ${leave.date}`}
+                        onClick={() => removeStaffLeave(leave.leaveId)}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="staff-attendance-panel-actions">
+              <button type="button" className="staff-page-btn staff-page-btn--ghost" onClick={closeAttendanceModal}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {pendingRemoveStaff ? (
         <div className="staff-remove-overlay" role="dialog" aria-modal="true" aria-labelledby="staff-remove-title">

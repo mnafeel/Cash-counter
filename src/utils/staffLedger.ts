@@ -1,5 +1,13 @@
 import type { AppData, Expense, StaffMember } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
+import {
+  buildStaffLeaveRows,
+  getStaffLeavesForMonth,
+  leaveDeductionAmount,
+  staffDailyRate,
+  totalLeaveDeduction,
+  type StaffLeaveRow,
+} from './staffAttendance'
 
 export type SalaryMonthKey = string
 
@@ -45,6 +53,12 @@ export function parseSalaryMonth(key: SalaryMonthKey): { year: number; month: nu
 
 export function salaryMonthKey(year: number, month: number): SalaryMonthKey {
   return `${year}-${String(month).padStart(2, '0')}`
+}
+
+export function nextSalaryMonth(monthKey: SalaryMonthKey): SalaryMonthKey {
+  const { year, month } = parseSalaryMonth(monthKey)
+  if (month >= 12) return salaryMonthKey(year + 1, 1)
+  return salaryMonthKey(year, month + 1)
 }
 
 export function formatSalaryMonthLabel(key: SalaryMonthKey): string {
@@ -135,7 +149,7 @@ export function searchStaffNames(data: AppData, query: string): string[] {
   if (!q) return []
   return (data.staff ?? [])
     .map((member) => member.name.trim())
-    .filter((raw) => raw && raw.toLowerCase().includes(q) && raw.toLowerCase() !== q)
+    .filter((raw) => raw && raw.toLowerCase().includes(q))
 }
 
 export function getStaffMember(data: AppData, staffId: string): StaffMember | undefined {
@@ -146,20 +160,54 @@ export interface StaffMonthSummary {
   staffId: string
   name: string
   monthlySalary: number
+  dailyRate: number
+  leaveDeductionTotal: number
+  fullDayLeaveCount: number
+  halfDayLeaveCount: number
+  netSalary: number
+  expensePaid: number
+  advanceIn: number
+  advanceOut: number
   paidTotal: number
   remaining: number
+  overpaidAmount: number
+  canApplyToNextMonth: boolean
+  nextMonthKey: SalaryMonthKey
   paymentCount: number
+  leaves: StaffLeaveRow[]
 }
 
 export interface StaffOverview {
   staffCount: number
   totalSalary: number
+  totalLeaveDeductions: number
+  totalNetSalary: number
   totalPaid: number
   totalRemaining: number
 }
 
 function paidAmountForExpense(expense: Expense): number {
   return Math.max(0, expense.amount)
+}
+
+export function getStaffSalaryAdvanceIn(
+  data: AppData,
+  staffId: string,
+  monthKey: SalaryMonthKey,
+): number {
+  return (data.staffSalaryAdvances ?? [])
+    .filter((row) => row.staffId === staffId && row.toMonth === monthKey)
+    .reduce((sum, row) => sum + Math.max(0, row.amount), 0)
+}
+
+export function getStaffSalaryAdvanceOut(
+  data: AppData,
+  staffId: string,
+  monthKey: SalaryMonthKey,
+): number {
+  return (data.staffSalaryAdvances ?? [])
+    .filter((row) => row.staffId === staffId && row.fromMonth === monthKey)
+    .reduce((sum, row) => sum + Math.max(0, row.amount), 0)
 }
 
 export function getStaffSalaryPayments(
@@ -185,15 +233,51 @@ export function getStaffMonthSummary(
   const member = getStaffMember(data, staffId)
   if (!member) return null
   const payments = getStaffSalaryPayments(data, staffId, monthKey)
-  const paidTotal = payments.reduce((sum, expense) => sum + paidAmountForExpense(expense), 0)
+  const expensePaid = payments.reduce((sum, expense) => sum + paidAmountForExpense(expense), 0)
+  const advanceIn = getStaffSalaryAdvanceIn(data, staffId, monthKey)
+  const advanceOut = getStaffSalaryAdvanceOut(data, staffId, monthKey)
+  const paidTotal = expensePaid + advanceIn
   const monthlySalary = Math.max(0, member.monthlySalary)
+  const dailyRate = staffDailyRate(monthlySalary)
+  const monthLeaves = getStaffLeavesForMonth(data, staffId, monthKey)
+  const deductibleLeaves = monthLeaves.filter((leave) => leaveDeductionAmount(monthlySalary, leave) > 0)
+  const leaveDeductionTotal = totalLeaveDeduction(monthlySalary, monthLeaves)
+  const netSalary = Math.max(0, monthlySalary - leaveDeductionTotal)
+  const rawRemaining = netSalary - paidTotal
+  const nextMonthKey = nextSalaryMonth(monthKey)
+  let remaining = rawRemaining
+  let overpaidAmount = 0
+  let canApplyToNextMonth = false
+
+  if (advanceOut > 0) {
+    remaining = Math.max(0, rawRemaining + advanceOut)
+  } else if (rawRemaining < 0) {
+    remaining = rawRemaining
+    overpaidAmount = -rawRemaining
+    canApplyToNextMonth = true
+  } else {
+    remaining = rawRemaining
+  }
+
   return {
     staffId: member.id,
     name: member.name,
     monthlySalary,
+    dailyRate,
+    leaveDeductionTotal,
+    fullDayLeaveCount: deductibleLeaves.filter((leave) => leave.type === 'full').length,
+    halfDayLeaveCount: deductibleLeaves.filter((leave) => leave.type === 'half').length,
+    netSalary,
+    expensePaid,
+    advanceIn,
+    advanceOut,
     paidTotal,
-    remaining: Math.max(0, monthlySalary - paidTotal),
+    remaining,
+    overpaidAmount,
+    canApplyToNextMonth,
+    nextMonthKey,
     paymentCount: payments.length,
+    leaves: buildStaffLeaveRows(monthlySalary, monthLeaves),
   }
 }
 
@@ -209,8 +293,10 @@ export function buildStaffOverview(data: AppData, monthKey: SalaryMonthKey): Sta
   return {
     staffCount: summaries.length,
     totalSalary: summaries.reduce((sum, row) => sum + row.monthlySalary, 0),
+    totalLeaveDeductions: summaries.reduce((sum, row) => sum + row.leaveDeductionTotal, 0),
+    totalNetSalary: summaries.reduce((sum, row) => sum + row.netSalary, 0),
     totalPaid: summaries.reduce((sum, row) => sum + row.paidTotal, 0),
-    totalRemaining: summaries.reduce((sum, row) => sum + row.remaining, 0),
+    totalRemaining: summaries.reduce((sum, row) => sum + Math.max(0, row.remaining), 0),
   }
 }
 
