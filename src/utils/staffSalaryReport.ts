@@ -123,7 +123,7 @@ function staffTableRows(summaries: StaffMonthSummary[]): string {
         <td class="num">${index + 1}</td>
         <td>${escapeHtml(row.name)}</td>
         <td class="num">${escapeHtml(formatMoney(row.monthlySalary))}</td>
-        <td class="num">${escapeHtml(formatMoney(row.leaveDeductionTotal))}</td>
+        <td class="num">${escapeHtml(formatMoney(row.deductionTotal))}</td>
         <td class="num">${escapeHtml(formatMoney(row.netSalary))}</td>
         <td class="num">${escapeHtml(formatMoney(row.paidTotal))}</td>
         <td class="num">${escapeHtml(formatMoney(row.remaining))}</td>
@@ -146,32 +146,32 @@ function buildStaffSalaryReportHtml(
   <p class="meta">Generated ${escapeHtml(exportedAt)} · ${escapeHtml(monthLabel)}</p>
   <div class="summary">
     <div class="summary-card">
-      <span>Gross Salary</span>
+      <span>Base Salary</span>
       <strong>${escapeHtml(formatMoney(overview.totalSalary))}</strong>
     </div>
     <div class="summary-card">
-      <span>Leave Deductions</span>
-      <strong>${escapeHtml(formatMoney(overview.totalLeaveDeductions))}</strong>
+      <span>Deductions</span>
+      <strong>${escapeHtml(formatMoney(overview.totalDeductions))}</strong>
     </div>
     <div class="summary-card">
-      <span>Amount Paid</span>
-      <strong>${escapeHtml(formatMoney(overview.totalPaid))}</strong>
+      <span>Net Salary</span>
+      <strong>${escapeHtml(formatMoney(overview.totalNetSalary))}</strong>
     </div>
     <div class="summary-card">
-      <span>Pending / Remaining</span>
+      <span>Remaining</span>
       <strong>${escapeHtml(formatMoney(overview.totalRemaining))}</strong>
     </div>
   </div>
-  <p class="meta">Daily rate = monthly salary ÷ 30 · Sundays are paid off days</p>
+  <p class="meta">Net salary = base salary − deduction (Half Day or Unpaid leave only).</p>
   <h2>Salaried Staff</h2>
   <table>
     <thead>
       <tr>
         <th class="num">#</th>
         <th>Staff Name</th>
-        <th class="num">Gross</th>
-        <th class="num">Leave Ded.</th>
-        <th class="num">Net</th>
+        <th class="num">Base</th>
+        <th class="num">Deduction</th>
+        <th class="num">Net Salary</th>
         <th class="num">Paid</th>
         <th class="num">Remaining</th>
       </tr>

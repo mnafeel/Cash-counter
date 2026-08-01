@@ -1,12 +1,13 @@
 import type { AppData, Expense, StaffMember } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import {
-  buildStaffLeaveRows,
+  buildStaffAttendanceRows,
+  computeLeaveNetSalary,
+  computeMonthLeaveDeduction,
+  computeMonthAttendanceTotals,
   getStaffLeavesForMonth,
-  leaveDeductionAmount,
+  resolveStaffSalaryDays,
   staffDailyRate,
-  totalLeaveDeduction,
-  type StaffLeaveRow,
 } from './staffAttendance'
 
 export type SalaryMonthKey = string
@@ -160,10 +161,15 @@ export interface StaffMonthSummary {
   staffId: string
   name: string
   monthlySalary: number
+  salaryDaysPerMonth: number
   dailyRate: number
-  leaveDeductionTotal: number
-  fullDayLeaveCount: number
-  halfDayLeaveCount: number
+  paidDays: number
+  fullDayCount: number
+  halfDayCount: number
+  notPaidCount: number
+  offCount: number
+  unsetCount: number
+  deductionTotal: number
   netSalary: number
   expensePaid: number
   advanceIn: number
@@ -174,13 +180,14 @@ export interface StaffMonthSummary {
   canApplyToNextMonth: boolean
   nextMonthKey: SalaryMonthKey
   paymentCount: number
-  leaves: StaffLeaveRow[]
+  attendance: import('./staffAttendance').StaffAttendanceRow[]
 }
 
 export interface StaffOverview {
   staffCount: number
   totalSalary: number
-  totalLeaveDeductions: number
+  totalDeductions: number
+  totalPaidDays: number
   totalNetSalary: number
   totalPaid: number
   totalRemaining: number
@@ -238,11 +245,12 @@ export function getStaffMonthSummary(
   const advanceOut = getStaffSalaryAdvanceOut(data, staffId, monthKey)
   const paidTotal = expensePaid + advanceIn
   const monthlySalary = Math.max(0, member.monthlySalary)
-  const dailyRate = staffDailyRate(monthlySalary)
+  const salaryDaysPerMonth = resolveStaffSalaryDays(member.salaryDaysPerMonth)
+  const dailyRate = staffDailyRate(monthlySalary, salaryDaysPerMonth)
   const monthLeaves = getStaffLeavesForMonth(data, staffId, monthKey)
-  const deductibleLeaves = monthLeaves.filter((leave) => leaveDeductionAmount(monthlySalary, leave) > 0)
-  const leaveDeductionTotal = totalLeaveDeduction(monthlySalary, monthLeaves)
-  const netSalary = Math.max(0, monthlySalary - leaveDeductionTotal)
+  const attendanceTotals = computeMonthAttendanceTotals(data, staffId, monthKey)
+  const deductionTotal = computeMonthLeaveDeduction(data, staffId, monthKey, dailyRate)
+  const netSalary = computeLeaveNetSalary(monthlySalary, deductionTotal)
   const rawRemaining = netSalary - paidTotal
   const nextMonthKey = nextSalaryMonth(monthKey)
   let remaining = rawRemaining
@@ -263,10 +271,15 @@ export function getStaffMonthSummary(
     staffId: member.id,
     name: member.name,
     monthlySalary,
+    salaryDaysPerMonth,
     dailyRate,
-    leaveDeductionTotal,
-    fullDayLeaveCount: deductibleLeaves.filter((leave) => leave.type === 'full').length,
-    halfDayLeaveCount: deductibleLeaves.filter((leave) => leave.type === 'half').length,
+    paidDays: attendanceTotals.paidDays,
+    fullDayCount: attendanceTotals.fullDayCount,
+    halfDayCount: attendanceTotals.halfDayCount,
+    notPaidCount: attendanceTotals.notPaidCount,
+    offCount: attendanceTotals.offCount,
+    unsetCount: attendanceTotals.unsetCount,
+    deductionTotal,
     netSalary,
     expensePaid,
     advanceIn,
@@ -277,7 +290,7 @@ export function getStaffMonthSummary(
     canApplyToNextMonth,
     nextMonthKey,
     paymentCount: payments.length,
-    leaves: buildStaffLeaveRows(monthlySalary, monthLeaves),
+    attendance: buildStaffAttendanceRows(monthlySalary, monthLeaves, salaryDaysPerMonth),
   }
 }
 
@@ -293,7 +306,8 @@ export function buildStaffOverview(data: AppData, monthKey: SalaryMonthKey): Sta
   return {
     staffCount: summaries.length,
     totalSalary: summaries.reduce((sum, row) => sum + row.monthlySalary, 0),
-    totalLeaveDeductions: summaries.reduce((sum, row) => sum + row.leaveDeductionTotal, 0),
+    totalDeductions: summaries.reduce((sum, row) => sum + row.deductionTotal, 0),
+    totalPaidDays: summaries.reduce((sum, row) => sum + row.paidDays, 0),
     totalNetSalary: summaries.reduce((sum, row) => sum + row.netSalary, 0),
     totalPaid: summaries.reduce((sum, row) => sum + row.paidTotal, 0),
     totalRemaining: summaries.reduce((sum, row) => sum + Math.max(0, row.remaining), 0),

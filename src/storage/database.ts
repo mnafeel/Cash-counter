@@ -30,7 +30,7 @@ import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
 import { loanBankToBalance, loanCashToDrawer } from '../utils/loanLedger'
 import { getStaffMonthSummary, isStaffLinkableExpense, salaryMonthFromDate, type SalaryMonthKey } from '../utils/staffLedger'
-import { validateStaffLeaveInput } from '../utils/staffAttendance'
+import { validateStaffLeaveInput, resolveStaffSalaryDays, normalizeStaffLeaveTypeValue, isSundayDate, isRedundantStaffLeaveRecord } from '../utils/staffAttendance'
 
 const defaultData: AppData = {
   openingBalance: 0,
@@ -452,7 +452,9 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
     expenses: normalizedExpenses,
     loans: (parsed.loans ?? []).map((loan) => normalizeLoan(loan)),
     staff: (parsed.staff ?? []).map((member) => normalizeStaffMember(member)),
-    staffLeaves: (parsed.staffLeaves ?? []).map((leave) => normalizeStaffLeave(leave)),
+    staffLeaves: (parsed.staffLeaves ?? [])
+      .map((leave) => normalizeStaffLeave(leave))
+      .filter((leave) => !isRedundantStaffLeaveRecord(leave.date, leave.type)),
     staffSalaryAdvances: (parsed.staffSalaryAdvances ?? []).map((row) => normalizeStaffSalaryAdvance(row)),
   }
 }
@@ -469,9 +471,7 @@ function normalizeStaffSalaryAdvance(raw: Partial<StaffSalaryAdvance>): StaffSal
 }
 
 function normalizeStaffLeaveType(raw: unknown): StaffLeaveType {
-  if (raw === 'half') return 'half'
-  if (raw === 'off') return 'off'
-  return 'full'
+  return normalizeStaffLeaveTypeValue(raw) ?? 'present'
 }
 
 function normalizeStaffLeave(raw: Partial<StaffLeave>): StaffLeave {
@@ -490,6 +490,7 @@ function normalizeStaffMember(raw: Partial<StaffMember>): StaffMember {
     id: raw.id ?? crypto.randomUUID(),
     name: (raw.name ?? 'Staff').trim() || 'Staff',
     monthlySalary: Math.max(0, Number(raw.monthlySalary) || 0),
+    salaryDaysPerMonth: resolveStaffSalaryDays(raw.salaryDaysPerMonth),
     createdAt: raw.createdAt ?? new Date().toISOString(),
   }
 }
@@ -1357,7 +1358,7 @@ export function addStaffMember(
 export function updateStaffMember(
   data: AppData,
   id: string,
-  updates: { name?: string; monthlySalary?: number },
+  updates: { name?: string; monthlySalary?: number; salaryDaysPerMonth?: number },
 ): AppData {
   const current = (data.staff ?? []).find((member) => member.id === id)
   if (!current) return data
@@ -1365,8 +1366,14 @@ export function updateStaffMember(
   if (!nextName) return data
   const nextSalary =
     updates.monthlySalary !== undefined ? Math.max(0, updates.monthlySalary) : current.monthlySalary
+  const nextDays =
+    updates.salaryDaysPerMonth !== undefined
+      ? resolveStaffSalaryDays(updates.salaryDaysPerMonth)
+      : resolveStaffSalaryDays(current.salaryDaysPerMonth)
   const nextStaff = (data.staff ?? []).map((member) =>
-    member.id === id ? { ...member, name: nextName, monthlySalary: nextSalary } : member,
+    member.id === id
+      ? { ...member, name: nextName, monthlySalary: nextSalary, salaryDaysPerMonth: nextDays }
+      : member,
   )
   let next: AppData = { ...data, staff: nextStaff }
   if (nextName.toLowerCase() !== current.name.trim().toLowerCase()) {
@@ -1487,11 +1494,9 @@ export function deleteStaffLeave(data: AppData, leaveId: string): AppData {
   return next
 }
 
-export type StaffAttendanceSetStatus = 'leave' | 'half' | 'present' | 'off'
-
 export function setStaffAttendance(
   data: AppData,
-  input: { staffId: string; date: string; status: StaffAttendanceSetStatus },
+  input: { staffId: string; date: string; type: StaffLeaveType | 'unset' },
 ): { data: AppData; ok: boolean; error?: string } {
   if (!(data.staff ?? []).some((member) => member.id === input.staffId)) {
     return { data, ok: false, error: 'Staff not found.' }
@@ -1506,13 +1511,37 @@ export function setStaffAttendance(
     (leave) => leave.staffId === input.staffId && leave.date === date,
   )
 
-  if (input.status === 'present') {
+  if (input.type === 'unset') {
     if (!existing) return { data, ok: true }
-    return { data: deleteStaffLeave(data, existing.id), ok: true }
+    const next = deleteStaffLeave(data, existing.id)
+    return { data: next, ok: true }
   }
 
-  const leaveType: StaffLeaveType =
-    input.status === 'off' ? 'off' : input.status === 'half' ? 'half' : 'full'
+  if (input.type === 'present' && !isSundayDate(date)) {
+    if (!existing) return { data, ok: true }
+    const next = deleteStaffLeave(data, existing.id)
+    return { data: next, ok: true }
+  }
+
+  if (input.type === 'off' && isSundayDate(date)) {
+    if (!existing) return { data, ok: true }
+    const next = deleteStaffLeave(data, existing.id)
+    return { data: next, ok: true }
+  }
+
+  if (input.type === 'not_paid' && !isSundayDate(date)) {
+    return { data, ok: false, error: 'Unpaid is only for Sundays.' }
+  }
+
+  if (input.type === 'leave' && isSundayDate(date)) {
+    return { data, ok: false, error: 'Leave is not marked on Sundays — Sunday is Off by default.' }
+  }
+
+  const normalized = normalizeStaffLeaveTypeValue(input.type)
+  if (!normalized) {
+    return { data, ok: false, error: 'Pick a valid attendance type.' }
+  }
+  const leaveType = normalized
 
   if (existing) {
     if (existing.type === leaveType) return { data, ok: true }

@@ -1,14 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCash } from '../context/CashContext'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import {
-  SALARY_DAYS_PER_MONTH,
   buildMonthCalendarGrid,
   formatLeaveDateLabel,
+  attendanceMenuItemsForDate,
+  attendanceMenuOptionLabel,
+  attendanceMenuPlacement,
+  attendanceStatusLabel,
+  calendarTagForDate,
+  shouldShowAttendanceTag,
   staffAttendanceStatusForDate,
+  todayIsoDate,
   weekdayLabelsForCalendar,
-  type StaffAttendanceStatus,
+  type AttendanceMenuItem,
 } from '../utils/staffAttendance'
 import {
   buildStaffMonthSummaries,
@@ -28,13 +34,6 @@ import {
 } from '../utils/staffLedger'
 import { printStaffSalaryReport } from '../utils/staffSalaryReport'
 import './Staff.css'
-
-const ATTENDANCE_MENU_OPTIONS: { status: StaffAttendanceStatus; label: string }[] = [
-  { status: 'leave', label: 'Leave' },
-  { status: 'half', label: 'Half Day' },
-  { status: 'present', label: 'Full Day' },
-  { status: 'off', label: 'Off' },
-]
 
 export default function Staff() {
   const {
@@ -64,10 +63,40 @@ export default function Staff() {
   const [editingPaymentMonth, setEditingPaymentMonth] = useState<SalaryMonthKey>(currentSalaryMonth())
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [attendanceMenuDate, setAttendanceMenuDate] = useState<string | null>(null)
+  const [attendanceFocusedDate, setAttendanceFocusedDate] = useState<string | null>(null)
+  const [attendanceMenuHighlight, setAttendanceMenuHighlight] = useState(0)
+  const [editingSalaryDays, setEditingSalaryDays] = useState(false)
+  const [editSalaryDays, setEditSalaryDays] = useState('30')
   const attendanceModalRef = useRef<HTMLDivElement>(null)
+  const attendanceDayButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   const calendarGrid = useMemo(() => buildMonthCalendarGrid(monthKey), [monthKey])
   const weekdayLabels = useMemo(() => weekdayLabelsForCalendar(), [])
+  const calendarDatesInMonth = useMemo(
+    () => calendarGrid.flatMap((cell) => (cell.date ? [cell.date] : [])),
+    [calendarGrid],
+  )
+  const calendarDateGridIndex = useMemo(() => {
+    const map = new Map<string, number>()
+    calendarGrid.forEach((cell, index) => {
+      if (cell.date) map.set(cell.date, index)
+    })
+    return map
+  }, [calendarGrid])
+
+  const defaultAttendanceFocusedDate = useCallback((): string | null => {
+    if (calendarDatesInMonth.length === 0) return null
+    const today = todayIsoDate()
+    if (today.startsWith(monthKey) && calendarDatesInMonth.includes(today)) return today
+    return calendarDatesInMonth[0] ?? null
+  }, [calendarDatesInMonth, monthKey])
+
+  const focusAttendanceDate = useCallback((date: string | null) => {
+    if (!date) return
+    window.requestAnimationFrame(() => {
+      attendanceDayButtonRefs.current[date]?.focus()
+    })
+  }, [])
 
   const monthOptions = useMemo(() => listMonthOptionsForYear(year), [year])
   const salaryMonthPickerOptions = useMemo(() => listSalaryMonthPickerOptions(), [])
@@ -94,24 +123,60 @@ export default function Staff() {
 
   useEffect(() => {
     setAttendanceMenuDate(null)
-  }, [monthKey, selectedStaffId])
+    setAttendanceMenuHighlight(0)
+    setAttendanceFocusedDate(defaultAttendanceFocusedDate())
+  }, [monthKey, selectedStaffId, defaultAttendanceFocusedDate])
 
   useEffect(() => {
-    if (!showAttendanceModal) setAttendanceMenuDate(null)
-  }, [showAttendanceModal])
+    if (!showAttendanceModal) {
+      setAttendanceMenuDate(null)
+      setAttendanceMenuHighlight(0)
+      setAttendanceFocusedDate(null)
+      return
+    }
+    setAttendanceFocusedDate((current) => current ?? defaultAttendanceFocusedDate())
+  }, [showAttendanceModal, defaultAttendanceFocusedDate])
+
+  useEffect(() => {
+    if (!showAttendanceModal || !attendanceFocusedDate || attendanceMenuDate) return
+    focusAttendanceDate(attendanceFocusedDate)
+  }, [showAttendanceModal, attendanceFocusedDate, attendanceMenuDate, focusAttendanceDate])
+
+  useEffect(() => {
+    setEditingSalaryDays(false)
+    if (selectedSummary) {
+      setEditSalaryDays(String(selectedSummary.salaryDaysPerMonth))
+    }
+  }, [selectedStaffId, selectedSummary?.salaryDaysPerMonth])
+
+  useEffect(() => {
+    if (!attendanceMenuDate || !showAttendanceModal) return
+    const menuItem = attendanceModalRef.current?.querySelector(
+      `[data-attendance-menu-date="${attendanceMenuDate}"] [data-attendance-menu-index="${attendanceMenuHighlight}"]`,
+    ) as HTMLButtonElement | null
+    menuItem?.focus()
+  }, [attendanceMenuDate, attendanceMenuHighlight, showAttendanceModal])
 
   useEffect(() => {
     if (!showAttendanceModal) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setShowAttendanceModal(false)
+      if (event.key !== 'Escape') return
+      if (attendanceMenuDate) {
+        event.preventDefault()
         setAttendanceMenuDate(null)
-        setFormError('')
+        setAttendanceMenuHighlight(0)
+        focusAttendanceDate(attendanceFocusedDate ?? attendanceMenuDate)
+        return
       }
+      setShowAttendanceModal(false)
+      setAttendanceMenuDate(null)
+      setAttendanceMenuHighlight(0)
+      setAttendanceFocusedDate(null)
+      setFormError('')
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showAttendanceModal])
+  }, [showAttendanceModal, attendanceMenuDate, attendanceFocusedDate, focusAttendanceDate])
 
   function handleMonthPick(nextKey: SalaryMonthKey) {
     setMonthKey(nextKey)
@@ -198,6 +263,18 @@ export default function Staff() {
     setShowSalaryEdit(false)
   }
 
+  function saveSalaryDays() {
+    if (!selectedStaffId) return
+    const days = Math.round(parseAmount(editSalaryDays))
+    if (!(days >= 1 && days <= 31)) {
+      setFormError('Enter days between 1 and 31.')
+      return
+    }
+    updateStaff(selectedStaffId, { salaryDaysPerMonth: days })
+    setEditingSalaryDays(false)
+    setFormError('')
+  }
+
   const pendingRemoveStaff = useMemo(
     () => (data.staff ?? []).find((member) => member.id === pendingRemoveStaffId) ?? null,
     [data.staff, pendingRemoveStaffId],
@@ -230,36 +307,172 @@ export default function Staff() {
   function closeAttendanceModal() {
     setShowAttendanceModal(false)
     setAttendanceMenuDate(null)
+    setAttendanceMenuHighlight(0)
+    setAttendanceFocusedDate(null)
     setFormError('')
   }
 
   function openAttendanceModal() {
+    const initialDate = defaultAttendanceFocusedDate()
     setShowAttendanceModal(true)
     setAttendanceMenuDate(null)
+    setAttendanceMenuHighlight(0)
+    setAttendanceFocusedDate(initialDate)
     setFormError('')
+    focusAttendanceDate(initialDate)
   }
+
+  function openAttendanceMenuForDate(date: string) {
+    setFormError('')
+    setAttendanceFocusedDate(date)
+    setAttendanceMenuDate(date)
+    setAttendanceMenuHighlight(0)
+  }
+
+  function closeAttendanceMenu() {
+    const date = attendanceMenuDate ?? attendanceFocusedDate
+    setAttendanceMenuDate(null)
+    setAttendanceMenuHighlight(0)
+    if (date) focusAttendanceDate(date)
+  }
+
+  const moveAttendanceFocusedDate = useCallback(
+    (direction: 'left' | 'right' | 'up' | 'down') => {
+      if (!attendanceFocusedDate) return
+      const currentIndex = calendarDateGridIndex.get(attendanceFocusedDate)
+      if (currentIndex == null) return
+
+      let nextIndex = currentIndex
+      if (direction === 'left') nextIndex -= 1
+      if (direction === 'right') nextIndex += 1
+      if (direction === 'up') nextIndex -= 7
+      if (direction === 'down') nextIndex += 7
+
+      const nextDate = calendarGrid[nextIndex]?.date
+      if (!nextDate) return
+
+      setAttendanceFocusedDate(nextDate)
+      setAttendanceMenuDate(null)
+      setAttendanceMenuHighlight(0)
+      focusAttendanceDate(nextDate)
+    },
+    [attendanceFocusedDate, calendarDateGridIndex, calendarGrid, focusAttendanceDate],
+  )
 
   function handleAttendanceDateClick(date: string) {
     setFormError('')
-    setAttendanceMenuDate((current) => (current === date ? null : date))
+    setAttendanceFocusedDate(date)
+    if (attendanceMenuDate === date) {
+      closeAttendanceMenu()
+      return
+    }
+    openAttendanceMenuForDate(date)
   }
 
-  function handleAttendancePick(date: string, status: StaffAttendanceStatus) {
+  function handleAttendancePick(date: string, type: AttendanceMenuItem['type']) {
     if (!selectedStaffId) return
-    const error = setStaffAttendance({ staffId: selectedStaffId, date, status })
+    const error = setStaffAttendance({ staffId: selectedStaffId, date, type })
     if (error) {
       setFormError(error)
       return
     }
     setFormError('')
     setAttendanceMenuDate(null)
+    setAttendanceMenuHighlight(0)
+    focusAttendanceDate(date)
   }
 
-  function attendanceCellLabel(status: StaffAttendanceStatus): string {
-    if (status === 'off') return 'Off'
-    if (status === 'half') return 'Half'
-    if (status === 'leave') return 'Leave'
-    return ''
+  function handleCalendarDayKeyDown(
+    event: React.KeyboardEvent,
+    date: string,
+    menuOpen: boolean,
+    menuItems: AttendanceMenuItem[],
+  ) {
+    if (menuOpen) {
+      handleAttendanceMenuKeyDown(event, date, menuItems)
+      return
+    }
+
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      openAttendanceMenuForDate(date)
+      return
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      moveAttendanceFocusedDate('left')
+      return
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      moveAttendanceFocusedDate('right')
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveAttendanceFocusedDate('up')
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      moveAttendanceFocusedDate('down')
+    }
+  }
+
+  function handleAttendanceMenuKeyDown(
+    event: React.KeyboardEvent,
+    date: string,
+    items: AttendanceMenuItem[],
+  ) {
+    const count = items.length
+    if (count === 0) return
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setAttendanceMenuHighlight((index) => (index + 1) % count)
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setAttendanceMenuHighlight((index) => (index - 1 + count) % count)
+      return
+    }
+    if (event.key === 'Home') {
+      event.preventDefault()
+      setAttendanceMenuHighlight(0)
+      return
+    }
+    if (event.key === 'End') {
+      event.preventDefault()
+      setAttendanceMenuHighlight(count - 1)
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeAttendanceMenu()
+      return
+    }
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleAttendancePick(date, items[attendanceMenuHighlight]?.type ?? items[0].type)
+      return
+    }
+    const shortcut = Number(event.key)
+    if (Number.isInteger(shortcut) && shortcut >= 1 && shortcut <= count) {
+      event.preventDefault()
+      handleAttendancePick(date, items[shortcut - 1].type)
+    }
+  }
+
+  function handleAttendanceMenuPick(
+    event: React.MouseEvent,
+    date: string,
+    item: AttendanceMenuItem,
+  ) {
+    event.stopPropagation()
+    event.preventDefault()
+    handleAttendancePick(date, item.type)
   }
 
   return (
@@ -371,9 +584,14 @@ export default function Staff() {
           <small>{overview.staffCount} staff</small>
         </div>
         <div className="staff-page-summary-card staff-page-summary-card--leave">
-          <span>Leave deductions</span>
-          <strong>{formatMoney(overview.totalLeaveDeductions)}</strong>
-          <small>Net {formatMoney(overview.totalNetSalary)}</small>
+          <span>Deduction</span>
+          <strong>{formatMoney(overview.totalDeductions)}</strong>
+          <small>{overview.totalDeductions > 0 ? 'Leave marked' : 'No leave'}</small>
+        </div>
+        <div className="staff-page-summary-card staff-page-summary-card--net">
+          <span>Net salary</span>
+          <strong>{formatMoney(overview.totalNetSalary)}</strong>
+          <small>To receive this month</small>
         </div>
         <div className="staff-page-summary-card">
           <span>Paid</span>
@@ -497,10 +715,10 @@ export default function Staff() {
                         <small>
                           Paid {formatMoney(row.paidTotal)}
                           {row.advanceIn > 0 ? ` (incl. ${formatMoney(row.advanceIn)} prev.)` : ''}
-                          {row.leaveDeductionTotal > 0
-                            ? ` · Leave −${formatMoney(row.leaveDeductionTotal)}`
-                            : ''}{' '}
-                          ·{' '}
+                          {row.deductionTotal > 0
+                            ? ` · Deduction −${formatMoney(row.deductionTotal)}`
+                            : ' · Deduction ₹0'}
+                          {` · Net ${formatMoney(row.netSalary)}`} ·{' '}
                           {row.canApplyToNextMonth
                             ? `Overpaid ${formatMoney(row.overpaidAmount)}`
                             : `Remaining ${formatMoney(row.remaining)}`}
@@ -585,13 +803,52 @@ export default function Staff() {
               <div>
                 <span>Daily rate</span>
                 <strong>{formatMoney(selectedSummary.dailyRate)}</strong>
-                <small>÷ {SALARY_DAYS_PER_MONTH} days</small>
+                {editingSalaryDays ? (
+                  <label className="staff-page-days-edit">
+                    <span>÷</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      className="staff-page-days-input"
+                      value={editSalaryDays}
+                      onChange={(e) => setEditSalaryDays(e.target.value)}
+                      onBlur={saveSalaryDays}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          saveSalaryDays()
+                        }
+                        if (e.key === 'Escape') {
+                          setEditingSalaryDays(false)
+                          setEditSalaryDays(String(selectedSummary.salaryDaysPerMonth))
+                        }
+                      }}
+                      autoFocus
+                      aria-label="Salary days per month"
+                    />
+                    <span>days</span>
+                  </label>
+                ) : (
+                  <button
+                    type="button"
+                    className="staff-page-days-link"
+                    onClick={() => {
+                      setEditSalaryDays(String(selectedSummary.salaryDaysPerMonth))
+                      setEditingSalaryDays(true)
+                      setFormError('')
+                    }}
+                  >
+                    ÷ {selectedSummary.salaryDaysPerMonth} days
+                  </button>
+                )}
               </div>
               <div>
-                <span>Leave deductions</span>
-                <strong>{formatMoney(selectedSummary.leaveDeductionTotal)}</strong>
+                <span>Deduction</span>
+                <strong>{formatMoney(selectedSummary.deductionTotal)}</strong>
                 <small>
-                  {selectedSummary.fullDayLeaveCount} full · {selectedSummary.halfDayLeaveCount} half
+                  {selectedSummary.deductionTotal > 0
+                    ? `${selectedSummary.halfDayCount} half · ${selectedSummary.notPaidCount} unpaid`
+                    : 'No leave marked'}
                 </small>
               </div>
               <div>
@@ -763,8 +1020,8 @@ export default function Staff() {
             </div>
 
             <p className="staff-attendance-panel-note">
-              Daily rate = monthly salary ÷ {SALARY_DAYS_PER_MONTH}. Tap a date, then choose Leave, Half Day,
-              Full Day, or Off. Off is a paid day off on any day — no salary deduction.
+              Arrow keys move the selected date. Enter opens the menu. Esc closes the menu. In the
+              menu use ↑↓ or 1–4, then Enter to pick.
             </p>
 
             {formError ? <p className="staff-page-error staff-page-error--modal">{formError}</p> : null}
@@ -791,37 +1048,67 @@ export default function Staff() {
 
                   const status = staffAttendanceStatusForDate(data, selectedStaffId, cell.date)
                   const menuOpen = attendanceMenuDate === cell.date
+                  const dateFocused = attendanceFocusedDate === cell.date
+                  const menuItems = attendanceMenuItemsForDate(cell.date!)
+                  const menuPlacement = attendanceMenuPlacement(cell.date!)
 
                   return (
                     <div
                       key={cell.date}
-                      className={`staff-attendance-calendar-cell ${cell.isSunday ? 'staff-attendance-calendar-cell--sun' : ''} staff-attendance-calendar-cell--${status} ${menuOpen ? 'staff-attendance-calendar-cell--menu-open' : ''}`}
+                      className={`staff-attendance-calendar-cell ${dateFocused ? 'staff-attendance-calendar-cell--focused' : ''} ${menuOpen ? 'staff-attendance-calendar-cell--menu-open' : ''}`}
                     >
                       <button
                         type="button"
                         className="staff-attendance-calendar-day"
+                        ref={(node) => {
+                          attendanceDayButtonRefs.current[cell.date!] = node
+                        }}
                         onClick={() => handleAttendanceDateClick(cell.date!)}
+                        onKeyDown={(event) =>
+                          handleCalendarDayKeyDown(event, cell.date!, menuOpen, menuItems)
+                        }
                         aria-expanded={menuOpen}
                         aria-haspopup="menu"
+                        aria-controls={menuOpen ? `staff-attendance-menu-${cell.date}` : undefined}
+                        tabIndex={dateFocused ? 0 : -1}
                       >
                         <span className="staff-attendance-calendar-day-num">{cell.day}</span>
-                        {status !== 'present' ? (
+                        {shouldShowAttendanceTag(data, selectedStaffId, cell.date!, status) ? (
                           <span className="staff-attendance-calendar-day-tag">
-                            {attendanceCellLabel(status)}
+                            {calendarTagForDate(data, selectedStaffId, cell.date!, status)}
                           </span>
                         ) : null}
                       </button>
                       {menuOpen ? (
-                        <ul className="staff-attendance-menu" role="menu">
-                          {ATTENDANCE_MENU_OPTIONS.map((option) => (
-                            <li key={option.status} role="none">
+                        <ul
+                          id={`staff-attendance-menu-${cell.date}`}
+                          data-attendance-menu-date={cell.date}
+                          className={`staff-attendance-menu staff-attendance-menu--${menuPlacement}`}
+                          role="menu"
+                          aria-label={`Attendance options for ${cell.date}`}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onKeyDown={(event) =>
+                            handleAttendanceMenuKeyDown(event, cell.date!, menuItems)
+                          }
+                        >
+                          {menuItems.map((item, itemIndex) => (
+                            <li key={item.type} role="none">
                               <button
                                 type="button"
                                 role="menuitem"
-                                className={`staff-attendance-menu-item staff-attendance-menu-item--${option.status} ${status === option.status ? 'staff-attendance-menu-item--active' : ''}`}
-                                onClick={() => handleAttendancePick(cell.date!, option.status)}
+                                data-attendance-menu-index={itemIndex}
+                                tabIndex={itemIndex === attendanceMenuHighlight ? 0 : -1}
+                                className={`staff-attendance-menu-item ${itemIndex === attendanceMenuHighlight ? 'staff-attendance-menu-item--highlight' : ''}`}
+                                aria-label={`${attendanceMenuOptionLabel(item)}, press ${itemIndex + 1}`}
+                                onMouseEnter={() => setAttendanceMenuHighlight(itemIndex)}
+                                onClick={(event) =>
+                                  handleAttendanceMenuPick(event, cell.date!, item)
+                                }
                               >
-                                {option.label}
+                                <span>{attendanceMenuOptionLabel(item)}</span>
+                                <span className="staff-attendance-menu-shortcut" aria-hidden="true">
+                                  {itemIndex + 1}
+                                </span>
                               </button>
                             </li>
                           ))}
@@ -835,8 +1122,8 @@ export default function Staff() {
 
             <div className="staff-attendance-summary">
               <div>
-                <span>Leave deductions</span>
-                <strong>{formatMoney(selectedSummary.leaveDeductionTotal)}</strong>
+                <span>Deduction</span>
+                <strong>{formatMoney(selectedSummary.deductionTotal)}</strong>
               </div>
               <div>
                 <span>Net salary</span>
@@ -844,31 +1131,27 @@ export default function Staff() {
               </div>
             </div>
 
-            {selectedSummary.leaves.length === 0 ? (
-              <p className="staff-page-empty staff-page-empty--inline">No leave recorded for this month.</p>
+            {selectedSummary.attendance.length === 0 ? (
+              <p className="staff-page-empty staff-page-empty--inline">
+                No deductions this month. Mark Leave, Half Day, or Unpaid (Sunday) to deduct.
+              </p>
             ) : (
+              <>
+                <h3 className="staff-page-payments-title">Leave deductions</h3>
               <ul className="staff-page-leave-list staff-page-leave-list--modal">
-                {selectedSummary.leaves.map((leave) => (
-                  <li key={leave.leaveId} className="staff-page-leave-row">
+                {selectedSummary.attendance.map((row) => (
+                  <li key={row.leaveId} className="staff-page-leave-row">
                     <div className="staff-page-leave-row-main">
-                      <strong>{formatLeaveDateLabel(leave.date)}</strong>
-                      <span>
-                        {leave.type === 'off'
-                          ? 'Off · Paid'
-                          : leave.type === 'full'
-                            ? 'Leave'
-                            : 'Half Day'}
-                        {leave.deduction <= 0 && leave.type !== 'off' ? ' · Paid (Off)' : ''}
-                      </span>
+                      <strong>{formatLeaveDateLabel(row.date)}</strong>
+                      <span>{attendanceStatusLabel(row.status)}</span>
                     </div>
                     <div className="staff-page-leave-row-meta">
-                      {leave.deduction > 0 ? <span>−{formatMoney(leave.deduction)}</span> : null}
-                      {leave.type === 'off' ? <span className="staff-page-leave-paid">Paid</span> : null}
+                      <span>−{formatMoney(row.dayDeduction)}</span>
                       <button
                         type="button"
                         className="staff-page-leave-remove"
-                        aria-label={`Remove leave on ${leave.date}`}
-                        onClick={() => removeStaffLeave(leave.leaveId)}
+                        aria-label={`Remove attendance on ${row.date}`}
+                        onClick={() => removeStaffLeave(row.leaveId)}
                       >
                         Remove
                       </button>
@@ -876,6 +1159,7 @@ export default function Staff() {
                   </li>
                 ))}
               </ul>
+              </>
             )}
 
             <div className="staff-attendance-panel-actions">

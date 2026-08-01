@@ -182,13 +182,13 @@ interface CashContextValue {
   removeExpense: (id: string) => void
   removeLoan: (id: string) => void
   addStaff: (input: { name: string; monthlySalary: number; linkExisting?: boolean }) => boolean
-  updateStaff: (id: string, updates: { name?: string; monthlySalary?: number }) => void
+  updateStaff: (id: string, updates: { name?: string; monthlySalary?: number; salaryDaysPerMonth?: number }) => void
   removeStaff: (id: string) => void
   addStaffLeave: (input: { staffId: string; date: string; type: StaffLeaveType }) => string | null
   setStaffAttendance: (input: {
     staffId: string
     date: string
-    status: 'leave' | 'half' | 'present' | 'off'
+    type: StaffLeaveType | 'unset'
   }) => string | null
   removeStaffLeave: (leaveId: string) => void
   applyStaffSalaryAdvance: (input: { staffId: string; fromMonth: string }) => string | null
@@ -641,7 +641,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
   )
 
   const updateStaff = useCallback(
-    (id: string, updates: { name?: string; monthlySalary?: number }) => {
+    (id: string, updates: { name?: string; monthlySalary?: number; salaryDaysPerMonth?: number }) => {
       setData((prev) => updateStaffMember(prev, id, updates))
     },
     [],
@@ -676,7 +676,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
     (input: {
       staffId: string
       date: string
-      status: 'leave' | 'half' | 'present' | 'off'
+      type: StaffLeaveType | 'unset'
     }): string | null => {
       let error: string | null = 'Could not save attendance.'
       setData((prev) => {

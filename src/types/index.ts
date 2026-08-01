@@ -151,12 +151,14 @@ export interface StaffMember {
   id: string
   name: string
   monthlySalary: number
+  /** Days used to divide monthly salary for daily rate (default 30). */
+  salaryDaysPerMonth?: number
   createdAt: string
 }
 
-export type StaffLeaveType = 'full' | 'half' | 'off'
+export type StaffLeaveType = 'present' | 'half' | 'off' | 'leave' | 'not_paid'
 
-/** Attendance / leave on a calendar day. Off = paid day off (no deduction). */
+/** Attendance on a calendar day. */
 export interface StaffLeave {
   id: string
   staffId: string
