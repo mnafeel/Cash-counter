@@ -8,7 +8,7 @@ import { formatMoney, parseAmount } from '../utils/format'
 import {
   buildExpenseAmountPickerOptions,
   buildExpenseNamePickerOptions,
-  findRecentExpenseNameOption,
+  searchExpenseNamePickerOptions,
   type ExpenseAmountPickerOption,
   type ExpenseNamePickerOption,
 } from '../utils/normalExpenseHistory'
@@ -21,7 +21,6 @@ import {
   getStaffMonthSummary,
   listSalaryMonthPickerOptions,
   salaryMonthChoiceHint,
-  searchStaffNames,
   shouldPromptSalaryMonthChoice,
   suggestDefaultSalaryMonth,
 } from '../utils/staffLedger'
@@ -73,32 +72,9 @@ export default function Expenses() {
   const recentExpenseOptions = useMemo(() => buildExpenseNamePickerOptions(data, 12), [data.expenses, data.staff])
 
   const visibleNameSuggestions = useMemo((): ExpenseNamePickerOption[] => {
-    const query = name.trim().toLowerCase()
+    const query = name.trim()
     if (!query) return recentExpenseOptions
-
-    const matches = recentExpenseOptions.filter((option) => {
-      const lower = option.name.toLowerCase()
-      return lower.includes(query)
-    })
-
-    const seen = new Set(matches.map((option) => option.name.toLowerCase()))
-    for (const staffName of searchStaffNames(data, query)) {
-      const lower = staffName.toLowerCase()
-      if (seen.has(lower)) continue
-      seen.add(lower)
-      const fromHistory = findRecentExpenseNameOption(data, staffName)
-      matches.push(
-        fromHistory ?? {
-          key: `staff-${lower}`,
-          name: staffName,
-          payLabel: 'Cash',
-          timeLabel: '',
-          isStaff: true,
-        },
-      )
-    }
-
-    return matches.slice(0, 12)
+    return searchExpenseNamePickerOptions(data, query, 12)
   }, [name, recentExpenseOptions, data])
 
   const matchedStaff = useMemo(() => findStaffByName(data, name), [data, name])
@@ -544,14 +520,14 @@ export default function Expenses() {
                             Staff
                           </span>
                         ) : null}
+                        {item.timeLabel ? (
+                          <span className="expense-name-suggestion-time">{item.timeLabel}</span>
+                        ) : null}
                       </span>
                       {item.metaLabel ? (
                         <span className="expense-name-suggestion-meta">{item.metaLabel}</span>
-                      ) : item.timeLabel ? (
-                        <span className="expense-name-suggestion-meta">
-                          {item.payLabel}
-                          {item.timeLabel ? ` · ${item.timeLabel}` : ''}
-                        </span>
+                      ) : item.payLabel ? (
+                        <span className="expense-name-suggestion-meta">{item.payLabel}</span>
                       ) : null}
                     </span>
                   </button>

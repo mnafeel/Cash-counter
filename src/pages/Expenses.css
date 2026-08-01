@@ -249,6 +249,15 @@
   width: 100%;
 }
 
+.expense-name-suggestion-time {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  line-height: 1.2;
+}
+
 .expense-name-suggestion-meta {
   font-size: 0.62rem;
   font-weight: 600;

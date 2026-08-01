@@ -3,12 +3,11 @@ import { isPurchaseExpense } from './expenseBillLabels'
 import { formatMoney, formatTime } from './format'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
 import {
-  buildStaffMonthSummaries,
   expenseCountsTowardStaffSalary,
   formatSalaryMonthLabel,
   getStaffMonthSummary,
   isStaffRosterName,
-  shouldPromptSalaryMonthChoice,
+  searchStaffNames,
   suggestDefaultSalaryMonth,
   type SalaryMonthKey,
 } from './staffLedger'
@@ -115,30 +114,6 @@ export function buildLastExpenseNamePickerOption(data: AppData): ExpenseNamePick
   return null
 }
 
-/** Staff with unpaid salary from last month — shown early in a new month. */
-export function buildPendingStaffSalaryPickerOptions(
-  data: AppData,
-  date = new Date(),
-  limit = 8,
-): ExpenseNamePickerOption[] {
-  if (!shouldPromptSalaryMonthChoice(date)) return []
-
-  const monthKey = suggestDefaultSalaryMonth(date)
-  return buildStaffMonthSummaries(data, monthKey)
-    .filter((row) => row.remaining > 0 && !row.canApplyToNextMonth)
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .slice(0, limit)
-    .map((row) => ({
-      key: `staff-pending-${row.staffId}-${monthKey}`,
-      name: row.name,
-      payLabel: 'Salary',
-      timeLabel: '',
-      isStaff: true,
-      staffSalaryMonth: monthKey,
-      metaLabel: `${formatSalaryMonthLabel(monthKey)} remaining`,
-    }))
-}
-
 /** Staff salary remaining only — shown on the expense amount field. */
 export function buildExpenseAmountPickerOptions(
   data: AppData,
@@ -161,21 +136,56 @@ export function buildExpenseAmountPickerOptions(
   ]
 }
 
-/** Recent unique normal expenses for the picker (newest first). */
-export function buildExpenseNamePickerOptions(data: AppData, limit = 8, date = new Date()): ExpenseNamePickerOption[] {
-  const pendingStaff = buildPendingStaffSalaryPickerOptions(data, date, limit)
-  const options: ExpenseNamePickerOption[] = [...pendingStaff]
-  const seen = new Set(pendingStaff.map((option) => option.name.trim().toLowerCase()))
+/** Recent normal expenses for the picker (newest first, each entry keeps its time). */
+export function buildExpenseNamePickerOptions(data: AppData, limit = 12): ExpenseNamePickerOption[] {
+  const options: ExpenseNamePickerOption[] = []
+
+  for (let i = 0; i < data.expenses.length; i++) {
+    const expense = data.expenses[i]
+    if (!isNormalExpenseRecord(expense)) continue
+    options.push(expenseToPickerOption(data, expense))
+    if (options.length >= limit) break
+  }
+
+  return options
+}
+
+/** Filter expenses by typed name — each match shows with its recorded time. */
+export function searchExpenseNamePickerOptions(
+  data: AppData,
+  query: string,
+  limit = 12,
+): ExpenseNamePickerOption[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+
+  const options: ExpenseNamePickerOption[] = []
+  const seenNames = new Set<string>()
 
   for (let i = 0; i < data.expenses.length; i++) {
     const expense = data.expenses[i]
     if (!isNormalExpenseRecord(expense)) continue
     const raw = expense.name.trim()
-    const nameKey = raw.toLowerCase()
-    if (seen.has(nameKey)) continue
-    seen.add(nameKey)
-
+    if (!raw.toLowerCase().includes(q)) continue
     options.push(expenseToPickerOption(data, expense))
+    seenNames.add(raw.toLowerCase())
+    if (options.length >= limit) break
+  }
+
+  for (const staffName of searchStaffNames(data, q)) {
+    const lower = staffName.toLowerCase()
+    if (seenNames.has(lower)) continue
+    seenNames.add(lower)
+    const fromHistory = findRecentExpenseNameOption(data, staffName)
+    options.push(
+      fromHistory ?? {
+        key: `staff-${lower}`,
+        name: staffName,
+        payLabel: 'Cash',
+        timeLabel: '',
+        isStaff: true,
+      },
+    )
     if (options.length >= limit) break
   }
 
