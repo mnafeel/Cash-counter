@@ -51,7 +51,7 @@ import {
 import type { BillReminderItem } from '../utils/billReminders'
 import '../pages/Reports.css'
 
-export type ReportSection = 'sales' | 'purchase' | 'expense' | 'credit' | 'cheque' | 'loan'
+export type ReportSection = 'all' | 'sales' | 'purchase' | 'expense' | 'credit' | 'cheque' | 'loan'
 
 const DATE_PRESETS: { id: ReportDatePreset; label: string }[] = [
   { id: 'today', label: 'Today' },
@@ -62,6 +62,7 @@ const DATE_PRESETS: { id: ReportDatePreset; label: string }[] = [
 ]
 
 const SECTION_TABS: { id: ReportSection; label: string }[] = [
+  { id: 'all', label: '📊 All' },
   { id: 'sales', label: '💰 Sales' },
   { id: 'credit', label: '💳 Credit' },
   { id: 'purchase', label: '🛒 Purchase' },
@@ -130,7 +131,9 @@ export default function ReportsPanel({
   const [datePreset, setDatePreset] = useState<ReportDatePreset>(initialPreset)
   const [selectedDate, setSelectedDate] = useState(toInputDate())
   const [rangeTo, setRangeTo] = useState(toInputDate())
-  const [activeSection, setActiveSection] = useState<ReportSection>(initialSection ?? 'sales')
+  const [activeSection, setActiveSection] = useState<ReportSection>(
+    focusSection ? (initialSection ?? 'sales') : 'all',
+  )
   const [salesSort, setSalesSort] = useState<ReportSort>('date-desc')
   const [salesDateMode, setSalesDateMode] = useState<SaleDateMode>('collected')
   const [creditSort, setCreditSort] = useState<CreditSort>('date-desc')
@@ -144,6 +147,7 @@ export default function ReportsPanel({
     if (!open) return
     setDatePreset(initialPreset)
     if (initialSection) setActiveSection(initialSection)
+    else if (!focusSection) setActiveSection('all')
     if (initialPreset === 'date' && initialSelectedDate) {
       setSelectedDate(initialSelectedDate)
     } else if (initialPreset === 'date' || initialPreset === 'range') {
@@ -165,6 +169,14 @@ export default function ReportsPanel({
     () =>
       salesSummaryForPreset(data, datePreset, selectedDate, rangeTo, salesDateMode),
     [data, datePreset, selectedDate, rangeTo, salesDateMode],
+  )
+  const overviewSalesTotals = useMemo(
+    () => salesSummaryForPreset(data, datePreset, selectedDate, rangeTo, 'collected'),
+    [data, datePreset, selectedDate, rangeTo],
+  )
+  const overviewSalesBills = useMemo(
+    () => salesBillsForPreset(data, datePreset, selectedDate, 'date-desc', rangeTo, 'collected'),
+    [data, datePreset, selectedDate, rangeTo],
   )
   const showSameDaySalesBox = isSingleDaySalesPreset(datePreset, selectedDate, rangeTo)
   const sameDaySales = useMemo(
@@ -197,7 +209,8 @@ export default function ReportsPanel({
     [salesBills],
   )
 
-  const showSalesCollectedAccordion = activeSection === 'sales' && salesDateMode === 'collected'
+  const showSalesCollectedAccordion =
+    activeSection === 'sales' && salesDateMode === 'collected'
 
   useEffect(() => {
     if (activeSection === 'sales' && salesDateMode === 'collected') {
@@ -262,6 +275,10 @@ export default function ReportsPanel({
     return filterChequeReportItems(items, datePreset, selectedDate, rangeTo)
   }, [data, datePreset, selectedDate, rangeTo])
   const chequeTotals = useMemo(() => summarizeChequeItems(chequeItems), [chequeItems])
+
+  const creditChequeOpenTotal = creditTotals.pendingTotal + chequeTotals.pendingTotal
+  const showSection = (section: Exclude<ReportSection, 'all'>) =>
+    activeSection === section || activeSection === 'all'
 
   const loanItems = useMemo(() => {
     const items = filterLoanReportItems(
@@ -499,6 +516,33 @@ export default function ReportsPanel({
               </div>
             )}
 
+            {activeSection === 'all' ? (
+              <div className="reports-summary reports-summary--all reports-summary--overview">
+                <div className="reports-summary-card reports-summary-card--orange">
+                  <span>Total expense</span>
+                  <strong>{formatMoney(expenseTotals.total)}</strong>
+                  <small>
+                    {expenseTotals.count} expense{expenseTotals.count === 1 ? '' : 's'}
+                  </small>
+                </div>
+                <div className="reports-summary-card reports-summary-card--green">
+                  <span>Total sales</span>
+                  <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
+                  <small>
+                    {overviewSalesTotals.billCount} bill{overviewSalesTotals.billCount === 1 ? '' : 's'} collected
+                  </small>
+                </div>
+                <div className="reports-summary-card">
+                  <span>Credit + Cheque</span>
+                  <strong>{formatMoney(creditChequeOpenTotal)}</strong>
+                  <small>
+                    Credit {formatMoney(creditTotals.pendingTotal)} · Cheque{' '}
+                    {formatMoney(chequeTotals.pendingTotal)}
+                  </small>
+                </div>
+              </div>
+            ) : null}
+
             {showSalesCollectedAccordion ? (
               <SalesCollectedSummaryCards
                 expanded={expandedSalesPanel}
@@ -541,7 +585,7 @@ export default function ReportsPanel({
               </div>
             ) : null}
 
-            {activeSection !== 'sales' ? (
+            {activeSection !== 'sales' && activeSection !== 'all' ? (
               <div className="reports-summary reports-summary--single">
                 {activeSection === 'credit' && (
                   <div className="reports-summary-card">
@@ -603,28 +647,40 @@ export default function ReportsPanel({
             />
           ) : null}
 
-          {activeSection === 'sales' && !showSalesCollectedAccordion && (
+          {showSection('sales') && !showSalesCollectedAccordion && (
+            <>
+              {activeSection === 'all' ? (
+                <div className="reports-section-head">
+                  <h2>💰 Sales</h2>
+                  <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
+                </div>
+              ) : null}
             <section className="reports-section">
               <p className="reports-list-meta">
-                {salesBills.length} sale{salesBills.length === 1 ? '' : 's'}
-                {salesDateMode === 'created' ? ' · by bill date' : ' · by collected date'}
+                {(activeSection === 'all' ? overviewSalesBills : salesBills).length} sale
+                {(activeSection === 'all' ? overviewSalesBills : salesBills).length === 1 ? '' : 's'}
+                {activeSection === 'all' || salesDateMode === 'collected'
+                  ? ' · by collected date'
+                  : ' · by bill date'}
               </p>
-              {salesBills.length === 0 ? (
+              {(activeSection === 'all' ? overviewSalesBills : salesBills).length === 0 ? (
                 <p className="reports-empty">No sales for this period.</p>
               ) : (
                 <ul className="reports-list">
-                  {salesBills.map((row) => (
+                  {(activeSection === 'all' ? overviewSalesBills : salesBills).map((row) => (
                     <li key={row.id} className="reports-item">
                       <div className="reports-item-head">
                         <span className="reports-item-title">{row.customerName || 'Sale'}</span>
                         <span className="reports-item-amount">
                           {formatMoney(
-                            salesDateMode === 'created' ? row.billAmount : row.collectedTotal,
+                            activeSection === 'all' || salesDateMode === 'collected'
+                              ? row.collectedTotal
+                              : row.billAmount,
                           )}
                         </span>
                       </div>
                       <div className="reports-item-meta">
-                        {salesDateMode === 'created' ? (
+                        {activeSection !== 'all' && salesDateMode === 'created' ? (
                           <>
                             Created {row.createdDateLabel} · Bill {formatMoney(row.billAmount)} ·{' '}
                             {formatCollectedSalesBreakdown(row.cashTotal, row.bankTotal)}
@@ -643,11 +699,19 @@ export default function ReportsPanel({
                 </ul>
               )}
             </section>
+            </>
           )}
 
-          {activeSection === 'purchase' && (
+          {showSection('purchase') && (
+            <>
+              {activeSection === 'all' ? (
+                <div className="reports-section-head">
+                  <h2>🛒 Purchase</h2>
+                  <strong>{formatMoney(purchaseTotals.total)}</strong>
+                </div>
+              ) : null}
             <section className="reports-section">
-              {!selectedPurchaseSupplier ? (
+              {activeSection === 'all' || !selectedPurchaseSupplier ? (
                 <>
                   <p className="reports-list-meta">
                     {purchaseSupplierGroups.length} supplier
@@ -664,6 +728,9 @@ export default function ReportsPanel({
                             type="button"
                             className="reports-supplier-btn"
                             onClick={() => {
+                              if (activeSection === 'all') {
+                                setActiveSection('purchase')
+                              }
                               setSelectedPurchaseSupplierKey(group.shopKey)
                               setExpandedReportKey(null)
                               bodyRef.current?.scrollTo({ top: 0 })
@@ -709,9 +776,17 @@ export default function ReportsPanel({
                 </>
               )}
             </section>
+            </>
           )}
 
-          {activeSection === 'expense' && (
+          {showSection('expense') && (
+            <>
+              {activeSection === 'all' ? (
+                <div className="reports-section-head">
+                  <h2>📤 Expense</h2>
+                  <strong>{formatMoney(expenseTotals.total)}</strong>
+                </div>
+              ) : null}
             <section className="reports-section">
               <p className="reports-list-meta">
                 {expenseItems.length} normal expense{expenseItems.length === 1 ? '' : 's'} · tap for details
@@ -732,11 +807,12 @@ export default function ReportsPanel({
                 </ul>
               )}
             </section>
+            </>
           )}
 
-          {activeSection === 'credit' && (
+          {showSection('credit') && (
             <>
-              {hasCreditAlertsPanel ? (
+              {activeSection === 'credit' && hasCreditAlertsPanel ? (
                 <details className="reports-alerts-details" open={activeAlertCount > 0}>
                   <summary className="reports-alerts-summary">
                     🔔 Credit alerts
@@ -785,6 +861,12 @@ export default function ReportsPanel({
                   </div>
                 </details>
               ) : null}
+              {activeSection === 'all' ? (
+                <div className="reports-section-head">
+                  <h2>💳 Credit</h2>
+                  <strong>{formatMoney(creditTotals.pendingTotal)}</strong>
+                </div>
+              ) : null}
               <section className="reports-section">
                 <p className="reports-list-meta">
                   {creditItems.length} credit record{creditItems.length === 1 ? '' : 's'} · tap for details
@@ -808,9 +890,9 @@ export default function ReportsPanel({
             </>
           )}
 
-          {activeSection === 'cheque' && (
+          {showSection('cheque') && (
             <>
-              {hasChequeAlertsPanel ? (
+              {activeSection === 'cheque' && hasChequeAlertsPanel ? (
                 <details className="reports-alerts-details" open={activeAlertCount > 0}>
                   <summary className="reports-alerts-summary">
                     🔔 Cheque alerts
@@ -827,6 +909,12 @@ export default function ReportsPanel({
                     />
                   </div>
                 </details>
+              ) : null}
+              {activeSection === 'all' ? (
+                <div className="reports-section-head">
+                  <h2>🧾 Cheque</h2>
+                  <strong>{formatMoney(chequeTotals.pendingTotal)}</strong>
+                </div>
               ) : null}
               <section className="reports-section">
                 <p className="reports-list-meta">
@@ -850,7 +938,14 @@ export default function ReportsPanel({
             </>
           )}
 
-          {activeSection === 'loan' && (
+          {showSection('loan') && (
+            <>
+              {activeSection === 'all' ? (
+                <div className="reports-section-head">
+                  <h2>🤝 Loan</h2>
+                  <strong>{formatMoney(loanTotals.pendingTotal)}</strong>
+                </div>
+              ) : null}
             <section className="reports-section">
               <p className="reports-list-meta">
                 {loanItems.length} loan{loanItems.length === 1 ? '' : 's'} · tap for full details
@@ -871,6 +966,7 @@ export default function ReportsPanel({
                 </ul>
               )}
             </section>
+            </>
           )}
         </div>
       </div>

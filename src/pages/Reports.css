@@ -863,7 +863,11 @@
 }
 
 .reports-summary--all {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.reports-summary--overview {
+  margin-bottom: 4px;
 }
 
 .reports-section {
@@ -1217,7 +1221,8 @@ html[data-short='true'] .reports-item {
 }
 
 html[data-screen='phone'] .reports-summary--sales-triple,
-html[data-screen='phone'] .reports-summary--sales-double {
+html[data-screen='phone'] .reports-summary--sales-double,
+html[data-screen='phone'] .reports-summary--all {
   grid-template-columns: 1fr;
 }
 
