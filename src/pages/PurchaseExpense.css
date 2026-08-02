@@ -4,34 +4,35 @@
 }
 
 .purchase-form {
-  flex-shrink: 0;
+  flex: 0 1 auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: clamp(3px, calc(var(--app-height, 800px) * 0.005), 4px);
   min-width: 0;
-  max-height: min(46vh, 340px);
-  overflow-x: hidden;
-  overflow-y: auto;
+  max-height: none;
+  overflow: visible;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) var(--bg);
 }
 
 .purchase-form-section {
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 3px;
   min-width: 0;
 }
 
 .purchase-form-row {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
 }
 
 .purchase-form-row--2 {
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+}
+
+.purchase-form-row--3 {
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.72fr) minmax(0, 0.88fr);
 }
 
 .purchase-form-row--bill-amount {
@@ -119,15 +120,15 @@
 
 .purchase-page-title {
   margin: 0;
-  font-size: 0.92rem;
+  font-size: clamp(0.78rem, calc(var(--app-height, 800px) * 0.018), 0.88rem);
   font-weight: 800;
   color: var(--cream);
   letter-spacing: 0.01em;
 }
 
 .purchase-page-sub {
-  margin: 2px 0 0;
-  font-size: 0.58rem;
+  margin: 1px 0 0;
+  font-size: 0.52rem;
   font-weight: 600;
   color: var(--cream-dim);
 }
@@ -172,9 +173,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  margin-top: 6px;
-  padding: 8px 10px;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 5px 8px;
   border-radius: var(--radius-sm);
   background: rgba(180, 120, 40, 0.14);
   border: 1px solid rgba(200, 150, 80, 0.35);
@@ -351,15 +352,7 @@
 }
 
 .purchase-page-active-bill {
-  margin: 4px 0 0;
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.62rem;
-  font-weight: 800;
-  color: var(--cream);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid var(--border);
+  display: none;
 }
 
 .purchase-page-pay-detail {
@@ -396,23 +389,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 7px 10px;
+  gap: 6px;
+  padding: 4px 8px;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-size: 0.62rem;
+  font-size: 0.54rem;
   color: var(--cream-dim);
   cursor: pointer;
 }
 
-.purchase-bill-total:active {
-  border-color: var(--cream);
-}
-
 .purchase-bill-total strong {
   color: var(--cream);
-  font-size: 0.76rem;
+  font-size: 0.66rem;
   white-space: nowrap;
 }
 
@@ -656,8 +645,8 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
+  gap: 2px;
+  padding: 4px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -699,15 +688,19 @@
 }
 
 .purchase-form-section--details .purchase-field-panel .purchase-field-input-row {
-  min-height: clamp(40px, calc(var(--app-height, 800px) * 0.056), 48px);
+  min-height: clamp(32px, calc(var(--app-height, 800px) * 0.044), 38px);
 }
 
-.purchase-form-row--2 .purchase-field-panel .purchase-field-input-row {
-  min-height: clamp(40px, calc(var(--app-height, 800px) * 0.056), 48px);
+.purchase-form-row--2 .purchase-field-panel .purchase-field-input-row,
+.purchase-form-row--3 .purchase-field-panel .purchase-field-input-row {
+  min-height: clamp(32px, calc(var(--app-height, 800px) * 0.044), 38px);
 }
 
 .purchase-form-row--2 .purchase-item-section,
-.purchase-form-row--2 .purchase-billno-section {
+.purchase-form-row--2 .purchase-billno-section,
+.purchase-form-row--3 .purchase-item-section,
+.purchase-form-row--3 .purchase-billno-section,
+.purchase-form-row--3 .purchase-billdate-section {
   min-height: auto;
 }
 
@@ -737,10 +730,10 @@
 }
 
 .purchase-amount-panel .pay-type-chip {
-  min-height: clamp(38px, calc(var(--app-height, 800px) * 0.052), 44px);
-  padding: 5px 4px;
+  min-height: clamp(30px, calc(var(--app-height, 800px) * 0.042), 36px);
+  padding: 3px 4px;
   border-radius: var(--radius-sm);
-  gap: 2px;
+  gap: 1px;
 }
 
 .purchase-amount-panel .pay-type-chip-label {
@@ -764,7 +757,7 @@
 .purchase-amount-panel .amount-display {
   flex: 1;
   width: 100%;
-  min-height: clamp(52px, calc(var(--app-height, 800px) * 0.072), 64px);
+  min-height: clamp(40px, calc(var(--app-height, 800px) * 0.056), 48px);
   justify-content: center;
   align-items: flex-start;
   text-align: left;
@@ -778,19 +771,19 @@
 
 .purchase-field-panel .purchase-field-input-row {
   flex: 1;
-  min-height: clamp(52px, calc(var(--app-height, 800px) * 0.072), 64px);
+  min-height: clamp(32px, calc(var(--app-height, 800px) * 0.044), 40px);
   align-items: stretch;
 }
 
 .purchase-field-panel.expense-name .purchase-field-input-row {
-  min-height: clamp(38px, calc(var(--app-height, 800px) * 0.052), 44px);
+  min-height: clamp(32px, calc(var(--app-height, 800px) * 0.044), 38px);
 }
 
 .purchase-field-panel .expense-name-input {
   flex: 1;
   min-height: 0;
-  padding: 8px 6px;
-  font-size: clamp(0.64rem, calc(var(--app-height, 800px) * 0.014), 0.76rem);
+  padding: 4px 5px;
+  font-size: clamp(0.58rem, calc(var(--app-height, 800px) * 0.012), 0.68rem);
   font-weight: 600;
   background: var(--brown-dark);
   border: 1px solid var(--border);
@@ -798,8 +791,8 @@
 }
 
 .purchase-field-panel.expense-name .expense-name-input {
-  padding: 6px 5px;
-  font-size: clamp(0.58rem, calc(var(--app-height, 800px) * 0.012), 0.68rem);
+  padding: 4px 5px;
+  font-size: clamp(0.56rem, calc(var(--app-height, 800px) * 0.011), 0.64rem);
 }
 
 .purchase-field-panel .expense-name-input::placeholder {
@@ -828,8 +821,12 @@
   display: none;
 }
 
+.purchase-amount-panel .amount-display--compact .amount-display-value {
+  font-size: clamp(0.88rem, calc(var(--app-height, 800px) * 0.028), 1.35rem);
+}
+
 .purchase-amount-side .amount-display--compact .amount-display-value {
-  font-size: clamp(1rem, calc(var(--app-height, 800px) * 0.034), 1.85rem);
+  font-size: clamp(0.88rem, calc(var(--app-height, 800px) * 0.028), 1.35rem);
 }
 
 .purchase-split-row .amount-display--compact {
@@ -848,7 +845,7 @@
 }
 
 .purchase-page {
-  gap: 6px;
+  gap: clamp(3px, calc(var(--app-height, 800px) * 0.004), 4px);
 }
 
 .purchase-page .expense-name-label {
@@ -920,20 +917,25 @@
 }
 
 .purchase-controls--pay-only .purchase-controls-pay {
-  padding: 6px 8px;
-}
-
-.purchase-controls--pay-only .pay-type-chip {
-  min-height: 38px;
-}
-
-.purchase-controls .pay-type-chip {
-  min-height: 34px;
   padding: 4px 6px;
 }
 
+.purchase-controls--pay-only .pay-type-chip {
+  min-height: clamp(28px, calc(var(--app-height, 800px) * 0.038), 32px);
+  padding: 2px 4px;
+}
+
+.purchase-controls .pay-type-chip {
+  min-height: clamp(28px, calc(var(--app-height, 800px) * 0.038), 32px);
+  padding: 2px 4px;
+}
+
 .purchase-controls .pay-type-chip-label {
-  font-size: 0.58rem;
+  font-size: 0.52rem;
+}
+
+.purchase-controls .pay-type-chip-icon {
+  font-size: 0.72rem;
 }
 
 .purchase-controls .pay-type-chip-sublabel {
@@ -951,7 +953,7 @@
 
 .purchase-keyboard {
   flex: 1 1 0;
-  min-height: 0;
+  min-height: clamp(110px, calc(var(--counter-height, 560px) * 0.28), 240px);
   overflow: hidden;
 }
 
@@ -969,9 +971,9 @@
 }
 
 .purchase-action-btn {
-  min-height: 34px !important;
-  padding: 4px 8px !important;
-  font-size: 0.68rem !important;
+  min-height: clamp(30px, calc(var(--counter-height, 560px) * 0.068), 36px) !important;
+  padding: 3px 8px !important;
+  font-size: clamp(0.62rem, calc(var(--counter-height, 560px) * 0.015), 0.72rem) !important;
 }
 
 .purchase-action-btn--save {
@@ -1012,16 +1014,17 @@
 }
 
 html[data-screen='phone'] .purchase-form-row--2,
+html[data-screen='phone'] .purchase-form-row--3,
 html[data-screen='phone'] .purchase-form-row--bill-amount {
   grid-template-columns: 1fr;
 }
 
-html[data-screen='phone'] .purchase-form {
-  max-height: min(44vh, 300px);
+html[data-screen='phone'] .purchase-page-sub {
+  display: none;
 }
 
-html[data-screen='phone'] .purchase-amount-panel .pay-type-chip {
-  min-height: 40px;
+html[data-screen='phone'] .purchase-split-row .amount-display--compact {
+  min-height: clamp(36px, calc(var(--counter-height, 560px) * 0.07), 44px);
 }
 
 html[data-screen='phone'] .purchase-controls {
@@ -1247,6 +1250,7 @@ html[data-screen='tablet'] .expenses-actions .btn {
 
 @media (max-width: 520px) {
   .purchase-form-row--2,
+  .purchase-form-row--3,
   .purchase-form-row--bill-amount {
     grid-template-columns: 1fr;
   }
@@ -1275,7 +1279,56 @@ html[data-screen='tablet'] .expenses-actions .btn {
   }
 }
 
+.purchase-bill-total:active {
+  border-color: var(--cream);
+}
+
+.purchase-field-panel .expense-name-input--date {
+  color-scheme: dark;
+  min-width: 0;
+}
+
+.purchase-page .expenses-top .amount-display--compact {
+  min-height: clamp(36px, calc(var(--counter-height, 560px) * 0.072), 44px);
+}
+
+.purchase-page .expenses-top .amount-display--compact .amount-display-value {
+  font-size: clamp(0.82rem, calc(var(--counter-height, 560px) * 0.022), 1.1rem);
+}
+
+.purchase-page .expenses-split-total,
+.purchase-page .purchase-bill-total,
+.purchase-page .expenses-cheque-approved,
+.purchase-page-pay-detail {
+  margin: 0;
+}
+
+html[data-short='true'] .purchase-page {
+  gap: 2px;
+}
+
+html[data-short='true'] .purchase-page-sub {
+  display: none;
+}
+
+html[data-short='true'] .purchase-keyboard {
+  min-height: clamp(100px, calc(var(--counter-height, 560px) * 0.26), 200px);
+}
+
 @media (orientation: landscape) and (max-height: 520px) {
+  .purchase-page-sub,
+  .purchase-page-active-bill {
+    display: none;
+  }
+
+  .purchase-form-row--3 {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr) minmax(0, 0.9fr);
+  }
+
+  .purchase-keyboard {
+    min-height: 100px;
+  }
+
   .expenses-actions .btn {
     min-height: 36px;
     font-size: 0.8rem;

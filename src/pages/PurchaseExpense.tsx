@@ -1583,13 +1583,11 @@ export default function PurchaseExpense() {
         <section className="purchase-form-section purchase-form-section--details" aria-label="Supplier details">
           {renderNameField()}
           {!isCreditUpdateMode ? (
-            <>
-              <div className="purchase-form-row purchase-form-row--2">
-                {renderDescriptionField()}
-                {renderBillNoField()}
-              </div>
+            <div className="purchase-form-row purchase-form-row--3">
+              {renderDescriptionField()}
+              {renderBillNoField()}
               {renderBillDateField()}
-            </>
+            </div>
           ) : (
             renderDescriptionField()
           )}
