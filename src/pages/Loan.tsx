@@ -1,5 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useMemo, useRef, useState, useCallback } from 'react'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import BillReminderModal from '../components/BillReminderModal'
@@ -16,6 +15,8 @@ import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
+import { useAppPageBack } from '../hooks/useAppPageBack'
+import { usePageEscape } from '../hooks/usePageEscape'
 import './Loan.css'
 
 type LoanTab = 'pending' | 'settled'
@@ -23,7 +24,7 @@ type FormMode = 'give' | 'take' | null
 type FormField = 'name' | 'amount'
 
 export default function Loan() {
-  const navigate = useNavigate()
+  const goBack = useAppPageBack()
   const {
     data,
     balance,
@@ -154,7 +155,7 @@ export default function Loan() {
     setFormError('')
   }
 
-  function handleClose() {
+  const handleClose = useCallback(() => {
     if (formMode) {
       resetForm()
       setFormMode(null)
@@ -165,8 +166,10 @@ export default function Loan() {
       setFormError('')
       return
     }
-    navigate('/')
-  }
+    goBack()
+  }, [formMode, settlingId, goBack])
+
+  usePageEscape(handleClose)
 
   return (
     <div className="loan-page page-shell">

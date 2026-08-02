@@ -16,6 +16,7 @@ interface PayTypeChipsProps {
   label?: string
   shortcutHint?: string
   disabled?: boolean
+  labelOverrides?: Partial<Record<PayType, string>>
 }
 
 export default function PayTypeChips({
@@ -25,6 +26,7 @@ export default function PayTypeChips({
   label = 'Payment',
   shortcutHint,
   disabled = false,
+  labelOverrides,
 }: PayTypeChipsProps) {
   const visible = options
     ? PAY_OPTIONS.filter((opt) => options.includes(opt.id))
@@ -48,7 +50,7 @@ export default function PayTypeChips({
             disabled={disabled}
           >
             <span className="pay-type-chip-icon">{opt.icon}</span>
-            <span className="pay-type-chip-label">{opt.label}</span>
+            <span className="pay-type-chip-label">{labelOverrides?.[opt.id] ?? opt.label}</span>
           </button>
         ))}
       </div>

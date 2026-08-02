@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCash } from '../context/CashContext'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
+import { useAppPageBack } from '../hooks/useAppPageBack'
+import { usePageEscape } from '../hooks/usePageEscape'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import {
   buildMonthCalendarGrid,
@@ -36,6 +38,7 @@ import { printStaffSalaryReport } from '../utils/staffSalaryReport'
 import './Staff.css'
 
 export default function Staff() {
+  const goBack = useAppPageBack()
   const {
     data,
     addStaff,
@@ -475,10 +478,35 @@ export default function Staff() {
     handleAttendancePick(date, item.type)
   }
 
+  const handlePageBack = useCallback(() => {
+    if (showAttendanceModal) {
+      setShowAttendanceModal(false)
+      setAttendanceMenuDate(null)
+      return
+    }
+    if (showCreate) {
+      setShowCreate(false)
+      setNewName('')
+      setNewSalary('')
+      setFormError('')
+      return
+    }
+    if (selectedStaffId) {
+      setSelectedStaffId(null)
+      setShowSalaryEdit(false)
+      setPendingRemoveStaffId(null)
+      setInlineEditStaffId(null)
+      return
+    }
+    goBack()
+  }, [goBack, selectedStaffId, showAttendanceModal, showCreate])
+
+  usePageEscape(handlePageBack)
+
   return (
     <div className="staff-page page-shell">
       <PageCorners
-        left={<PageBackButton to="/" />}
+        left={<PageBackButton onClick={handlePageBack} ariaLabel="Back" />}
         right={
           selectedStaffId ? (
             <>

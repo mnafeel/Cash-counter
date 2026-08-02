@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppData } from '../types'
+import { usePageEscape } from '../hooks/usePageEscape'
 import { formatDate, formatMoney } from '../utils/format'
 import { formatCollectedSalesBreakdown, toInputDate, type ReportSort, type SaleDateMode, type SalesBillRow } from '../utils/salesReport'
 import {
@@ -318,14 +319,7 @@ export default function ReportsPanel({
   const hasChequeAlertsPanel =
     activeSection === 'cheque' && scheduledChequeReminders.length > 0
 
-  function selectSection(section: ReportSection) {
-    setActiveSection(section)
-    setSelectedPurchaseSupplierKey(null)
-    setExpandedReportKey(null)
-    bodyRef.current?.scrollTo({ top: 0 })
-  }
-
-  function handleReportsBack() {
+  const handleReportsBack = useCallback(() => {
     if (selectedPurchaseSupplierKey) {
       setSelectedPurchaseSupplierKey(null)
       setExpandedReportKey(null)
@@ -333,6 +327,15 @@ export default function ReportsPanel({
       return
     }
     onClose()
+  }, [selectedPurchaseSupplierKey, onClose])
+
+  usePageEscape(handleReportsBack, open)
+
+  function selectSection(section: ReportSection) {
+    setActiveSection(section)
+    setSelectedPurchaseSupplierKey(null)
+    setExpandedReportKey(null)
+    bodyRef.current?.scrollTo({ top: 0 })
   }
 
   function toggleReportExpand(key: string) {

@@ -159,6 +159,8 @@ interface CashContextValue {
       amount: number
       name: string
       description?: string
+      billNo?: string
+      billDate?: string
       payType: ExpensePayType
       cashAmount?: number
       bankAmount?: number
@@ -258,6 +260,8 @@ interface CashContextValue {
       amount: number
       name: string
       description?: string
+      billNo?: string
+      billDate?: string
       payType: ExpensePayType
       cashAmount?: number
       bankAmount?: number
@@ -544,6 +548,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
         amount: number
         name: string
         description?: string
+        billNo?: string
+        billDate?: string
         payType: ExpensePayType
         cashAmount?: number
         bankAmount?: number
@@ -564,6 +570,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
             amount: expense.amount,
             name: expense.name.trim(),
             description: expense.description?.trim() || undefined,
+            billNo: expense.billNo?.trim() || undefined,
+            billDate: expense.billDate?.trim() || undefined,
             payType: expense.payType,
             cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
             bankAmount:
@@ -907,6 +915,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
         amount: number
         name: string
         description?: string
+        billNo?: string
+        billDate?: string
         payType: ExpensePayType
         cashAmount?: number
         bankAmount?: number
@@ -924,6 +934,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
           amount: expense.amount,
           name: expense.name.trim(),
           description: expense.description?.trim() || undefined,
+          billNo: expense.billNo?.trim() || undefined,
+          billDate: expense.billDate?.trim() || undefined,
           payType: expense.payType,
           cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
           bankAmount:

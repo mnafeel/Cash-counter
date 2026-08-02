@@ -1,5 +1,60 @@
 .purchase-page-head {
   flex-shrink: 0;
+  text-align: left;
+}
+
+.purchase-form {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-height: min(46vh, 340px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+.purchase-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.purchase-form-row {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.purchase-form-row--2 {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+}
+
+.purchase-form-row--bill-amount {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.purchase-bill-option-panel {
+  justify-content: flex-start;
+}
+
+.purchase-bill-option-panel .pay-type-chips {
+  width: 100%;
+}
+
+.purchase-bill-option-panel .pay-type-chips-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.purchase-amount-panel {
+  justify-content: center;
 }
 
 .purchase-corner-btn {
@@ -134,16 +189,6 @@
   min-width: 0;
 }
 
-.purchase-credit-cancel-btn {
-  flex-shrink: 0;
-  min-height: 36px;
-  padding: 6px 10px;
-  font-size: 0.62rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
 .purchase-credit-update-stats {
   display: flex;
   align-items: stretch;
@@ -169,6 +214,41 @@
 .purchase-credit-update-stat strong {
   font-size: 0.72rem;
   color: var(--cream);
+}
+
+.purchase-edit-summary {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: rgba(64, 145, 108, 0.12);
+  border: 1px solid rgba(64, 145, 108, 0.35);
+}
+
+.purchase-edit-summary-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 64px;
+}
+
+.purchase-edit-summary-stat span {
+  font-size: 0.48rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cream-dim);
+}
+
+.purchase-edit-summary-stat strong {
+  font-size: 0.74rem;
+  color: var(--cream);
+}
+
+.purchase-edit-summary-stat--balance strong {
+  color: #e8c080;
 }
 
 .purchase-credit-pay-live {
@@ -218,11 +298,11 @@
 }
 
 .purchase-split-row--credit-pay {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .expenses-top--split-pay {
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .purchase-credit-update-balance {
@@ -571,16 +651,17 @@
 
 .purchase-field-panel,
 .purchase-amount-panel {
-  flex: 1;
+  flex: 0 0 auto;
   width: 100%;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 5px;
+  padding: 6px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  box-sizing: border-box;
 }
 
 .purchase-field-panel--active,
@@ -598,10 +679,36 @@
   letter-spacing: 0.05em;
   color: var(--cream-dim);
   text-align: left;
+  line-height: 1.2;
 }
 
 .purchase-page .pay-type-chips-head {
   justify-content: flex-start;
+}
+
+.purchase-page-title {
+  text-align: left;
+}
+
+.purchase-page-sub {
+  text-align: left;
+}
+
+.purchase-form-section--details .purchase-field-panel.expense-name {
+  min-height: auto;
+}
+
+.purchase-form-section--details .purchase-field-panel .purchase-field-input-row {
+  min-height: clamp(40px, calc(var(--app-height, 800px) * 0.056), 48px);
+}
+
+.purchase-form-row--2 .purchase-field-panel .purchase-field-input-row {
+  min-height: clamp(40px, calc(var(--app-height, 800px) * 0.056), 48px);
+}
+
+.purchase-form-row--2 .purchase-item-section,
+.purchase-form-row--2 .purchase-billno-section {
+  min-height: auto;
 }
 
 .purchase-amount-side {
@@ -657,7 +764,7 @@
 .purchase-amount-panel .amount-display {
   flex: 1;
   width: 100%;
-  min-height: 48px;
+  min-height: clamp(52px, calc(var(--app-height, 800px) * 0.072), 64px);
   justify-content: center;
   align-items: flex-start;
   text-align: left;
@@ -737,7 +844,11 @@
 }
 
 .purchase-split-row {
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.purchase-page {
+  gap: 6px;
 }
 
 .purchase-page .expense-name-label {
@@ -900,8 +1011,13 @@
   font-size: 0.58rem;
 }
 
-html[data-screen='phone'] .purchase-entry-row {
-  grid-template-columns: 1fr minmax(88px, 0.36fr);
+html[data-screen='phone'] .purchase-form-row--2,
+html[data-screen='phone'] .purchase-form-row--bill-amount {
+  grid-template-columns: 1fr;
+}
+
+html[data-screen='phone'] .purchase-form {
+  max-height: min(44vh, 300px);
 }
 
 html[data-screen='phone'] .purchase-amount-panel .pay-type-chip {
@@ -1130,6 +1246,15 @@ html[data-screen='tablet'] .expenses-actions .btn {
 }
 
 @media (max-width: 520px) {
+  .purchase-form-row--2,
+  .purchase-form-row--bill-amount {
+    grid-template-columns: 1fr;
+  }
+
+  .purchase-split-row {
+    grid-template-columns: 1fr;
+  }
+
   .expenses-top,
   .expenses-top--split,
   .expenses-top--split-give,

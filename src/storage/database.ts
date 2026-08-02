@@ -2710,6 +2710,10 @@ export function updateExpense(
       updates.description !== undefined
         ? updates.description.trim() || undefined
         : existing.description,
+    billNo:
+      updates.billNo !== undefined ? updates.billNo.trim() || undefined : existing.billNo,
+    billDate:
+      updates.billDate !== undefined ? updates.billDate.trim() || undefined : existing.billDate,
   }
 
   let next: AppData = {

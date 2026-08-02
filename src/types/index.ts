@@ -52,6 +52,10 @@ export interface Expense {
   name: string
   /** Purchase item or expense description. */
   description?: string
+  /** Supplier invoice / bill reference number (purchase). */
+  billNo?: string
+  /** Supplier bill date (YYYY-MM-DD) — used for purchase history ordering. */
+  billDate?: string
   payType: ExpensePayType
   cashAmount?: number
   bankAmount?: number

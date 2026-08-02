@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback, type MouseEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import PurchaseHistoryPanel from '../components/PurchaseHistoryPanel'
+import { PageBackButton, PageCorners } from '../components/PageCorners'
+import { useAppPageBack } from '../hooks/useAppPageBack'
+import { usePageEscape } from '../hooks/usePageEscape'
 import { formatDate, formatMoney } from '../utils/format'
 import { buildPurchaseCreditItems } from '../utils/purchaseHistory'
 import { counterBillPath, resolveHistoryItemBillId } from '../utils/counterBillRoute'
@@ -116,8 +119,9 @@ function editKey(item: HistoryItem): string {
 }
 
 export default function History() {
-  const { data, updateHistoryName, cancelPurchaseCredit } = useCash()
+  const { data, updateHistoryName } = useCash()
   const navigate = useNavigate()
+  const goBack = useAppPageBack()
   const location = useLocation()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [paymentFilter, setPaymentFilter] = useState<HistoryPaymentFilter>('all')
@@ -142,11 +146,14 @@ export default function History() {
     const fromState = Boolean(
       (location.state as { showPurchaseHistory?: boolean } | null)?.showPurchaseHistory,
     )
-    if (fromQuery || fromState) {
-      setShowPurchaseHistory(true)
-      setPurchaseOnlyMode(true)
-    }
+    const purchaseMode = fromQuery || fromState
+    setShowPurchaseHistory(purchaseMode)
+    setPurchaseOnlyMode(purchaseMode)
   }, [location.key, location.search, location.state])
+
+  const closePurchaseHistory = useCallback(() => {
+    navigate('/')
+  }, [navigate])
 
   useEffect(() => {
     if (!purchaseCreditListOpen) return
@@ -167,6 +174,26 @@ export default function History() {
     window.addEventListener('bill-edit-mode', onBillEditModeChange)
     return () => window.removeEventListener('bill-edit-mode', onBillEditModeChange)
   }, [])
+
+  const handlePageBack = useCallback(() => {
+    if (receiptItem) {
+      setReceiptItem(null)
+      return
+    }
+    if (purchaseCreditListOpen) {
+      setPurchaseCreditListOpen(false)
+      setHighlightedPurchaseCreditIndex(-1)
+      return
+    }
+    if (editingKey) {
+      setEditingKey(null)
+      setEditValue('')
+      return
+    }
+    goBack()
+  }, [goBack, receiptItem, purchaseCreditListOpen, editingKey])
+
+  usePageEscape(handlePageBack, !purchaseOnlyMode)
 
   const allItems = useMemo(() => buildHistoryItems(data), [data])
   const purchaseCreditItems = useMemo(() => buildPurchaseCreditItems(data), [data])
@@ -354,12 +381,6 @@ export default function History() {
     navigate(`/purchase?edit=${encodeURIComponent(expenseId)}`)
   }
 
-  function handleCancelPurchaseCredit(expenseId: string) {
-    cancelPurchaseCredit(expenseId)
-    setPurchaseCreditListOpen(false)
-    setHighlightedPurchaseCreditIndex(-1)
-  }
-
   function togglePurchaseCreditList() {
     setPurchaseCreditListOpen((open) => {
       const next = !open
@@ -540,14 +561,17 @@ export default function History() {
           open
           variant="embedded"
           data={data}
-          onClose={() => navigate('/')}
+          onClose={closePurchaseHistory}
+          embeddedBackLabel="Home"
+          embeddedActionLabel="Open Purchase"
         />
       </div>
     )
   }
 
   return (
-    <div className="history-page">
+    <div className="history-page page-shell">
+      <PageCorners left={<PageBackButton onClick={handlePageBack} ariaLabel="Back" />} />
       <div className="history-top">
       <header className="history-header">
         <div className="history-header-main">
@@ -764,10 +788,10 @@ export default function History() {
                       </button>
                       <button
                         type="button"
-                        className="history-purchase-credit-cancel"
-                        onClick={() => handleCancelPurchaseCredit(credit.id)}
+                        className="history-purchase-credit-update"
+                        onClick={() => openPurchaseCreditUpdate(credit.id)}
                       >
-                        Cancel
+                        Credit Update
                       </button>
                     </li>
                   ))}

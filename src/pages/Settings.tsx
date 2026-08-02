@@ -96,6 +96,7 @@ import { getEffectiveSaleReminderAt, getEffectiveSaleReminderNote } from '../uti
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
+import { useAppPageBack } from '../hooks/useAppPageBack'
 import './Settings.css'
 
 type SettingsField = 'openingCash' | 'openingBank' | 'pin' | 'pinConfirm'
@@ -177,6 +178,7 @@ const DAILY_REPORT_DOWNLOAD_GROUPS: {
 ]
 
 export default function Settings() {
+  const goBack = useAppPageBack()
   const {
     data,
     balance,
@@ -762,13 +764,18 @@ export default function Settings() {
     try {
       const restored = await restoreFullCloudData()
       if (restored) {
+        replaceAllData(restored)
         if (!isMainBillingDevice()) {
           setAutoPullFromCloudEnabled(true)
           setAutoPull(true)
         }
         setOpeningStr(String(restored.openingBalance))
         setOpeningBankStr(String(restored.openingBankBalance ?? 0))
-        setBackupStatus(`Opened · full data loaded · ${cloudDataSummary(restored)}`)
+        if (isMainBillingDevice()) {
+          setCloudLoginRestoreActive(false)
+          await backupNow({ force: true })
+        }
+        setBackupStatus(`Imported · cloud loaded into database · ${cloudDataSummary(restored)}`)
         setBackupError(false)
         return
       }
@@ -1054,7 +1061,7 @@ export default function Settings() {
 
   return (
     <div className="settings-page page-shell">
-      <PageCorners left={<PageBackButton to="/" />} />
+      <PageCorners left={<PageBackButton onClick={goBack} ariaLabel="Back" />} />
       <div className="settings-tabs page-head--corners" role="tablist" aria-label="Settings sections">
         {SETTINGS_TABS.map((item) => (
           <button
@@ -2063,7 +2070,7 @@ export default function Settings() {
                   disabled={backupBusy || !cloudUsername.trim() || cloudPassword.length < 6}
                   onClick={() => void handleCloudOpen()}
                 >
-                  Open
+                  Import
                 </button>
               </div>
             </div>

@@ -1541,26 +1541,28 @@
   color: var(--text-muted);
 }
 
-.history-purchase-credit-cancel {
+.history-purchase-credit-update {
   flex-shrink: 0;
   align-self: stretch;
-  min-width: 52px;
-  padding: 0 8px;
-  border: 1px solid var(--border);
+  min-width: 58px;
+  max-width: 72px;
+  padding: 0 6px;
+  border: 1px solid rgba(200, 150, 80, 0.45);
   border-radius: 6px;
-  background: var(--surface-2);
-  color: var(--cream-dim);
-  font-size: 0.58rem;
+  background: rgba(180, 120, 40, 0.22);
+  color: var(--cream);
+  font-size: 0.52rem;
   font-weight: 800;
+  line-height: 1.2;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   cursor: pointer;
 }
 
-.history-purchase-credit-cancel:hover {
-  color: var(--danger-text);
-  border-color: var(--danger);
-  background: rgba(139, 58, 58, 0.2);
+.history-purchase-credit-update:hover,
+.history-purchase-credit-update:active {
+  background: rgba(180, 120, 40, 0.36);
+  border-color: rgba(200, 150, 80, 0.65);
 }
 
 .history-item-open-btn {

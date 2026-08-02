@@ -1,22 +1,27 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AppData } from '../types'
+import { usePageEscape } from '../hooks/usePageEscape'
 import { downloadPurchaseExpenseItemsSpreadsheet } from '../utils/expenseRangeExport'
 import { formatDate, formatMoney } from '../utils/format'
-import { NO1_BILL_LABEL, NO1_EXPENSE_LABEL, NO2_BILL_LABEL, NO2_EXPENSE_LABEL } from '../utils/expenseBillLabels'
+import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
 import {
+  buildPurchaseCreditItems,
   buildPurchaseHistoryItems,
   filterPurchaseHistoryItems,
-  getTopPurchaseShop,
+  formatPurchaseCreditMonthLabel,
   groupPurchasesBySupplier,
+  listPurchaseHistoryMonthOptions,
   matchesPurchaseHistorySearch,
-  summarizePurchasePaymentBreakdown,
-  summarizePurchases,
+  PURCHASE_CASH_LABEL,
+  summarizeSupplierPurchaseFile,
   type PurchaseDateFilter,
   type PurchaseHistoryItem,
   type PurchaseSupplierGroup,
+  type SupplierPurchaseFileSummary,
 } from '../utils/purchaseHistory'
 import { toInputDate } from '../utils/salesReport'
+import PurchaseCreditPanel, { type PurchaseCreditPanelHandle } from './PurchaseCreditPanel'
 import './PurchaseHistoryPanel.css'
 import Portal from './Portal'
 import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
@@ -29,13 +34,16 @@ const DATE_OPTIONS: { id: PurchaseDateFilter | 'range'; label: string }[] = [
   { id: 'range', label: 'Range' },
 ]
 
+type PurchasePanelDateFilter = PurchaseDateFilter | 'range' | 'monthPick'
+
 interface PurchaseHistoryPanelProps {
   open: boolean
   onClose: () => void
   data: AppData
   variant?: 'modal' | 'fullscreen' | 'embedded'
-  onOpenBill?: (expenseId: string) => void
   onUpdateBill?: (expenseId: string) => void
+  embeddedBackLabel?: string
+  embeddedActionLabel?: string
 }
 
 function billTagClass(billType: PurchaseHistoryItem['billType']): string {
@@ -49,52 +57,81 @@ export default function PurchaseHistoryPanel({
   onClose,
   data,
   variant = 'modal',
-  onOpenBill,
   onUpdateBill,
+  embeddedBackLabel = 'Home',
+  embeddedActionLabel = 'Open Purchase',
 }: PurchaseHistoryPanelProps) {
   const navigate = useNavigate()
   const fullscreen = variant === 'fullscreen'
   const embedded = variant === 'embedded'
-  const [dateFilter, setDateFilter] = useState<PurchaseDateFilter | 'range'>('today')
+  const [dateFilter, setDateFilter] = useState<PurchasePanelDateFilter>('all')
   const [selectedDate, setSelectedDate] = useState('')
+  const [selectedMonth, setSelectedMonth] = useState('')
   const [rangeFrom, setRangeFrom] = useState(() => toInputDate())
   const [rangeTo, setRangeTo] = useState(() => toInputDate())
   const [search, setSearch] = useState('')
   const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
+  const [showCreditPage, setShowCreditPage] = useState(false)
+  const [supplierSort, setSupplierSort] = useState<'newest' | 'oldest'>('newest')
   const [exportStatus, setExportStatus] = useState('')
+  const creditPanelRef = useRef<PurchaseCreditPanelHandle>(null)
 
   const allItems = useMemo(() => buildPurchaseHistoryItems(data), [data])
+  const monthOptions = useMemo(() => listPurchaseHistoryMonthOptions(allItems), [allItems])
+  const purchaseCreditItems = useMemo(() => buildPurchaseCreditItems(data), [data])
+  const purchaseCreditTotal = useMemo(
+    () => purchaseCreditItems.reduce((sum, item) => sum + item.amount, 0),
+    [purchaseCreditItems],
+  )
   const dateFilteredItems = useMemo(() => {
     if (dateFilter === 'range') {
       return filterPurchaseHistoryItems(allItems, 'range', rangeFrom, rangeTo)
     }
+    if (dateFilter === 'monthPick') {
+      return filterPurchaseHistoryItems(allItems, 'monthPick', selectedMonth)
+    }
     return filterPurchaseHistoryItems(allItems, dateFilter, selectedDate)
-  }, [allItems, dateFilter, selectedDate, rangeFrom, rangeTo])
-  const items = useMemo(() => {
-    if (!search.trim()) return dateFilteredItems
-    return dateFilteredItems.filter((item) => matchesPurchaseHistorySearch(item, search))
-  }, [dateFilteredItems, search])
-  const supplierGroups = useMemo(() => groupPurchasesBySupplier(items), [items])
-  const summary = useMemo(() => summarizePurchases(items), [items])
-  const paymentBreakdown = useMemo(
-    () => summarizePurchasePaymentBreakdown(data, dateFilteredItems),
+  }, [allItems, dateFilter, selectedDate, selectedMonth, rangeFrom, rangeTo])
+  const periodSummary = useMemo(
+    () => summarizeSupplierPurchaseFile(data, dateFilteredItems),
     [data, dateFilteredItems],
   )
+  const allTimeSummary = useMemo(
+    () => summarizeSupplierPurchaseFile(data, allItems),
+    [data, allItems],
+  )
+  const allSupplierGroups = useMemo(() => {
+    const groups = groupPurchasesBySupplier(allItems)
+    if (!search.trim() || selectedSupplierKey) return groups
+    const q = search.toLowerCase().trim()
+    return groups.filter(
+      (group) =>
+        group.shopName.toLowerCase().includes(q) ||
+        group.items.some((item) => matchesPurchaseHistorySearch(item, search)),
+    )
+  }, [allItems, search, selectedSupplierKey])
+  const allSupplierGroupSummaries = useMemo(() => {
+    const map = new Map<string, SupplierPurchaseFileSummary>()
+    for (const group of allSupplierGroups) {
+      map.set(group.shopKey, summarizeSupplierPurchaseFile(data, group.items))
+    }
+    return map
+  }, [allSupplierGroups, data])
   const paymentHistoryItems = useMemo(
     () => [...dateFilteredItems].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     [dateFilteredItems],
   )
-  const topShop = useMemo(() => getTopPurchaseShop(items), [items])
   const selectedSupplier = useMemo((): PurchaseSupplierGroup | null => {
     if (!selectedSupplierKey) return null
-    const fromGroups = supplierGroups.find((group) => group.shopKey === selectedSupplierKey)
+    const allGroups = groupPurchasesBySupplier(allItems)
+    const fromGroups = allGroups.find((group) => group.shopKey === selectedSupplierKey)
     if (fromGroups) return fromGroups
-    const shopItems = items.filter((item) => item.shopName.trim().toLowerCase() === selectedSupplierKey)
+    const shopItems = allItems.filter((item) => item.shopName.trim().toLowerCase() === selectedSupplierKey)
     if (shopItems.length === 0) {
       const name =
-        dateFilteredItems.find((item) => item.shopName.trim().toLowerCase() === selectedSupplierKey)
-          ?.shopName ?? selectedSupplierKey
+        allItems.find((item) => item.shopName.trim().toLowerCase() === selectedSupplierKey)?.shopName ??
+        selectedSupplierKey
       return {
         shopName: name,
         shopKey: selectedSupplierKey,
@@ -118,19 +155,67 @@ export default function PurchaseHistoryPanel({
       creditCount: 0,
       items: shopItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     }
-  }, [selectedSupplierKey, supplierGroups, items, dateFilteredItems])
+  }, [selectedSupplierKey, allItems])
 
-  if (!open) return null
+  const supplierAllItems = useMemo(() => {
+    if (!selectedSupplierKey) return []
+    return allItems.filter((item) => item.shopName.trim().toLowerCase() === selectedSupplierKey)
+  }, [allItems, selectedSupplierKey])
 
-  function handleClose() {
+  const supplierHistoryItems = useMemo(() => {
+    if (!selectedSupplierKey) return []
+    if (!search.trim()) return supplierAllItems
+    return supplierAllItems.filter((item) => matchesPurchaseHistorySearch(item, search))
+  }, [selectedSupplierKey, supplierAllItems, search])
+
+  const supplierAllFileSummary = useMemo(() => {
+    if (!selectedSupplierKey || supplierAllItems.length === 0) return null
+    return summarizeSupplierPurchaseFile(data, supplierAllItems)
+  }, [data, selectedSupplierKey, supplierAllItems])
+
+  const sortedSupplierItems = useMemo(() => {
+    if (!selectedSupplierKey) return []
+    const list = [...supplierHistoryItems]
+    list.sort((a, b) => {
+      const diff = new Date(a.date).getTime() - new Date(b.date).getTime()
+      return supplierSort === 'newest' ? -diff : diff
+    })
+    return list
+  }, [selectedSupplierKey, supplierHistoryItems, supplierSort])
+
+  const handleClose = useCallback(() => {
     setSelectedSupplierKey(null)
     setExpandedItemId(null)
+    setShowCreditPage(false)
     setSearch('')
     setExportStatus('')
     onClose()
-  }
+  }, [onClose])
+
+  const handleBack = useCallback(() => {
+    if (showCreditPage && creditPanelRef.current?.back()) return
+    if (showCreditPage) {
+      setShowCreditPage(false)
+      return
+    }
+    if (selectedSupplierKey) {
+      setSelectedSupplierKey(null)
+      setExpandedItemId(null)
+      return
+    }
+    if (embedded) {
+      onClose()
+      return
+    }
+    handleClose()
+  }, [showCreditPage, selectedSupplierKey, embedded, onClose, handleClose])
+
+  usePageEscape(handleBack, open)
+
+  if (!open) return null
 
   function purchasePeriodLabel(): string {
+    if (dateFilter === 'monthPick' && selectedMonth) return formatPurchaseCreditMonthLabel(selectedMonth)
     if (dateFilter === 'range') {
       if (rangeFrom === rangeTo) return formatDate(rangeFrom)
       return `${formatDate(rangeFrom)} – ${formatDate(rangeTo)}`
@@ -144,7 +229,7 @@ export default function PurchaseHistoryPanel({
   }
 
   function handleDownloadSpreadsheet() {
-    const exportItems = selectedSupplier ? selectedSupplier.items : dateFilteredItems
+    const exportItems = selectedSupplier ? sortedSupplierItems : dateFilteredItems
     const label = purchasePeriodLabel()
     const filenameLabel = selectedSupplier
       ? `${selectedSupplier.shopName}-${label}`.replace(/\s+/g, '-').toLowerCase()
@@ -158,28 +243,6 @@ export default function PurchaseHistoryPanel({
     navigate('/')
   }
 
-  function handleBack() {
-    if (selectedSupplierKey) {
-      setSelectedSupplierKey(null)
-      setExpandedItemId(null)
-      return
-    }
-    if (embedded) {
-      onClose()
-      return
-    }
-    handleClose()
-  }
-
-  function handleOpenBill(expenseId: string) {
-    handleClose()
-    if (onOpenBill) {
-      onOpenBill(expenseId)
-      return
-    }
-    navigate(`/purchase?open=${encodeURIComponent(expenseId)}`)
-  }
-
   function handleUpdateBill(expenseId: string) {
     handleClose()
     if (onUpdateBill) {
@@ -189,79 +252,358 @@ export default function PurchaseHistoryPanel({
     navigate(`/purchase?edit=${encodeURIComponent(expenseId)}`)
   }
 
-  function renderBillActions(billId: string) {
+  function renderBillActions(item: PurchaseHistoryItem) {
+    const billId = item.openCreditExpenseId ?? item.id
+    const creditAction = item.hasOpenCredit
     return (
-      <div className="purchase-hist-item-actions purchase-hist-item-actions--bill">
-        <button type="button" className="purchase-hist-action-btn" onClick={() => handleOpenBill(billId)}>
-          Open Bill
-        </button>
+      <div className="purchase-hist-item-actions purchase-hist-item-actions--credit-only">
         <button
           type="button"
-          className="purchase-hist-action-btn purchase-hist-action-btn--update"
+          className={`purchase-hist-action-btn ${creditAction ? 'purchase-hist-action-btn--credit' : 'purchase-hist-action-btn--update'}`}
           onClick={() => handleUpdateBill(billId)}
         >
-          Update
+          {creditAction ? 'Credit Update' : 'Update'}
         </button>
       </div>
     )
   }
 
+  function renderCreditSideButton(expenseId: string) {
+    return (
+      <button
+        type="button"
+        className="purchase-hist-side-credit-btn"
+        onClick={(e) => {
+          e.stopPropagation()
+          handleUpdateBill(expenseId)
+        }}
+      >
+        Credit Update
+      </button>
+    )
+  }
+
+  function renderPayStrip(
+    cash: number,
+    bank: number,
+    options?: {
+      title?: string
+      cheque?: number
+      compact?: boolean
+    },
+  ) {
+    const combined = cash + bank + (options?.cheque ?? 0)
+
+    return (
+      <div
+        className={`purchase-hist-pay-strip ${options?.compact ? 'purchase-hist-pay-strip--compact' : ''}`}
+      >
+        {options?.title ? <h5 className="purchase-hist-pay-strip-title">{options.title}</h5> : null}
+        <div className="purchase-hist-pay-strip-grid">
+          <div className="purchase-hist-pay-strip-cell purchase-hist-pay-strip-cell--cash">
+            <span>{PURCHASE_CASH_LABEL}</span>
+            <strong>{formatMoney(cash)}</strong>
+          </div>
+          <div className="purchase-hist-pay-strip-cell purchase-hist-pay-strip-cell--bank">
+            <span>Bank</span>
+            <strong>{formatMoney(bank)}</strong>
+          </div>
+          <div className="purchase-hist-pay-strip-cell purchase-hist-pay-strip-cell--total">
+            <span>Total Paid</span>
+            <strong>{formatMoney(combined)}</strong>
+          </div>
+        </div>
+        {options?.cheque && options.cheque > 0 ? (
+          <div className="purchase-hist-pay-strip-cheque">
+            <span>Cheque</span>
+            <strong>{formatMoney(options.cheque)}</strong>
+          </div>
+        ) : null}
+      </div>
+    )
+  }
+
+  function renderPeriodReport(
+    summary: SupplierPurchaseFileSummary,
+    label: string,
+    options?: { supplierCount?: number },
+  ) {
+    return (
+      <section className="purchase-hist-period-report" aria-label={`${label} purchase summary`}>
+        <header className="purchase-hist-period-report-head">
+          <div className="purchase-hist-period-report-head-text">
+            <span className="purchase-hist-period-report-label">{label}</span>
+            <span className="purchase-hist-period-report-meta">
+              {summary.billCount} bills
+              {options?.supplierCount != null ? ` · ${options.supplierCount} suppliers` : ''}
+            </span>
+          </div>
+          <div className="purchase-hist-period-report-grand">
+            <span>Bill total</span>
+            <strong>{formatMoney(summary.billTotal)}</strong>
+          </div>
+        </header>
+
+        <div className="purchase-hist-period-bills">
+          <article className="purchase-hist-period-bill purchase-hist-period-bill--no1">
+            <div className="purchase-hist-period-bill-head">
+              <h4>{NO1_BILL_LABEL}</h4>
+              <div className="purchase-hist-period-bill-amount">
+                <span>Bill amount</span>
+                <strong>{formatMoney(summary.no1BillTotal)}</strong>
+              </div>
+            </div>
+            {renderPayStrip(summary.no1CashTotal, summary.no1BankTotal, {
+              compact: true,
+            })}
+          </article>
+
+          <article className="purchase-hist-period-bill purchase-hist-period-bill--no2">
+            <div className="purchase-hist-period-bill-head">
+              <h4>{NO2_BILL_LABEL}</h4>
+              <div className="purchase-hist-period-bill-amount">
+                <span>Bill amount</span>
+                <strong>{formatMoney(summary.no2BillTotal)}</strong>
+              </div>
+            </div>
+            {renderPayStrip(summary.no2CashTotal, summary.no2BankTotal, {
+              compact: true,
+              cheque: summary.no2ChequeTotal,
+            })}
+          </article>
+        </div>
+      </section>
+    )
+  }
+
+  function renderSupplierBalanceDue(
+    summary: SupplierPurchaseFileSummary,
+    options?: { scope?: 'all' | 'supplier' },
+  ) {
+    const balanceDue =
+      summary.pendingTotal > 0 ? summary.pendingTotal : summary.creditOpenTotal
+    if (balanceDue <= 0) return null
+
+    const dueLabel =
+      options?.scope === 'all'
+        ? summary.creditOpenTotal > 0 && summary.creditOpenBillCount > 0
+          ? `${summary.creditOpenBillCount} credit bill${summary.creditOpenBillCount === 1 ? '' : 's'} · all suppliers`
+          : summary.pendingBillCount > 0
+            ? `${summary.pendingBillCount} pending bill${summary.pendingBillCount === 1 ? '' : 's'} · all suppliers`
+            : 'All suppliers'
+        : summary.creditOpenTotal > 0 && summary.creditOpenBillCount > 0
+          ? `${summary.creditOpenBillCount} bill${summary.creditOpenBillCount === 1 ? '' : 's'} on credit`
+          : summary.pendingBillCount > 0
+            ? `${summary.pendingBillCount} bill${summary.pendingBillCount === 1 ? '' : 's'} with balance`
+            : 'Outstanding balance'
+
+    return (
+      <section
+        className="purchase-hist-balance-due"
+        aria-label={options?.scope === 'all' ? 'Total purchase balance due' : 'Supplier balance due'}
+      >
+        <div className="purchase-hist-balance-due-copy">
+          <span>Balance due</span>
+          <small>{dueLabel}</small>
+        </div>
+        <strong>{formatMoney(balanceDue)}</strong>
+      </section>
+    )
+  }
+
+  function supplierRowMeta(group: PurchaseSupplierGroup): string {
+    let pending = 0
+    let paid = 0
+    for (const item of group.items) {
+      if (item.hasOpenCredit || item.paidAmount < item.amount) pending += 1
+      else if (item.paidAmount >= item.amount && item.amount > 0) paid += 1
+      else pending += 1
+    }
+    const parts = [`${group.count} purchases`]
+    if (paid > 0) parts.push(`${paid} paid`)
+    if (pending > 0) parts.push(`${pending} with balance`)
+    if (group.creditCount > 0) parts.push(`${formatMoney(group.creditTotal)} on credit`)
+    return parts.join(' · ')
+  }
+
+  function renderSupplierGroupsList() {
+    return (
+      <ul className="purchase-hist-list purchase-hist-list--suppliers">
+        {allSupplierGroups.map((group) => (
+          <li key={group.shopKey} className="purchase-hist-supplier">
+            <button
+              type="button"
+              className="purchase-hist-supplier-btn"
+              onClick={() => {
+                setSelectedSupplierKey(group.shopKey)
+                setExpandedItemId(null)
+              }}
+            >
+              <div className="purchase-hist-supplier-top">
+                <span className="purchase-hist-supplier-name">{group.shopName}</span>
+                <span className="purchase-hist-supplier-open">Open →</span>
+                <span className="purchase-hist-item-amount">-{formatMoney(group.total)}</span>
+              </div>
+              {(() => {
+                const groupSummary = allSupplierGroupSummaries.get(group.shopKey)
+                if (!groupSummary) return null
+                return (
+                  <div className="purchase-hist-supplier-pay-strip">
+                    <span>
+                      {PURCHASE_CASH_LABEL} {formatMoney(groupSummary.cashTotal)}
+                    </span>
+                    <span>Bank {formatMoney(groupSummary.bankTotal)}</span>
+                    <span className="purchase-hist-supplier-pay-strip-total">
+                      Total Paid{' '}
+                      {formatMoney(
+                        groupSummary.cashTotal + groupSummary.bankTotal + groupSummary.chequeTotal,
+                      )}
+                    </span>
+                    {groupSummary.pendingTotal > 0 || groupSummary.creditOpenTotal > 0 ? (
+                      <span className="purchase-hist-supplier-pay-strip-pending">
+                        Balance due{' '}
+                        {formatMoney(
+                          groupSummary.pendingTotal > 0
+                            ? groupSummary.pendingTotal
+                            : groupSummary.creditOpenTotal,
+                        )}
+                      </span>
+                    ) : null}
+                  </div>
+                )
+              })()}
+              <span className="purchase-hist-supplier-meta">{supplierRowMeta(group)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+
   function renderPurchaseItem(item: PurchaseHistoryItem) {
     const expanded = expandedItemId === item.id
+    const pendingAmount = Math.max(0, item.amount - item.paidAmount)
+    const isFullyPaid = pendingAmount <= 0 && item.paidAmount > 0
+    const isPending = pendingAmount > 0 || item.hasOpenCredit
+    const itemTitle = item.description?.trim() || item.shopName || 'Purchase'
+
     return (
-      <li key={item.id} className={`purchase-hist-item ${expanded ? 'purchase-hist-item--expanded' : ''}`}>
-        <button
-          type="button"
-          className="purchase-hist-item-btn"
-          onClick={() => setExpandedItemId(expanded ? null : item.id)}
-        >
+      <li key={item.id} className={`purchase-hist-item ${expanded ? 'purchase-hist-item--expanded' : ''}${item.hasOpenCredit ? ' purchase-hist-item--credit-row' : ''}`}>
+        <div className="purchase-hist-item-row">
+          <button
+            type="button"
+            className="purchase-hist-item-btn"
+            onClick={() => setExpandedItemId(expanded ? null : item.id)}
+          >
           <div className="purchase-hist-item-info">
             <div className="purchase-hist-item-top">
               <span className="purchase-hist-item-label">
-                {item.description || item.billLabel}
+                {itemTitle}
                 <span className={`purchase-hist-bill-tag ${billTagClass(item.billType)}`}>
                   {item.billLabel}
                 </span>
               </span>
               <span className="purchase-hist-item-amount">-{formatMoney(item.amount)}</span>
             </div>
-            <span className="purchase-hist-item-meta">
-              {formatDate(item.date)} · {item.payLabel}
-            </span>
+            <div className="purchase-hist-item-quick">
+              {item.billNo ? <span className="purchase-hist-item-chip">Bill {item.billNo}</span> : null}
+              <span className="purchase-hist-item-chip">{formatDate(item.date)}</span>
+              {item.no1Amount > 0 ? (
+                <span className="purchase-hist-item-chip purchase-hist-item-chip--no1">
+                  {NO1_BILL_LABEL} {formatMoney(item.no1Amount)}
+                </span>
+              ) : null}
+              {item.no2Amount > 0 ? (
+                <span className="purchase-hist-item-chip purchase-hist-item-chip--no2">
+                  {NO2_BILL_LABEL} {formatMoney(item.no2Amount)}
+                </span>
+              ) : null}
+            </div>
+            <div className="purchase-hist-item-status-row">
+              {isFullyPaid ? (
+                <span className="purchase-hist-item-status purchase-hist-item-status--paid">
+                  Paid {formatMoney(item.paidAmount)}
+                </span>
+              ) : null}
+              {!isFullyPaid && item.paidAmount > 0 ? (
+                <span className="purchase-hist-item-status purchase-hist-item-status--partial">
+                  Paid {formatMoney(item.paidAmount)}
+                </span>
+              ) : null}
+              {isPending ? (
+                <span className="purchase-hist-item-status purchase-hist-item-status--pending">
+                  Balance due{' '}
+                  {formatMoney(item.hasOpenCredit ? (item.openCreditAmount ?? pendingAmount) : pendingAmount)}
+                </span>
+              ) : null}
+              <span className="purchase-hist-item-meta-inline">{item.payLabel}</span>
+            </div>
           </div>
-        </button>
+          </button>
+          {item.hasOpenCredit
+            ? renderCreditSideButton(item.openCreditExpenseId ?? item.id)
+            : null}
+        </div>
         {expanded ? (
           <div className="purchase-hist-item-detail">
-            {item.description ? (
+            <div className="purchase-hist-item-detail-grid">
               <div className="purchase-hist-item-detail-row">
-                <span>Item</span>
-                <strong>{item.description}</strong>
+                <span>Supplier</span>
+                <strong>{item.shopName}</strong>
               </div>
-            ) : null}
-            <div className="purchase-hist-item-detail-row">
-              <span>Date</span>
-              <strong>{formatDate(item.date)}</strong>
-            </div>
-            <div className="purchase-hist-item-detail-row">
-              <span>No 1</span>
-              <strong>{formatMoney(item.no1Amount)}</strong>
-            </div>
-            <div className="purchase-hist-item-detail-row">
-              <span>No 2</span>
-              <strong>{formatMoney(item.no2Amount)}</strong>
-            </div>
-            <div className="purchase-hist-item-detail-row purchase-hist-item-detail-row--total">
-              <span>Total</span>
-              <strong>{formatMoney(item.amount)}</strong>
-            </div>
-            {item.amount !== item.paidAmount ? (
+              {item.description ? (
+                <div className="purchase-hist-item-detail-row">
+                  <span>Item purchased</span>
+                  <strong>{item.description}</strong>
+                </div>
+              ) : null}
+              {item.billNo ? (
+                <div className="purchase-hist-item-detail-row">
+                  <span>Bill No</span>
+                  <strong>{item.billNo}</strong>
+                </div>
+              ) : null}
               <div className="purchase-hist-item-detail-row">
+                <span>Date</span>
+                <strong>{formatDate(item.date)}</strong>
+              </div>
+              <div className="purchase-hist-item-detail-row">
+                <span>{NO1_BILL_LABEL} bill</span>
+                <strong>{formatMoney(item.no1Amount)}</strong>
+              </div>
+              <div className="purchase-hist-item-detail-row">
+                <span>{NO2_BILL_LABEL} bill</span>
+                <strong>{formatMoney(item.no2Amount)}</strong>
+              </div>
+              <div className="purchase-hist-item-detail-row purchase-hist-item-detail-row--total">
+                <span>Bill total</span>
+                <strong>{formatMoney(item.amount)}</strong>
+              </div>
+              <div className="purchase-hist-item-detail-row purchase-hist-item-detail-row--paid">
                 <span>Paid</span>
                 <strong>{formatMoney(item.paidAmount)}</strong>
               </div>
-            ) : null}
+              {pendingAmount > 0 ? (
+                <div className="purchase-hist-item-detail-row purchase-hist-item-detail-row--pending">
+                  <span>Balance due</span>
+                  <strong>{formatMoney(pendingAmount)}</strong>
+                </div>
+              ) : null}
+              {item.paidNo1Amount > 0 ? (
+                <div className="purchase-hist-item-detail-row">
+                  <span>{NO1_BILL_LABEL} paid</span>
+                  <strong>{formatMoney(item.paidNo1Amount)}</strong>
+                </div>
+              ) : null}
+              {item.paidNo2Amount > 0 ? (
+                <div className="purchase-hist-item-detail-row">
+                  <span>{NO2_BILL_LABEL} paid</span>
+                  <strong>{formatMoney(item.paidNo2Amount)}</strong>
+                </div>
+              ) : null}
+            </div>
             <p className="purchase-hist-item-detail-pay">{item.payDetail}</p>
-            {renderBillActions(item.id)}
+            {renderBillActions(item)}
           </div>
         ) : null}
       </li>
@@ -280,14 +622,37 @@ export default function PurchaseHistoryPanel({
         left={
           <PageBackButton
             onClick={handleBack}
-            ariaLabel={selectedSupplierKey ? 'Back to suppliers' : 'Back'}
+            ariaLabel={
+              showCreditPage
+                ? 'Back to purchase history'
+                : selectedSupplierKey
+                  ? 'Back to suppliers'
+                  : embedded
+                    ? `Back to ${embeddedBackLabel.toLowerCase()}`
+                    : 'Back'
+            }
           />
         }
           right={<PageCloseButton onClick={handleClose} />}
         />
+        {showCreditPage ? (
+          <PurchaseCreditPanel
+            ref={creditPanelRef}
+            data={data}
+            embedded={embedded}
+            onClose={() => setShowCreditPage(false)}
+            onUpdateBill={handleUpdateBill}
+          />
+        ) : (
+          <>
         <div className="purchase-hist-top">
           <div className="purchase-hist-head page-head--corners">
             <h3>{selectedSupplier ? selectedSupplier.shopName : 'Purchase History'}</h3>
+            {selectedSupplier ? (
+              <p className="purchase-hist-supplier-sub">
+                {supplierAllFileSummary?.billCount ?? 0} bills · all time · by bill date
+              </p>
+            ) : null}
           </div>
 
           <input
@@ -310,11 +675,40 @@ export default function PurchaseHistoryPanel({
                 onClick={() => {
                   setDateFilter(opt.id)
                   setSelectedDate('')
+                  setSelectedMonth('')
                 }}
               >
                 {opt.label}
               </button>
             ))}
+            <label
+              className={`purchase-hist-date-pick purchase-hist-date-pick--month ${dateFilter === 'monthPick' ? 'purchase-hist-date-pick--active' : ''}`}
+            >
+              <span>Month</span>
+              <select
+                className="purchase-hist-month-select"
+                value={dateFilter === 'monthPick' ? selectedMonth : ''}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (!value) {
+                    setSelectedMonth('')
+                    setDateFilter('all')
+                    return
+                  }
+                  setSelectedMonth(value)
+                  setDateFilter('monthPick')
+                  setSelectedDate('')
+                }}
+                aria-label="Pick month for purchase history"
+              >
+                <option value="">All months</option>
+                {monthOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label
               className={`purchase-hist-date-pick ${dateFilter === 'date' ? 'purchase-hist-date-pick--active' : ''}`}
             >
@@ -325,6 +719,7 @@ export default function PurchaseHistoryPanel({
                 value={selectedDate}
                 onChange={(e) => {
                   setSelectedDate(e.target.value)
+                  setSelectedMonth('')
                   if (e.target.value) setDateFilter('date')
                 }}
                 aria-label="Pick date for purchase history"
@@ -368,134 +763,103 @@ export default function PurchaseHistoryPanel({
         <div className="purchase-hist-body">
         {!selectedSupplier ? (
           <>
-            <div className="purchase-hist-summary-top">
-              <div className="purchase-hist-summary-row purchase-hist-summary-row--no1">
-                <span>{NO1_BILL_LABEL}</span>
-                <strong>{formatMoney(summary.gstTotal)}</strong>
-              </div>
-              <div className="purchase-hist-summary-row purchase-hist-summary-row--no2">
-                <span>{NO2_BILL_LABEL}</span>
-                <strong>{formatMoney(summary.noGstTotal)}</strong>
-              </div>
-              <div className="purchase-hist-summary-row purchase-hist-summary-row--total">
-                <span>Total</span>
-                <strong>{formatMoney(summary.total)}</strong>
-              </div>
-              <span className="purchase-hist-summary-count">
-                {summary.count} purchases · {supplierGroups.length} suppliers
-              </span>
-            </div>
-
-            <div className="purchase-hist-pay-breakdown">
-              <div className="purchase-hist-pay-block purchase-hist-pay-block--no1">
-                <h4>{NO1_BILL_LABEL} · payment split</h4>
-                <div className="purchase-hist-pay-row">
-                  <span>💵 Cash</span>
-                  <strong>{formatMoney(paymentBreakdown.no1.cash)}</strong>
-                </div>
-                <div className="purchase-hist-pay-row">
-                  <span>🏦 Bank</span>
-                  <strong>{formatMoney(paymentBreakdown.no1.bank)}</strong>
-                </div>
-                <div className="purchase-hist-pay-row purchase-hist-pay-row--total">
-                  <span>Paid total</span>
-                  <strong>{formatMoney(paymentBreakdown.no1.total)}</strong>
-                </div>
-              </div>
-              <div className="purchase-hist-pay-block purchase-hist-pay-block--no2">
-                <h4>{NO2_BILL_LABEL} · payment split</h4>
-                <div className="purchase-hist-pay-row">
-                  <span>💵 Cash</span>
-                  <strong>{formatMoney(paymentBreakdown.no2.cash)}</strong>
-                </div>
-                <div className="purchase-hist-pay-row">
-                  <span>🏦 Bank</span>
-                  <strong>{formatMoney(paymentBreakdown.no2.bank)}</strong>
-                </div>
-                <div className="purchase-hist-pay-row">
-                  <span>🧾 Cheque</span>
-                  <strong>{formatMoney(paymentBreakdown.no2.cheque)}</strong>
-                </div>
-                <div className="purchase-hist-pay-row">
-                  <span>💳 Credit / other</span>
-                  <strong>
-                    {formatMoney(paymentBreakdown.no2.credit + paymentBreakdown.no2.other)}
-                  </strong>
-                </div>
-                <div className="purchase-hist-pay-row purchase-hist-pay-row--total">
-                  <span>Paid total</span>
-                  <strong>{formatMoney(paymentBreakdown.no2.total)}</strong>
-                </div>
-              </div>
-            </div>
-
-            {topShop ? (
-              <div className="purchase-hist-top-shop">
-                <span className="purchase-hist-top-shop-label">Top Supplier</span>
-                <strong>{topShop.shopName}</strong>
-                <span>
-                  {NO1_EXPENSE_LABEL} {formatMoney(topShop.gstTotal)} · {NO2_EXPENSE_LABEL}{' '}
-                  {formatMoney(topShop.noGstTotal)}
-                </span>
-              </div>
-            ) : null}
+            {renderSupplierBalanceDue(allTimeSummary, { scope: 'all' })}
+            {renderPeriodReport(periodSummary, purchasePeriodLabel(), {
+              supplierCount: allSupplierGroups.length,
+            })}
           </>
-        ) : (
-          <div className="purchase-hist-supplier-summary">
-            <div className="purchase-hist-supplier-summary-row">
-              <span>Total</span>
-              <strong>{formatMoney(selectedSupplier.total)}</strong>
+        ) : selectedSupplier ? (
+          <>
+            {supplierAllFileSummary ? renderSupplierBalanceDue(supplierAllFileSummary) : null}
+
+            {supplierAllFileSummary
+              ? renderPeriodReport(supplierAllFileSummary, 'All time')
+              : renderPeriodReport(
+                  {
+                    billCount: 0,
+                    pendingBillCount: 0,
+                    paidBillCount: 0,
+                    creditOpenBillCount: 0,
+                    creditOpenTotal: 0,
+                    billTotal: 0,
+                    no1BillTotal: 0,
+                    no2BillTotal: 0,
+                    paidTotal: 0,
+                    pendingTotal: 0,
+                    paidNo1Total: 0,
+                    paidNo2Total: 0,
+                    cashTotal: 0,
+                    bankTotal: 0,
+                    no1CashTotal: 0,
+                    no1BankTotal: 0,
+                    no2CashTotal: 0,
+                    no2BankTotal: 0,
+                    no2ChequeTotal: 0,
+                    chequeTotal: 0,
+                  },
+                  purchasePeriodLabel(),
+                )}
+
+            <div className="purchase-hist-supplier-tools">
+              <div className="purchase-hist-supplier-sort">
+                <span>Sort</span>
+                <button
+                  type="button"
+                  className={`purchase-hist-date-chip ${supplierSort === 'newest' ? 'purchase-hist-date-chip--active' : ''}`}
+                  onClick={() => setSupplierSort('newest')}
+                >
+                  Newest
+                </button>
+                <button
+                  type="button"
+                  className={`purchase-hist-date-chip ${supplierSort === 'oldest' ? 'purchase-hist-date-chip--active' : ''}`}
+                  onClick={() => setSupplierSort('oldest')}
+                >
+                  Oldest
+                </button>
+              </div>
+              <p className="purchase-hist-supplier-hint">Tap a bill to see details</p>
             </div>
-            <div className="purchase-hist-supplier-summary-row">
-              <span>{NO1_EXPENSE_LABEL}</span>
-              <strong>{formatMoney(selectedSupplier.gstTotal)}</strong>
-            </div>
-            <div className="purchase-hist-supplier-summary-row">
-              <span>{NO2_EXPENSE_LABEL}</span>
-              <strong>{formatMoney(selectedSupplier.noGstTotal)}</strong>
-            </div>
-            <span className="purchase-hist-supplier-summary-count">
-              {selectedSupplier.count} purchases · {purchasePeriodLabel()} · tap row for details
-            </span>
-          </div>
-        )}
+          </>
+        ) : null}
+
+        {!selectedSupplier && purchaseCreditItems.length > 0 ? (
+          <section className="purchase-hist-credit-section" aria-label="Purchase credit history">
+            <button
+              type="button"
+              className="purchase-hist-credit-open purchase-hist-credit-open--page"
+              onClick={() => setShowCreditPage(true)}
+            >
+              <span>💳 Open Purchase Credits ({purchaseCreditItems.length})</span>
+              <span className="purchase-hist-credit-open-meta">
+                <span className="purchase-hist-credit-open-total">{formatMoney(purchaseCreditTotal)}</span>
+                <span className="purchase-hist-credit-open-caret">→</span>
+              </span>
+            </button>
+          </section>
+        ) : null}
 
         {!selectedSupplier ? (
-          supplierGroups.length === 0 ? (
-            <p className="purchase-hist-empty">
-              {search.trim() ? 'No purchases match your search.' : 'No purchases for this period.'}
-            </p>
+          allSupplierGroups.length === 0 ? (
+            search.trim() ? (
+              <p className="purchase-hist-empty">No suppliers match your search.</p>
+            ) : null
           ) : (
-            <ul className="purchase-hist-list purchase-hist-list--suppliers">
-              {supplierGroups.map((group) => (
-                <li key={group.shopKey} className="purchase-hist-supplier">
-                  <button
-                    type="button"
-                    className="purchase-hist-supplier-btn"
-                    onClick={() => {
-                      setSelectedSupplierKey(group.shopKey)
-                      setExpandedItemId(null)
-                    }}
-                  >
-                    <div className="purchase-hist-supplier-top">
-                      <span className="purchase-hist-supplier-name">{group.shopName}</span>
-                      <span className="purchase-hist-item-amount">-{formatMoney(group.total)}</span>
-                    </div>
-                    <span className="purchase-hist-supplier-meta">
-                      {group.count} purchases · {NO1_BILL_LABEL} {formatMoney(group.gstTotal)} ·{' '}
-                      {NO2_BILL_LABEL} {formatMoney(group.noGstTotal)}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <section className="purchase-hist-suppliers-section" aria-label="Suppliers">
+              <div className="purchase-hist-suppliers-head">
+                <h4 className="purchase-hist-suppliers-title">Suppliers</h4>
+                <span className="purchase-hist-suppliers-count">{allSupplierGroups.length}</span>
+              </div>
+              <p className="purchase-hist-suppliers-hint">Tap a supplier to open bills and see details</p>
+              {renderSupplierGroupsList()}
+            </section>
           )
-        ) : selectedSupplier.items.length === 0 ? (
+        ) : sortedSupplierItems.length === 0 ? (
           <p className="purchase-hist-empty">
             {search.trim() ? 'No purchases match your search.' : 'No purchases for this supplier.'}
           </p>
         ) : (
-          <ul className="purchase-hist-list">{selectedSupplier.items.map(renderPurchaseItem)}</ul>
+          <ul className="purchase-hist-list">{sortedSupplierItems.map(renderPurchaseItem)}</ul>
         )}
 
         {!selectedSupplier && paymentHistoryItems.length > 0 ? (
@@ -523,22 +887,33 @@ export default function PurchaseHistoryPanel({
 
         <div className="purchase-hist-footer">
           <button type="button" className="purchase-hist-back" onClick={handleBack}>
-            {selectedSupplierKey ? '← Suppliers' : fullscreen || embedded ? '← Back' : '← Back'}
+            {selectedSupplierKey
+              ? '← Suppliers'
+              : embedded
+                ? `← ${embeddedBackLabel}`
+                : '← Back'}
           </button>
           {!fullscreen && !embedded ? (
             <button type="button" className="purchase-hist-home" onClick={handleGoHome}>
               🏠 Home
             </button>
           ) : embedded ? (
-            <button type="button" className="purchase-hist-home" onClick={() => navigate('/purchase')}>
-              🛒 Open Purchase
+            <button
+              type="button"
+              className="purchase-hist-home"
+              onClick={() => navigate('/purchase')}
+            >
+              🛒 {embeddedActionLabel}
             </button>
           ) : (
             <button type="button" className="purchase-hist-home" onClick={() => navigate('/purchase')}>
               🛒 Purchase
             </button>
           )}
+          <span className="purchase-hist-esc-hint">Esc · back</span>
         </div>
+          </>
+        )}
       </div>
     </div>
   )

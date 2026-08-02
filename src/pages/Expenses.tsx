@@ -3,6 +3,8 @@ import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
+import { PageBackButton, PageCorners } from '../components/PageCorners'
+import { useAppPageBack } from '../hooks/useAppPageBack'
 import type { ExpensePayType } from '../types'
 import { formatMoney, parseAmount } from '../utils/format'
 import {
@@ -43,6 +45,7 @@ function formatSplitPart(amount: number): string {
 }
 
 export default function Expenses() {
+  const goBack = useAppPageBack()
   const { recordExpense, data } = useCash()
   const [amountStr, setAmountStr] = useState('')
   const [cashSplitStr, setCashSplitStr] = useState('')
@@ -414,8 +417,9 @@ export default function Expenses() {
   }
 
   return (
-    <div className="expenses-page">
-      <header className="expenses-page-head">
+    <div className="expenses-page page-shell">
+      <PageCorners left={<PageBackButton onClick={goBack} ariaLabel="Back" />} />
+      <header className="expenses-page-head page-head--corners">
         <h1 className="expenses-page-title">Expenses</h1>
         <p className="expenses-page-sub">Normal cash or bank expenses only · not purchases</p>
       </header>

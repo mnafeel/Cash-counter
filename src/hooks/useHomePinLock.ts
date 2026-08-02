@@ -3,10 +3,23 @@ import { useLocation } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import { normalizeRoutePath } from '../utils/hashRoute'
 
-/** Lock Home when leaving it, except Home ↔ Purchase / Loan / History (no PIN when returning). */
+/** In-app routes — moving between these does not lock Home or require PIN again on return. */
+const IN_APP_ROUTES = [
+  '/',
+  '/purchase',
+  '/loan',
+  '/history',
+  '/staff',
+  '/settings',
+  '/expenses',
+  '/counter',
+  '/reports',
+]
+
+/** Lock Home only when leaving the app shell; in-app back navigation stays unlocked. */
 export function useHomePinLock() {
   const location = useLocation()
-  const { lockHome } = useCash()
+  const { lockHome, unlockHome } = useCash()
   const prevPathRef = useRef(normalizeRoutePath(location.pathname))
 
   useEffect(() => {
@@ -15,15 +28,22 @@ export function useHomePinLock() {
     if (prev === curr) return
     prevPathRef.current = curr
 
-    const wasHome = prev === '/'
-    const isHome = curr === '/'
-    const noPinWhenReturning = ['/purchase', '/loan', '/history', '/staff']
+    const prevInApp = IN_APP_ROUTES.includes(prev)
+    const currInApp = IN_APP_ROUTES.includes(curr)
 
-    if (wasHome && noPinWhenReturning.includes(curr)) return
-    if (isHome && noPinWhenReturning.includes(prev)) return
+    if (prevInApp && currInApp) {
+      unlockHome()
+      return
+    }
 
-    if (wasHome || isHome) {
+    if (prev === '/' && currInApp) return
+    if (curr === '/' && prevInApp) {
+      unlockHome()
+      return
+    }
+
+    if (prev === '/' || curr === '/') {
       lockHome()
     }
-  }, [location.pathname, lockHome])
+  }, [location.pathname, lockHome, unlockHome])
 }

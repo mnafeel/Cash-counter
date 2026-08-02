@@ -126,7 +126,7 @@ export function buildNo1PurchaseExpenseItemsRows(
     [`${NO1_BILL_LABEL} paid`, summary.paidTotal],
     ['Count', summary.count],
     [],
-    ['No', 'Date', 'Time', 'Supplier', 'Item / description', NO1_BILL_LABEL, 'Paid', 'Payment', 'Details'],
+    ['No', 'Date', 'Time', 'Supplier', 'Bill No', 'Item / description', NO1_BILL_LABEL, 'Paid', 'Payment', 'Details'],
   ]
 
   for (const [index, item] of no1Items.entries()) {
@@ -135,6 +135,7 @@ export function buildNo1PurchaseExpenseItemsRows(
       formatDate(item.date),
       formatReportTime(item.date),
       item.shopName,
+      item.billNo ?? '',
       item.description ?? '',
       item.no1Amount,
       item.paidNo1Amount,
@@ -166,6 +167,7 @@ export function buildPurchaseExpenseItemsRows(
       'Date',
       'Time',
       'Supplier',
+      'Bill No',
       'Item / description',
       'Bill type',
       NO1_BILL_LABEL,
@@ -183,6 +185,7 @@ export function buildPurchaseExpenseItemsRows(
       formatDate(item.date),
       formatReportTime(item.date),
       item.shopName,
+      item.billNo ?? '',
       item.description ?? '',
       item.billLabel,
       item.no1Amount,

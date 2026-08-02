@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import ReportsPanel from '../components/ReportsPanel'
 import CreditDashboard from '../components/CreditDashboard'
+import { useAppPageBack } from '../hooks/useAppPageBack'
 
 export default function Reports() {
   const { data, setCustomerReminder, updateReminderAlertSettings } = useCash()
-  const navigate = useNavigate()
+  const goBack = useAppPageBack()
   const [customerName, setCustomerName] = useState<string | undefined>()
 
   return (
@@ -14,7 +14,7 @@ export default function Reports() {
       <ReportsPanel
         open
         data={data}
-        onClose={() => navigate('/')}
+        onClose={goBack}
         initialPreset="today"
         onOpenCustomer={(name) => setCustomerName(name)}
       />

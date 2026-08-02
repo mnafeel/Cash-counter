@@ -10,6 +10,8 @@ import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
 
 export type PurchaseDateFilter = CashDateFilter
 
+export const PURCHASE_CASH_LABEL = 'Cash'
+
 export interface PurchaseHistoryItem {
   id: string
   amount: number
@@ -20,6 +22,7 @@ export interface PurchaseHistoryItem {
   paidNo2Amount: number
   shopName: string
   description?: string
+  billNo?: string
   billType: 'gst' | 'no-gst' | 'both'
   billLabel: string
   payLabel: string
@@ -46,6 +49,8 @@ export interface PurchaseCreditItem {
   payDetail: string
   payLabel: string
   billLabel: string
+  billNumber: 1 | 2
+  billNo?: string
   payType: Expense['payType']
 }
 
@@ -139,6 +144,91 @@ export function summarizePurchasePaymentBreakdown(
   return breakdown
 }
 
+export interface SupplierPurchaseFileSummary {
+  billCount: number
+  pendingBillCount: number
+  paidBillCount: number
+  creditOpenBillCount: number
+  creditOpenTotal: number
+  billTotal: number
+  no1BillTotal: number
+  no2BillTotal: number
+  paidTotal: number
+  pendingTotal: number
+  paidNo1Total: number
+  paidNo2Total: number
+  cashTotal: number
+  bankTotal: number
+  no1CashTotal: number
+  no1BankTotal: number
+  no2CashTotal: number
+  no2BankTotal: number
+  no2ChequeTotal: number
+  chequeTotal: number
+}
+
+export function summarizeSupplierPurchaseFile(
+  data: AppData,
+  items: PurchaseHistoryItem[],
+): SupplierPurchaseFileSummary {
+  const payment = summarizePurchasePaymentBreakdown(data, items)
+  let pendingBillCount = 0
+  let paidBillCount = 0
+  let creditOpenBillCount = 0
+  let creditOpenTotal = 0
+  let billTotal = 0
+  let paidTotal = 0
+  let paidNo1Total = 0
+  let paidNo2Total = 0
+  let no1BillTotal = 0
+  let no2BillTotal = 0
+  let pendingTotal = 0
+
+  for (const item of items) {
+    billTotal += item.amount
+    paidTotal += item.paidAmount
+    paidNo1Total += item.paidNo1Amount
+    paidNo2Total += item.paidNo2Amount
+    no1BillTotal += item.no1Amount
+    no2BillTotal += item.no2Amount
+    pendingTotal += Math.max(0, item.amount - item.paidAmount)
+    if (item.hasOpenCredit) {
+      pendingBillCount += 1
+      creditOpenBillCount += 1
+      creditOpenTotal += item.openCreditAmount ?? 0
+    } else if (item.paidAmount >= item.amount && item.amount > 0) {
+      paidBillCount += 1
+    } else if (item.paidAmount > 0) {
+      pendingBillCount += 1
+    } else {
+      pendingBillCount += 1
+    }
+  }
+
+  return {
+    billCount: items.length,
+    pendingBillCount,
+    paidBillCount,
+    creditOpenBillCount,
+    creditOpenTotal,
+    billTotal,
+    no1BillTotal,
+    no2BillTotal,
+    paidTotal,
+    pendingTotal,
+    paidNo1Total,
+    paidNo2Total,
+    cashTotal: payment.no1.cash + payment.no2.cash,
+    bankTotal: payment.no1.bank + payment.no2.bank,
+    no1CashTotal: payment.no1.cash,
+    no1BankTotal: payment.no1.bank,
+    no2CashTotal: payment.no2.cash,
+    no2BankTotal: payment.no2.bank,
+    no2ChequeTotal: payment.no2.cheque,
+    chequeTotal: payment.no2.cheque,
+  }
+}
+
 export interface TopPurchaseShop {
   shopName: string
   total: number
@@ -206,11 +296,20 @@ export function purchaseExpenseActivityTime(expense: Expense): string {
   return expense.updatedAt ?? expense.createdAt
 }
 
-function latestPurchaseActivityTime(...expenses: Expense[]): string {
+/** Bill date for history display and sorting — falls back to created date. */
+export function purchaseExpenseBillDate(expense: Expense): string {
+  const billDate = expense.billDate?.trim()
+  if (billDate) return billDate
+  const created = expense.createdAt
+  if (created.includes('T')) return created.slice(0, 10)
+  return created
+}
+
+function latestPurchaseBillDate(...expenses: Expense[]): string {
   return expenses.reduce((latest, expense) => {
-    const next = purchaseExpenseActivityTime(expense)
+    const next = purchaseExpenseBillDate(expense)
     return new Date(next).getTime() > new Date(latest).getTime() ? next : latest
-  }, purchaseExpenseActivityTime(expenses[0]))
+  }, purchaseExpenseBillDate(expenses[0]))
 }
 
 export function isPurchaseCreditExpense(expense: Expense): boolean {
@@ -343,13 +442,18 @@ function purchasePayLabel(expense: Expense): string {
   if (expense.payType === 'cheque') return expense.chequeApproved ? 'Cheque ✓' : 'Cheque pending'
   if (expense.payType === 'credit') return 'Credit'
   if (expense.payType === 'bank') return 'Bank'
-  return 'Cash'
+  return PURCHASE_CASH_LABEL
 }
 
 function purchasePayDetail(expense: Expense): string {
   if (expense.payType === 'split') {
     const parts: string[] = []
-    if ((expense.cashAmount ?? 0) > 0) parts.push(`💵 ${formatMoney(expense.cashAmount ?? 0)}`)
+    if ((expense.cashAmount ?? 0) > 0) {
+      parts.push(`💵 ${PURCHASE_CASH_LABEL} ${formatMoney(expense.cashAmount ?? 0)}`)
+    }
+    if ((expense.bankAmount ?? 0) > 0) {
+      parts.push(`🏦 Bank ${formatMoney(expense.bankAmount ?? 0)}`)
+    }
     if ((expense.creditAmount ?? 0) > 0) parts.push(`💳 ${formatMoney(expense.creditAmount ?? 0)}`)
     if ((expense.chequeAmount ?? 0) > 0) {
       parts.push(
@@ -363,7 +467,7 @@ function purchasePayDetail(expense: Expense): string {
   }
   if (expense.payType === 'credit') return `💳 Credit ${formatMoney(expense.amount)}`
   if (expense.payType === 'bank') return `🏦 Bank ${formatMoney(expense.amount)}`
-  return `💵 Cash ${formatMoney(expense.amount)}`
+  return `💵 ${PURCHASE_CASH_LABEL} ${formatMoney(expense.amount)}`
 }
 
 export function buildPurchaseCreditItems(data: AppData): PurchaseCreditItem[] {
@@ -384,11 +488,175 @@ export function buildPurchaseCreditItems(data: AppData): PurchaseCreditItem[] {
       payDetail: purchasePayDetail(expense),
       payLabel: purchasePayLabel(expense),
       billLabel: expense.billNumber === 2 ? purchaseBillLabel(2) : purchaseBillLabel(1),
+      billNumber: expense.billNumber === 2 ? 2 : 1,
+      billNo: expense.billNo,
       payType: expense.payType,
     })
   }
 
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+}
+
+export interface PurchaseCreditSupplierGroup {
+  shopName: string
+  shopKey: string
+  creditTotal: number
+  creditCount: number
+  no1CreditTotal: number
+  no2CreditTotal: number
+  no1Count: number
+  no2Count: number
+  items: PurchaseCreditItem[]
+}
+
+export interface PurchaseCreditSummary {
+  creditTotal: number
+  no1CreditTotal: number
+  no2CreditTotal: number
+  creditCount: number
+  no1Count: number
+  no2Count: number
+  paidTotal: number
+  billTotal: number
+}
+
+export function purchaseCreditMonthKey(isoDate: string): string {
+  return isoDate.slice(0, 7)
+}
+
+const PURCHASE_CREDIT_MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
+
+export function formatPurchaseCreditMonthLabel(monthKey: string): string {
+  const [yearText, monthText] = monthKey.split('-')
+  const month = Number(monthText)
+  const year = Number(yearText)
+  if (!month || !year) return monthKey
+  return `${PURCHASE_CREDIT_MONTH_NAMES[month - 1] ?? monthText} ${year}`
+}
+
+export function summarizePurchaseCreditItems(items: PurchaseCreditItem[]): PurchaseCreditSummary {
+  return items.reduce(
+    (acc, item) => {
+      acc.creditTotal += item.amount
+      acc.creditCount += 1
+      acc.paidTotal += item.paidAmount
+      acc.billTotal += item.billTotal
+      if (item.billNumber === 2) {
+        acc.no2CreditTotal += item.amount
+        acc.no2Count += 1
+      } else {
+        acc.no1CreditTotal += item.amount
+        acc.no1Count += 1
+      }
+      return acc
+    },
+    {
+      creditTotal: 0,
+      no1CreditTotal: 0,
+      no2CreditTotal: 0,
+      creditCount: 0,
+      no1Count: 0,
+      no2Count: 0,
+      paidTotal: 0,
+      billTotal: 0,
+    },
+  )
+}
+
+export function listPurchaseCreditMonthOptions(
+  items: PurchaseCreditItem[],
+): { key: string; label: string }[] {
+  const keys = new Set<string>()
+  for (const item of items) keys.add(purchaseCreditMonthKey(item.date))
+  return Array.from(keys)
+    .sort((a, b) => b.localeCompare(a))
+    .map((key) => ({ key, label: formatPurchaseCreditMonthLabel(key) }))
+}
+
+export function filterPurchaseCreditItemsByMonth(
+  items: PurchaseCreditItem[],
+  monthKey: string | 'all',
+): PurchaseCreditItem[] {
+  if (monthKey === 'all') return items
+  return items.filter((item) => purchaseCreditMonthKey(item.date) === monthKey)
+}
+
+export function groupPurchaseCreditsBySupplier(items: PurchaseCreditItem[]): PurchaseCreditSupplierGroup[] {
+  const map = new Map<string, PurchaseCreditSupplierGroup>()
+
+  for (const item of items) {
+    const shopKey = item.shopName.trim().toLowerCase() || 'supplier'
+    const group = map.get(shopKey) ?? {
+      shopName: item.shopName.trim() || 'Supplier',
+      shopKey,
+      creditTotal: 0,
+      creditCount: 0,
+      no1CreditTotal: 0,
+      no2CreditTotal: 0,
+      no1Count: 0,
+      no2Count: 0,
+      items: [],
+    }
+    group.creditTotal += item.amount
+    group.creditCount += 1
+    if (item.billNumber === 2) {
+      group.no2CreditTotal += item.amount
+      group.no2Count += 1
+    } else {
+      group.no1CreditTotal += item.amount
+      group.no1Count += 1
+    }
+    group.items.push(item)
+    map.set(shopKey, group)
+  }
+
+  return Array.from(map.values())
+    .map((group) => ({
+      ...group,
+      items: group.items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    }))
+    .sort((a, b) => b.creditTotal - a.creditTotal)
+}
+
+export function matchesPurchaseCreditItem(item: PurchaseCreditItem, query: string): boolean {
+  if (!query.trim()) return true
+  const q = query.toLowerCase().trim()
+  const haystack = [
+    item.shopName,
+    item.description,
+    item.billNo,
+    item.billLabel,
+    item.payLabel,
+    item.payDetail,
+    formatMoney(item.amount),
+    formatMoney(item.paidAmount),
+    formatMoney(item.billTotal),
+    formatDate(item.date),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return haystack.includes(q)
+}
+
+export function matchesPurchaseCreditSupplier(group: PurchaseCreditSupplierGroup, query: string): boolean {
+  if (!query.trim()) return true
+  const q = query.toLowerCase().trim()
+  if (group.shopName.toLowerCase().includes(q)) return true
+  return group.items.some((item) => matchesPurchaseCreditItem(item, q))
 }
 
 export function purchaseExpensePaymentModes(expense: Expense): Array<
@@ -397,6 +665,7 @@ export function purchaseExpensePaymentModes(expense: Expense): Array<
   if (expense.payType === 'split') {
     const modes: Array<'cash' | 'bank' | 'credit' | 'cheque' | 'split'> = ['split']
     if ((expense.cashAmount ?? 0) > 0) modes.push('cash')
+    if ((expense.bankAmount ?? 0) > 0) modes.push('bank')
     if ((expense.creditAmount ?? 0) > 0) modes.push('credit')
     if ((expense.chequeAmount ?? 0) > 0) modes.push('cheque')
     return modes
@@ -432,11 +701,12 @@ export function buildPurchaseHistoryItems(data: AppData): PurchaseHistoryItem[] 
         paidNo2Amount: purchasePaidAmount(no2),
         shopName: stripExpenseBillSuffix(no1.name || no2.name),
         description: no1.description ?? no2.description,
+        billNo: no1.billNo ?? no2.billNo,
         billType: 'both',
         billLabel: `${purchaseBillLabel(1)} + ${purchaseBillLabel(2)}`,
         payLabel: 'Both bills',
         payDetail: `No 1: ${purchasePayDetail(no1)} · No 2: ${purchasePayDetail(no2)}`,
-        date: latestPurchaseActivityTime(no1, no2),
+        date: latestPurchaseBillDate(no1, no2),
         createdAt: no1.createdAt,
         hasOpenCredit: no1Credit.open || no2Credit.open,
         openCreditAmount: openCreditAmount > 0 ? openCreditAmount : undefined,
@@ -458,11 +728,12 @@ export function buildPurchaseHistoryItems(data: AppData): PurchaseHistoryItem[] 
       paidNo2Amount: gst ? 0 : purchasePaidAmount(expense),
       shopName: stripExpenseBillSuffix(expense.name),
       description: expense.description,
+      billNo: expense.billNo,
       billType: gst ? 'gst' : 'no-gst',
       billLabel: gst ? purchaseBillLabel(1) : purchaseBillLabel(2),
       payLabel: purchasePayLabel(expense),
       payDetail: purchasePayDetail(expense),
-      date: purchaseExpenseActivityTime(expense),
+      date: purchaseExpenseBillDate(expense),
       createdAt: expense.createdAt,
       hasOpenCredit: credit.open,
       openCreditAmount: credit.open ? credit.amount : undefined,
@@ -513,10 +784,11 @@ export function filterPaidPurchaseItems(items: PurchaseHistoryItem[]): PurchaseH
   return items.filter((item) => item.paidAmount > 0)
 }
 
-export function getTopPurchaseShop(
+export function getTopPurchaseShops(
   items: PurchaseHistoryItem[],
   paidOnly = false,
-): TopPurchaseShop | null {
+  limit = 10,
+): TopPurchaseShop[] {
   const byShop = new Map<string, TopPurchaseShop>()
 
   for (const item of items) {
@@ -525,6 +797,7 @@ export function getTopPurchaseShop(
     const noGstTotal = paidOnly ? item.paidNo2Amount : item.no2Amount
     if (paidOnly && total <= 0) continue
     const key = item.shopName.trim().toLowerCase()
+    if (!key) continue
     const current = byShop.get(key) ?? {
       shopName: item.shopName,
       total: 0,
@@ -537,21 +810,54 @@ export function getTopPurchaseShop(
     byShop.set(key, current)
   }
 
-  let top: TopPurchaseShop | null = null
-  for (const entry of byShop.values()) {
-    if (!top || entry.total > top.total) top = entry
-  }
+  return Array.from(byShop.values())
+    .filter((entry) => entry.shopName.trim().length > 0)
+    .sort((a, b) => b.total - a.total)
+    .slice(0, limit)
+}
 
-  return top?.shopName ? top : null
+export function getTopPurchaseShop(
+  items: PurchaseHistoryItem[],
+  paidOnly = false,
+): TopPurchaseShop | null {
+  return getTopPurchaseShops(items, paidOnly, 1)[0] ?? null
+}
+
+export function summarizeTodayPaid(items: PurchaseHistoryItem[]): number {
+  return items
+    .filter((item) => matchesCashDateFilter(item.date, 'today', ''))
+    .reduce((sum, item) => sum + item.paidAmount, 0)
 }
 
 export function filterPurchaseHistoryItems(
   items: PurchaseHistoryItem[],
-  dateFilter: PurchaseDateFilter,
+  dateFilter: PurchaseDateFilter | 'monthPick',
   selectedDate: string,
   rangeTo?: string,
 ): PurchaseHistoryItem[] {
+  if (dateFilter === 'monthPick') {
+    if (!selectedDate) return items
+    return filterPurchaseHistoryItemsByMonth(items, selectedDate)
+  }
   return items.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate, rangeTo))
+}
+
+export function listPurchaseHistoryMonthOptions(
+  items: PurchaseHistoryItem[],
+): { key: string; label: string }[] {
+  const keys = new Set<string>()
+  for (const item of items) keys.add(purchaseCreditMonthKey(item.date))
+  return Array.from(keys)
+    .sort((a, b) => b.localeCompare(a))
+    .map((key) => ({ key, label: formatPurchaseCreditMonthLabel(key) }))
+}
+
+export function filterPurchaseHistoryItemsByMonth(
+  items: PurchaseHistoryItem[],
+  monthKey: string,
+): PurchaseHistoryItem[] {
+  if (!monthKey) return items
+  return items.filter((item) => purchaseCreditMonthKey(item.date) === monthKey)
 }
 
 export function matchesPurchaseHistorySearch(item: PurchaseHistoryItem, query: string): boolean {
@@ -560,6 +866,7 @@ export function matchesPurchaseHistorySearch(item: PurchaseHistoryItem, query: s
   const haystack = [
     item.shopName,
     item.description,
+    item.billNo,
     item.billLabel,
     item.payLabel,
     item.payDetail,
