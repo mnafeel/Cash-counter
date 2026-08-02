@@ -1,5 +1,6 @@
 import type { AppData, Expense, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
+import { purchasePaidComponents } from './purchaseHistory'
 import { getSalePaymentEvents } from './salePayment'
 import { saleCashCollected, saleBankCollected, saleChequeToBankCollected } from './salesReport'
 
@@ -139,6 +140,20 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
         name: expense.name,
       })
     }
+    return
+  }
+
+  if (isPurchaseExpense(expense)) {
+    const { cash } = purchasePaidComponents(expense)
+    if (cash <= 0) return
+    items.push({
+      id: `expense-${expense.id}-cash`,
+      label: expenseOutLabel(expense),
+      amount: cash,
+      direction: 'out',
+      date: expense.updatedAt ?? expense.createdAt,
+      name: expense.name,
+    })
     return
   }
 

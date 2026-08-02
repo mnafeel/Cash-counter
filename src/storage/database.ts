@@ -6,6 +6,7 @@ import {
   buildCreditPaymentUpdate,
   isPurchaseCreditExpense,
   purchaseCreditAmount,
+  purchasePaidComponents,
   type CreditPaymentInput,
 } from '../utils/purchaseHistory'
 import { notifyDataChanged, notifyDataChangedImmediate } from '../firebase/sync'
@@ -893,7 +894,11 @@ function expenseCashToDrawer(expense: Expense): number {
     if (expense.transferDirection === 'bank-to-cash') return -expense.amount
     return 0
   }
-  if (expense.payType === 'bank' || expense.payType === 'cheque') return 0
+  if (isPurchaseExpense(expense)) {
+    const { cash } = purchasePaidComponents(expense)
+    return expense.kind === 'add' ? -cash : cash
+  }
+  if (expense.payType === 'bank' || expense.payType === 'cheque' || expense.payType === 'credit') return 0
   if (expense.payType === 'split') {
     const cash = expense.cashAmount ?? 0
     return expense.kind === 'add' ? -cash : cash
@@ -907,7 +912,12 @@ function expenseBankToBalance(expense: Expense): number {
     if (expense.transferDirection === 'bank-to-cash') return expense.amount
     return 0
   }
-  if (expense.payType === 'cash') return 0
+  if (isPurchaseExpense(expense)) {
+    const { bank, cheque } = purchasePaidComponents(expense)
+    const paid = bank + cheque
+    return expense.kind === 'add' ? -paid : paid
+  }
+  if (expense.payType === 'cash' || expense.payType === 'credit') return 0
   if (expense.payType === 'cheque') {
     if (!expense.chequeApproved) return 0
     const cheque = expense.chequeAmount ?? expense.amount
