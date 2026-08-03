@@ -25,7 +25,8 @@ import {
 } from './normalExpenseHistory'
 import { buildDailyTotals } from './dailyTotals'
 import { buildSalesBillList, summarizeSalesBillRows } from './salesReport'
-import { formatMoney } from './format'
+import { formatMoney, formatReportTime } from './format'
+import { printHtmlReport } from './printHtmlReport'
 
 export type DailyReportKind = 'cash' | 'bank' | 'expense'
 
@@ -143,10 +144,6 @@ function escapeCsv(value: string | number | undefined | null): string {
   return str
 }
 
-function formatReportTime(iso: string): string {
-  return new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(new Date(iso))
-}
-
 function formatSelectedDateLabel(selectedDate: string): string {
   const [y, m, d] = selectedDate.split('-').map(Number)
   if (!y || !m || !d) return selectedDate
@@ -181,41 +178,6 @@ function downloadCsvFile(csv: string, filename: string): void {
   link.download = filename
   link.click()
   URL.revokeObjectURL(url)
-}
-
-function printHtmlReport(html: string): void {
-  const frame = document.createElement('iframe')
-  frame.style.position = 'fixed'
-  frame.style.right = '0'
-  frame.style.bottom = '0'
-  frame.style.width = '0'
-  frame.style.height = '0'
-  frame.style.border = '0'
-  frame.setAttribute('aria-hidden', 'true')
-  document.body.appendChild(frame)
-
-  const doc = frame.contentDocument
-  const win = frame.contentWindow
-  if (!doc || !win) {
-    frame.remove()
-    return
-  }
-
-  doc.open()
-  doc.write(html)
-  doc.close()
-
-  const cleanup = () => {
-    frame.remove()
-    win.removeEventListener('afterprint', cleanup)
-  }
-  win.addEventListener('afterprint', cleanup)
-
-  win.requestAnimationFrame(() => {
-    win.focus()
-    win.print()
-    window.setTimeout(cleanup, 60_000)
-  })
 }
 
 function activityTableRows(items: CashActivityItem[]): string {

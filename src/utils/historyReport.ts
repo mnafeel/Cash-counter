@@ -1,5 +1,5 @@
 import type { AppData } from '../types'
-import { formatMoney } from './format'
+import { formatMoney, formatReportDate, formatReportTime } from './format'
 import {
   buildHistoryItems,
   getHistoryPaymentLabel,
@@ -7,6 +7,7 @@ import {
   type HistoryItem,
   type HistoryItemType,
 } from './historyItems'
+import { printHtmlReport } from './printHtmlReport'
 
 export interface HistoryReportMeta {
   exportedAt: string
@@ -20,14 +21,6 @@ function escapeCsv(value: string | number | undefined | null): string {
   const str = String(value ?? '')
   if (/[",\n\r]/.test(str)) return `"${str.replace(/"/g, '""')}"`
   return str
-}
-
-function formatReportDate(iso: string): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: 'short' }).format(new Date(iso))
-}
-
-function formatReportTime(iso: string): string {
-  return new Intl.DateTimeFormat(undefined, { timeStyle: 'short' }).format(new Date(iso))
 }
 
 function escapeHtml(value: string | number | undefined | null): string {
@@ -273,37 +266,5 @@ export function downloadFullHistoryReport(data: AppData, meta: HistoryReportMeta
 }
 
 export function printFullHistoryReportPdf(data: AppData, meta: HistoryReportMeta): void {
-  const html = buildFullHistoryReportHtml(data, meta)
-  const frame = document.createElement('iframe')
-  frame.style.position = 'fixed'
-  frame.style.right = '0'
-  frame.style.bottom = '0'
-  frame.style.width = '0'
-  frame.style.height = '0'
-  frame.style.border = '0'
-  frame.setAttribute('aria-hidden', 'true')
-  document.body.appendChild(frame)
-
-  const doc = frame.contentDocument
-  const win = frame.contentWindow
-  if (!doc || !win) {
-    frame.remove()
-    return
-  }
-
-  doc.open()
-  doc.write(html)
-  doc.close()
-
-  const cleanup = () => {
-    frame.remove()
-    win.removeEventListener('afterprint', cleanup)
-  }
-  win.addEventListener('afterprint', cleanup)
-
-  win.requestAnimationFrame(() => {
-    win.focus()
-    win.print()
-    window.setTimeout(cleanup, 60_000)
-  })
+  printHtmlReport(buildFullHistoryReportHtml(data, meta))
 }

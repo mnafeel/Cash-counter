@@ -20,10 +20,26 @@ export function formatDate(iso: string): string {
 }
 
 export function formatTime(iso: string): string {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
   return new Intl.DateTimeFormat(undefined, {
     hour: 'numeric',
     minute: '2-digit',
-  }).format(new Date(iso))
+  }).format(date)
+}
+
+/** Short date for report headers (no time). */
+export function formatReportDate(iso: string): string {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'short' }).format(date)
+}
+
+/** Time-only label for report line items. */
+export function formatReportTime(iso: string): string {
+  return formatTime(iso)
 }
 
 /** YYYY-MM-DD for HTML date inputs from an ISO timestamp. */

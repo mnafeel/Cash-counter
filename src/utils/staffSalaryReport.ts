@@ -1,5 +1,6 @@
 import type { AppData } from '../types'
 import { formatMoney } from './format'
+import { printHtmlReport } from './printHtmlReport'
 import {
   buildStaffMonthSummaries,
   buildStaffOverview,
@@ -79,41 +80,6 @@ function escapeHtml(value: string | number | undefined | null): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-}
-
-function printHtmlReport(html: string): void {
-  const frame = document.createElement('iframe')
-  frame.style.position = 'fixed'
-  frame.style.right = '0'
-  frame.style.bottom = '0'
-  frame.style.width = '0'
-  frame.style.height = '0'
-  frame.style.border = '0'
-  frame.setAttribute('aria-hidden', 'true')
-  document.body.appendChild(frame)
-
-  const doc = frame.contentDocument
-  const win = frame.contentWindow
-  if (!doc || !win) {
-    frame.remove()
-    return
-  }
-
-  doc.open()
-  doc.write(html)
-  doc.close()
-
-  const cleanup = () => {
-    frame.remove()
-    win.removeEventListener('afterprint', cleanup)
-  }
-  win.addEventListener('afterprint', cleanup)
-
-  win.requestAnimationFrame(() => {
-    win.focus()
-    win.print()
-    window.setTimeout(cleanup, 60_000)
-  })
 }
 
 function staffTableRows(summaries: StaffMonthSummary[]): string {
