@@ -553,6 +553,21 @@ html[data-screen='tablet'] .settings-info {
   color: var(--cream-dim);
 }
 
+.settings-folder-backup {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.settings-folder-backup-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
 .settings-data-backup-list {
   list-style: none;
   margin: 6px 0 0;

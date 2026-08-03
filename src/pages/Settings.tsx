@@ -80,6 +80,17 @@ import {
   loadLocalBackupSnapshot,
   type LocalBackupSnapshotMeta,
 } from '../storage/localBackup'
+import {
+  chooseFolderDailyBackupDir,
+  clearFolderDailyBackupDir,
+  formatFolderBackupTimeLabel,
+  getFolderDailyBackupSettings,
+  isFolderBackupSupported,
+  runFolderDailyBackupNow,
+  setFolderDailyBackupEnabled,
+  setFolderDailyBackupTime,
+  type FolderDailyBackupSettings,
+} from '../storage/folderBackup'
 import { testTallyConnection, type TallyDateScope } from '../tally/localSource'
 import {
   getPineLabsBaseUrl,
@@ -249,6 +260,11 @@ export default function Settings() {
   const [expenseExportStatus, setExpenseExportStatus] = useState('')
   const [dataBackupStatus, setDataBackupStatus] = useState('')
   const [localSnapshots, setLocalSnapshots] = useState<LocalBackupSnapshotMeta[]>([])
+  const [folderBackup, setFolderBackup] = useState<FolderDailyBackupSettings>(() =>
+    getFolderDailyBackupSettings(),
+  )
+  const [folderBackupBusy, setFolderBackupBusy] = useState(false)
+  const folderBackupSupported = isFolderBackupSupported()
   const backupFileInputRef = useRef<HTMLInputElement>(null)
   const [billEditSearch, setBillEditSearch] = useState('')
   const [billEditFilter, setBillEditFilter] = useState<BillEditFilter>('all')
@@ -495,6 +511,69 @@ export default function Settings() {
     const payload = downloadDataBackup(data)
     setDataBackupStatus(`Backup downloaded · ${formatBackupSummary(payload.data)}`)
     setTimeout(() => setDataBackupStatus(''), 5000)
+  }
+
+  function refreshFolderBackupSettings() {
+    setFolderBackup(getFolderDailyBackupSettings())
+  }
+
+  async function handleChooseBackupFolder() {
+    setFolderBackupBusy(true)
+    try {
+      const next = await chooseFolderDailyBackupDir()
+      setFolderBackup(next)
+      setDataBackupStatus(`Backup folder set · ${next.folderName}`)
+      setTimeout(() => setDataBackupStatus(''), 5000)
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      setDataBackupStatus(err instanceof Error ? err.message : 'Could not choose folder')
+      setTimeout(() => setDataBackupStatus(''), 6000)
+    } finally {
+      setFolderBackupBusy(false)
+    }
+  }
+
+  function handleFolderBackupTimeChange(value: string) {
+    setFolderBackup(setFolderDailyBackupTime(value))
+  }
+
+  function handleFolderBackupToggle(enabled: boolean) {
+    if (enabled && !folderBackup.folderName) {
+      setDataBackupStatus('Choose a backup folder first.')
+      setTimeout(() => setDataBackupStatus(''), 4000)
+      return
+    }
+    setFolderBackup(setFolderDailyBackupEnabled(enabled))
+  }
+
+  async function handleClearBackupFolder() {
+    if (!confirm('Clear the daily backup folder setting?')) return
+    setFolderBackup(await clearFolderDailyBackupDir())
+    setDataBackupStatus('Backup folder cleared')
+    setTimeout(() => setDataBackupStatus(''), 4000)
+  }
+
+  async function handleBackupNowToFolder() {
+    if (!folderBackup.folderName) {
+      setDataBackupStatus('Choose a backup folder first.')
+      setTimeout(() => setDataBackupStatus(''), 4000)
+      return
+    }
+    setFolderBackupBusy(true)
+    try {
+      const result = await runFolderDailyBackupNow(data, { force: true })
+      setFolderBackup(result.settings)
+      setDataBackupStatus(
+        `Saved to folder · ${result.filename} · ${formatBackupSummary(data)}`,
+      )
+      setTimeout(() => setDataBackupStatus(''), 6000)
+    } catch (err) {
+      refreshFolderBackupSettings()
+      setDataBackupStatus(err instanceof Error ? err.message : 'Folder backup failed')
+      setTimeout(() => setDataBackupStatus(''), 6000)
+    } finally {
+      setFolderBackupBusy(false)
+    }
   }
 
   function handlePickBackupFile() {
@@ -1343,6 +1422,83 @@ export default function Settings() {
                   onChange={(event) => void handleRestoreBackupFile(event)}
                 />
               </div>
+
+              <div className="settings-folder-backup">
+                <h4 className="settings-folder-backup-title">Daily folder backup</h4>
+                <p className="settings-backup-meta">
+                  Choose a folder and time. Once a day at that time, all data is saved as a JSON file
+                  in the folder. Keep this site open (or reopen after that time) on Chrome / Edge.
+                </p>
+                {!folderBackupSupported ? (
+                  <p className="settings-backup-meta settings-backup-meta--warn">
+                    Folder pick is not available in this browser. Use Chrome or Edge on computer /
+                    tablet.
+                  </p>
+                ) : null}
+                <label className="settings-backup-field">
+                  <span>Daily backup time</span>
+                  <input
+                    type="time"
+                    value={folderBackup.time}
+                    onChange={(event) => handleFolderBackupTimeChange(event.target.value)}
+                    disabled={!folderBackupSupported}
+                  />
+                </label>
+                <label className="settings-backup-toggle">
+                  <input
+                    type="checkbox"
+                    checked={folderBackup.enabled}
+                    onChange={(event) => handleFolderBackupToggle(event.target.checked)}
+                    disabled={!folderBackupSupported}
+                  />
+                  Enable daily backup at {formatFolderBackupTimeLabel(folderBackup.time)}
+                </label>
+                <div className="settings-history-report-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary settings-history-report-btn"
+                    onClick={() => void handleChooseBackupFolder()}
+                    disabled={!folderBackupSupported || folderBackupBusy}
+                  >
+                    {folderBackup.folderName ? 'Change folder' : 'Choose folder'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary settings-history-report-btn"
+                    onClick={() => void handleBackupNowToFolder()}
+                    disabled={!folderBackupSupported || folderBackupBusy || !folderBackup.folderName}
+                  >
+                    Backup now to folder
+                  </button>
+                  {folderBackup.folderName ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost settings-history-report-btn"
+                      onClick={() => void handleClearBackupFolder()}
+                      disabled={folderBackupBusy}
+                    >
+                      Clear folder
+                    </button>
+                  ) : null}
+                </div>
+                <p className="settings-backup-meta">
+                  Folder:{' '}
+                  {folderBackup.folderName ? (
+                    <strong>{folderBackup.folderName}</strong>
+                  ) : (
+                    'not set'
+                  )}
+                  {folderBackup.lastBackupAt
+                    ? ` · Last saved ${new Date(folderBackup.lastBackupAt).toLocaleString()}`
+                    : ''}
+                </p>
+                {folderBackup.lastError ? (
+                  <p className="settings-backup-meta settings-backup-meta--warn">
+                    {folderBackup.lastError}
+                  </p>
+                ) : null}
+              </div>
+
               {localSnapshots.length > 0 ? (
                 <ul className="settings-data-backup-list">
                   {localSnapshots.slice(0, 8).map((snapshot) => (

@@ -5,6 +5,7 @@ import { initFirebaseSync, flushPendingBackup, pullCloudIfNewer, refreshCloudRem
 import { isAutoPullFromCloudEnabled, isCloudLoggedIn } from './firebase/backup'
 import { initReminderNotificationSound } from './utils/reminderNotificationSound'
 import { flushLocalBackupSnapshot, queueLocalBackupSnapshot } from './storage/localBackup'
+import { startFolderDailyBackupScheduler } from './storage/folderBackup'
 import { flushSaveData, loadData } from './storage/database'
 import { applyTheme } from './utils/theme'
 import './index.css'
@@ -23,6 +24,7 @@ createRoot(document.getElementById('root')!).render(
 function startBackgroundServices() {
   initFirebaseSync()
   queueLocalBackupSnapshot(loadData())
+  startFolderDailyBackupScheduler()
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
