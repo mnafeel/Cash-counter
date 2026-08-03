@@ -16,7 +16,6 @@ import {
   buildPurchaseHistoryItems,
   summarizePurchases,
 } from './purchaseHistory'
-import { saleCollectedAmount } from './salePayment'
 
 export interface DailyTotalsSummary {
   fromDate: string
@@ -79,14 +78,14 @@ function pendingCreditAddedOnCreate(sale: Sale, fromDate: string, toDate: string
   if (!isInDateRange(pendingBalanceActivityDate(sale), fromDate, toDate)) return 0
   if (sale.status !== 'pending') return 0
   if (sale.payType !== 'credit' && sale.pendingPayType !== 'credit') return 0
-  return sale.originalBillAmount ?? sale.billAmount + saleCollectedAmount(sale)
+  return sale.billAmount
 }
 
 function pendingChequeAddedOnCreate(sale: Sale, fromDate: string, toDate: string): number {
   if (!isInDateRange(pendingBalanceActivityDate(sale), fromDate, toDate)) return 0
   if (sale.status !== 'pending') return 0
   if (sale.payType !== 'cheque' && sale.pendingPayType !== 'cheque') return 0
-  return sale.originalBillAmount ?? sale.billAmount + saleCollectedAmount(sale)
+  return sale.billAmount
 }
 
 export function buildDailyTotals(

@@ -251,6 +251,10 @@
 
 .counter-customer-suggestion {
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   text-align: left;
   padding: 7px 9px;
   background: transparent;
@@ -259,9 +263,33 @@
   color: var(--cream);
   font-size: 0.75rem;
   cursor: pointer;
-  white-space: nowrap;
+}
+
+.counter-customer-suggestion > span:first-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.counter-customer-suggestion-pending {
+  flex-shrink: 0;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: rgba(230, 190, 120, 0.9);
+  opacity: 0.92;
+}
+
+.counter-customer-pending-hint {
+  margin: 2px 0 0;
+  padding: 3px 6px;
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: rgba(230, 190, 100, 0.92);
+  background: rgba(120, 90, 40, 0.18);
+  border: 1px solid rgba(200, 170, 100, 0.22);
+  border-radius: 4px;
+  line-height: 1.2;
 }
 
 .counter-customer-suggestion:hover,

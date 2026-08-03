@@ -355,3 +355,14 @@ export function getCustomerSummary(
   const trimmed = name.trim()
   return summaries.find((summary) => summary.name === trimmed)
 }
+
+export function lookupCustomerCreditPending(data: AppData, name: string): number {
+  const key = name.trim().toLowerCase()
+  if (!key) return 0
+  for (const summary of buildCustomerSummaries(data)) {
+    if (summary.name.trim().toLowerCase() === key) {
+      return summary.totalCreditPending
+    }
+  }
+  return 0
+}

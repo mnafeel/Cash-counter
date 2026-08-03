@@ -12,6 +12,7 @@ import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { expenseBillSuffix, GST_BILL_LABEL, isGstExpense, isPurchaseExpense, NO_GST_BILL_LABEL, parseExpenseBillMode, purchaseBillLabel, stripExpenseBillSuffix } from '../utils/expenseBillLabels'
 import { PURCHASE_CASH_LABEL } from '../utils/purchaseHistory'
 import {
+  getSupplierOpenCreditTotal,
   isPurchaseCreditExpense,
   normalizeCreditPaymentPayType,
   purchaseCreditAmount,
@@ -489,6 +490,21 @@ export default function PurchaseExpense() {
       })
       .slice(0, 10)
   }, [name, supplierOptions])
+
+  const supplierPendingByName = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const item of supplierOptions) {
+      const pending = getSupplierOpenCreditTotal(data, item)
+      if (pending > 0) map.set(item.toLowerCase(), pending)
+    }
+    return map
+  }, [supplierOptions, data])
+
+  const supplierOpenCreditTotal = useMemo(() => {
+    const key = name.trim().toLowerCase()
+    if (!key) return 0
+    return supplierPendingByName.get(key) ?? 0
+  }, [name, supplierPendingByName])
 
   const amount = parseAmount(bill.amountStr)
   const cashSplitAmount = parseAmount(bill.cashSplitStr)
@@ -1449,6 +1465,11 @@ export default function PurchaseExpense() {
           </button>
         ) : null}
         </label>
+        {supplierOpenCreditTotal > 0 ? (
+          <p className="purchase-supplier-pending-hint" role="status">
+            Open credit · {formatMoney(supplierOpenCreditTotal)} pending
+          </p>
+        ) : null}
         {nameDropdownOpen && dropdownCount > 0 ? (
           <ul ref={nameSuggestionsListRef} className="expense-name-suggestions" role="listbox">
             {filteredNameSuggestions.map((item, index) => (
@@ -1463,7 +1484,12 @@ export default function PurchaseExpense() {
                     selectSupplier(item)
                   }}
                 >
-                  {item}
+                  <span>{item}</span>
+                  {(supplierPendingByName.get(item.toLowerCase()) ?? 0) > 0 ? (
+                    <span className="expense-name-suggestion-pending">
+                      {formatMoney(supplierPendingByName.get(item.toLowerCase()) ?? 0)} due
+                    </span>
+                  ) : null}
                 </button>
               </li>
             ))}

@@ -594,6 +594,15 @@ export function filterPurchaseCreditItemsByMonth(
   return items.filter((item) => purchaseCreditMonthKey(item.date) === monthKey)
 }
 
+export function getSupplierOpenCreditTotal(data: AppData, supplierName: string): number {
+  const key = supplierName.trim().toLowerCase()
+  if (!key) return 0
+  const group = groupPurchaseCreditsBySupplier(buildPurchaseCreditItems(data)).find(
+    (entry) => entry.shopKey === key,
+  )
+  return group?.creditTotal ?? 0
+}
+
 export function groupPurchaseCreditsBySupplier(items: PurchaseCreditItem[]): PurchaseCreditSupplierGroup[] {
   const map = new Map<string, PurchaseCreditSupplierGroup>()
 

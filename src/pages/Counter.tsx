@@ -14,6 +14,7 @@ import {
   getEffectiveSaleReminderAt,
   getEffectiveSaleReminderNote,
 } from '../utils/customerReminders'
+import { lookupCustomerCreditPending } from '../utils/customerLedger'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
@@ -238,6 +239,21 @@ export default function Counter() {
       })
       .slice(0, 8)
   }, [customerName, customerNameSuggestions])
+
+  const customerPendingByName = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const name of customerNameSuggestions) {
+      const pending = lookupCustomerCreditPending(data, name)
+      if (pending > 0) map.set(name.toLowerCase(), pending)
+    }
+    return map
+  }, [customerNameSuggestions, data])
+
+  const customerOpenCreditTotal = useMemo(() => {
+    const key = customerName.trim().toLowerCase()
+    if (!key) return 0
+    return customerPendingByName.get(key) ?? 0
+  }, [customerName, customerPendingByName])
 
   const chequePendingBills = useMemo(
     () => pendingBills.filter(isChequePendingBill),
@@ -3720,6 +3736,11 @@ export default function Counter() {
               placeholder="Optional"
               autoComplete="off"
             />
+            {customerOpenCreditTotal > 0 ? (
+              <p className="counter-customer-pending-hint" role="status">
+                Open credit · {formatMoney(customerOpenCreditTotal)} pending
+              </p>
+            ) : null}
             {nameDropdownOpen && filteredNameSuggestions.length > 0 && (
               <ul ref={nameSuggestionsListRef} className="counter-customer-suggestions" role="listbox">
                 {filteredNameSuggestions.map((name, index) => (
@@ -3736,7 +3757,12 @@ export default function Counter() {
                         setHighlightedNameIndex(-1)
                       }}
                     >
-                      {name}
+                      <span>{name}</span>
+                      {(customerPendingByName.get(name.toLowerCase()) ?? 0) > 0 ? (
+                        <span className="counter-customer-suggestion-pending">
+                          {formatMoney(customerPendingByName.get(name.toLowerCase()) ?? 0)} due
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 ))}

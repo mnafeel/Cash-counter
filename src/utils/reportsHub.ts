@@ -95,10 +95,28 @@ function saleCreditAmount(sale: Sale): number {
   return sale.creditAmount ?? 0
 }
 
+function isSplitCreditParentWithOpenChild(sale: Sale, sales: Sale[]): boolean {
+  if (sale.status !== 'paid' || sale.payType !== 'split') return false
+  return sales.some(
+    (child) =>
+      child.parentSplitId === sale.id &&
+      child.status === 'pending' &&
+      (child.payType === 'credit' || child.pendingPayType === 'credit'),
+  )
+}
+
 function saleCreditTotalBill(sale: Sale): number {
   const collected = saleCollectedAmount(sale)
+  if (sale.status === 'pending' && isSaleCredit(sale)) {
+    // Split credit child bills keep the full bill on originalBillAmount — credit due is billAmount.
+    if (sale.parentSplitId) return sale.billAmount + collected
+    if (sale.originalBillAmount && sale.originalBillAmount > 0) return sale.originalBillAmount
+    return sale.billAmount + collected
+  }
+  if (sale.payType === 'split' && (sale.creditAmount ?? 0) > 0) {
+    return sale.creditAmount ?? 0
+  }
   if (sale.originalBillAmount && sale.originalBillAmount > 0) return sale.originalBillAmount
-  if (sale.status === 'pending' && isSaleCredit(sale)) return sale.billAmount + collected
   return sale.billAmount
 }
 
@@ -178,6 +196,7 @@ export function buildCreditReportItems(data: AppData): CreditReportItem[] {
 
   for (const sale of data.sales) {
     if (!isSaleCredit(sale)) continue
+    if (isSplitCreditParentWithOpenChild(sale, data.sales)) continue
     const pending = saleCreditAmount(sale)
     const collected = saleCollectedAmount(sale)
     const totalBill = saleCreditTotalBill(sale)

@@ -232,10 +232,12 @@ function isChequePendingSale(sale: Sale): boolean {
 
 export function saleOriginalBillAmount(sale: Sale): number {
   const collected = saleCollectedAmount(sale)
-  if (sale.originalBillAmount && sale.originalBillAmount > 0) return sale.originalBillAmount
   if (isCreditPendingSale(sale) || isChequePendingSale(sale)) {
+    if (sale.parentSplitId) return sale.billAmount + collected
+    if (sale.originalBillAmount && sale.originalBillAmount > 0) return sale.originalBillAmount
     return sale.billAmount + collected
   }
+  if (sale.originalBillAmount && sale.originalBillAmount > 0) return sale.originalBillAmount
   return sale.billAmount
 }
 

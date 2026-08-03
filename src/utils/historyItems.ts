@@ -982,8 +982,10 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
   }
 
   const totalBill =
-    sale.originalBillAmount ??
-    (isCreditBill(sale) || isChequeBill(sale) ? sale.billAmount + collected : sale.billAmount)
+    sale.parentSplitId && (isCreditBill(sale) || isChequeBill(sale)) && sale.status === 'pending'
+      ? sale.billAmount + collected
+      : (sale.originalBillAmount ??
+        (isCreditBill(sale) || isChequeBill(sale) ? sale.billAmount + collected : sale.billAmount))
   const paySummary =
     sale.status !== 'pending' && collected > 0
       ? `Paid ${formatMoney(collected)}`

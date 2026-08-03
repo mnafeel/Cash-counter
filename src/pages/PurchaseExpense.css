@@ -1079,6 +1079,10 @@ html[data-screen='phone'] .purchase-action-btn {
 
 .expense-name-suggestion {
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   text-align: left;
   padding: 8px 10px;
   background: transparent;
@@ -1087,9 +1091,13 @@ html[data-screen='phone'] .purchase-action-btn {
   color: var(--cream);
   font-size: 0.85rem;
   cursor: pointer;
-  white-space: nowrap;
+}
+
+.expense-name-suggestion > span:first-child {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .expense-name-suggestion:hover,
@@ -1102,6 +1110,26 @@ html[data-screen='phone'] .purchase-action-btn {
 .expense-name-suggestion--create {
   color: #8fd99a;
   font-weight: 800;
+}
+
+.purchase-supplier-pending-hint {
+  margin: 2px 0 0;
+  padding: 3px 6px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: rgba(230, 190, 120, 0.92);
+  background: rgba(120, 90, 40, 0.18);
+  border: 1px solid rgba(200, 170, 100, 0.22);
+  border-radius: 4px;
+  line-height: 1.2;
+}
+
+.expense-name-suggestion-pending {
+  flex-shrink: 0;
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: rgba(230, 190, 120, 0.9);
+  opacity: 0.92;
 }
 
 .expenses-pay {
