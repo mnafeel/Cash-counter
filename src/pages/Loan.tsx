@@ -46,6 +46,7 @@ export default function Loan() {
   const [formError, setFormError] = useState('')
   const [settlingId, setSettlingId] = useState<string | null>(null)
   const [settlementSource, setSettlementSource] = useState<LoanPaySource>('cash')
+  const [settlementAmountStr, setSettlementAmountStr] = useState('')
   const [reminderLoanId, setReminderLoanId] = useState<string | null>(null)
   const [expandedLoanId, setExpandedLoanId] = useState<string | null>(null)
   const [formField, setFormField] = useState<FormField>('amount')
@@ -137,21 +138,31 @@ export default function Loan() {
   }
 
   function handleSettle(loan: LoanListItem) {
+    const amount = parseAmount(settlementAmountStr)
+    if (!(amount > 0)) {
+      setFormError('Enter settlement amount.')
+      return
+    }
+    if (amount > loan.remainingAmount) {
+      setFormError(`Maximum ${formatMoney(loan.remainingAmount)}.`)
+      return
+    }
     if (loan.kind === 'borrow') {
-      if (settlementSource === 'cash' && balance < loan.amount) {
+      if (settlementSource === 'cash' && balance < amount) {
         setFormError('Not enough cash.')
         return
       }
-      if (settlementSource === 'bank' && bankBalance < loan.amount) {
+      if (settlementSource === 'bank' && bankBalance < amount) {
         setFormError('Not enough bank balance.')
         return
       }
     }
-    if (!settleLoanRecord(loan.id, settlementSource)) {
+    if (!settleLoanRecord(loan.id, settlementSource, { amount })) {
       setFormError('Could not settle.')
       return
     }
     setSettlingId(null)
+    setSettlementAmountStr('')
     setFormError('')
   }
 
@@ -300,7 +311,27 @@ export default function Loan() {
         ) : settlingId ? (
           <section className="loan-page-settle">
             <h2>Mark settled</h2>
-            <p className="loan-page-form-hint">Cash or bank for return / collection</p>
+            <p className="loan-page-form-hint">
+              {(() => {
+                const loan = list.find((entry) => entry.id === settlingId)
+                return loan
+                  ? `Balance ${formatMoney(loan.remainingAmount)} · cash or bank for return / collection`
+                  : 'Cash or bank for return / collection'
+              })()}
+            </p>
+            <label className="loan-page-field">
+              <span>Amount</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={settlementAmountStr}
+                onChange={(e) => {
+                  setSettlementAmountStr(e.target.value)
+                  setFormError('')
+                }}
+                placeholder="Settlement amount"
+              />
+            </label>
             <div className="loan-page-chips">
               <button
                 type="button"
@@ -381,6 +412,7 @@ export default function Loan() {
                       onSettle={() => {
                         setFormError('')
                         setSettlementSource('cash')
+                        setSettlementAmountStr(String(loan.remainingAmount))
                         setSettlingId(loan.id)
                         setExpandedLoanId(null)
                       }}
@@ -456,7 +488,12 @@ function LoanRow({
                   : ''}
             </small>
           </div>
-          <span className="loan-page-row-amount">{formatMoney(loan.amount)}</span>
+          <span className="loan-page-row-amount">
+            {formatMoney(loan.remainingAmount)}
+            {loan.remainingAmount < loan.amount ? (
+              <small> / {formatMoney(loan.amount)}</small>
+            ) : null}
+          </span>
         </div>
       </button>
       {expanded ? (

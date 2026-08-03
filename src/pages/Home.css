@@ -972,6 +972,37 @@ html[data-screen='desktop'] .home-pin-digit {
   color: var(--cream);
 }
 
+.home-cash-search {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 12px;
+}
+
+.home-cash-search span {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--cream-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.home-cash-search-input {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--cream);
+  outline: none;
+}
+
+.home-cash-search-input:focus {
+  border-color: var(--cream);
+}
+
 .home-cash-list {
   list-style: none;
   flex: 1;

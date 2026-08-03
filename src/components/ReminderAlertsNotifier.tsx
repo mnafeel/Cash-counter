@@ -30,7 +30,7 @@ type UnifiedReminderAlert = {
   onOpen: () => void
 }
 
-function useNow(tickMs = 1000) {
+function useNow(tickMs = 5000) {
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), tickMs)
@@ -98,7 +98,14 @@ function kindIcon(kind: UnifiedReminderAlert['kind']): string {
 export default function ReminderAlertsNotifier() {
   const { data } = useCash()
   const navigate = useNavigate()
-  const now = useNow()
+  const mightHaveReminders = useMemo(() => {
+    if (data.sales.some((sale) => sale.reminderAt)) return true
+    if ((data.loans ?? []).some((loan) => !loan.settledAt && loan.reminderAt)) return true
+    const customerReminders = data.customerReminders
+    if (customerReminders && Object.keys(customerReminders).length > 0) return true
+    return false
+  }, [data])
+  const now = useNow(mightHaveReminders ? 5000 : 60000)
   const alertSettings = useMemo(() => getReminderAlertSettings(data), [data])
   const showSeconds = alertSettings.notificationShowSeconds
   const [collapsed, setCollapsed] = useState(false)

@@ -7,6 +7,19 @@ export interface SaleCollectedBreakdown {
   total: number
 }
 
+const paymentEventsCache = new Map<string, SalePaymentEvent[]>()
+const breakdownCache = new Map<string, SaleCollectedBreakdown>()
+
+function saleCacheKey(sale: Sale): string {
+  const eventsLen = sale.paymentEvents?.length ?? 0
+  return `${sale.id}:${sale.updatedAt ?? sale.createdAt}:${eventsLen}:${sale.status ?? 'paid'}`
+}
+
+export function clearSalePaymentCaches(): void {
+  paymentEventsCache.clear()
+  breakdownCache.clear()
+}
+
 function localDayTimestamp(iso: string): number {
   const d = new Date(iso)
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
@@ -171,12 +184,41 @@ export function salePaidCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
     })
   }
   if (sale.paidAmount > 0) {
+    if (sale.payType === 'bank' || sale.payType === 'cheque') {
+      return { cash: 0, bank: sale.paidAmount, cheque: 0, total: sale.paidAmount }
+    }
     return { cash: sale.paidAmount, bank: 0, cheque: 0, total: sale.paidAmount }
   }
   if (sale.billAmount > 0) {
+    if (sale.payType === 'bank' || sale.payType === 'cheque') {
+      return { cash: 0, bank: sale.billAmount, cheque: 0, total: sale.billAmount }
+    }
     return { cash: sale.billAmount, bank: 0, cheque: 0, total: sale.billAmount }
   }
   return { cash: 0, bank: 0, cheque: 0, total: 0 }
+}
+
+/** When cash/bank was collected — never use updatedAt alone (edits must not move activity). */
+export function saleCollectionTimestamp(sale: Sale): string {
+  if (sale.paymentEvents && sale.paymentEvents.length > 0) return sale.paymentEvents[0].at
+  const events = inferLegacyPaymentEvents(sale)
+  if (events.length > 0) return events[0].at
+  return sale.createdAt
+}
+
+export function paymentEventFromCollectedBreakdown(
+  at: string,
+  breakdown: SaleCollectedBreakdown,
+): SalePaymentEvent {
+  return paymentEventFromNormalizedBreakdown(at, breakdown)
+}
+
+/** Rebuild payment events for a paid bill at the original collection date. */
+export function buildPaidSalePaymentEvents(sale: Sale, at?: string): SalePaymentEvent[] {
+  const collected =
+    sale.status === 'pending' ? salePendingCreditPaidBreakdown(sale) : salePaidCollectedBreakdown(sale)
+  if (collected.total <= 0) return []
+  return [paymentEventFromNormalizedBreakdown(at ?? saleCollectionTimestamp(sale), collected)]
 }
 
 function paymentEventFromBreakdown(at: string, breakdown: SaleCollectedBreakdown): SalePaymentEvent {
@@ -200,11 +242,17 @@ export function inferLegacyPaymentEvents(sale: Sale): SalePaymentEvent[] {
 }
 
 export function getSalePaymentEvents(sale: Sale): SalePaymentEvent[] {
+  const key = saleCacheKey(sale)
+  const cached = paymentEventsCache.get(key)
+  if (cached) return cached
+
   const raw =
     sale.paymentEvents && sale.paymentEvents.length > 0
       ? repairSalePaymentEvents(sale).paymentEvents ?? []
       : inferLegacyPaymentEvents(sale)
-  return raw.map(normalizePaymentEvent)
+  const result = raw.map(normalizePaymentEvent)
+  paymentEventsCache.set(key, result)
+  return result
 }
 
 export function migrateSalePaymentEvents(sale: Sale): Sale {
@@ -219,7 +267,7 @@ export function migrateSalePaymentEvents(sale: Sale): Sale {
 }
 
 export function repairSalePaymentEvents(sale: Sale): Sale {
-  if (!sale.paymentEvents || sale.paymentEvents.length < 2) return sale
+  if (!sale.paymentEvents || sale.paymentEvents.length === 0) return sale
 
   const repaired: SalePaymentEvent[] = []
   for (const event of sale.paymentEvents) {
@@ -234,8 +282,41 @@ export function repairSalePaymentEvents(sale: Sale): Sale {
     if (!isDuplicate) repaired.push(event)
   }
 
-  if (repaired.length === sale.paymentEvents.length) return sale
-  return { ...sale, paymentEvents: repaired }
+  let next = repaired.length === sale.paymentEvents.length ? sale : { ...sale, paymentEvents: repaired }
+
+  // Paid bills: payment events must match final cash/bank on the sale row.
+  // Pending split amounts must not linger after switching to a single pay type.
+  if (next.status !== 'pending' && (next.paymentEvents?.length ?? 0) > 0) {
+    const fieldBreakdown = salePaidCollectedBreakdown(next)
+    if (fieldBreakdown.total > 0) {
+      const eventBreakdown = normalizeCollectedBreakdown(
+        (next.paymentEvents ?? []).reduce(
+          (acc, event) => {
+            acc.cash += event.cash ?? 0
+            acc.bank += event.bank ?? 0
+            acc.cheque += event.cheque ?? 0
+            acc.total += event.amount
+            return acc
+          },
+          { cash: 0, bank: 0, cheque: 0, total: 0 },
+        ),
+      )
+      const totalsMatch =
+        Math.abs(eventBreakdown.cash - fieldBreakdown.cash) < 0.01 &&
+        Math.abs(eventBreakdown.bank - fieldBreakdown.bank) < 0.01 &&
+        Math.abs(eventBreakdown.total - fieldBreakdown.total) < 0.01
+      if (!totalsMatch) {
+        return {
+          ...next,
+          paymentEvents: [
+            paymentEventFromBreakdown(saleCollectionTimestamp(next), fieldBreakdown),
+          ],
+        }
+      }
+    }
+  }
+
+  return next
 }
 
 export function salePaymentEventsInRange(
@@ -282,7 +363,12 @@ export function saleCollectedAmount(sale: Sale): number {
 }
 
 export function saleCollectedComponentBreakdown(sale: Sale): SaleCollectedBreakdown {
+  const key = saleCacheKey(sale)
+  const cached = breakdownCache.get(key)
+  if (cached) return cached
+
   const events = getSalePaymentEvents(sale)
+  let result: SaleCollectedBreakdown
   if (events.length > 0) {
     const raw = events.reduce(
       (acc, event) => {
@@ -294,10 +380,14 @@ export function saleCollectedComponentBreakdown(sale: Sale): SaleCollectedBreakd
       },
       { cash: 0, bank: 0, cheque: 0, total: 0 },
     )
-    return normalizeCollectedBreakdown(raw)
+    result = normalizeCollectedBreakdown(raw)
+  } else if (sale.status === 'pending') {
+    result = normalizeCollectedBreakdown(salePendingCreditPaidBreakdown(sale))
+  } else {
+    result = salePaidCollectedBreakdown(sale)
   }
-  if (sale.status === 'pending') return normalizeCollectedBreakdown(salePendingCreditPaidBreakdown(sale))
-  return salePaidCollectedBreakdown(sale)
+  breakdownCache.set(key, result)
+  return result
 }
 
 /** Cash / bank / approved cheque already collected on a pending credit or cheque bill. */

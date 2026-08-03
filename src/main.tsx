@@ -5,7 +5,7 @@ import { initFirebaseSync, flushPendingBackup, pullCloudIfNewer, refreshCloudRem
 import { isAutoPullFromCloudEnabled, isCloudLoggedIn } from './firebase/backup'
 import { initReminderNotificationSound } from './utils/reminderNotificationSound'
 import { flushLocalBackupSnapshot, queueLocalBackupSnapshot } from './storage/localBackup'
-import { loadData } from './storage/database'
+import { flushSaveData, loadData } from './storage/database'
 import { applyTheme } from './utils/theme'
 import './index.css'
 import App from './App.tsx'
@@ -26,6 +26,7 @@ function startBackgroundServices() {
 
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
+      flushSaveData()
       flushPendingBackup()
       flushLocalBackupSnapshot()
     } else if (document.visibilityState === 'visible') {
@@ -35,6 +36,7 @@ function startBackgroundServices() {
     }
   })
   window.addEventListener('pagehide', () => {
+    flushSaveData()
     flushPendingBackup()
     flushLocalBackupSnapshot()
   })

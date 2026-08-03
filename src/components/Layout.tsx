@@ -1,7 +1,9 @@
 import { useEffect } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { useCashBooting } from '../context/CashContext'
 import { useDeviceSize } from '../hooks/useDeviceSize'
 import { useHomePinLock } from '../hooks/useHomePinLock'
+import AppBootScreen from './AppBootScreen'
 import ReminderAlertsNotifier from './ReminderAlertsNotifier'
 import CloudStatusNotifier from './CloudStatusNotifier'
 import { initReminderNotificationSound } from '../utils/reminderNotificationSound'
@@ -23,6 +25,7 @@ function getNavIndex(pathname: string): number {
 export default function Layout() {
   useDeviceSize()
   useHomePinLock()
+  const dataBooting = useCashBooting()
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -47,6 +50,11 @@ export default function Layout() {
 
   return (
     <div className="layout layout--fit">
+      {dataBooting ? (
+        <div className="layout-boot-overlay">
+          <AppBootScreen />
+        </div>
+      ) : null}
       <header className="header header--compact">
         <div className="header-top">
           <img

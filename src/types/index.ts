@@ -130,6 +130,14 @@ export type LoanKind = 'lend' | 'borrow'
 export type LoanStatus = 'pending' | 'settled'
 export type LoanPaySource = 'cash' | 'bank'
 
+/** One partial or full loan settlement — dated for history and balance activity. */
+export interface LoanSettlementEvent {
+  id: string
+  at: string
+  amount: number
+  paySource: LoanPaySource
+}
+
 /** Zero-interest loan — lend (receivable) or borrow (payable). */
 export interface Loan {
   id: string
@@ -145,6 +153,9 @@ export interface Loan {
   /** Mark loan reminder as urgent — longer, stronger alert sound. */
   reminderUrgent?: boolean
   createdAt: string
+  /** Total returned / collected so far (partial settlements supported). */
+  paidAmount?: number
+  settlementEvents?: LoanSettlementEvent[]
   settledAt?: string
   /** Cash or bank used when settling / returning the loan. */
   settlementPaySource?: LoanPaySource

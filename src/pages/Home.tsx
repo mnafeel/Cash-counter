@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
+import type { AppData } from '../types'
 import AmountDisplay from '../components/AmountDisplay'
 import BigAmount from '../components/BigAmount'
 import NumberKeyboard from '../components/NumberKeyboard'
@@ -19,20 +20,14 @@ import {
   buildBankActivityItems,
   bankClosingLabel,
   bankOpeningLabel,
-  getBankClosingBalance,
-  getBankOpeningBalance,
-  matchesBankDateFilter,
-  summarizeBankActivity,
+  summarizeBankActivityForPeriod,
   type BankDateFilter,
 } from '../utils/bankActivity'
 import {
   buildCashActivityItems,
   cashClosingLabel,
   cashOpeningLabel,
-  getCashClosingBalance,
-  getCashOpeningBalance,
-  matchesCashDateFilter,
-  summarizeCashActivity,
+  summarizeCashActivityForPeriod,
   type CashDateFilter,
 } from '../utils/cashActivity'
 import {
@@ -75,6 +70,14 @@ import './Home.css'
 
 const DEFAULT_PIN = '0000'
 
+/** Stable empty dataset — Home skips heavy dashboard work while PIN-locked. */
+const LOCKED_DASHBOARD_DATA: AppData = {
+  openingBalance: 0,
+  openingBankBalance: 0,
+  sales: [],
+  expenses: [],
+}
+
 type PanelField = 'note' | 'amount'
 
 const BALANCE_DATE_OPTIONS: { id: CashDateFilter; label: string }[] = [
@@ -102,6 +105,7 @@ export default function Home() {
   const navigate = useNavigate()
   const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense, removeLoan, homeUnlocked, unlockHome, setCustomerReminder, updateReminderAlertSettings } =
     useCash()
+  const dashData = homeUnlocked ? data : LOCKED_DASHBOARD_DATA
   const [pinStr, setPinStr] = useState('')
   const [pinError, setPinError] = useState(false)
   const [addTarget, setAddTarget] = useState<ExpensePayType | null>(null)
@@ -115,9 +119,11 @@ export default function Home() {
   const [deleteRecordSearch, setDeleteRecordSearch] = useState('')
   const [deleteRecordFilter, setDeleteRecordFilter] = useState<HistoryFilter>('all')
   const [showCashHistory, setShowCashHistory] = useState(false)
+  const [cashHistorySearch, setCashHistorySearch] = useState('')
   const [cashDateFilter, setCashDateFilter] = useState<CashDateFilter>('today')
   const [cashSelectedDate, setCashSelectedDate] = useState('')
   const [showBankHistory, setShowBankHistory] = useState(false)
+  const [bankHistorySearch, setBankHistorySearch] = useState('')
   const [bankDateFilter, setBankDateFilter] = useState<BankDateFilter>('today')
   const [bankSelectedDate, setBankSelectedDate] = useState('')
   const [showReports, setShowReports] = useState(false)
@@ -213,25 +219,25 @@ export default function Home() {
   )
 
   const salesSummary = useMemo(
-    () => salesSummaryForPreset(data, homeDayPreset, homeDayDate),
-    [data, homeDayPreset, homeDayDate],
+    () => salesSummaryForPreset(dashData, homeDayPreset, homeDayDate),
+    [dashData, homeDayPreset, homeDayDate],
   )
   const periodDailyTotals = useMemo(
-    () => buildDailyTotalsForPreset(data, homeDayPreset, homeDayDate),
-    [data, homeDayPreset, homeDayDate],
+    () => buildDailyTotalsForPreset(dashData, homeDayPreset, homeDayDate),
+    [dashData, homeDayPreset, homeDayDate],
   )
   const periodExpenseItems = useMemo(() => {
-    const items = buildNormalExpenseHistoryItems(data)
+    const items = buildNormalExpenseHistoryItems(dashData)
     return filterNormalExpenseHistoryItems(items, homeDayPreset, homeDayDate)
-  }, [data, homeDayPreset, homeDayDate])
+  }, [dashData, homeDayPreset, homeDayDate])
   const periodExpenseSummary = useMemo(
     () => summarizeNormalExpenses(periodExpenseItems),
     [periodExpenseItems],
   )
   const periodPurchaseItems = useMemo(() => {
-    const items = buildPurchaseHistoryItems(data)
+    const items = buildPurchaseHistoryItems(dashData)
     return filterPurchaseHistoryItems(items, homeDayPreset, homeDayDate)
-  }, [data, homeDayPreset, homeDayDate])
+  }, [dashData, homeDayPreset, homeDayDate])
   const periodPurchaseSummary = useMemo(
     () => summarizePurchases(periodPurchaseItems),
     [periodPurchaseItems],
@@ -240,51 +246,54 @@ export default function Home() {
     () => getTopPurchaseShop(periodPurchaseItems),
     [periodPurchaseItems],
   )
-  const creditOverview = useMemo(() => buildCreditOverview(data), [data])
-  const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
-  const dueReminders = useMemo(() => countActiveBillReminders(data), [data])
-  const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(data), [data])
-  const activeChequeAlerts = useMemo(() => buildActiveChequeReminders(data), [data])
+  const creditOverview = useMemo(() => buildCreditOverview(dashData), [dashData])
+  const chequeOverview = useMemo(() => buildChequeOverview(dashData), [dashData])
+  const dueReminders = useMemo(() => countActiveBillReminders(dashData), [dashData])
+  const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(dashData), [dashData])
+  const activeChequeAlerts = useMemo(() => buildActiveChequeReminders(dashData), [dashData])
 
-  const cashActivityItems = useMemo(() => {
-    return buildCashActivityItems(data).filter((item) =>
-      matchesCashDateFilter(item.date, cashDateFilter, cashSelectedDate),
-    )
-  }, [data, cashDateFilter, cashSelectedDate])
+  const allCashActivityItems = useMemo(() => buildCashActivityItems(dashData), [dashData])
+  const cashPeriod = useMemo(
+    () => summarizeCashActivityForPeriod(allCashActivityItems, balance, cashDateFilter, cashSelectedDate),
+    [allCashActivityItems, balance, cashDateFilter, cashSelectedDate],
+  )
+  const cashActivityItems = cashPeriod.items
+  const cashActivitySummary = cashPeriod.summary
 
-  const cashActivitySummary = useMemo(
-    () => summarizeCashActivity(cashActivityItems),
-    [cashActivityItems],
-  )
+  const filteredCashActivityItems = useMemo(() => {
+    const q = cashHistorySearch.trim().toLowerCase()
+    if (!q) return cashActivityItems
+    return cashActivityItems.filter((item) => {
+      if (item.label.toLowerCase().includes(q)) return true
+      if (item.name?.toLowerCase().includes(q)) return true
+      if (String(item.amount).includes(q)) return true
+      return false
+    })
+  }, [cashActivityItems, cashHistorySearch])
 
-  const bankActivityItems = useMemo(() => {
-    return buildBankActivityItems(data).filter((item) =>
-      matchesBankDateFilter(item.date, bankDateFilter, bankSelectedDate),
-    )
-  }, [data, bankDateFilter, bankSelectedDate])
+  const allBankActivityItems = useMemo(() => buildBankActivityItems(dashData), [dashData])
+  const bankPeriod = useMemo(
+    () => summarizeBankActivityForPeriod(allBankActivityItems, bankBalance, bankDateFilter, bankSelectedDate),
+    [allBankActivityItems, bankBalance, bankDateFilter, bankSelectedDate],
+  )
+  const bankActivityItems = bankPeriod.items
+  const bankActivitySummary = bankPeriod.summary
 
-  const bankActivitySummary = useMemo(
-    () => summarizeBankActivity(bankActivityItems),
-    [bankActivityItems],
-  )
+  const filteredBankActivityItems = useMemo(() => {
+    const q = bankHistorySearch.trim().toLowerCase()
+    if (!q) return bankActivityItems
+    return bankActivityItems.filter((item) => {
+      if (item.label.toLowerCase().includes(q)) return true
+      if (item.name?.toLowerCase().includes(q)) return true
+      if (String(item.amount).includes(q)) return true
+      return false
+    })
+  }, [bankActivityItems, bankHistorySearch])
 
-  const cashOpeningToday = useMemo(
-    () => getCashOpeningBalance(data, balance, cashDateFilter, cashSelectedDate),
-    [data, balance, cashDateFilter, cashSelectedDate],
-  )
-  const bankOpeningToday = useMemo(
-    () => getBankOpeningBalance(data, bankBalance, bankDateFilter, bankSelectedDate),
-    [data, bankBalance, bankDateFilter, bankSelectedDate],
-  )
-
-  const cashClosingPeriod = useMemo(
-    () => getCashClosingBalance(data, balance, cashDateFilter, cashSelectedDate),
-    [data, balance, cashDateFilter, cashSelectedDate],
-  )
-  const bankClosingPeriod = useMemo(
-    () => getBankClosingBalance(data, bankBalance, bankDateFilter, bankSelectedDate),
-    [data, bankBalance, bankDateFilter, bankSelectedDate],
-  )
+  const cashOpeningToday = cashPeriod.opening
+  const bankOpeningToday = bankPeriod.opening
+  const cashClosingPeriod = cashPeriod.closing
+  const bankClosingPeriod = bankPeriod.closing
 
   const cashPeriodStart = cashOpeningToday
   const bankPeriodStart = bankOpeningToday
@@ -292,11 +301,12 @@ export default function Home() {
   const bankPeriodClose = bankClosingPeriod
 
   const recordsForDelete = useMemo(() => {
-    return buildHistoryItems(data)
+    if (!showDeleteRecords) return []
+    return buildHistoryItems(dashData)
       .filter((item) => deleteRecordFilter === 'all' || item.type === deleteRecordFilter)
       .filter((item) => matchesHistorySearch(item, deleteRecordSearch))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  }, [data, deleteRecordFilter, deleteRecordSearch])
+  }, [dashData, showDeleteRecords, deleteRecordFilter, deleteRecordSearch])
 
   function handleDeleteRecord(
     type: HistoryItemType,
@@ -902,11 +912,27 @@ export default function Home() {
               <span>Net {formatMoney(cashActivitySummary.net)}</span>
             </div>
 
-            {cashActivityItems.length === 0 ? (
-              <p className="home-delete-empty">No cash activity for this period.</p>
+            <label className="home-cash-search">
+              <span>Search payments</span>
+              <input
+                type="search"
+                className="home-cash-search-input"
+                value={cashHistorySearch}
+                onChange={(e) => setCashHistorySearch(e.target.value)}
+                placeholder="Name, label, amount…"
+                aria-label="Search cash history"
+              />
+            </label>
+
+            {filteredCashActivityItems.length === 0 ? (
+              <p className="home-delete-empty">
+                {cashActivityItems.length === 0
+                  ? 'No cash activity for this period.'
+                  : 'No payments match your search.'}
+              </p>
             ) : (
               <ul className="home-cash-list">
-                {cashActivityItems.map((item) => (
+                {filteredCashActivityItems.map((item) => (
                   <li key={item.id} className="home-cash-item">
                     <div className="home-cash-item-info">
                       <div className="home-cash-item-top">
@@ -984,11 +1010,27 @@ export default function Home() {
               <span>Net {formatMoney(bankActivitySummary.net)}</span>
             </div>
 
-            {bankActivityItems.length === 0 ? (
-              <p className="home-delete-empty">No bank activity for this period.</p>
+            <label className="home-cash-search">
+              <span>Search payments</span>
+              <input
+                type="search"
+                className="home-cash-search-input"
+                value={bankHistorySearch}
+                onChange={(e) => setBankHistorySearch(e.target.value)}
+                placeholder="Name, label, amount…"
+                aria-label="Search bank history"
+              />
+            </label>
+
+            {filteredBankActivityItems.length === 0 ? (
+              <p className="home-delete-empty">
+                {bankActivityItems.length === 0
+                  ? 'No bank activity for this period.'
+                  : 'No payments match your search.'}
+              </p>
             ) : (
               <ul className="home-cash-list">
-                {bankActivityItems.map((item) => (
+                {filteredBankActivityItems.map((item) => (
                   <li key={item.id} className="home-cash-item">
                     <div className="home-cash-item-info">
                       <div className="home-cash-item-top">
@@ -1163,55 +1205,63 @@ export default function Home() {
         </div>
       )}
 
-      <ReportsPanel
-        open={showReports}
-        onClose={() => setShowReports(false)}
-        data={data}
-        initialPreset={reportPreset}
-        initialSelectedDate={reportSelectedDate}
-        initialSection={reportSection}
-        focusSection={Boolean(reportSection)}
-        onOpenCustomer={openCustomerFromReports}
-      />
+      {showReports ? (
+        <ReportsPanel
+          open
+          onClose={() => setShowReports(false)}
+          data={data}
+          initialPreset={reportPreset}
+          initialSelectedDate={reportSelectedDate}
+          initialSection={reportSection}
+          focusSection={Boolean(reportSection)}
+          onOpenCustomer={openCustomerFromReports}
+        />
+      ) : null}
 
-      <CustomerDashboard
-        open={showCustomers}
-        onClose={() => {
-          setShowCustomers(false)
-          setCustomerInitialName(undefined)
-        }}
-        data={data}
-        initialFilter={customerFilter}
-        initialCustomer={customerInitialName}
-        onSetCustomerReminder={setCustomerReminder}
-        onSaveAlertSettings={updateReminderAlertSettings}
-      />
+      {showCustomers ? (
+        <CustomerDashboard
+          open
+          onClose={() => {
+            setShowCustomers(false)
+            setCustomerInitialName(undefined)
+          }}
+          data={data}
+          initialFilter={customerFilter}
+          initialCustomer={customerInitialName}
+          onSetCustomerReminder={setCustomerReminder}
+          onSaveAlertSettings={updateReminderAlertSettings}
+        />
+      ) : null}
 
-      <CreditDashboard
-        open={showCredits}
-        onClose={() => {
-          setShowCredits(false)
-          setCreditInitialName(undefined)
-        }}
-        data={data}
-        initialFilter={creditFilter}
-        initialCustomer={creditInitialName}
-        onSetCustomerReminder={setCustomerReminder}
-        onSaveAlertSettings={updateReminderAlertSettings}
-      />
+      {showCredits ? (
+        <CreditDashboard
+          open
+          onClose={() => {
+            setShowCredits(false)
+            setCreditInitialName(undefined)
+          }}
+          data={data}
+          initialFilter={creditFilter}
+          initialCustomer={creditInitialName}
+          onSetCustomerReminder={setCustomerReminder}
+          onSaveAlertSettings={updateReminderAlertSettings}
+        />
+      ) : null}
 
-      <ChequeDashboard
-        open={showCheques}
-        onClose={() => {
-          setShowCheques(false)
-          setChequeInitialName(undefined)
-        }}
-        data={data}
-        initialFilter={chequeFilter}
-        initialCustomer={chequeInitialName}
-        onSetCustomerReminder={setCustomerReminder}
-        onSaveAlertSettings={updateReminderAlertSettings}
-      />
+      {showCheques ? (
+        <ChequeDashboard
+          open
+          onClose={() => {
+            setShowCheques(false)
+            setChequeInitialName(undefined)
+          }}
+          data={data}
+          initialFilter={chequeFilter}
+          initialCustomer={chequeInitialName}
+          onSetCustomerReminder={setCustomerReminder}
+          onSaveAlertSettings={updateReminderAlertSettings}
+        />
+      ) : null}
     </div>
   )
 }

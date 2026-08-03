@@ -17,19 +17,22 @@ import type { BillReminderKind } from '../utils/billReminders'
 import {
   appendSalePaymentEvent,
   buildIncrementalPaymentEvent,
-  getSalePaymentEvents,
-  migrateSalePaymentEvents,
+  buildPaidSalePaymentEvents,
+  clearSalePaymentCaches,
   normalizeCollectedBreakdown,
   normalizePaymentEvent,
-  priorPaymentEventsFromSale,
+  paymentEventFromCollectedBreakdown,
+  migrateSalePaymentEvents,
+  repairSalePaymentEvents,
   saleCollectedAmount,
   saleCollectedComponentBreakdown,
+  saleCollectionTimestamp,
   salePendingCreditPaidBreakdown,
 } from '../utils/salePayment'
 import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
-import { loanBankToBalance, loanCashToDrawer } from '../utils/loanLedger'
+import { loanBankToBalance, loanCashToDrawer, loanRemainingAmount } from '../utils/loanLedger'
 import { getStaffMonthSummary, isStaffLinkableExpense, salaryMonthFromDate, type SalaryMonthKey } from '../utils/staffLedger'
 import { validateStaffLeaveInput, resolveStaffSalaryDays, normalizeStaffLeaveTypeValue, isSundayDate, isRedundantStaffLeaveRecord } from '../utils/staffAttendance'
 
@@ -178,14 +181,6 @@ function normalizeExpense(expense: Expense): Expense {
           : 'cash-to-bank'
         : undefined,
   }
-}
-
-function expenseWasNormalized(before: Expense, after: Expense): boolean {
-  return (
-    before.payType !== after.payType ||
-    before.name !== after.name ||
-    before.kind !== after.kind
-  )
 }
 
 function recordTimestamp(iso?: string): number {
@@ -449,7 +444,7 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
         alerts?.notificationSoundEnabled ?? DEFAULT_REMINDER_ALERTS.notificationSoundEnabled,
     },
     customerReminders: normalizeCustomerReminders(parsed.customerReminders),
-    sales: (parsed.sales ?? []).map((sale) => migrateSalePaymentEvents(sale)),
+    sales: (parsed.sales ?? []).map((sale) => repairSalePaymentEvents(sale)),
     expenses: normalizedExpenses,
     loans: (parsed.loans ?? []).map((loan) => normalizeLoan(loan)),
     staff: (parsed.staff ?? []).map((member) => normalizeStaffMember(member)),
@@ -505,18 +500,36 @@ function normalizeLoan(raw: Partial<Loan>): Loan {
       : raw.settlementPaySource === 'cash'
         ? 'cash'
         : undefined
+  const amount = Math.max(0, Number(raw.amount) || 0)
+  const settlementEvents = Array.isArray(raw.settlementEvents)
+    ? raw.settlementEvents.map((event) => ({
+        id: typeof event.id === 'string' ? event.id : crypto.randomUUID(),
+        at: typeof event.at === 'string' ? event.at : new Date().toISOString(),
+        amount: Math.max(0, Number(event.amount) || 0),
+        paySource: event.paySource === 'bank' ? ('bank' as const) : ('cash' as const),
+      }))
+    : undefined
+  const eventPaid = settlementEvents?.reduce((sum, event) => sum + event.amount, 0) ?? 0
+  const paidAmount = Math.max(0, Number(raw.paidAmount) || eventPaid || 0)
+  const legacyPaid =
+    raw.status === 'settled' && paidAmount <= 0 && (!settlementEvents || settlementEvents.length === 0)
+      ? amount
+      : paidAmount
+  const status = legacyPaid >= amount && amount > 0 ? ('settled' as const) : ('pending' as const)
   return {
     id: typeof raw.id === 'string' ? raw.id : crypto.randomUUID(),
     kind,
     personName: typeof raw.personName === 'string' ? raw.personName.trim() : 'Unknown',
-    amount: Math.max(0, Number(raw.amount) || 0),
+    amount,
     paySource,
-    status: raw.status === 'settled' ? 'settled' : 'pending',
+    status,
     note: typeof raw.note === 'string' ? raw.note.trim() || undefined : undefined,
     reminderAt: typeof raw.reminderAt === 'string' ? raw.reminderAt : undefined,
     reminderNote: typeof raw.reminderNote === 'string' ? raw.reminderNote.trim() || undefined : undefined,
     reminderUrgent: raw.reminderUrgent === true ? true : undefined,
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+    paidAmount: legacyPaid > 0 ? legacyPaid : undefined,
+    settlementEvents,
     settledAt: typeof raw.settledAt === 'string' ? raw.settledAt : undefined,
     settlementPaySource,
   }
@@ -548,33 +561,42 @@ export function loadData(): AppData {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...defaultData }
     const parsed = JSON.parse(raw) as AppData
-    const normalized = normalizeData(parsed)
-    const salesMigrated = (parsed.sales ?? []).some((sale, index) => {
-      const next = normalized.sales[index]
-      return JSON.stringify(sale.paymentEvents ?? null) !== JSON.stringify(next?.paymentEvents ?? null)
-    })
-    const expensesMigrated = (parsed.expenses ?? []).some((expense, index) => {
-      const next = normalized.expenses[index]
-      return next ? expenseWasNormalized(expense, next) : false
-    })
-    if (salesMigrated || expensesMigrated) {
-      saveLocalData(normalized)
-      localStorage.setItem(LOCAL_UPDATED_AT_KEY, new Date().toISOString())
-      notifyDataChanged(normalized)
-    }
-    return normalized
+    return normalizeData(parsed)
   } catch {
     return { ...defaultData }
   }
 }
 
-export function saveData(data: AppData, options?: { cloudImmediate?: boolean }): void {
+let pendingSaveData: AppData | null = null
+let saveDataTimer: ReturnType<typeof setTimeout> | null = null
+const SAVE_DEBOUNCE_MS = 100
+
+/** Force pending localStorage write — call on page hide / before cloud push. */
+export function flushSaveData(options?: { cloudImmediate?: boolean }): void {
+  if (saveDataTimer) {
+    clearTimeout(saveDataTimer)
+    saveDataTimer = null
+  }
+  if (!pendingSaveData) return
+  const data = pendingSaveData
+  pendingSaveData = null
+  clearSalePaymentCaches()
   const serialized = JSON.stringify(data)
   localStorage.setItem(STORAGE_KEY, serialized)
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, new Date().toISOString())
   queueLocalBackupSnapshot(data)
   if (options?.cloudImmediate) notifyDataChangedImmediate(data)
   else notifyDataChanged(data)
+}
+
+export function saveData(data: AppData, options?: { cloudImmediate?: boolean; immediate?: boolean }): void {
+  pendingSaveData = data
+  if (options?.immediate || options?.cloudImmediate) {
+    flushSaveData(options)
+    return
+  }
+  if (saveDataTimer) clearTimeout(saveDataTimer)
+  saveDataTimer = setTimeout(() => flushSaveData(options), SAVE_DEBOUNCE_MS)
 }
 
 /** Persist locally without cloud backup — used for migrations and cloud restore. */
@@ -607,13 +629,39 @@ export function isLocalDataEmpty(data: AppData): boolean {
   )
 }
 
+/** Backfill paymentEvents for legacy sales without blocking login UI. */
+export function scheduleSalePaymentEventsMigration(data: AppData): void {
+  const needsMigration = data.sales.some(
+    (sale) => sale.status === 'paid' && (!sale.paymentEvents || sale.paymentEvents.length === 0),
+  )
+  if (!needsMigration) return
+
+  const run = () => {
+    let changed = false
+    const sales = data.sales.map((sale) => {
+      const migrated = migrateSalePaymentEvents(sale)
+      if (migrated !== sale) changed = true
+      return migrated
+    })
+    if (changed) saveLocalData({ ...data, sales })
+  }
+
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(run, { timeout: 8000 })
+  } else {
+    setTimeout(run, 2000)
+  }
+}
+
 /** Login restore — replace local with full cloud copy (no merge). */
 export function applyFullRemoteCloudData(data: AppData, backupAt: string, uid?: string): AppData {
   const next = normalizeData(data)
+  clearSalePaymentCaches()
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, backupAt)
   markLocalBackupTime(backupAt)
   if (uid) setLocalUserUid(uid)
+  scheduleSalePaymentEventsMigration(next)
   return next
 }
 
@@ -657,9 +705,7 @@ export function clearAllLocalData(): AppData {
 }
 
 function collectionTimestampFromSale(sale: Sale): string {
-  const events = getSalePaymentEvents(sale)
-  if (events.length > 0) return events[0].at
-  return sale.updatedAt ?? sale.createdAt
+  return saleCollectionTimestamp(sale)
 }
 
 function paymentEventFromCollected(
@@ -668,18 +714,11 @@ function paymentEventFromCollected(
   bank: number,
   cheque: number,
 ): SalePaymentEvent {
-  const normalized = normalizeCollectedBreakdown({
+  return paymentEventFromCollectedBreakdown(at, {
     cash,
     bank,
     cheque,
     total: cash + bank + cheque,
-  })
-  return normalizePaymentEvent({
-    at,
-    amount: normalized.total,
-    cash: normalized.cash > 0 ? normalized.cash : undefined,
-    bank: normalized.bank > 0 ? normalized.bank : undefined,
-    cheque: normalized.cheque > 0 ? normalized.cheque : undefined,
   })
 }
 
@@ -861,13 +900,39 @@ export function editPaidSalePayment(
   return next
 }
 
-function saleCashToDrawer(sale: Sale): number {
-  return saleCollectedComponentBreakdown(sale).cash
+export interface DrawerBalances {
+  cash: number
+  bank: number
 }
 
-function saleBankToBalance(sale: Sale): number {
-  const { bank, cheque } = saleCollectedComponentBreakdown(sale)
-  return bank + cheque
+/** Single pass over sales/expenses/loans — used for header balances. */
+export function computeDrawerBalances(data: AppData): DrawerBalances {
+  let salesCash = 0
+  let salesBank = 0
+  for (const sale of data.sales) {
+    const breakdown = saleCollectedComponentBreakdown(sale)
+    salesCash += breakdown.cash
+    salesBank += breakdown.bank + breakdown.cheque
+  }
+
+  let expenseCash = 0
+  let expenseBank = 0
+  for (const expense of data.expenses) {
+    expenseCash += expenseCashToDrawer(expense)
+    expenseBank += expenseBankToBalance(expense)
+  }
+
+  let loanCash = 0
+  let loanBank = 0
+  for (const loan of data.loans ?? []) {
+    loanCash += loanCashToDrawer(loan)
+    loanBank += loanBankToBalance(loan)
+  }
+
+  return {
+    cash: data.openingBalance + salesCash - expenseCash + loanCash,
+    bank: (data.openingBankBalance ?? 0) + salesBank - expenseBank + loanBank,
+  }
 }
 
 export function getPendingBills(data: AppData): Sale[] {
@@ -931,17 +996,11 @@ function expenseBankToBalance(expense: Expense): number {
 }
 
 export function getBankBalance(data: AppData): number {
-  const salesTotal = data.sales.reduce((sum, s) => sum + saleBankToBalance(s), 0)
-  const expensesTotal = data.expenses.reduce((sum, e) => sum + expenseBankToBalance(e), 0)
-  const loansTotal = (data.loans ?? []).reduce((sum, loan) => sum + loanBankToBalance(loan), 0)
-  return (data.openingBankBalance ?? 0) + salesTotal - expensesTotal + loansTotal
+  return computeDrawerBalances(data).bank
 }
 
 export function getCurrentBalance(data: AppData): number {
-  const salesTotal = data.sales.reduce((sum, s) => sum + saleCashToDrawer(s), 0)
-  const expensesTotal = data.expenses.reduce((sum, e) => sum + expenseCashToDrawer(e), 0)
-  const loansTotal = (data.loans ?? []).reduce((sum, loan) => sum + loanCashToDrawer(loan), 0)
-  return data.openingBalance + salesTotal - expensesTotal + loansTotal
+  return computeDrawerBalances(data).cash
 }
 
 export function addSale(
@@ -958,7 +1017,11 @@ export function addSale(
     createdAt: now,
     updatedAt: now,
   })
-  const next = { ...data, sales: [newSale, ...data.sales] }
+  const withEvents =
+    newSale.status !== 'pending'
+      ? { ...newSale, paymentEvents: buildPaidSalePaymentEvents(newSale, now) }
+      : newSale
+  const next = { ...data, sales: [withEvents, ...data.sales] }
   saveData(next)
   return next
 }
@@ -1102,22 +1165,41 @@ export function settleLoan(
   data: AppData,
   id: string,
   settlementPaySource: LoanPaySource,
+  options?: { amount?: number; settledAt?: string },
 ): AppData {
   const loan = (data.loans ?? []).find((entry) => entry.id === id)
-  if (!loan || loan.status !== 'pending') return data
+  if (!loan) return data
+
+  const remaining = loanRemainingAmount(loan)
+  if (remaining <= 0) return data
+
+  const payAmount = Math.min(Math.max(0, options?.amount ?? remaining), remaining)
+  if (payAmount <= 0) return data
 
   if (loan.kind === 'borrow') {
-    if (settlementPaySource === 'cash' && getCurrentBalance(data) < loan.amount) return data
-    if (settlementPaySource === 'bank' && getBankBalance(data) < loan.amount) return data
+    if (settlementPaySource === 'cash' && getCurrentBalance(data) < payAmount) return data
+    if (settlementPaySource === 'bank' && getBankBalance(data) < payAmount) return data
   }
 
-  const now = new Date().toISOString()
+  const at = options?.settledAt ?? new Date().toISOString()
+  const event = {
+    id: crypto.randomUUID(),
+    at,
+    amount: payAmount,
+    paySource: settlementPaySource,
+  }
+  const priorEvents = loan.settlementEvents ?? []
+  const newPaid = (loan.paidAmount ?? 0) + payAmount
+  const fullySettled = newPaid >= loan.amount
+
   const nextLoans = (data.loans ?? []).map((entry) =>
     entry.id === id
       ? {
           ...entry,
-          status: 'settled' as const,
-          settledAt: now,
+          paidAmount: newPaid,
+          settlementEvents: [...priorEvents, event],
+          status: fullySettled ? ('settled' as const) : ('pending' as const),
+          settledAt: fullySettled ? at : entry.settledAt,
           settlementPaySource,
         }
       : entry,
@@ -2119,6 +2201,7 @@ export function saleBillCreatePayType(sale: Sale): BillCreatePayType {
 function applyPaidBillPayType(sale: Sale, payType: BillCreatePayType, billAmount: number): Sale {
   const amount = billAmount
   const paidAmount = sale.paidAmount > 0 ? sale.paidAmount : amount
+  const collectionAt = saleCollectionTimestamp(sale)
   const base: Sale = {
     ...sale,
     payType,
@@ -2131,25 +2214,28 @@ function applyPaidBillPayType(sale: Sale, payType: BillCreatePayType, billAmount
     chequeAmount: undefined,
     creditAmount: undefined,
     chequeApproved: undefined,
-    updatedAt: new Date().toISOString(),
+    updatedAt: collectionAt,
   }
 
+  let patched: Sale
   if (payType === 'cash') {
-    return { ...base, changeAmount: Math.max(0, paidAmount - amount) }
-  }
-  if (payType === 'bank') {
-    return { ...base, bankAmount: amount, changeAmount: 0 }
-  }
-  if (payType === 'cheque') {
-    return {
+    patched = { ...base, changeAmount: Math.max(0, paidAmount - amount) }
+  } else if (payType === 'bank') {
+    patched = { ...base, bankAmount: amount, changeAmount: 0 }
+  } else if (payType === 'cheque') {
+    patched = {
       ...base,
       bankAmount: amount,
       chequeAmount: amount,
       chequeApproved: true,
       changeAmount: 0,
     }
+  } else {
+    patched = { ...base, changeAmount: 0 }
   }
-  return { ...base, changeAmount: 0 }
+
+  const events = buildPaidSalePaymentEvents(patched, collectionAt)
+  return events.length > 0 ? { ...patched, paymentEvents: events } : patched
 }
 
 function isCreditPendingSale(sale: Sale): boolean {
@@ -2364,8 +2450,6 @@ export function collectPendingBill(
 ): AppData {
   const original = data.sales.find((s) => s.id === id && s.status === 'pending')
   const now = new Date().toISOString()
-  const event: SalePaymentEvent =
-    paymentEvent ?? buildIncrementalPaymentEvent(original, sale, now)
   const next = {
     ...data,
     sales: data.sales.map((s) => {
@@ -2386,12 +2470,25 @@ export function collectPendingBill(
         updatedAt: now,
       }
 
-      if (event.amount > 0) {
-        const priorEvents = original ? priorPaymentEventsFromSale(original) : (s.paymentEvents ?? [])
-        return appendSalePaymentEvent({ ...settled, paymentEvents: priorEvents }, event)
+      const priorEvents = original?.paymentEvents ?? []
+      const cash = sale.cashAmount ?? 0
+      const bank = sale.bankAmount ?? 0
+      const cheque =
+        sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
+
+      if (priorEvents.length > 0) {
+        const event = paymentEvent ?? buildIncrementalPaymentEvent(original, sale, now)
+        if (event.amount > 0) {
+          return appendSalePaymentEvent({ ...settled, paymentEvents: priorEvents }, event)
+        }
+        return { ...settled, paymentEvents: priorEvents }
       }
-      const priorEvents = original ? priorPaymentEventsFromSale(original) : []
-      return priorEvents.length > 0 ? { ...settled, paymentEvents: priorEvents } : settled
+
+      const correctedEvent = paymentEventFromCollected(now, cash, bank, cheque)
+      return {
+        ...settled,
+        paymentEvents: correctedEvent.amount > 0 ? [correctedEvent] : [],
+      }
     }),
   }
   const settled = next.sales.find((s) => s.id === id)
@@ -2435,9 +2532,30 @@ function applyBillCreatedAt(
   relatedSaleIds?: string[],
 ): AppData {
   const targets = collectBillDateTargets(data, id, relatedSaleIds)
+  const anchorSale = data.sales.find((s) => s.id === id)
+  const oldCreatedAt = anchorSale?.createdAt
   return {
     ...data,
-    sales: data.sales.map((s) => (targets.has(s.id) ? { ...s, createdAt } : s)),
+    sales: data.sales.map((s) => {
+      if (!targets.has(s.id)) return s
+      let patched: Sale = { ...s, createdAt }
+      if (oldCreatedAt && s.paymentEvents && s.paymentEvents.length > 0) {
+        patched = {
+          ...patched,
+          paymentEvents: s.paymentEvents.map((event) => {
+            const anchor = s.updatedAt ?? oldCreatedAt
+            if (event.at === oldCreatedAt || event.at === anchor) {
+              return { ...event, at: createdAt }
+            }
+            return event
+          }),
+        }
+      }
+      if (s.id === id || targets.has(s.id)) {
+        patched = { ...patched, updatedAt: saleCollectionTimestamp(patched) }
+      }
+      return patched
+    }),
   }
 }
 
@@ -2641,7 +2759,6 @@ export function updateSaleBill(
     return data
   }
 
-  const now = new Date().toISOString()
   const nameTargets = new Set<string>()
   for (const saleId of collectSplitNameTargets(working, id)) nameTargets.add(saleId)
   if (relatedSaleIds) {
@@ -2667,22 +2784,27 @@ export function updateSaleBill(
         touched = true
       }
       if (s.id === id && updates.billAmount != null && updates.billAmount > 0) {
+        const collectionAt = saleCollectionTimestamp(s)
         patched = {
           ...patched,
           billAmount,
-          updatedAt: now,
+          updatedAt: collectionAt,
         }
         touched = true
         if (s.payType === 'cash' || !s.payType) {
           patched.changeAmount = Math.max(0, s.paidAmount - billAmount)
         }
+        if (s.payType === 'bank') {
+          patched.bankAmount = billAmount
+        }
         if (s.payType === 'cheque') {
           patched.chequeAmount = billAmount
+          patched.bankAmount = billAmount
         }
-      } else if (touched && updates.billAmount == null) {
-        // Customer name only — keep collection date unchanged.
+        const events = buildPaidSalePaymentEvents(patched, collectionAt)
+        if (events.length > 0) patched = { ...patched, paymentEvents: events }
       } else if (touched) {
-        patched = { ...patched, updatedAt: now }
+        patched = { ...patched, updatedAt: saleCollectionTimestamp(patched) }
       }
       return patched
     }),

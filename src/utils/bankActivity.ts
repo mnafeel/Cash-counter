@@ -1,6 +1,7 @@
-import type { AppData, Expense, Sale } from '../types'
+import type { AppData, Expense, Loan, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
-import { getSalePaymentEvents } from './salePayment'
+import { loanSettlementEvents } from './loanLedger'
+import { getSalePaymentEvents, saleCollectionTimestamp } from './salePayment'
 import { saleBankCollected, saleChequeToBankCollected } from './salesReport'
 import {
   cashClosingLabel,
@@ -19,7 +20,7 @@ function saleActivityDate(sale: Sale): string {
     if (bank > 0 && sale.updatedAt) return sale.updatedAt
     return sale.createdAt
   }
-  return sale.updatedAt ?? sale.createdAt
+  return saleCollectionTimestamp(sale)
 }
 
 function pushSaleItems(items: CashActivityItem[], sale: Sale) {
@@ -153,10 +154,47 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
   })
 }
 
+function pushLoanItems(items: CashActivityItem[], loan: Loan) {
+  if (loan.kind === 'lend' && loan.paySource === 'bank') {
+    items.push({
+      id: `loan-${loan.id}-give-bank`,
+      label: 'Loan given · bank',
+      amount: loan.amount,
+      direction: 'out',
+      date: loan.createdAt,
+      name: loan.personName,
+    })
+  }
+
+  for (const [index, event] of loanSettlementEvents(loan).entries()) {
+    if (event.paySource !== 'bank') continue
+    if (loan.kind === 'lend') {
+      items.push({
+        id: `loan-${loan.id}-settle-bank-${index}`,
+        label: 'Loan collected · bank',
+        amount: event.amount,
+        direction: 'in',
+        date: event.at,
+        name: loan.personName,
+      })
+    } else {
+      items.push({
+        id: `loan-${loan.id}-settle-bank-${index}`,
+        label: 'Loan returned · bank',
+        amount: event.amount,
+        direction: 'out',
+        date: event.at,
+        name: loan.personName,
+      })
+    }
+  }
+}
+
 export function buildBankActivityItems(data: AppData): CashActivityItem[] {
   const items: CashActivityItem[] = []
   for (const sale of data.sales) pushSaleItems(items, sale)
   for (const expense of data.expenses) pushExpenseItems(items, expense)
+  for (const loan of data.loans ?? []) pushLoanItems(items, loan)
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
 
@@ -176,11 +214,24 @@ export function getBankOpeningBalance(
   currentBalance: number,
   dateFilter: CashDateFilter,
   selectedDate = '',
+  prebuiltItems?: CashActivityItem[],
 ): number {
-  const items = buildBankActivityItems(data).filter((item) =>
+  const items = (prebuiltItems ?? buildBankActivityItems(data)).filter((item) =>
     matchesCashDateFilter(item.date, dateFilter, selectedDate),
   )
   return currentBalance - summarizeBankActivity(items).net
+}
+
+export function summarizeBankActivityForPeriod(
+  allItems: CashActivityItem[],
+  currentBalance: number,
+  dateFilter: CashDateFilter,
+  selectedDate = '',
+) {
+  const items = allItems.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate))
+  const summary = summarizeBankActivity(items)
+  const opening = currentBalance - summary.net
+  return { items, summary, opening, closing: opening + summary.net }
 }
 
 export { cashOpeningLabel as bankOpeningLabel, cashClosingLabel as bankClosingLabel }
@@ -191,10 +242,11 @@ export function getBankClosingBalance(
   currentBalance: number,
   dateFilter: CashDateFilter,
   selectedDate = '',
+  prebuiltItems?: CashActivityItem[],
 ): number {
-  const opening = getBankOpeningBalance(data, currentBalance, dateFilter, selectedDate)
-  const items = buildBankActivityItems(data).filter((item) =>
+  const items = (prebuiltItems ?? buildBankActivityItems(data)).filter((item) =>
     matchesCashDateFilter(item.date, dateFilter, selectedDate),
   )
+  const opening = currentBalance - summarizeBankActivity(items).net
   return opening + summarizeBankActivity(items).net
 }

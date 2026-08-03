@@ -30,10 +30,11 @@ import {
   setBackupStatusListener,
   setCloudLoginRestoreActive,
   setCloudRemoteSummaryListener,
+  waitForCloudRestoreIdle,
   type CloudRemoteSummary,
 } from '../firebase/sync'
 import type { AppData } from '../types'
-import { getApprovedChequeAmount, getCurrentBalance, getBankBalance, listApprovedCheques, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
+import { getApprovedChequeAmount, getCurrentBalance, getBankBalance, isLocalDataEmpty, listApprovedCheques, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
 import { clearAllLocalBackupSnapshots } from '../storage/localBackup'
 import {
   dateTimeInputValuesToIso,
@@ -187,6 +188,7 @@ export default function Settings() {
     updateOpeningBankBalance,
     updateHomePin,
     replaceAllData,
+    hydrateData,
     resetAllData,
     recordSale,
     getTallyApiUrl,
@@ -313,7 +315,8 @@ export default function Settings() {
   const pendingChequeSales = useMemo(() => listPendingChequeSales(data), [data.sales])
   const reminderAlertSettings = useMemo(() => getReminderAlertSettings(data), [data])
   const [alertSettingsStatus, setAlertSettingsStatus] = useState('')
-  const historyRecordCount = useMemo(() => buildHistoryItems(data).length, [data])
+  const historyRecordCount =
+    data.sales.length + data.expenses.length + (data.loans?.length ?? 0)
   const dailyReportCounts = useMemo(
     () => getDailyReportCounts({ data, selectedDate: dailyReportDate }),
     [data, dailyReportDate],
@@ -762,19 +765,20 @@ export default function Settings() {
   async function loadCloudDataAfterAuth(isNewAccount: boolean) {
     setCloudLoginRestoreActive(true)
     try {
-      const restored = await restoreFullCloudData()
-      if (restored) {
-        replaceAllData(restored)
+      await waitForCloudRestoreIdle()
+      let restored = loadData()
+      if (isLocalDataEmpty(restored) && !isNewAccount) {
+        const fromCloud = await restoreFullCloudData()
+        if (fromCloud) restored = fromCloud
+      }
+      if (!isLocalDataEmpty(restored)) {
+        hydrateData(restored)
         if (!isMainBillingDevice()) {
           setAutoPullFromCloudEnabled(true)
           setAutoPull(true)
         }
         setOpeningStr(String(restored.openingBalance))
         setOpeningBankStr(String(restored.openingBankBalance ?? 0))
-        if (isMainBillingDevice()) {
-          setCloudLoginRestoreActive(false)
-          await backupNow({ force: true })
-        }
         setBackupStatus(`Imported · cloud loaded into database · ${cloudDataSummary(restored)}`)
         setBackupError(false)
         return
@@ -784,8 +788,8 @@ export default function Settings() {
         setAutoBackupEnabled(true)
         setMainBillingDeviceState(true)
         setAutoBackup(true)
-        setCloudLoginRestoreActive(false)
         const fresh = loadData()
+        hydrateData(fresh)
         await backupNow({ force: true })
         setBackupStatus(`Username created · ${cloudDataSummary(fresh)} saved to cloud`)
         setBackupError(false)

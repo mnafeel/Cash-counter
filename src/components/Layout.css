@@ -309,3 +309,13 @@ html[data-screen='desktop'] .main--fit {
     padding: 4px 8px max(6px, env(safe-area-inset-bottom));
   }
 }
+
+.layout-boot-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 12, 8, 0.92);
+}

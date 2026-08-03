@@ -1,4 +1,4 @@
-import type { AppData, Loan, LoanKind, LoanPaySource, LoanStatus } from '../types'
+import type { AppData, Loan, LoanKind, LoanPaySource, LoanSettlementEvent, LoanStatus } from '../types'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
 import { formatDate } from './format'
 
@@ -16,6 +16,33 @@ export interface LoanListItem extends Loan {
   kindLabel: string
   statusLabel: string
   paySourceLabel: string
+  remainingAmount: number
+}
+
+export function loanSettlementEvents(loan: Loan): LoanSettlementEvent[] {
+  if (loan.settlementEvents && loan.settlementEvents.length > 0) return loan.settlementEvents
+  if (loan.status === 'settled' && loan.settledAt) {
+    return [
+      {
+        id: `${loan.id}-legacy-settlement`,
+        at: loan.settledAt,
+        amount: loan.amount,
+        paySource: loan.settlementPaySource ?? 'cash',
+      },
+    ]
+  }
+  return []
+}
+
+export function loanPaidAmount(loan: Loan): number {
+  if (loan.paidAmount != null && loan.paidAmount > 0) return loan.paidAmount
+  const events = loanSettlementEvents(loan)
+  if (events.length > 0) return events.reduce((sum, event) => sum + event.amount, 0)
+  return loan.status === 'settled' ? loan.amount : 0
+}
+
+export function loanRemainingAmount(loan: Loan): number {
+  return Math.max(0, loan.amount - loanPaidAmount(loan))
 }
 
 export function buildLoanOverview(data: AppData): LoanOverview {
@@ -27,15 +54,16 @@ export function buildLoanOverview(data: AppData): LoanOverview {
   let settledCount = 0
 
   for (const loan of loans) {
-    if (loan.status === 'settled') {
+    const remaining = loanRemainingAmount(loan)
+    if (remaining <= 0) {
       settledCount += 1
       continue
     }
     if (loan.kind === 'lend') {
-      receivableTotal += loan.amount
+      receivableTotal += remaining
       receivableCount += 1
     } else {
-      payableTotal += loan.amount
+      payableTotal += remaining
       payableCount += 1
     }
   }
@@ -47,8 +75,8 @@ function loanKindLabel(kind: LoanKind): string {
   return kind === 'lend' ? 'Given' : 'Taken'
 }
 
-function loanStatusLabel(status: LoanStatus): string {
-  return status === 'settled' ? 'Settled' : 'Pending'
+function loanStatusLabel(_status: LoanStatus, remaining: number): string {
+  return remaining <= 0 ? 'Settled' : 'Pending'
 }
 
 function paySourceLabel(source: LoanPaySource): string {
@@ -56,19 +84,26 @@ function paySourceLabel(source: LoanPaySource): string {
 }
 
 export function decorateLoan(loan: Loan): LoanListItem {
+  const remaining = loanRemainingAmount(loan)
+  const events = loanSettlementEvents(loan)
+  const lastSettlement = events.length > 0 ? events[events.length - 1] : undefined
   return {
     ...loan,
     dateLabel: formatDate(loan.createdAt),
-    settledDateLabel: loan.settledAt ? formatDate(loan.settledAt) : undefined,
+    settledDateLabel: lastSettlement ? formatDate(lastSettlement.at) : loan.settledAt ? formatDate(loan.settledAt) : undefined,
     kindLabel: loanKindLabel(loan.kind),
-    statusLabel: loanStatusLabel(loan.status),
+    statusLabel: loanStatusLabel(loan.status, remaining),
     paySourceLabel: paySourceLabel(loan.paySource),
+    remainingAmount: remaining,
   }
 }
 
 export function buildLoanList(data: AppData, status: LoanStatus): LoanListItem[] {
   return (data.loans ?? [])
-    .filter((loan) => loan.status === status)
+    .filter((loan) => {
+      const remaining = loanRemainingAmount(loan)
+      return status === 'settled' ? remaining <= 0 : remaining > 0
+    })
     .map(decorateLoan)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 }
@@ -80,6 +115,7 @@ export function searchLoans(loans: LoanListItem[], query: string): LoanListItem[
     if (loan.personName.toLowerCase().includes(q)) return true
     if (loan.note?.toLowerCase().includes(q)) return true
     if (String(loan.amount).includes(q)) return true
+    if (String(loan.remainingAmount).includes(q)) return true
     return false
   })
 }
@@ -91,9 +127,9 @@ export function loanCashToDrawer(loan: Loan): number {
   } else {
     impact += loan.amount
   }
-  if (loan.status === 'settled') {
-    if (loan.kind === 'lend' && loan.settlementPaySource === 'cash') impact += loan.amount
-    if (loan.kind === 'borrow' && loan.settlementPaySource === 'cash') impact -= loan.amount
+  for (const event of loanSettlementEvents(loan)) {
+    if (loan.kind === 'lend' && event.paySource === 'cash') impact += event.amount
+    if (loan.kind === 'borrow' && event.paySource === 'cash') impact -= event.amount
   }
   return impact
 }
@@ -101,9 +137,9 @@ export function loanCashToDrawer(loan: Loan): number {
 export function loanBankToBalance(loan: Loan): number {
   let impact = 0
   if (loan.kind === 'lend' && loan.paySource === 'bank') impact -= loan.amount
-  if (loan.status === 'settled') {
-    if (loan.kind === 'lend' && loan.settlementPaySource === 'bank') impact += loan.amount
-    if (loan.kind === 'borrow' && loan.settlementPaySource === 'bank') impact -= loan.amount
+  for (const event of loanSettlementEvents(loan)) {
+    if (loan.kind === 'lend' && event.paySource === 'bank') impact += event.amount
+    if (loan.kind === 'borrow' && event.paySource === 'bank') impact -= event.amount
   }
   return impact
 }
@@ -155,11 +191,11 @@ export function summarizeLoanReportItems(items: LoanListItem[]): LoanReportSumma
       takenTotal += loan.amount
       takenCount += 1
     }
-    if (loan.status === 'settled') {
+    if (loan.remainingAmount <= 0) {
       settledTotal += loan.amount
       settledCount += 1
     } else {
-      pendingTotal += loan.amount
+      pendingTotal += loan.remainingAmount
       pendingCount += 1
     }
   }

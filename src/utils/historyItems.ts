@@ -1,7 +1,7 @@
 import type { AppData, Expense, Sale } from '../types'
 import { expenseBillTag, isPurchaseExpense } from './expenseBillLabels'
 import { formatDate, formatMoney } from './format'
-import { decorateLoan } from './loanLedger'
+import { decorateLoan, loanRemainingAmount, loanSettlementEvents } from './loanLedger'
 import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, type PurchaseHistoryItem } from './purchaseHistory'
 import { getSaleCustomerName } from './saleCustomerName'
 
@@ -1523,42 +1523,72 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
   const loanItems: HistoryItem[] = []
   for (const loan of data.loans ?? []) {
     const decorated = decorateLoan(loan)
+    const remaining = loanRemainingAmount(loan)
     const payLabel = loan.paySource === 'bank' ? 'Bank' : 'Cash'
     const payMode: HistoryPaymentMode = loan.paySource === 'bank' ? 'bank' : 'cash'
-    const statusPart =
-      loan.status === 'settled' && decorated.settledDateLabel
-        ? ` · Settled ${decorated.settledDateLabel}`
-        : ' · Pending'
+    const remainingPart = remaining > 0 ? ` · Balance ${formatMoney(remaining)}` : ''
 
     if (loan.kind === 'lend') {
       const giveTag = loan.paySource === 'bank' ? '🏦 Bank expense' : '💵 Cash expense'
       loanItems.push({
         type: 'expense',
-        id: loan.id,
+        id: `${loan.id}-give`,
         amount: loan.amount,
         name: loan.personName,
-        sub: `🤝 Loan given · ${giveTag}${statusPart}${loan.note ? ` · ${loan.note}` : ''}`,
+        sub: `🤝 Loan given · ${giveTag}${remainingPart}${loan.note ? ` · ${loan.note}` : ''}`,
         date: loan.createdAt,
         billCreatedAt: loan.createdAt,
         completedAt: loan.createdAt,
         paymentMode: payMode,
         paymentModes: [payMode],
       })
-      continue
+    } else {
+      loanItems.push({
+        type: 'loan',
+        id: `${loan.id}-take`,
+        amount: loan.amount,
+        name: loan.personName,
+        sub: `${decorated.kindLabel} · ${payLabel}${remainingPart}${loan.note ? ` · ${loan.note}` : ''}`,
+        date: loan.createdAt,
+        billCreatedAt: loan.createdAt,
+        completedAt: loan.createdAt,
+        paymentMode: payMode,
+        paymentModes: [payMode],
+      })
     }
 
-    loanItems.push({
-      type: 'loan',
-      id: loan.id,
-      amount: loan.amount,
-      name: loan.personName,
-      sub: `${decorated.kindLabel} · ${payLabel}${statusPart}${loan.note ? ` · ${loan.note}` : ''}`,
-      date: loan.createdAt,
-      billCreatedAt: loan.createdAt,
-      completedAt: loan.createdAt,
-      paymentMode: payMode,
-      paymentModes: [payMode],
-    })
+    for (const [index, event] of loanSettlementEvents(loan).entries()) {
+      const settlePayMode: HistoryPaymentMode = event.paySource === 'bank' ? 'bank' : 'cash'
+      const settleLabel = event.paySource === 'bank' ? 'Bank' : 'Cash'
+      const settledOn = formatDate(event.at)
+      if (loan.kind === 'lend') {
+        loanItems.push({
+          type: 'loan',
+          id: `${loan.id}-settle-${index}`,
+          amount: event.amount,
+          name: loan.personName,
+          sub: `🤝 Loan collected · ${settleLabel} · Settled ${settledOn}`,
+          date: event.at,
+          billCreatedAt: loan.createdAt,
+          completedAt: event.at,
+          paymentMode: settlePayMode,
+          paymentModes: [settlePayMode],
+        })
+      } else {
+        loanItems.push({
+          type: 'expense',
+          id: `${loan.id}-settle-${index}`,
+          amount: event.amount,
+          name: loan.personName,
+          sub: `🤝 Loan returned · ${settleLabel} · Settled ${settledOn}`,
+          date: event.at,
+          billCreatedAt: loan.createdAt,
+          completedAt: event.at,
+          paymentMode: settlePayMode,
+          paymentModes: [settlePayMode],
+        })
+      }
+    }
   }
 
   return [...saleItems, ...expenseItems, ...purchaseItems, ...loanItems]

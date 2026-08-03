@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
-import { useCash } from '../context/CashContext'
+import { useCashLock } from '../context/CashContext'
 import { normalizeRoutePath } from '../utils/hashRoute'
 
 /** In-app routes — moving between these does not lock Home or require PIN again on return. */
@@ -19,7 +19,7 @@ const IN_APP_ROUTES = [
 /** Lock Home only when leaving the app shell; in-app back navigation stays unlocked. */
 export function useHomePinLock() {
   const location = useLocation()
-  const { lockHome, unlockHome } = useCash()
+  const { lockHome, unlockHome } = useCashLock()
   const prevPathRef = useRef(normalizeRoutePath(location.pathname))
 
   useEffect(() => {

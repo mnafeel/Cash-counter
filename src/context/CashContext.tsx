@@ -48,8 +48,7 @@ import {
   editPaidSalePayment,
   type BillCreatePayType,
   type PaidSalePaymentEdit,
-  getBankBalance,
-  getCurrentBalance,
+  computeDrawerBalances,
   getPendingBills,
   importTallyBills,
   loadData,
@@ -84,6 +83,8 @@ import { applyTheme } from '../utils/theme'
 
 interface CashContextValue {
   data: AppData
+  /** True while a large cloud dataset is being applied — show loading overlay. */
+  dataBooting: boolean
   balance: number
   bankBalance: number
   pendingBills: Sale[]
@@ -289,6 +290,8 @@ interface CashContextValue {
   ) => void
   editPaidSalePayment: (id: string, payment: PaidSalePaymentEdit, relatedSaleIds?: string[]) => void
   replaceAllData: (data: AppData) => void
+  /** Update React state from data already persisted locally (cloud restore). */
+  hydrateData: (data: AppData) => void
   resetAllData: () => void
   refresh: () => void
   getTallyApiUrl: () => string
@@ -311,7 +314,11 @@ interface CashContextValue {
     reminderAt?: string
     reminderNote?: string
   }) => boolean
-  settleLoanRecord: (id: string, settlementPaySource: LoanPaySource) => boolean
+  settleLoanRecord: (
+    id: string,
+    settlementPaySource: LoanPaySource,
+    options?: { amount?: number; settledAt?: string },
+  ) => boolean
   setLoanReminder: (
     id: string,
     reminderAt: string | null,
@@ -320,7 +327,20 @@ interface CashContextValue {
   ) => void
 }
 
+const CashLockContext = createContext<{ lockHome: () => void; unlockHome: () => void } | null>(null)
+
+export function useCashLock() {
+  const ctx = useContext(CashLockContext)
+  if (!ctx) throw new Error('useCashLock must be used within CashProvider')
+  return ctx
+}
+
 const CashContext = createContext<CashContextValue | null>(null)
+const CashBootContext = createContext(false)
+
+export function useCashBooting(): boolean {
+  return useContext(CashBootContext)
+}
 
 function tallyBillsToImport(bills: Awaited<ReturnType<typeof fetchTallyBills>>) {
   return bills.map((bill) => ({
@@ -345,6 +365,7 @@ function applyTallyImport(data: AppData, bills: Awaited<ReturnType<typeof fetchT
 
 export function CashProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => loadData())
+  const [dataBooting, setDataBooting] = useState(false)
   const [homeUnlocked, setHomeUnlocked] = useState(false)
 
   const unlockHome = useCallback(() => setHomeUnlocked(true), [])
@@ -356,10 +377,31 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setCloudRemoteListener((remoteData) => {
-      setData(remoteData)
+      const heavy = remoteData.sales.length > 250 || remoteData.expenses.length > 400
+      if (!heavy) {
+        setDataBooting(false)
+        setData(remoteData)
+        return
+      }
+      setDataBooting(true)
+      const apply = () => {
+        setData(remoteData)
+        requestAnimationFrame(() => setDataBooting(false))
+      }
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(apply, { timeout: 2000 })
+      } else {
+        setTimeout(apply, 32)
+      }
     })
     return () => setCloudRemoteListener(null)
   }, [])
+
+  useEffect(() => {
+    if (!dataBooting) return
+    const timer = window.setTimeout(() => setDataBooting(false), 15000)
+    return () => window.clearTimeout(timer)
+  }, [dataBooting])
 
   // Local data loads from localStorage on mount. Cloud sync uses live Firestore
   // listener — applies remote only when cloud backup is newer than local edits.
@@ -418,8 +460,9 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [syncTallyBills],
   )
 
-  const balance = useMemo(() => getCurrentBalance(data), [data])
-  const bankBalance = useMemo(() => getBankBalance(data), [data])
+  const balances = useMemo(() => computeDrawerBalances(data), [data])
+  const balance = balances.cash
+  const bankBalance = balances.bank
   const pendingBills = useMemo(() => getPendingBills(data), [data])
 
   const recordSale = useCallback(
@@ -818,10 +861,14 @@ export function CashProvider({ children }: { children: ReactNode }) {
   )
 
   const settleLoanRecordHandler = useCallback(
-    (id: string, settlementPaySource: LoanPaySource): boolean => {
+    (
+      id: string,
+      settlementPaySource: LoanPaySource,
+      options?: { amount?: number; settledAt?: string },
+    ): boolean => {
       let success = false
       setData((prev) => {
-        const next = settleLoan(prev, id, settlementPaySource)
+        const next = settleLoan(prev, id, settlementPaySource, options)
         success = next !== prev
         return next
       })
@@ -991,6 +1038,25 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData(replaceData(next))
   }, [])
 
+  const hydrateData = useCallback((next: AppData) => {
+    const heavy = next.sales.length > 250 || next.expenses.length > 400
+    if (!heavy) {
+      setDataBooting(false)
+      setData(next)
+      return
+    }
+    setDataBooting(true)
+    const apply = () => {
+      setData(next)
+      requestAnimationFrame(() => setDataBooting(false))
+    }
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(apply, { timeout: 2000 })
+    } else {
+      setTimeout(apply, 32)
+    }
+  }, [])
+
   const resetAllData = useCallback(() => {
     setData(clearAllLocalData())
     setHomeUnlocked(false)
@@ -999,6 +1065,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       data,
+      dataBooting,
       balance,
       bankBalance,
       pendingBills,
@@ -1042,6 +1109,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateSaleBill: updateSaleBillHandler,
       editPaidSalePayment: editPaidSalePaymentHandler,
       replaceAllData,
+      hydrateData,
       resetAllData,
       refresh,
       getTallyApiUrl,
@@ -1056,6 +1124,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
     }),
     [
       data,
+      dataBooting,
       balance,
       bankBalance,
       pendingBills,
@@ -1098,6 +1167,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateSaleBillHandler,
       editPaidSalePaymentHandler,
       replaceAllData,
+      hydrateData,
       resetAllData,
       refresh,
       saveTallyApiUrlHandler,
@@ -1110,7 +1180,15 @@ export function CashProvider({ children }: { children: ReactNode }) {
     ],
   )
 
-  return <CashContext.Provider value={value}>{children}</CashContext.Provider>
+  const lockActions = useMemo(() => ({ lockHome, unlockHome }), [lockHome, unlockHome])
+
+  return (
+    <CashBootContext.Provider value={dataBooting}>
+      <CashLockContext.Provider value={lockActions}>
+        <CashContext.Provider value={value}>{children}</CashContext.Provider>
+      </CashLockContext.Provider>
+    </CashBootContext.Provider>
+  )
 }
 
 export function useCash() {

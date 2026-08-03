@@ -4,7 +4,7 @@ import { NO1_EXPENSE_LABEL } from '../utils/expenseBillLabels'
 import { downloadExpenseAndNo1PurchaseSpreadsheet, filterNo1PurchaseItems } from '../utils/expenseRangeExport'
 import { formatDate, formatMoney, formatTime } from '../utils/format'
 import {
-  buildExpenseTimelineEntries,
+  buildExpenseTimelineEntriesFromData,
   expenseTimelineKindLabel,
   summarizeExpenseTimeline,
   type ExpenseTimelineKind,
@@ -47,6 +47,7 @@ export default function ExpenseHistoryPanel({ open, onClose, data }: ExpenseHist
   const [sort, setSort] = useState<ExpenseTimelineSort>('time-desc')
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState('')
+  const [search, setSearch] = useState('')
 
   const normalItems = useMemo(
     () => filterNormalExpenseHistoryItems(buildNormalExpenseHistoryItems(data), 'range', rangeFrom, rangeTo),
@@ -61,10 +62,21 @@ export default function ExpenseHistoryPanel({ open, onClose, data }: ExpenseHist
     [purchaseItems],
   )
   const timeline = useMemo(
-    () => buildExpenseTimelineEntries(normalItems, no1PurchaseItems, sort),
-    [normalItems, no1PurchaseItems, sort],
+    () => buildExpenseTimelineEntriesFromData(data, normalItems, purchaseItems, sort),
+    [data, normalItems, purchaseItems, sort],
   )
-  const summary = useMemo(() => summarizeExpenseTimeline(timeline), [timeline])
+  const filteredTimeline = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return timeline
+    return timeline.filter((entry) => {
+      if (entry.title.toLowerCase().includes(q)) return true
+      if (entry.detail.toLowerCase().includes(q)) return true
+      if (entry.payLabel.toLowerCase().includes(q)) return true
+      if (String(entry.amount).includes(q)) return true
+      return false
+    })
+  }, [timeline, search])
+  const summary = useMemo(() => summarizeExpenseTimeline(filteredTimeline), [filteredTimeline])
   const periodLabel = expensePeriodLabel(rangeFrom, rangeTo)
 
   if (!open) return null
@@ -206,18 +218,43 @@ export default function ExpenseHistoryPanel({ open, onClose, data }: ExpenseHist
         <div className="purchase-hist-summary-top">
           <div className="purchase-hist-summary-row purchase-hist-summary-row--total">
             <span>Total · {periodLabel}</span>
-            <strong>{formatMoney(summary.expenseTotal + summary.no1Total)}</strong>
+            <strong>{formatMoney(summary.expenseTotal + summary.purchaseTotal)}</strong>
+          </div>
+          <div className="purchase-hist-summary-row">
+            <span>Normal expenses</span>
+            <strong>{formatMoney(summary.expenseTotal)}</strong>
           </div>
           <span className="purchase-hist-summary-count">
-            {summary.expenseCount} expenses · {summary.no1Count} {NO1_EXPENSE_LABEL}
+            💵 Cash {formatMoney(summary.expenseCash)} · 🏦 Bank {formatMoney(summary.expenseBank)} ·{' '}
+            {summary.expenseCount} items
+          </span>
+          <div className="purchase-hist-summary-row">
+            <span>Purchase expenses</span>
+            <strong>{formatMoney(summary.purchaseTotal)}</strong>
+          </div>
+          <span className="purchase-hist-summary-count">
+            💵 Cash {formatMoney(summary.purchaseCash)} · 🏦 Bank {formatMoney(summary.purchaseBank)} ·{' '}
+            {summary.purchaseCount} purchases · {NO1_EXPENSE_LABEL} {formatMoney(summary.no1Total)}
           </span>
         </div>
 
-        {timeline.length === 0 ? (
+        <label className="purchase-hist-search">
+          <span className="purchase-hist-range-title">Search</span>
+          <input
+            type="search"
+            className="purchase-hist-date-input purchase-hist-date-input--active"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Name, amount, payment type…"
+            aria-label="Search expenses"
+          />
+        </label>
+
+        {filteredTimeline.length === 0 ? (
           <p className="purchase-hist-empty">No expenses or purchases for this date range.</p>
         ) : (
           <ul className="purchase-hist-list">
-            {timeline.map((entry) => {
+            {filteredTimeline.map((entry) => {
               const key = `${entry.kind}:${entry.id}`
               const expanded = expandedKey === key
               return (

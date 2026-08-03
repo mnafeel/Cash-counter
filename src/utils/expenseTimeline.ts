@@ -1,5 +1,8 @@
 import { NO1_BILL_LABEL, NO1_EXPENSE_LABEL } from './expenseBillLabels'
 import { formatDate, formatTime } from './format'
+import type { AppData, Expense } from '../types'
+import { isPurchaseExpense } from './expenseBillLabels'
+import { purchasePaidComponents } from './purchaseHistory'
 import type { NormalExpenseHistoryItem } from './normalExpenseHistory'
 import type { PurchaseHistoryItem } from './purchaseHistory'
 
@@ -17,6 +20,8 @@ export interface ExpenseTimelineEntry {
   amount: number
   payLabel: string
   payDetail: string
+  cashAmount?: number
+  bankAmount?: number
   no1Amount?: number
   billLabel?: string
 }
@@ -85,14 +90,20 @@ export function summarizeExpenseTimeline(entries: ExpenseTimelineEntry[]) {
       if (entry.kind === 'expense') {
         acc.expenseTotal += entry.amount
         acc.expenseCount += 1
+        acc.expenseCash += entry.cashAmount ?? 0
+        acc.expenseBank += entry.bankAmount ?? 0
       } else if (entry.kind === 'no1-purchase') {
         acc.no1Total += entry.no1Amount ?? entry.amount
         acc.no1Count += 1
         acc.purchaseTotal += entry.amount
         acc.purchaseCount += 1
+        acc.purchaseCash += entry.cashAmount ?? 0
+        acc.purchaseBank += entry.bankAmount ?? 0
       } else {
         acc.purchaseTotal += entry.amount
         acc.purchaseCount += 1
+        acc.purchaseCash += entry.cashAmount ?? 0
+        acc.purchaseBank += entry.bankAmount ?? 0
       }
       return acc
     },
@@ -100,12 +111,91 @@ export function summarizeExpenseTimeline(entries: ExpenseTimelineEntry[]) {
       count: 0,
       expenseTotal: 0,
       expenseCount: 0,
+      expenseCash: 0,
+      expenseBank: 0,
       purchaseTotal: 0,
       purchaseCount: 0,
+      purchaseCash: 0,
+      purchaseBank: 0,
       no1Total: 0,
       no1Count: 0,
     },
   )
+}
+
+function normalExpenseCashBank(expense: Expense): { cash: number; bank: number } {
+  if (expense.payType === 'bank') return { cash: 0, bank: expense.amount }
+  if (expense.payType === 'split') {
+    return { cash: expense.cashAmount ?? 0, bank: expense.bankAmount ?? 0 }
+  }
+  if (expense.payType === 'credit' || expense.payType === 'cheque') return { cash: 0, bank: 0 }
+  return { cash: expense.amount, bank: 0 }
+}
+
+function purchaseItemCashBank(data: AppData, item: PurchaseHistoryItem): { cash: number; bank: number } {
+  const expense = data.expenses.find((entry) => entry.id === item.id)
+  if (!expense) return { cash: 0, bank: 0 }
+  const paid = purchasePaidComponents(expense)
+  return { cash: paid.cash, bank: paid.bank + paid.cheque }
+}
+
+export function buildExpenseTimelineEntriesFromData(
+  data: AppData,
+  normalItems: NormalExpenseHistoryItem[],
+  purchaseItems: PurchaseHistoryItem[],
+  sort: ExpenseTimelineSort = 'time-desc',
+): ExpenseTimelineEntry[] {
+  const expenseById = new Map(
+    data.expenses
+      .filter((expense) => (!expense.kind || expense.kind === 'expense') && !isPurchaseExpense(expense))
+      .map((expense) => [expense.id, expense]),
+  )
+
+  const entries: ExpenseTimelineEntry[] = [
+    ...normalItems.map((item) => {
+      const expense = expenseById.get(item.id)
+      const parts = expense ? normalExpenseCashBank(expense) : { cash: item.amount, bank: 0 }
+      return {
+        kind: 'expense' as const,
+        id: item.id,
+        date: item.date,
+        sortTime: new Date(item.date).getTime(),
+        title: item.name,
+        detail: item.payLabel,
+        amount: item.amount,
+        payLabel: item.payLabel,
+        payDetail: item.payDetail,
+        cashAmount: parts.cash,
+        bankAmount: parts.bank,
+      }
+    }),
+    ...purchaseItems.map((item) => {
+      const kind = purchaseTimelineKind(item)
+      const parts = purchaseItemCashBank(data, item)
+      return {
+        kind,
+        id: item.id,
+        date: item.date,
+        sortTime: new Date(item.date).getTime(),
+        title: item.shopName,
+        detail: item.description?.trim() || item.billLabel,
+        amount: kind === 'no1-purchase' ? item.no1Amount : item.paidAmount > 0 ? item.paidAmount : item.amount,
+        payLabel: item.payLabel,
+        payDetail: item.payDetail,
+        no1Amount: item.no1Amount,
+        billLabel: item.billLabel,
+        cashAmount: parts.cash,
+        bankAmount: parts.bank,
+      }
+    }),
+  ]
+
+  entries.sort((a, b) =>
+    sort === 'time-desc'
+      ? b.sortTime - a.sortTime || b.amount - a.amount
+      : a.sortTime - b.sortTime || a.amount - b.amount,
+  )
+  return entries
 }
 
 export function buildExpenseTimelineRows(

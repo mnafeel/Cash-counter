@@ -30,6 +30,7 @@ import {
   setAutoPullFromCloudEnabled,
   subscribeToAuth,
   subscribeToCloudData,
+  type CloudBackupTotals,
 } from './backup'
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
@@ -74,8 +75,31 @@ function buildCloudRemoteSummary(data: AppData, backupAt: string): CloudRemoteSu
   }
 }
 
+function buildCloudRemoteSummaryFromTotals(totals: CloudBackupTotals, backupAt: string): CloudRemoteSummary {
+  return { ...totals, backupAt }
+}
+
+let deferredSummaryTimer: ReturnType<typeof setTimeout> | null = null
+
 function emitCloudRemoteSummary(data: AppData, backupAt: string): void {
   cloudRemoteSummaryListener?.(buildCloudRemoteSummary(data, backupAt))
+}
+
+function emitCloudRemoteSummaryFromPayload(
+  data: AppData,
+  backupAt: string,
+  totals?: CloudBackupTotals,
+): void {
+  if (totals) {
+    cloudRemoteSummaryListener?.(buildCloudRemoteSummaryFromTotals(totals, backupAt))
+    return
+  }
+  if (loginRestoreActive || applyingRemote || backingUp) return
+  if (deferredSummaryTimer) clearTimeout(deferredSummaryTimer)
+  deferredSummaryTimer = setTimeout(() => {
+    deferredSummaryTimer = null
+    cloudRemoteSummaryListener?.(buildCloudRemoteSummary(data, backupAt))
+  }, 800)
 }
 
 /** Read latest cloud backup metadata — same on every device, does not change local data. */
@@ -89,7 +113,16 @@ export async function refreshCloudRemoteSummary(): Promise<CloudRemoteSummary | 
     cloudRemoteSummaryListener?.(null)
     return null
   }
-  const summary = buildCloudRemoteSummary(remote.data, remote.backupAt)
+  const summary =
+    remote.totals != null
+      ? buildCloudRemoteSummaryFromTotals(remote.totals, remote.backupAt)
+      : {
+          bills: remote.data.sales?.length ?? 0,
+          records: remote.data.expenses?.length ?? 0,
+          cash: 0,
+          bank: 0,
+          backupAt: remote.backupAt,
+        }
   cloudRemoteSummaryListener?.(summary)
   return summary
 }
@@ -118,6 +151,15 @@ export function setCloudLoginRestoreActive(active: boolean): void {
   }
 }
 
+/** Wait until auth restore / remote apply finishes — avoids duplicate restore loops on login. */
+export async function waitForCloudRestoreIdle(timeoutMs = 30000): Promise<void> {
+  const start = Date.now()
+  while (loginRestoreActive || applyingRemote || backingUp) {
+    if (Date.now() - start > timeoutMs) break
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+}
+
 function wipeLocalDeviceData(): void {
   clearAllLocalData()
   clearLocalLastBackupTime()
@@ -140,7 +182,7 @@ export async function restoreFullCloudData(): Promise<AppData | null> {
     const next = applyFullRemoteCloudData(remote.data, remote.backupAt, user.uid)
     lastAppliedRemoteBackupAt = parseBackupTimestamp(remote.backupAt)
     markLocalDataSynced(remote.backupAt)
-    remoteListener?.(next)
+    notifyRemoteListener(next)
     emitBackupStatus(
       `Full data loaded · ${next.sales.length} bills · ${next.expenses.length} records · ${new Date(remote.backupAt).toLocaleString()}`,
     )
@@ -160,7 +202,7 @@ async function replaceLocalFromCloud(uid: string): Promise<AppData | null> {
       const next = applyFullRemoteCloudData(remote.data, remote.backupAt, uid)
       lastAppliedRemoteBackupAt = parseBackupTimestamp(remote.backupAt)
       markLocalDataSynced(remote.backupAt)
-      remoteListener?.(next)
+      notifyRemoteListener(next)
       emitBackupStatus(
         `Account data loaded · ${next.sales.length} bills · ${next.expenses.length} records`,
       )
@@ -169,7 +211,7 @@ async function replaceLocalFromCloud(uid: string): Promise<AppData | null> {
 
     setLocalUserUid(uid)
     const empty = loadData()
-    remoteListener?.(empty)
+    notifyRemoteListener(empty)
     return empty
   } finally {
     applyingRemote = false
@@ -195,7 +237,7 @@ async function syncSecondaryDeviceFromCloud(uid: string): Promise<void> {
     const next = applyFullRemoteCloudData(remote.data, remote.backupAt, uid)
     lastAppliedRemoteBackupAt = parseBackupTimestamp(remote.backupAt)
     markLocalDataSynced(remote.backupAt)
-    remoteListener?.(next)
+    notifyRemoteListener(next)
     emitBackupStatus(
       `Cloud loaded · ${next.sales.length} bills · ${next.expenses.length} records · ${new Date(remote.backupAt).toLocaleString()}`,
     )
@@ -228,7 +270,7 @@ async function onCloudUserSignedIn(uid: string): Promise<void> {
         const next = applyFullRemoteCloudData(remote.data, remote.backupAt, uid)
         lastAppliedRemoteBackupAt = parseBackupTimestamp(remote.backupAt)
         markLocalDataSynced(remote.backupAt)
-        remoteListener?.(next)
+        notifyRemoteListener(next)
       } finally {
         applyingRemote = false
         loginRestoreActive = false
@@ -237,7 +279,7 @@ async function onCloudUserSignedIn(uid: string): Promise<void> {
     }
 
     setLocalUserUid(uid)
-    remoteListener?.(local)
+    notifyRemoteListener(local)
     return
   }
 
@@ -306,6 +348,21 @@ export function setCloudRemoteListener(listener: ((data: AppData) => void) | nul
   remoteListener = listener
 }
 
+function notifyRemoteListener(data: AppData): void {
+  if (!remoteListener) return
+  const heavy = data.sales.length > 250 || data.expenses.length > 400
+  if (!heavy) {
+    remoteListener(data)
+    return
+  }
+  const deliver = () => remoteListener?.(data)
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(deliver, { timeout: 2000 })
+  } else {
+    setTimeout(deliver, 32)
+  }
+}
+
 export function flushPendingBackup(): void {
   if (!pendingData || !isCloudLoggedIn()) return
   if (debounceTimer) {
@@ -348,7 +405,7 @@ function applyRemoteSnapshot(data: AppData, backupAt: string): void {
   try {
     const next = applyFullRemoteCloudData(data, backupAt, user?.uid)
     lastAppliedRemoteBackupAt = parseBackupTimestamp(backupAt)
-    remoteListener?.(next)
+    notifyRemoteListener(next)
     emitBackupStatus(
       `Synced from cloud · ${next.sales.length} bills · ${next.expenses.length} records · ${new Date(backupAt).toLocaleString()}`,
     )
@@ -360,9 +417,9 @@ function applyRemoteSnapshot(data: AppData, backupAt: string): void {
 function startCloudListener(): void {
   cloudSnapshotUnsub?.()
   cloudSnapshotUnsub = subscribeToCloudData(
-    (data, backupAt) => {
-      emitCloudRemoteSummary(data, backupAt)
-      applyRemoteSnapshot(data, backupAt)
+    (payload) => {
+      emitCloudRemoteSummaryFromPayload(payload.data, payload.backupAt, payload.totals)
+      applyRemoteSnapshot(payload.data, payload.backupAt)
     },
     (message) => {
       emitBackupStatus(`Cloud error · ${message}`, true)

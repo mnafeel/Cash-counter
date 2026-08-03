@@ -170,12 +170,11 @@ export interface CloudBackupTotals {
 }
 
 export function cloudBackupTotals(data: AppData): CloudBackupTotals {
-  const normalized = normalizeData(data)
   return {
-    bills: normalized.sales.length,
-    records: normalized.expenses.length,
-    cash: getCurrentBalance(normalized),
-    bank: getBankBalance(normalized),
+    bills: data.sales.length,
+    records: data.expenses.length,
+    cash: getCurrentBalance(data),
+    bank: getBankBalance(data),
   }
 }
 
@@ -226,7 +225,9 @@ export async function backupAppData(source?: AppData): Promise<string> {
   }
 
   const verified = await fetchRemoteAppData()
-  if (!verified || !cloudTotalsMatch(cloudBackupTotals(cleanData), cloudBackupTotals(verified.data))) {
+  const uploadedTotals = cloudBackupTotals(cleanData)
+  const remoteTotals = verified?.totals ?? (verified ? cloudBackupTotals(normalizeData(verified.data)) : null)
+  if (!verified || !remoteTotals || !cloudTotalsMatch(uploadedTotals, remoteTotals)) {
     throw new Error(
       'Cloud verify failed — uploaded cash/bills did not match. Check internet and tap Save to cloud again.',
     )
@@ -269,20 +270,37 @@ export async function getRemoteLastBackupTime(): Promise<string | null> {
   }
 }
 
-function cloudPayloadToAppData(raw: AppData & { _backupAt?: string; _updatedAt?: unknown; _totals?: unknown }): {
+export interface CloudRemotePayload {
   data: AppData
   backupAt: string
-} | null {
+  totals?: CloudBackupTotals
+}
+
+function parseCloudTotals(raw: unknown): CloudBackupTotals | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const totals = raw as Partial<CloudBackupTotals>
+  if (typeof totals.bills !== 'number') return undefined
+  return {
+    bills: totals.bills,
+    records: typeof totals.records === 'number' ? totals.records : 0,
+    cash: typeof totals.cash === 'number' ? totals.cash : 0,
+    bank: typeof totals.bank === 'number' ? totals.bank : 0,
+  }
+}
+
+/** Parse cloud doc without normalizing — normalize only when applying to local storage. */
+function parseCloudPayload(
+  raw: AppData & { _backupAt?: string; _updatedAt?: unknown; _totals?: unknown },
+): CloudRemotePayload | null {
   if (!raw._backupAt) return null
-  const { _backupAt: backupAt, _updatedAt: _ignoredUpdated, _totals: _ignoredTotals, ...rest } = raw
+  const { _backupAt: backupAt, _updatedAt: _ignoredUpdated, _totals, ...rest } = raw
   void _ignoredUpdated
-  void _ignoredTotals
-  return { data: normalizeData(rest as AppData), backupAt }
+  return { data: rest as AppData, backupAt, totals: parseCloudTotals(_totals) }
 }
 
 /** Live listener — fires when another device backs up to cloud. */
 export function subscribeToCloudData(
-  onUpdate: (data: AppData, backupAt: string) => void,
+  onUpdate: (payload: CloudRemotePayload) => void,
   onError?: (message: string) => void,
 ): () => void {
   const user = getCloudUser()
@@ -292,11 +310,11 @@ export function subscribeToCloudData(
     latestDocRef(user.uid),
     (snap) => {
       if (!snap.exists()) return
-      const parsed = cloudPayloadToAppData(
-        snap.data() as AppData & { _backupAt?: string; _updatedAt?: unknown },
+      const parsed = parseCloudPayload(
+        snap.data() as AppData & { _backupAt?: string; _updatedAt?: unknown; _totals?: unknown },
       )
       if (!parsed) return
-      onUpdate(parsed.data, parsed.backupAt)
+      onUpdate(parsed)
     },
     (error) => {
       onError?.(formatFirebaseError(error))
@@ -304,15 +322,15 @@ export function subscribeToCloudData(
   )
 }
 
-export async function fetchRemoteAppData(): Promise<{ data: AppData; backupAt: string } | null> {
+export async function fetchRemoteAppData(): Promise<CloudRemotePayload | null> {
   const user = getCloudUser()
   if (!user) return null
 
   try {
     const snap = await getDoc(latestDocRef(user.uid))
     if (!snap.exists()) return null
-    return cloudPayloadToAppData(
-      snap.data() as AppData & { _backupAt?: string; _updatedAt?: unknown },
+    return parseCloudPayload(
+      snap.data() as AppData & { _backupAt?: string; _updatedAt?: unknown; _totals?: unknown },
     )
   } catch {
     return null

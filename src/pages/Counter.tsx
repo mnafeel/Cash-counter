@@ -14,7 +14,7 @@ import {
   getEffectiveSaleReminderAt,
   getEffectiveSaleReminderNote,
 } from '../utils/customerReminders'
-import { lookupCustomerCreditPending } from '../utils/customerLedger'
+import { buildCustomerSummaries } from '../utils/customerLedger'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
@@ -218,6 +218,8 @@ export default function Counter() {
     }
   }, [highlightedNameIndex])
 
+  const customerSummaries = useMemo(() => buildCustomerSummaries(data), [data])
+
   const customerNameSuggestions = useMemo(() => {
     const seen = new Map<string, string>()
     for (let i = data.sales.length - 1; i >= 0; i--) {
@@ -242,12 +244,13 @@ export default function Counter() {
 
   const customerPendingByName = useMemo(() => {
     const map = new Map<string, number>()
-    for (const name of customerNameSuggestions) {
-      const pending = lookupCustomerCreditPending(data, name)
-      if (pending > 0) map.set(name.toLowerCase(), pending)
+    for (const summary of customerSummaries) {
+      if (summary.totalCreditPending > 0) {
+        map.set(summary.name.trim().toLowerCase(), summary.totalCreditPending)
+      }
     }
     return map
-  }, [customerNameSuggestions, data])
+  }, [customerSummaries])
 
   const customerOpenCreditTotal = useMemo(() => {
     const key = customerName.trim().toLowerCase()
