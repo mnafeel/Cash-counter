@@ -91,6 +91,8 @@ function getLayoutVars(
 }
 
 /** Apply device attrs + layout CSS vars. Safe to call before React render. */
+let deviceSizeTimer: ReturnType<typeof setTimeout> | null = null
+
 export function applyDeviceSize() {
   const { width, height } = getAppDimensions()
   const touch = isTouchDevice()
@@ -121,23 +123,28 @@ export function useDeviceSize() {
   useEffect(() => {
     let orientTimer: ReturnType<typeof setTimeout> | undefined
 
-    const update = () => applyDeviceSize()
+    const update = () => {
+      if (deviceSizeTimer) clearTimeout(deviceSizeTimer)
+      deviceSizeTimer = setTimeout(() => {
+        deviceSizeTimer = null
+        applyDeviceSize()
+      }, 80)
+    }
 
-    update()
+    applyDeviceSize()
     window.addEventListener('resize', update)
     window.addEventListener('orientationchange', () => {
       clearTimeout(orientTimer)
       orientTimer = setTimeout(update, 150)
     })
     window.visualViewport?.addEventListener('resize', update)
-    window.visualViewport?.addEventListener('scroll', update)
 
     return () => {
+      if (deviceSizeTimer) clearTimeout(deviceSizeTimer)
       clearTimeout(orientTimer)
       window.removeEventListener('resize', update)
       window.removeEventListener('orientationchange', update)
       window.visualViewport?.removeEventListener('resize', update)
-      window.visualViewport?.removeEventListener('scroll', update)
     }
   }, [])
 }

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { NumpadAction } from '../utils/numpad'
 import './NumPad.css'
 
@@ -22,7 +23,7 @@ interface NumPadProps {
   variant?: 'default' | 'pin'
 }
 
-export default function NumPad({ onPress, showEnter = true, variant = 'default' }: NumPadProps) {
+function NumPad({ onPress, showEnter = true, variant = 'default' }: NumPadProps) {
   if (variant === 'pin') {
     return (
       <div className="numpad numpad--pin">
@@ -92,3 +93,5 @@ export default function NumPad({ onPress, showEnter = true, variant = 'default' 
     </div>
   )
 }
+
+export default memo(NumPad)

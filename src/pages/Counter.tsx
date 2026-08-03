@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
@@ -1530,8 +1530,11 @@ export default function Counter() {
 
   const numpadHandlerRef = useRef(handleNumpad)
   numpadHandlerRef.current = handleNumpad
+  const stableNumpadPress = useCallback((action: NumpadAction) => {
+    numpadHandlerRef.current(action)
+  }, [])
   useNumpadKeyboard(
-    (action) => numpadHandlerRef.current(action),
+    stableNumpadPress,
     !isSaving && !pendingSectionFocus,
   )
 
@@ -3784,7 +3787,7 @@ export default function Counter() {
 
           <div className="counter-keyboard-wrap">
             <NumberKeyboard
-              onPress={handleNumpad}
+              onPress={stableNumpadPress}
               hint={keyboardHint(activeField)}
             />
           </div>

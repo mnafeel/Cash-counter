@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
@@ -367,7 +367,10 @@ export default function Expenses() {
 
   const numpadHandlerRef = useRef(handleNumpad)
   numpadHandlerRef.current = handleNumpad
-  useNumpadKeyboard((action) => numpadHandlerRef.current(action), !saved)
+  const stableNumpadPress = useCallback((action: NumpadAction) => {
+    numpadHandlerRef.current(action)
+  }, [])
+  useNumpadKeyboard(stableNumpadPress, !saved)
 
   const saveHandlerRef = useRef(handleSave)
   saveHandlerRef.current = handleSave
@@ -695,7 +698,7 @@ export default function Expenses() {
       </div>
 
       <div className="expenses-keyboard">
-        <NumberKeyboard onPress={handleNumpad} />
+        <NumberKeyboard onPress={stableNumpadPress} />
       </div>
 
       <div className="expenses-actions">

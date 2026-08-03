@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { ReactNode } from 'react'
 import NumPad from './NumPad'
 import type { NumpadAction } from '../utils/numpad'
@@ -11,7 +12,7 @@ interface NumberKeyboardProps {
   variant?: 'default' | 'pin'
 }
 
-export default function NumberKeyboard({
+function NumberKeyboard({
   onPress,
   footer,
   showEnter = true,
@@ -27,3 +28,5 @@ export default function NumberKeyboard({
     </div>
   )
 }
+
+export default memo(NumberKeyboard)
