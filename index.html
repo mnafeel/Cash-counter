@@ -4,7 +4,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
-    <!-- build 2026-08-03T14:01:02.010Z -->
+    <!-- build 2026-08-03T14:31:30.854Z -->
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/Cash-counter/favicon.png" />
     <link rel="apple-touch-icon" href="/Cash-counter/logo.png" />
@@ -13,6 +13,62 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Shalimar Fashions · Cash Counter</title>
+    <style>
+      #app-boot {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 100dvh;
+        margin: 0;
+        padding: 24px;
+        text-align: center;
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+        background: linear-gradient(165deg, #1f120a 0%, #3d2518 45%, #2a1810 100%);
+        color: #f2dcc0;
+      }
+      #app-boot-title {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+      #app-boot-sub {
+        margin: 0;
+        font-size: 0.82rem;
+        color: #c9a882;
+      }
+      #app-boot-spinner {
+        width: 28px;
+        height: 28px;
+        margin-top: 8px;
+        border: 3px solid rgba(242, 220, 192, 0.25);
+        border-top-color: #f2dcc0;
+        border-radius: 50%;
+        animation: app-boot-spin 0.8s linear infinite;
+      }
+      @keyframes app-boot-spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+    <script>
+      (function () {
+        window.addEventListener(
+          'error',
+          function (event) {
+            var target = event.target
+            if (!target || target.tagName !== 'SCRIPT') return
+            var boot = document.getElementById('app-boot')
+            if (!boot) return
+            boot.innerHTML =
+              '<p id="app-boot-title">Could not load app</p>' +
+              '<p id="app-boot-sub">After an update, hard refresh the page (Ctrl+Shift+R or clear cache).</p>'
+          },
+          true,
+        )
+      })()
+    </script>
     <script>
       (function () {
         var hash = location.hash ? location.hash.slice(1) : ''
@@ -23,12 +79,13 @@
           } catch (e) {}
           path = path.replace(/\/+/g, '/')
           if (path !== hash) {
-            location.replace(location.pathname + '#' + path + location.search)
+            location.replace(location.pathname + location.search + '#' + path)
             return
           }
         }
-        if (!location.hash && location.pathname && location.pathname !== '/') {
-          location.replace('/#' + location.pathname + location.search)
+        if (!location.hash) {
+          var base = location.pathname.replace(/\/?index\.html$/i, '').replace(/\/$/, '')
+          location.replace((base || '') + '/#/' + location.search)
         }
       })()
     </script>
@@ -48,10 +105,20 @@
         d.style.setProperty('--counter-height', Math.max(320, h - hdr - uiPad * 2) + 'px')
       })()
     </script>
-    <script type="module" crossorigin src="/Cash-counter/assets/index-D7Vu3KGk.js"></script>
-    <link rel="stylesheet" crossorigin href="/Cash-counter/assets/index-Ca4cwecj.css">
+    <script type="module" crossorigin src="/Cash-counter/assets/index-CRMw8v-D.js"></script>
+    <link rel="modulepreload" crossorigin href="/Cash-counter/assets/rolldown-runtime-QTnfLwEv.js">
+    <link rel="modulepreload" crossorigin href="/Cash-counter/assets/vendor-CnqtWTz7.js">
+    <link rel="modulepreload" crossorigin href="/Cash-counter/assets/firebase-BfYMTAZ-.js">
+    <link rel="modulepreload" crossorigin href="/Cash-counter/assets/database-7ooFaFko.js">
+    <link rel="stylesheet" crossorigin href="/Cash-counter/assets/index-DZQwL8g8.css">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="app-boot" aria-live="polite" aria-busy="true">
+        <p id="app-boot-title">Shalimar Fashions</p>
+        <p id="app-boot-sub">Cash Counter</p>
+        <div id="app-boot-spinner" aria-hidden="true"></div>
+      </div>
+    </div>
   </body>
 </html>

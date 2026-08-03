@@ -1,0 +1,1 @@
+function e(e){return`/counter?bill=${encodeURIComponent(e)}`}function t(e){return e.type===`sale`?e.id:null}var n=`cash-counter-bill-edit-mode`;function r(){try{return localStorage.getItem(n)===`1`}catch{return!1}}function i(e){try{localStorage.setItem(n,e?`1`:`0`)}catch{}window.dispatchEvent(new CustomEvent(`bill-edit-mode`,{detail:e}))}export{t as i,i as n,e as r,r as t};
