@@ -150,6 +150,24 @@ function tallyApiProxy(): Plugin {
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/Cash-counter/' : '/',
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/firebase')) return 'firebase'
+          if (id.includes('node_modules/xlsx')) return 'xlsx'
+          if (
+            id.includes('node_modules/react') ||
+            id.includes('node_modules/react-dom') ||
+            id.includes('node_modules/react-router') ||
+            id.includes('node_modules/scheduler')
+          ) {
+            return 'vendor'
+          }
+        },
+      },
+    },
+  },
   plugins: [
     react(),
     pinelabsApiProxy(),
