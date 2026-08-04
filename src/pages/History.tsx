@@ -903,10 +903,30 @@ export default function History() {
               ) : null}
               {receiptItem.isSplitGroup &&
               receiptItem.originalBillAmount &&
-              receiptItem.receiptLines ? (
+              receiptItem.collectionBreakdown ? (
                 (() => {
-                  const collectTarget = receiptItem.receiptLines.reduce(
-                    (sum, line) => sum + line.amount,
+                  const collectTarget =
+                    receiptItem.collectionBreakdown.cash +
+                    receiptItem.collectionBreakdown.bank +
+                    receiptItem.collectionBreakdown.cheque +
+                    (receiptItem.receiptLines ?? [])
+                      .filter((line) => line.status === 'pending')
+                      .reduce((sum, line) => sum + line.amount, 0)
+                  return collectTarget > 0 &&
+                    collectTarget !== receiptItem.originalBillAmount ? (
+                    <div className="history-receipt-row">
+                      <span>Round / Collect</span>
+                      <strong>{formatMoney(collectTarget)}</strong>
+                    </div>
+                  ) : null
+                })()
+              ) : receiptItem.isSplitGroup &&
+                receiptItem.originalBillAmount &&
+                receiptItem.receiptLines ? (
+                (() => {
+                  // Sum unique payment channels only — paid cheque counts as bank, not twice.
+                  const collectTarget = getHistoryItemListPaymentParts(receiptItem, 'all', '').reduce(
+                    (sum, part) => sum + part.amount,
                     0,
                   )
                   return collectTarget > 0 &&

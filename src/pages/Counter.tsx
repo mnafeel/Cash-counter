@@ -2043,6 +2043,14 @@ export default function Counter() {
       Boolean(options.credit && options.cheque) &&
       creditSplitAmount > 0 &&
       chequeSplitAmount > 0
+    // Pending cheque belongs on the child — never also on the parent (doubles bank/history).
+    const chequeGoesToChild = Boolean(options.cheque && chequeSplitAmount > 0)
+    const parentChequeAmount = chequeGoesToChild
+      ? splitChequeApprovedAmount > 0
+        ? splitChequeApprovedAmount
+        : undefined
+      : chequeSplitAmount || splitChequeApprovedAmount || undefined
+    const parentChequeApproved = splitChequeApprovedAmount > 0 || undefined
 
     if (splitSaleId) {
       const parentBill = data.sales.find((sale) => sale.id === splitSaleId)
@@ -2056,9 +2064,9 @@ export default function Counter() {
             payType: 'split',
             cashAmount: cashSplitAmount || undefined,
             bankAmount: bankSplitAmount || undefined,
-            chequeAmount: chequeSplitAmount || splitChequeApprovedAmount || undefined,
+            chequeAmount: parentChequeAmount,
             creditAmount: creditSplitAmount || undefined,
-            chequeApproved: splitChequeApprovedAmount > 0 || undefined,
+            chequeApproved: parentChequeApproved,
             customerName: name,
           })
         } else {
@@ -2069,7 +2077,7 @@ export default function Counter() {
             payType: 'split',
             cashAmount: cashSplitAmount,
             bankAmount: bankSplitAmount,
-            chequeAmount: chequeSplitAmount,
+            chequeAmount: parentChequeAmount,
             creditAmount: creditSplitAmount,
           })
         }
@@ -2111,9 +2119,9 @@ export default function Counter() {
           payType: 'split',
           cashAmount: cashSplitAmount || undefined,
           bankAmount: bankSplitAmount || undefined,
-          chequeAmount: chequeSplitAmount || splitChequeApprovedAmount || undefined,
+          chequeAmount: parentChequeAmount,
           creditAmount: creditSplitAmount || undefined,
-          chequeApproved: splitChequeApprovedAmount > 0 || undefined,
+          chequeApproved: parentChequeApproved,
           customerName: name,
           status: 'paid',
         })
@@ -2182,9 +2190,19 @@ export default function Counter() {
     },
   ) {
     const chequeToBank = options.chequeToBank ?? false
-    const bankAmount = chequeToBank
+    const createChequePending = options.createChequePending ?? false
+    // Cheque pending child owns that leg — parent must not also store it (history/bank 2×).
+    const chequeOnParentOnly = chequeToBank && !createChequePending
+    const bankAmount = chequeOnParentOnly
       ? bankSplitAmount + chequeSplitAmount
       : bankSplitAmount
+    const parentChequeAmount = chequeOnParentOnly
+      ? chequeSplitAmount || splitChequeApprovedAmount
+      : splitChequeApprovedAmount > 0
+        ? splitChequeApprovedAmount
+        : undefined
+    const parentChequeApproved =
+      chequeOnParentOnly || splitChequeApprovedAmount > 0
     const splitSaleId = loadedPendingId ?? crypto.randomUUID()
 
     const salePayload = {
@@ -2195,9 +2213,9 @@ export default function Counter() {
       payType: 'split' as const,
       cashAmount: cashSplitAmount,
       bankAmount,
-      chequeAmount: chequeSplitAmount || splitChequeApprovedAmount,
+      chequeAmount: parentChequeAmount,
       creditAmount: creditSplitAmount,
-      chequeApproved: chequeToBank || splitChequeApprovedAmount > 0,
+      chequeApproved: parentChequeApproved,
       customerName: name,
     }
 
@@ -2217,14 +2235,11 @@ export default function Counter() {
         payType: 'split',
         cashAmount: cashSplitAmount > 0 ? cashSplitAmount : undefined,
         bankAmount: bankAmount > 0 ? bankAmount : undefined,
-        chequeAmount:
-          chequeSplitAmount > 0 || splitChequeApprovedAmount > 0
-            ? chequeSplitAmount || splitChequeApprovedAmount
-            : undefined,
+        chequeAmount: parentChequeAmount,
         creditAmount: creditSplitAmount > 0 ? creditSplitAmount : undefined,
-        chequeApproved: chequeToBank || splitChequeApprovedAmount > 0 || undefined,
+        chequeApproved: parentChequeApproved || undefined,
         creditPending: options.createCreditPending ? creditSplitAmount : 0,
-        chequePending: options.createChequePending ? chequeSplitAmount : 0,
+        chequePending: createChequePending ? chequeSplitAmount : 0,
       })
       return splitSaleId
     }

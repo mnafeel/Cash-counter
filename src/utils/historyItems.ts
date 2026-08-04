@@ -261,7 +261,8 @@ function saleCollectionPaymentModes(sale: Sale): HistoryPaymentMode[] {
   const modes: HistoryPaymentMode[] = []
   if (breakdown.cash > 0) modes.push('cash')
   if (breakdown.bank > 0) modes.push('bank')
-  if (breakdown.cheque > 0) modes.push('cheque')
+  // Approved cheque is already folded into bank — only pending cheque is its own mode.
+  if (breakdown.cheque > 0 && sale.status === 'pending') modes.push('cheque')
 
   if (modes.length > 1) return ['split', ...modes]
   if (modes.length === 1) return modes
@@ -272,9 +273,10 @@ function saleCollectionPaymentModes(sale: Sale): HistoryPaymentMode[] {
     return ['pending']
   }
 
-  if (sale.payType === 'bank') return ['bank']
-  if (sale.payType === 'cheque') return ['cheque']
+  // Paid cheque → bank (funds cleared).
+  if (sale.payType === 'bank' || sale.payType === 'cheque') return ['bank']
   if (sale.payType === 'split') return ['split']
+  if (isChequeBill(sale)) return ['bank']
   return ['cash']
 }
 
@@ -296,7 +298,11 @@ function paymentModesFromReceiptLines(
     if (line.label === 'Cash') modes.add('cash')
     if (line.label === 'Bank') modes.add('bank')
     if (line.label === 'Credit') modes.add('credit')
-    if (line.label === 'Cheque') modes.add('cheque')
+    if (line.label === 'Cheque') {
+      // Paid/approved cheque has cleared to bank.
+      if (line.status === 'paid') modes.add('bank')
+      else modes.add('cheque')
+    }
     if (line.status === 'pending') modes.add('pending')
   }
   return [...modes]
@@ -323,6 +329,7 @@ import {
   saleCollectedAmount,
   saleCollectedComponentBreakdown,
   salePendingCreditPaidBreakdown,
+  sanitizeSplitParentChildChequeOverlap,
 } from './salePayment'
 
 function partialCollectionMethodLabel(sale: Sale): string {
@@ -466,16 +473,63 @@ function latestIso(dates: (string | undefined)[]): string {
   return best
 }
 
+function parentCollectedExcludingChequeChildren(
+  parent: Sale,
+  children: Sale[],
+): { cash: number; bank: number; cheque: number } | null {
+  if (parent.status === 'pending') return null
+  const breakdown = saleCollectedComponentBreakdown(parent)
+  const chequeChildren = children.filter(
+    (child) => child.payType === 'cheque' || child.pendingPayType === 'cheque',
+  )
+  if (chequeChildren.length === 0) {
+    return { cash: breakdown.cash, bank: breakdown.bank, cheque: 0 }
+  }
+
+  const approvedParentCheque =
+    parent.chequeApproved && (parent.chequeAmount ?? 0) > 0 ? parent.chequeAmount ?? 0 : 0
+  let bank = breakdown.bank
+  let cash = breakdown.cash
+  if (approvedParentCheque > 0) {
+    bank = Math.max(0, bank - approvedParentCheque)
+  } else if (bank > 0 && (parent.cashAmount ?? 0) === 0) {
+    const paidChildBank = chequeChildren.reduce((sum, child) => {
+      if (child.status === 'pending') return sum
+      return sum + saleCollectedComponentBreakdown(child).bank
+    }, 0)
+    if (paidChildBank > 0 && Math.abs(bank - paidChildBank) < 0.01) bank = 0
+  }
+
+  // Drop parent cash that only mirrors the paid cheque child (would 2× / hit cash drawer).
+  const paidChildBank = chequeChildren.reduce((sum, child) => {
+    if (child.status === 'pending') return sum
+    return sum + saleCollectedComponentBreakdown(child).bank
+  }, 0)
+  if (cash > 0 && paidChildBank > 0 && Math.abs(cash - paidChildBank) < 0.01) {
+    const billCap = parent.originalBillAmount
+    const totalIfKeep = cash + bank + paidChildBank
+    const exceedsBill = billCap != null && billCap > 0 && totalIfKeep > billCap + 0.01
+    const billIsJustTheCheque =
+      billCap != null && billCap > 0 && Math.abs(billCap - paidChildBank) < 0.01
+    if (exceedsBill || billIsJustTheCheque) {
+      cash = 0
+    }
+  }
+
+  return { cash, bank, cheque: 0 }
+}
+
 function buildSplitReceiptLines(parent: Sale, children: Sale[]): HistoryReceiptLine[] {
   const lines: HistoryReceiptLine[] = []
   const childTypes = new Set(children.map((c) => c.payType))
   const parentPaidAt = parent.updatedAt ?? parent.createdAt
+  const parentCollected = parentCollectedExcludingChequeChildren(parent, children)
 
-  if (parent.status !== 'pending') {
-    if ((parent.cashAmount ?? 0) > 0) {
+  if (parent.status !== 'pending' && parentCollected) {
+    if (parentCollected.cash > 0) {
       lines.push({
         label: 'Cash',
-        amount: parent.cashAmount ?? 0,
+        amount: parentCollected.cash,
         status: 'paid',
         detail: '💵 Collected at counter',
         createdAt: parent.createdAt,
@@ -484,20 +538,20 @@ function buildSplitReceiptLines(parent: Sale, children: Sale[]): HistoryReceiptL
       })
     }
 
-    const bankOnParent = parent.bankAmount ?? 0
-    if (bankOnParent > 0) {
+    if (parentCollected.bank > 0) {
       lines.push({
         label: 'Bank',
-        amount: bankOnParent,
+        amount: parentCollected.bank,
         status: 'paid',
-        detail: parent.chequeApproved ? '🧾 Cheque approved to bank' : '🏦 Collected to bank',
+        detail: '🏦 Collected to bank',
         createdAt: parent.createdAt,
         paidAt: parentPaidAt,
         date: parentPaidAt,
       })
     }
-    const pendingCheque = (parent.chequeAmount ?? 0) > 0 && !parent.chequeApproved
-    if (pendingCheque && !childTypes.has('cheque')) {
+    const pendingCheque =
+      (parent.chequeAmount ?? 0) > 0 && !parent.chequeApproved && !childTypes.has('cheque')
+    if (pendingCheque) {
       lines.push({
         label: 'Cheque',
         amount: parent.chequeAmount ?? 0,
@@ -522,8 +576,15 @@ function buildSplitReceiptLines(parent: Sale, children: Sale[]): HistoryReceiptL
 
   for (const child of children) {
     const kind = childBillKind(child)
-    const label = kind === 'credit' ? 'Credit' : kind === 'cheque' ? 'Cheque' : 'Bill'
     const childCollected = collectedPaymentAmount(child)
+    const paidToBank = kind === 'cheque' && child.status !== 'pending'
+    const label = paidToBank
+      ? 'Bank'
+      : kind === 'credit'
+        ? 'Credit'
+        : kind === 'cheque'
+          ? 'Cheque'
+          : 'Bill'
     const hasPartial =
       child.status === 'pending' &&
       childCollected > 0 &&
@@ -545,11 +606,12 @@ function buildSplitReceiptLines(parent: Sale, children: Sale[]): HistoryReceiptL
 
     lines.push({
       label,
-      amount: child.billAmount,
+      amount: child.status === 'pending' ? child.billAmount : childCollected || child.billAmount,
       status: child.status === 'pending' ? 'pending' : 'paid',
-      detail:
-        child.status === 'pending'
-          ? `${label} bill pending`
+      detail: paidToBank
+        ? '🧾 Cheque approved to bank'
+        : child.status === 'pending'
+          ? `${kind === 'credit' ? 'Credit' : kind === 'cheque' ? 'Cheque' : 'Bill'} bill pending`
           : balanceBillCollectionDetail(child) ?? paidCollectionDetail(child),
       createdAt: child.createdAt,
       paidAt,
@@ -571,22 +633,22 @@ function buildSplitTimeline(parent: Sale, children: Sale[]): HistoryReceiptEvent
   ]
 
   const parentPaidAt = parent.updatedAt ?? parent.createdAt
+  const parentCollected = parentCollectedExcludingChequeChildren(parent, children)
 
-  if (parent.status !== 'pending') {
-    if ((parent.cashAmount ?? 0) > 0) {
+  if (parent.status !== 'pending' && parentCollected) {
+    if (parentCollected.cash > 0) {
       events.push({
         label: 'Cash collected',
         date: parentPaidAt,
-        amount: parent.cashAmount ?? 0,
+        amount: parentCollected.cash,
         type: 'collected',
       })
     }
-    const bankOnParent = parent.bankAmount ?? 0
-    if (bankOnParent > 0) {
+    if (parentCollected.bank > 0) {
       events.push({
-        label: parent.chequeApproved ? 'Cheque approved to bank' : 'Bank collected',
+        label: 'Bank collected',
         date: parentPaidAt,
-        amount: bankOnParent,
+        amount: parentCollected.bank,
         type: 'collected',
       })
     }
@@ -619,17 +681,26 @@ function buildSplitTimeline(parent: Sale, children: Sale[]): HistoryReceiptEvent
       }
     } else {
       const paidAt = child.updatedAt ?? child.createdAt
-      const method = collectionMethodLabel(child)
       const collected = collectedPaymentAmount(child)
-      const detail = paidCollectionDetail(child)
-      events.push({
-        label: kind
-          ? `${part} paid · ${method}${detail ? ` · ${detail}` : ''}`
-          : `${part} paid${detail ? ` · ${detail}` : ''}`,
-        date: paidAt,
-        amount: collected,
-        type: 'collected',
-      })
+      if (kind === 'cheque') {
+        events.push({
+          label: 'Cheque approved to bank',
+          date: paidAt,
+          amount: collected,
+          type: 'collected',
+        })
+      } else {
+        const method = collectionMethodLabel(child)
+        const detail = paidCollectionDetail(child)
+        events.push({
+          label: kind
+            ? `${part} paid · ${method}${detail ? ` · ${detail}` : ''}`
+            : `${part} paid${detail ? ` · ${detail}` : ''}`,
+          date: paidAt,
+          amount: collected,
+          type: 'collected',
+        })
+      }
     }
   }
 
@@ -637,22 +708,37 @@ function buildSplitTimeline(parent: Sale, children: Sale[]): HistoryReceiptEvent
 }
 
 function splitPartsTarget(parent: Sale, children: Sale[]): number {
+  const chequeApproved =
+    parent.chequeApproved && (parent.chequeAmount ?? 0) > 0 ? parent.chequeAmount ?? 0 : 0
+  const chequePending =
+    !parent.chequeApproved && (parent.chequeAmount ?? 0) > 0 ? parent.chequeAmount ?? 0 : 0
+  let bank = parent.bankAmount ?? 0
+  if (chequeApproved > 0) bank = Math.max(0, bank - chequeApproved)
   const parentParts =
-    (parent.cashAmount ?? 0) +
-    (parent.bankAmount ?? 0) +
-    (parent.chequeAmount ?? 0) +
-    (parent.creditAmount ?? 0)
+    (parent.cashAmount ?? 0) + bank + chequeApproved + chequePending + (parent.creditAmount ?? 0)
   const childTotal = children.reduce((sum, child) => sum + child.billAmount, 0)
   if (parentParts + childTotal > 0) return parentParts + childTotal
   return parent.billAmount
 }
 
-function splitGroupMoneyCollected(parent: Sale, children: Sale[]): number {
-  let total = parent.status !== 'pending' ? collectedPaymentAmount(parent) : 0
+function splitGroupCollectionBreakdown(
+  parent: Sale,
+  children: Sale[],
+): { cash: number; bank: number; cheque: number } {
+  const parentCollected = parentCollectedExcludingChequeChildren(parent, children)
+  let cash = parentCollected?.cash ?? 0
+  let bank = parentCollected?.bank ?? 0
   for (const child of children) {
-    total += collectedPaymentAmount(child)
+    const b = saleCollectedComponentBreakdown(child)
+    cash += b.cash
+    bank += b.bank
   }
-  return total
+  return { cash, bank, cheque: 0 }
+}
+
+function splitGroupMoneyCollected(parent: Sale, children: Sale[]): number {
+  const breakdown = splitGroupCollectionBreakdown(parent, children)
+  return breakdown.cash + breakdown.bank
 }
 
 function formatSplitPaymentBreakdown(lines: HistoryReceiptLine[]): string {
@@ -661,8 +747,10 @@ function formatSplitPaymentBreakdown(lines: HistoryReceiptLine[]): string {
     if (line.status !== 'paid') continue
     if (line.label === 'Cash') parts.push(`💵 ${formatMoney(line.amount)}`)
     else if (line.label === 'Bank') parts.push(`🏦 ${formatMoney(line.amount)}`)
-    else if (line.label === 'Cheque') parts.push(`🧾 ${formatMoney(line.amount)}`)
-    else if (line.label === 'Credit') parts.push(`💳 ${formatMoney(line.amount)}`)
+    else if (line.label === 'Cheque') {
+      // Should not appear as paid after normalize, but treat as bank if it does.
+      parts.push(`🏦 ${formatMoney(line.amount)}`)
+    } else if (line.label === 'Credit') parts.push(`💳 ${formatMoney(line.amount)}`)
   }
   return parts.join(' · ')
 }
@@ -764,6 +852,7 @@ function findOrphanSplitGroups(sales: Sale[], consumedIds: Set<string>): Sale[][
 function buildSplitGroupItem(parent: Sale, children: Sale[], sales: Sale[]): HistoryItem {
   const receiptLines = buildSplitReceiptLines(parent, children)
   const receiptTimeline = buildSplitTimeline(parent, children)
+  const breakdown = splitGroupCollectionBreakdown(parent, children)
   const fullBill =
     parent.originalBillAmount ??
     children[0]?.originalBillAmount ??
@@ -784,6 +873,9 @@ function buildSplitGroupItem(parent: Sale, children: Sale[], sales: Sale[]): His
     parent.updatedAt ?? parent.createdAt,
     ...children.map((c) => (c.status !== 'pending' ? c.updatedAt ?? c.createdAt : c.createdAt)),
   ])
+  const paymentCollections = [parent, ...children].flatMap((sale) =>
+    buildSalePaymentCollections(sale) ?? [],
+  )
 
   return {
     type: 'sale',
@@ -799,6 +891,12 @@ function buildSplitGroupItem(parent: Sale, children: Sale[], sales: Sale[]): His
     receiptTimeline,
     groupSaleIds,
     originalBillAmount: fullBill,
+    collectedAmount: moneyCollected > 0 ? moneyCollected : undefined,
+    collectionBreakdown:
+      breakdown.cash > 0 || breakdown.bank > 0
+        ? { cash: breakdown.cash, bank: breakdown.bank, cheque: 0 }
+        : undefined,
+    paymentCollections: paymentCollections.length > 0 ? paymentCollections : undefined,
     billCreatedAt: parent.createdAt,
     completedAt,
     paymentMode: 'split',
@@ -811,9 +909,13 @@ function buildSplitGroupItem(parent: Sale, children: Sale[], sales: Sale[]): His
 }
 
 function saleReceiptLabel(sale: Sale): string {
-  if (isCreditBill(sale)) return 'Credit'
-  if (isChequeBill(sale)) return 'Cheque'
+  if (isCreditBill(sale)) return sale.status === 'pending' ? 'Credit' : 'Credit'
+  if (isChequeBill(sale)) {
+    // Approved / paid cheque is bank money.
+    return sale.status === 'paid' ? 'Bank' : 'Cheque'
+  }
   if (sale.payType === 'bank') return 'Bank'
+  if (sale.payType === 'cheque') return sale.status === 'paid' ? 'Bank' : 'Cheque'
   if (sale.payType === 'split') return 'Split'
   return 'Cash'
 }
@@ -963,7 +1065,7 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
         ? collected > 0
           ? `Cheque · Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
           : `Cheque · ${amount} pending`
-        : `Cheque · Paid ${formatMoney(collected)} · ${collectionMethodLabel(sale)}${paidTime ? ` · ${paidTime}` : ''}`
+        : `Bank · Cheque cleared ${formatMoney(collected)} · ${collectionMethodLabel(sale)}${paidTime ? ` · ${paidTime}` : ''}`
   } else {
     const payLabel = salePayLabel(sale)
     const paidDetail = paidCollectionDetail(sale)
@@ -982,10 +1084,10 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
   }
 
   const totalBill =
-    sale.parentSplitId && (isCreditBill(sale) || isChequeBill(sale)) && sale.status === 'pending'
+    sale.originalBillAmount ??
+    ((isCreditBill(sale) || isChequeBill(sale)) && sale.status === 'pending'
       ? sale.billAmount + collected
-      : (sale.originalBillAmount ??
-        (isCreditBill(sale) || isChequeBill(sale) ? sale.billAmount + collected : sale.billAmount))
+      : sale.billAmount)
   const paySummary =
     sale.status !== 'pending' && collected > 0
       ? `Paid ${formatMoney(collected)}`
@@ -1004,7 +1106,11 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
     collectedAmount: collected > 0 ? collected : undefined,
     collectionBreakdown:
       breakdown.cash > 0 || breakdown.bank > 0 || breakdown.cheque > 0
-        ? { cash: breakdown.cash, bank: breakdown.bank, cheque: breakdown.cheque }
+        ? {
+            cash: breakdown.cash,
+            bank: breakdown.bank + breakdown.cheque,
+            cheque: 0,
+          }
         : undefined,
     sub,
     name: getSaleCustomerName(sale, sales),
@@ -1149,10 +1255,16 @@ export function getHistoryListPaymentPartIcon(mode: HistoryListPaymentPart['mode
   return '🧾'
 }
 
-function receiptLinePaymentMode(label: string): HistoryListPaymentPart['mode'] | null {
+function receiptLinePaymentMode(
+  label: string,
+  status?: HistoryReceiptLine['status'],
+): HistoryListPaymentPart['mode'] | null {
   if (label === 'Cash') return 'cash'
   if (label === 'Bank') return 'bank'
-  if (label === 'Cheque') return 'cheque'
+  if (label === 'Cheque') {
+    // Approved cheque has cleared — show under bank, not as a separate cheque total.
+    return status === 'paid' ? 'bank' : 'cheque'
+  }
   if (label === 'Credit' || label === 'Credit balance') return 'credit'
   return null
 }
@@ -1177,21 +1289,25 @@ export function getHistoryItemListPaymentParts(
 ): HistoryListPaymentPart[] {
   const bucket = new Map<string, HistoryListPaymentPart>()
 
-  if (item.receiptLines?.length) {
+  const breakdown = historyItemCollectionBreakdownForDateFilter(item, dateFilter, selectedDate)
+  if (breakdown && (breakdown.cash > 0 || breakdown.bank > 0 || breakdown.cheque > 0)) {
+    mergeListPaymentPart(bucket, 'cash', breakdown.cash, 'paid')
+    // Approved cheque is bank money — never a separate cheque total.
+    mergeListPaymentPart(bucket, 'bank', breakdown.bank + breakdown.cheque, 'paid')
+    // Keep open pending cheque / credit lines visible alongside collected amounts.
+    for (const line of item.receiptLines ?? []) {
+      if (line.status !== 'pending') continue
+      if (line.label === 'Cheque') mergeListPaymentPart(bucket, 'cheque', line.amount, 'pending')
+      if (line.label === 'Credit') mergeListPaymentPart(bucket, 'credit', line.amount, 'pending')
+    }
+  } else if (item.receiptLines?.length) {
     for (const line of item.receiptLines) {
       if (line.label === 'Paid' || line.label === 'Bill total' || line.label === 'Purchase') {
         continue
       }
-      const mode = receiptLinePaymentMode(line.label)
+      const mode = receiptLinePaymentMode(line.label, line.status)
       if (mode) mergeListPaymentPart(bucket, mode, line.amount, line.status)
     }
-  }
-
-  const breakdown = historyItemCollectionBreakdownForDateFilter(item, dateFilter, selectedDate)
-  if (breakdown && bucket.size === 0) {
-    mergeListPaymentPart(bucket, 'cash', breakdown.cash, 'paid')
-    mergeListPaymentPart(bucket, 'bank', breakdown.bank, 'paid')
-    mergeListPaymentPart(bucket, 'cheque', breakdown.cheque, 'paid')
   }
 
   if (bucket.size === 0 && item.paymentMode) {
@@ -1201,7 +1317,9 @@ export function getHistoryItemListPaymentParts(
     if (item.paymentMode === 'cash') mergeListPaymentPart(bucket, 'cash', amount, 'paid')
     else if (item.paymentMode === 'bank') mergeListPaymentPart(bucket, 'bank', amount, 'paid')
     else if (item.paymentMode === 'cheque') {
-      mergeListPaymentPart(bucket, 'cheque', amount, pendingFromLines ? 'pending' : 'paid')
+      // Paid cheque → bank; only open cheque bills stay as cheque.
+      if (pendingFromLines) mergeListPaymentPart(bucket, 'cheque', amount, 'pending')
+      else mergeListPaymentPart(bucket, 'bank', amount, 'paid')
     } else if (item.paymentMode === 'credit') {
       mergeListPaymentPart(bucket, 'credit', amount, pendingFromLines ? 'pending' : 'paid')
     } else if (item.paymentMode === 'pending') {
@@ -1384,7 +1502,7 @@ function buildPurchaseListReceiptLines(
 }
 
 export function buildHistoryItems(data: AppData): HistoryItem[] {
-  const sales = data.sales
+  const sales = sanitizeSplitParentChildChequeOverlap(data.sales)
   const childrenByParent = buildChildrenMap(sales)
   const consumedChildIds = new Set<string>()
   const saleItems: HistoryItem[] = []
@@ -1668,6 +1786,18 @@ export function matchesHistoryPaymentFilter(
     }
     if (item.type === 'purchase') return Boolean(item.hasOpenCredit)
     return false
+  }
+  if (paymentFilter === 'cheque') {
+    // Open cheque bills, or any bill that originated as cheque (incl. cleared to bank).
+    const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
+    if (modes.includes('cheque')) return true
+    return (
+      item.receiptLines?.some(
+        (line) =>
+          line.label === 'Cheque' ||
+          (line.label === 'Bank' && (line.detail ?? '').toLowerCase().includes('cheque')),
+      ) ?? false
+    )
   }
   const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
   return modes.includes(paymentFilter)

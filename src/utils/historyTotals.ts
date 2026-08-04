@@ -16,6 +16,7 @@ export interface HistoryTotalsSummary {
   salesCash: number
   salesBank: number
   salesCredit: number
+  /** Pending cheque only — approved cheque is counted in salesBank. */
   salesCheque: number
   /** bills collected + money added − expenses − purchases */
   netTotal: number
@@ -32,30 +33,43 @@ function addPaymentAmount(
 
   if (item.collectionBreakdown) {
     totals.salesCash += item.collectionBreakdown.cash
-    totals.salesBank += item.collectionBreakdown.bank
-    totals.salesCheque += item.collectionBreakdown.cheque
+    // Approved cheque is folded into bank — never count it again as cheque.
+    totals.salesBank += item.collectionBreakdown.bank + item.collectionBreakdown.cheque
     return
   }
 
   const amount = item.collectedAmount ?? historyItemDisplayAmount(item, false)
   const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
+  const hasPendingCheque = item.receiptLines?.some(
+    (line) => line.label === 'Cheque' && line.status === 'pending',
+  )
+
   if (modes.length === 0) {
     totals.salesCash += amount
     return
   }
-  if (modes.includes('split')) {
-    if (item.paySummary?.includes('💵')) totals.salesCash += amount
-    else if (modes.includes('cash')) totals.salesCash += amount
-    if (modes.includes('bank')) totals.salesBank += amount
-    if (modes.includes('cheque')) totals.salesCheque += amount
+
+  // Without a breakdown, count the collected amount once (never into bank AND cheque).
+  if (modes.includes('credit') && !modes.includes('cash') && !modes.includes('bank') && !modes.includes('cheque')) {
+    totals.salesCredit += amount
+    return
+  }
+  if (modes.includes('cash') && !modes.includes('bank') && !modes.includes('cheque')) {
+    totals.salesCash += amount
+    return
+  }
+  if (hasPendingCheque && !modes.includes('cash') && !modes.includes('bank')) {
+    totals.salesCheque += amount
+    return
+  }
+  if (modes.includes('bank') || modes.includes('cheque') || modes.includes('split')) {
+    // Paid/approved cheque and bank both clear to bank.
+    if (modes.includes('cash')) totals.salesCash += amount
+    else totals.salesBank += amount
     if (modes.includes('credit')) totals.salesCredit += amount
     return
   }
-  if (modes.includes('cash')) totals.salesCash += amount
-  else if (modes.includes('bank')) totals.salesBank += amount
-  else if (modes.includes('cheque')) totals.salesCheque += amount
-  else if (modes.includes('credit')) totals.salesCredit += amount
-  else if (modes.includes('pending')) totals.salesCredit += amount
+  if (modes.includes('pending')) totals.salesCredit += amount
 }
 
 export function buildHistoryTotals(

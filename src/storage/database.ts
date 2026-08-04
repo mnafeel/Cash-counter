@@ -28,6 +28,7 @@ import {
   saleCollectedComponentBreakdown,
   saleCollectionTimestamp,
   salePendingCreditPaidBreakdown,
+  sanitizeSplitParentChildChequeOverlap,
 } from '../utils/salePayment'
 import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
@@ -444,7 +445,9 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
         alerts?.notificationSoundEnabled ?? DEFAULT_REMINDER_ALERTS.notificationSoundEnabled,
     },
     customerReminders: normalizeCustomerReminders(parsed.customerReminders),
-    sales: (parsed.sales ?? []).map((sale) => repairSalePaymentEvents(sale)),
+    sales: sanitizeSplitParentChildChequeOverlap(parsed.sales ?? []).map((sale) =>
+      repairSalePaymentEvents(sale),
+    ),
     expenses: normalizedExpenses,
     loans: (parsed.loans ?? []).map((loan) => normalizeLoan(loan)),
     staff: (parsed.staff ?? []).map((member) => normalizeStaffMember(member)),
@@ -629,21 +632,100 @@ export function isLocalDataEmpty(data: AppData): boolean {
   )
 }
 
-/** Backfill paymentEvents for legacy sales without blocking login UI. */
+/** Backfill paymentEvents and strip erroneous cheque→cash / parent+child doubles. */
 export function scheduleSalePaymentEventsMigration(data: AppData): void {
-  const needsMigration = data.sales.some(
-    (sale) => sale.status === 'paid' && (!sale.paymentEvents || sale.paymentEvents.length === 0),
-  )
+  // Probe RAW localStorage — loadData()/normalizeData already sanitize in memory,
+  // so checking only `data` would skip persisting cleanup of dirty stored rows.
+  let stored: AppData | null = null
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) stored = JSON.parse(raw) as AppData
+  } catch {
+    stored = null
+  }
+  const probe = stored?.sales ?? data.sales
+
+  const needsMigration = probe.some((sale) => {
+    const paidMissingEvents =
+      sale.status === 'paid' && (!sale.paymentEvents || sale.paymentEvents.length === 0)
+    const chequeHasCash =
+      (sale.payType === 'cheque' || sale.pendingPayType === 'cheque') &&
+      sale.payType !== 'split' &&
+      ((sale.cashAmount ?? 0) > 0 ||
+        (sale.paymentEvents ?? []).some((event) => (event.cash ?? 0) > 0))
+    const splitChequeDupCash =
+      sale.payType === 'split' &&
+      sale.chequeApproved === true &&
+      (sale.cashAmount ?? 0) > 0 &&
+      (sale.chequeAmount ?? 0) > 0 &&
+      Math.abs((sale.cashAmount ?? 0) - (sale.chequeAmount ?? 0)) < 0.01
+    const chequeChildren = probe.filter(
+      (child) =>
+        child.parentSplitId === sale.id &&
+        (child.payType === 'cheque' || child.pendingPayType === 'cheque'),
+    )
+    const splitParentWithChequeFields =
+      !sale.parentSplitId &&
+      chequeChildren.length > 0 &&
+      ((sale.chequeAmount ?? 0) > 0 || sale.chequeApproved === true)
+    const paidChequeChildTotal = chequeChildren.reduce((sum, child) => {
+      if (child.status === 'pending') return sum
+      const childCheque =
+        child.chequeApproved && (child.chequeAmount ?? 0) > 0 ? child.chequeAmount ?? 0 : 0
+      let childBank = child.bankAmount ?? 0
+      if (childCheque > 0) childBank = Math.max(0, childBank - childCheque)
+      const collected = (child.cashAmount ?? 0) + childBank + childCheque
+      return sum + (collected > 0 ? collected : child.billAmount)
+    }, 0)
+    const parentCash =
+      (sale.cashAmount ?? 0) > 0
+        ? sale.cashAmount ?? 0
+        : (sale.paymentEvents ?? []).reduce((sum, e) => sum + (e.cash ?? 0), 0)
+    const parentBank = sale.bankAmount ?? 0
+    const splitParentCashDupChequeChild =
+      !sale.parentSplitId &&
+      chequeChildren.length > 0 &&
+      paidChequeChildTotal > 0 &&
+      parentCash > 0 &&
+      Math.abs(parentCash - paidChequeChildTotal) < 0.01 &&
+      (Math.abs(parentBank - paidChequeChildTotal) < 0.01 ||
+        ((sale.originalBillAmount ?? 0) > 0 &&
+          (Math.abs((sale.originalBillAmount ?? 0) - paidChequeChildTotal) < 0.01 ||
+            parentCash + parentBank + paidChequeChildTotal > (sale.originalBillAmount ?? 0) + 0.01)))
+    return (
+      paidMissingEvents ||
+      chequeHasCash ||
+      splitChequeDupCash ||
+      splitParentWithChequeFields ||
+      splitParentCashDupChequeChild
+    )
+  })
   if (!needsMigration) return
 
   const run = () => {
-    let changed = false
-    const sales = data.sales.map((sale) => {
-      const migrated = migrateSalePaymentEvents(sale)
-      if (migrated !== sale) changed = true
-      return migrated
+    let parsed: AppData
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (!raw) return
+      parsed = JSON.parse(raw) as AppData
+    } catch {
+      return
+    }
+    const before = parsed.sales ?? []
+    const sales = sanitizeSplitParentChildChequeOverlap(before).map((sale) =>
+      migrateSalePaymentEvents(sale),
+    )
+    const changed = sales.some((sale, index) => {
+      try {
+        return JSON.stringify(sale) !== JSON.stringify(before[index])
+      } catch {
+        return sale !== before[index]
+      }
     })
-    if (changed) saveLocalData({ ...data, sales })
+    if (changed) {
+      clearSalePaymentCaches()
+      saveLocalData(normalizeData({ ...parsed, sales }))
+    }
   }
 
   if (typeof requestIdleCallback === 'function') {
@@ -907,9 +989,11 @@ export interface DrawerBalances {
 
 /** Single pass over sales/expenses/loans — used for header balances. */
 export function computeDrawerBalances(data: AppData): DrawerBalances {
+  // Dedupe split parent cheque copies so cash/bank headers stay correct live.
+  const sales = sanitizeSplitParentChildChequeOverlap(data.sales)
   let salesCash = 0
   let salesBank = 0
-  for (const sale of data.sales) {
+  for (const sale of sales) {
     const breakdown = saleCollectedComponentBreakdown(sale)
     salesCash += breakdown.cash
     salesBank += breakdown.bank + breakdown.cheque
@@ -2458,6 +2542,8 @@ export function collectPendingBill(
       const settled: Sale = {
         ...s,
         ...sale,
+        originalBillAmount:
+          sale.originalBillAmount ?? s.originalBillAmount ?? sale.billAmount,
         pendingPayType:
           s.pendingPayType ??
           (s.payType === 'credit' || s.payType === 'cheque' ? s.payType : undefined),

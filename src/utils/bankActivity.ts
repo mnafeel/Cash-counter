@@ -1,7 +1,11 @@
 import type { AppData, Expense, Loan, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import { loanSettlementEvents } from './loanLedger'
-import { getSalePaymentEvents, saleCollectionTimestamp } from './salePayment'
+import {
+  getSalePaymentEvents,
+  saleCollectionTimestamp,
+  sanitizeSplitParentChildChequeOverlap,
+} from './salePayment'
 import { saleBankCollected, saleChequeToBankCollected } from './salesReport'
 import {
   cashClosingLabel,
@@ -192,7 +196,8 @@ function pushLoanItems(items: CashActivityItem[], loan: Loan) {
 
 export function buildBankActivityItems(data: AppData): CashActivityItem[] {
   const items: CashActivityItem[] = []
-  for (const sale of data.sales) pushSaleItems(items, sale)
+  const sales = sanitizeSplitParentChildChequeOverlap(data.sales)
+  for (const sale of sales) pushSaleItems(items, sale)
   for (const expense of data.expenses) pushExpenseItems(items, expense)
   for (const loan of data.loans ?? []) pushLoanItems(items, loan)
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())

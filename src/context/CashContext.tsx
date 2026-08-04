@@ -53,6 +53,7 @@ import {
   importTallyBills,
   loadData,
   replaceData,
+  scheduleSalePaymentEventsMigration,
   setHomePin,
   setOpeningBalance,
   setOpeningBankBalance,
@@ -375,6 +376,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     applyTheme()
+  }, [])
+
+  useEffect(() => {
+    scheduleSalePaymentEventsMigration(loadData())
   }, [])
 
   useEffect(() => {

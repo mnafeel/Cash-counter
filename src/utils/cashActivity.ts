@@ -2,7 +2,7 @@ import type { AppData, Expense, Loan, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import { loanSettlementEvents } from './loanLedger'
 import { purchasePaidComponents } from './purchaseHistory'
-import { getSalePaymentEvents, saleCollectionTimestamp } from './salePayment'
+import { getSalePaymentEvents, saleCollectionTimestamp, sanitizeSplitParentChildChequeOverlap, isChequeOriginSale } from './salePayment'
 import { saleCashCollected, saleBankCollected, saleChequeToBankCollected } from './salesReport'
 
 export type CashDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'date' | 'range'
@@ -90,6 +90,17 @@ function pushSaleItems(items: CashActivityItem[], sale: Sale) {
     events.forEach((event, index) => {
       const cash = event.cash ?? 0
       if (cash <= 0) return
+      // Cheque→bank settlements must never appear as cash drawer credits.
+      if (isChequeOriginSale(sale)) {
+        const bank = (event.bank ?? 0) + (event.cheque ?? 0)
+        if (bank > 0 && Math.abs(cash - bank) < 0.01) return
+        if ((sale.chequeAmount ?? 0) > 0 && Math.abs(cash - (sale.chequeAmount ?? 0)) < 0.01) {
+          return
+        }
+      }
+      const cheque =
+        sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
+      if (sale.payType === 'split' && cheque > 0 && Math.abs(cash - cheque) < 0.01) return
       items.push({
         id: `sale-${sale.id}-cash-${index}`,
         label: 'Bill · cash collected',
@@ -102,18 +113,25 @@ function pushSaleItems(items: CashActivityItem[], sale: Sale) {
     return
   }
 
+  // Fallback path also uses sanitized breakdown (via getSalePaymentEvents/saleCashCollected).
   const date = saleActivityDate(sale)
   const cash = saleCashCollected(sale)
-  if (cash > 0) {
-    items.push({
-      id: `sale-${sale.id}-cash`,
-      label: 'Bill · cash collected',
-      amount: cash,
-      direction: 'in',
-      date,
-      name: sale.customerName,
-    })
-  }
+  if (cash <= 0) return
+
+  // Split safety: cash that only duplicates an approved cheque must not hit the drawer.
+  const cheque =
+    sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
+  if (sale.payType === 'split' && cheque > 0 && Math.abs(cash - cheque) < 0.01) return
+  if (isChequeOriginSale(sale)) return
+
+  items.push({
+    id: `sale-${sale.id}-cash`,
+    label: 'Bill · cash collected',
+    amount: cash,
+    direction: 'in',
+    date,
+    name: sale.customerName,
+  })
 }
 
 function expenseOutLabel(expense: Expense): string {
@@ -255,7 +273,8 @@ function pushLoanItems(items: CashActivityItem[], loan: Loan) {
 
 export function buildCashActivityItems(data: AppData): CashActivityItem[] {
   const items: CashActivityItem[] = []
-  for (const sale of data.sales) pushSaleItems(items, sale)
+  const sales = sanitizeSplitParentChildChequeOverlap(data.sales)
+  for (const sale of sales) pushSaleItems(items, sale)
   for (const expense of data.expenses) pushExpenseItems(items, expense)
   for (const loan of data.loans ?? []) pushLoanItems(items, loan)
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
