@@ -1232,7 +1232,7 @@ export function setLoanReminder(
 
 export function addExpenseBatch(
   data: AppData,
-  expenses: Omit<Expense, 'id' | 'createdAt' | 'pairedExpenseId'>[],
+  expenses: (Omit<Expense, 'id' | 'createdAt' | 'pairedExpenseId'> & { createdAt?: string })[],
 ): AppData {
   if (expenses.length === 0) return data
   const now = new Date().toISOString()
@@ -1240,7 +1240,7 @@ export function addExpenseBatch(
   const newExpenses: Expense[] = expenses.map((expense, index) => ({
     ...expense,
     id: ids[index],
-    createdAt: now,
+    createdAt: expense.createdAt ?? now,
     billNumber:
       expense.billNumber ??
       (expenses.length > 1 ? ((index === 0 ? 1 : 2) as 1 | 2) : undefined),
@@ -2828,7 +2828,7 @@ export function updateExpenseName(data: AppData, id: string, name: string): AppD
 export function updateExpense(
   data: AppData,
   id: string,
-  updates: Partial<Omit<Expense, 'id' | 'createdAt'>>,
+  updates: Partial<Omit<Expense, 'id'>>,
 ): AppData {
   const existing = data.expenses.find((e) => e.id === id)
   if (!existing) return data
@@ -2846,6 +2846,10 @@ export function updateExpense(
       updates.billNo !== undefined ? updates.billNo.trim() || undefined : existing.billNo,
     billDate:
       updates.billDate !== undefined ? updates.billDate.trim() || undefined : existing.billDate,
+    createdAt:
+      updates.createdAt !== undefined && updates.createdAt.trim()
+        ? updates.createdAt
+        : existing.createdAt,
   }
 
   let next: AppData = {

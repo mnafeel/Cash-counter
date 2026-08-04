@@ -162,6 +162,7 @@ interface CashContextValue {
       description?: string
       billNo?: string
       billDate?: string
+      createdAt?: string
       payType: ExpensePayType
       cashAmount?: number
       bankAmount?: number
@@ -263,6 +264,7 @@ interface CashContextValue {
       description?: string
       billNo?: string
       billDate?: string
+      createdAt?: string
       payType: ExpensePayType
       cashAmount?: number
       bankAmount?: number
@@ -593,6 +595,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         description?: string
         billNo?: string
         billDate?: string
+        createdAt?: string
         payType: ExpensePayType
         cashAmount?: number
         bankAmount?: number
@@ -615,6 +618,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
             description: expense.description?.trim() || undefined,
             billNo: expense.billNo?.trim() || undefined,
             billDate: expense.billDate?.trim() || undefined,
+            createdAt: expense.createdAt,
             payType: expense.payType,
             cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
             bankAmount:
@@ -964,6 +968,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         description?: string
         billNo?: string
         billDate?: string
+        createdAt?: string
         payType: ExpensePayType
         cashAmount?: number
         bankAmount?: number
@@ -983,6 +988,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
           description: expense.description?.trim() || undefined,
           billNo: expense.billNo?.trim() || undefined,
           billDate: expense.billDate?.trim() || undefined,
+          createdAt: expense.createdAt,
           payType: expense.payType,
           cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
           bankAmount:

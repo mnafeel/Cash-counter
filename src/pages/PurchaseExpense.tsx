@@ -52,7 +52,7 @@ type BillFormState = {
 
 const EMPTY_BILL: BillFormState = {
   amountStr: '',
-  payType: 'cash',
+  payType: 'bank',
   cashSplitStr: '',
   bankSplitStr: '',
   creditSplitStr: '',
@@ -137,7 +137,7 @@ function nextExpenseField(
   creditUpdate = false,
 ): ExpenseField {
   const order: ExpenseField[] = creditUpdate
-    ? ['name', 'description', ...billFieldSteps(bill, creditUpdate), 'pay']
+    ? ['name', 'billNo', 'billDate', ...billFieldSteps(bill, creditUpdate), 'pay']
     : ['name', 'description', 'billNo', 'billDate', ...billFieldSteps(bill, creditUpdate), 'pay']
   const idx = order.indexOf(current)
   if (idx < 0) return order[0]
@@ -345,10 +345,10 @@ function expenseToBillState(expense: Expense): BillFormState {
   }
 }
 
-function expenseToCreditPayState(): BillFormState {
+function expenseToCreditPayState(slot: BillSlot = 1): BillFormState {
   return {
     amountStr: '',
-    payType: 'cash',
+    payType: slot === 2 ? 'cash' : 'bank',
     cashSplitStr: '',
     bankSplitStr: '',
     creditSplitStr: '',
@@ -359,7 +359,7 @@ function expenseToCreditPayState(): BillFormState {
 
 function billStateForLoad(expense: Expense, mode: 'open' | 'update'): BillFormState {
   if (mode === 'update' && isPurchaseCreditExpense(expense)) {
-    return expenseToCreditPayState()
+    return expenseToCreditPayState(expense.billNumber === 2 ? 2 : 1)
   }
   return expenseToBillState(expense)
 }
@@ -578,11 +578,7 @@ export default function PurchaseExpense() {
   )
 
   const payDetailText = creditUpdateActiveSlot
-    ? creditPayingNow > 0
-      ? `Paid ${formatMoney(creditTotalPaid)} · Credit ${formatMoney(creditRemaining)}`
-      : creditAlreadyPaid > 0
-        ? `Paid ${formatMoney(creditAlreadyPaid)} · Credit ${formatMoney(creditOpeningBalance)}`
-        : ''
+    ? `${formatMoney(creditPayingNow)} / ${formatMoney(creditOpeningBalance)}`
     : amount > 0
       ? describeBillPay(bill)
       : ''
@@ -842,6 +838,30 @@ export default function PurchaseExpense() {
       if (!expense || !isPurchaseCreditExpense(expense)) return
       const payAmount = creditPaymentFromBill(bill)
       const payType = normalizeCreditPaymentPayType(bill.payType)
+      const supplier = name.trim()
+      for (const id of editingExpenseIds) {
+        const entry = data.expenses.find((item) => item.id === id)
+        if (!entry) continue
+        const slot: BillSlot = entry.billNumber === 2 ? 2 : 1
+        const taggedName = supplier
+          ? `${supplier}${expenseBillSuffix(slot)}`
+          : entry.name
+        updateExpense(id, {
+          amount: entry.amount,
+          name: taggedName,
+          description: entry.description,
+          billNo: billNo.trim() || undefined,
+          billDate: billDateStr.trim() || undefined,
+          payType: entry.payType,
+          cashAmount: entry.cashAmount,
+          bankAmount: entry.bankAmount,
+          creditAmount: entry.creditAmount,
+          chequeAmount: entry.chequeAmount,
+          chequeApproved: entry.chequeApproved,
+          billNumber: entry.billNumber,
+          kind: 'expense',
+        })
+      }
       applyPurchaseCreditPayment(expenseId, {
         payType,
         payAmount,
@@ -924,7 +944,7 @@ export default function PurchaseExpense() {
         .reduce((sum, entry) => sum + purchaseCreditAmount(entry), 0)
       setFormNote(
         mode === 'update' && creditBalance > 0
-          ? `Credit Update · ${supplierLabel} · Balance ${formatMoney(creditBalance)}`
+          ? null
           : mode === 'update'
             ? `Updating purchase · ${supplierLabel}`
             : `Purchase bill · ${supplierLabel}`,
@@ -935,7 +955,7 @@ export default function PurchaseExpense() {
       const state = billStateForLoad(expense, mode)
       if (slot === 1) {
         setBill1(state)
-        setBill2({ ...EMPTY_BILL })
+        setBill2({ ...EMPTY_BILL, payType: 'cash' })
       } else {
         setBill2(state)
         setBill1({ ...EMPTY_BILL })
@@ -946,7 +966,7 @@ export default function PurchaseExpense() {
       const creditBalance = isPurchaseCreditExpense(expense) ? purchaseCreditAmount(expense) : 0
       setFormNote(
         mode === 'update' && creditBalance > 0
-          ? `Credit Update · ${supplierLabel} · Balance ${formatMoney(creditBalance)}`
+          ? null
           : mode === 'update'
             ? `Updating purchase · ${supplierLabel}`
             : `Purchase bill · ${supplierLabel}`,
@@ -1008,8 +1028,8 @@ export default function PurchaseExpense() {
 
   function handleClear() {
     if (isCreditUpdateMode) {
-      if (slotHasOpenCredit(1)) setBill1(expenseToCreditPayState())
-      if (slotHasOpenCredit(2)) setBill2(expenseToCreditPayState())
+      if (slotHasOpenCredit(1)) setBill1(expenseToCreditPayState(1))
+      if (slotHasOpenCredit(2)) setBill2(expenseToCreditPayState(2))
       setActiveField('amount')
       setSaved(false)
       return
@@ -1031,9 +1051,13 @@ export default function PurchaseExpense() {
   useEffect(() => {
     if (!isCreditUpdateMode || !creditUpdateActiveSlot) return
     if (bill.payType === 'credit') {
-      patchBill({ payType: 'cash', amountStr: bill.amountStr, chequeApproved: false })
+      patchBill({
+        payType: editingBill === 2 ? 'cash' : 'bank',
+        amountStr: bill.amountStr,
+        chequeApproved: false,
+      })
     }
-  }, [isCreditUpdateMode, creditUpdateActiveSlot, bill.payType])
+  }, [isCreditUpdateMode, creditUpdateActiveSlot, bill.payType, editingBill])
 
   function enableBillUpdate() {
     if (loadedExpenseIds.length === 0) return
@@ -1536,7 +1560,7 @@ export default function PurchaseExpense() {
         <p className="purchase-page-sub">
           Purchases only · {GST_BILL_LABEL} · {NO_GST_BILL_LABEL} · cash, bank, cheque, split
         </p>
-        {formNote ? (
+        {formNote && !isCreditUpdateMode ? (
           <div className="purchase-page-form-note-row">
             <p className="purchase-page-credit-note">{formNote}</p>
             {!isEditing && loadedExpenseIds.length > 0 ? (
@@ -1544,46 +1568,6 @@ export default function PurchaseExpense() {
                 Update
               </button>
             ) : null}
-          </div>
-        ) : null}
-        {creditUpdateInfo ? (
-          <div className="purchase-credit-update-banner">
-            <div className="purchase-credit-update-main">
-              <div className="purchase-credit-update-stats">
-                <div className="purchase-credit-update-stat purchase-credit-update-stat--paid">
-                  <span>Paid</span>
-                  <strong className={creditUpdateInfo.payingNow > 0 ? 'purchase-credit-stat-live' : ''}>
-                    {formatMoney(creditUpdateInfo.totalPaid ?? creditUpdateInfo.alreadyPaid)}
-                  </strong>
-                </div>
-                {creditUpdateInfo.activeSlot && creditUpdateInfo.payingNow > 0 ? (
-                  <div className="purchase-credit-update-stat purchase-credit-update-stat--paying">
-                    <span>Paying Now</span>
-                    <strong className="purchase-credit-stat-live">
-                      {formatMoney(creditUpdateInfo.payingNow)}
-                    </strong>
-                  </div>
-                ) : null}
-                <div className="purchase-credit-update-stat purchase-credit-update-stat--remaining">
-                  <span>Credit Balance</span>
-                  <strong className={creditUpdateInfo.payingNow > 0 ? 'purchase-credit-stat-live' : ''}>
-                    {formatMoney(creditUpdateInfo.remaining)}
-                  </strong>
-                </div>
-              </div>
-              <div className="purchase-credit-update-types">
-                <span className="purchase-credit-update-type">
-                  <span className="purchase-credit-update-type-label">Bill</span>
-                  <strong>{creditUpdateInfo.billLabel}</strong>
-                </span>
-                {!creditUpdateInfo.activeSlot ? (
-                  <span className="purchase-credit-update-type">
-                    <span className="purchase-credit-update-type-label">Tip</span>
-                    <strong>Switch bill</strong>
-                  </span>
-                ) : null}
-              </div>
-            </div>
           </div>
         ) : null}
         {isEditing && !isCreditUpdateMode && amount > 0 ? (
@@ -1601,7 +1585,7 @@ export default function PurchaseExpense() {
               <strong>{formatMoney(editBillBalanceDue)}</strong>
             </div>
           </div>
-        ) : !creditUpdateInfo ? (
+        ) : !isCreditUpdateMode ? (
           <p className="purchase-page-active-bill">
             {billMode === 'no1' ? purchaseBillLabel(1) : purchaseBillLabel(2)}
           </p>
@@ -1611,14 +1595,17 @@ export default function PurchaseExpense() {
       <div className="purchase-form">
         <section className="purchase-form-section purchase-form-section--details" aria-label="Supplier details">
           {renderNameField()}
-          {!isCreditUpdateMode ? (
+          {isCreditUpdateMode ? (
+            <div className="purchase-form-row purchase-form-row--credit-meta">
+              {renderBillNoField()}
+              {renderBillDateField()}
+            </div>
+          ) : (
             <div className="purchase-form-row purchase-form-row--3">
               {renderDescriptionField()}
               {renderBillNoField()}
               {renderBillDateField()}
             </div>
-          ) : (
-            renderDescriptionField()
           )}
         </section>
 
@@ -1671,20 +1658,11 @@ export default function PurchaseExpense() {
                 compact
               />
               {creditUpdateActiveSlot ? (
-                <div className="purchase-credit-pay-live" aria-live="polite">
-                  <span className="purchase-credit-pay-live-item">
-                    Paid{' '}
-                    <strong className={creditPayingNow > 0 ? 'purchase-credit-stat-live' : ''}>
-                      {formatMoney(creditTotalPaid)}
-                    </strong>
-                  </span>
-                  <span className="purchase-credit-pay-live-item">
-                    Credit{' '}
-                    <strong className={creditPayingNow > 0 ? 'purchase-credit-stat-live' : ''}>
-                      {formatMoney(creditRemaining)}
-                    </strong>
-                  </span>
-                </div>
+                <p className="purchase-credit-pay-ratio" aria-live="polite">
+                  <strong>{formatMoney(creditPayingNow)}</strong>
+                  <span>/</span>
+                  <strong>{formatMoney(creditOpeningBalance)}</strong>
+                </p>
               ) : null}
             </div>
           </div>
@@ -1753,12 +1731,13 @@ export default function PurchaseExpense() {
 
         {hasBill1 || hasBill2 || creditUpdateActiveSlot ? (
           creditUpdateActiveSlot ? (
-            <div className="purchase-bill-total purchase-bill-total--credit-pay">
-              <span>
-                Paid {formatMoney(creditTotalPaid)}
-                {creditPayingNow > 0 ? ` · Now ${formatMoney(creditPayingNow)}` : ''}
-              </span>
-              <strong>Credit {formatMoney(creditRemaining)}</strong>
+            <div className="purchase-bill-total purchase-bill-total--credit-pay" aria-live="polite">
+              <span>Paying now</span>
+              <strong>
+                {formatMoney(creditPayingNow)}
+                <span className="purchase-credit-pay-sep">/</span>
+                {formatMoney(creditOpeningBalance)}
+              </strong>
             </div>
           ) : (
             <div className="purchase-bill-total purchase-bill-total--static">

@@ -35,6 +35,10 @@
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.72fr) minmax(0, 0.88fr);
 }
 
+.purchase-form-row--credit-meta {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
+}
+
 .purchase-form-row--bill-amount {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: stretch;
@@ -262,6 +266,30 @@
   border-radius: var(--radius-sm);
   background: rgba(80, 140, 80, 0.12);
   border: 1px solid rgba(120, 180, 100, 0.3);
+}
+
+.purchase-credit-pay-ratio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: var(--cream);
+  line-height: 1.2;
+}
+
+.purchase-credit-pay-ratio span {
+  color: var(--cream-dim);
+  font-weight: 700;
+}
+
+.purchase-credit-pay-sep {
+  margin: 0 0.2em;
+  color: var(--cream-dim);
+  font-weight: 700;
 }
 
 .purchase-credit-pay-live-item {
@@ -692,7 +720,8 @@
 }
 
 .purchase-form-row--2 .purchase-field-panel .purchase-field-input-row,
-.purchase-form-row--3 .purchase-field-panel .purchase-field-input-row {
+.purchase-form-row--3 .purchase-field-panel .purchase-field-input-row,
+.purchase-form-row--credit-meta .purchase-field-panel .purchase-field-input-row {
   min-height: clamp(32px, calc(var(--app-height, 800px) * 0.044), 38px);
 }
 
@@ -700,7 +729,9 @@
 .purchase-form-row--2 .purchase-billno-section,
 .purchase-form-row--3 .purchase-item-section,
 .purchase-form-row--3 .purchase-billno-section,
-.purchase-form-row--3 .purchase-billdate-section {
+.purchase-form-row--3 .purchase-billdate-section,
+.purchase-form-row--credit-meta .purchase-billno-section,
+.purchase-form-row--credit-meta .purchase-billdate-section {
   min-height: auto;
 }
 
@@ -1015,6 +1046,7 @@
 
 html[data-screen='phone'] .purchase-form-row--2,
 html[data-screen='phone'] .purchase-form-row--3,
+html[data-screen='phone'] .purchase-form-row--credit-meta,
 html[data-screen='phone'] .purchase-form-row--bill-amount {
   grid-template-columns: 1fr;
 }
@@ -1279,6 +1311,7 @@ html[data-screen='tablet'] .expenses-actions .btn {
 @media (max-width: 520px) {
   .purchase-form-row--2,
   .purchase-form-row--3,
+  .purchase-form-row--credit-meta,
   .purchase-form-row--bill-amount {
     grid-template-columns: 1fr;
   }
