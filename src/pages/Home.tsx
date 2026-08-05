@@ -699,8 +699,14 @@ export default function Home() {
               )}
             </span>
             <span className="stat-meta">
-              {salesSummary.billCount} bills · Credit+Cheque sales{' '}
+              {salesSummary.billCount} bills · Sales collected{' '}
+              {formatMoney(salesSummary.totalBills)} · Credit{' '}
+              {formatMoney(salesSummary.creditPending)} · Cheque{' '}
+              {formatMoney(salesSummary.chequePending)} · Total{' '}
               {formatMoney(salesSummary.withCreditSales)}
+              {salesSummary.oldCreditChequeCollected > 0
+                ? ` · Old cleared ${formatMoney(salesSummary.oldCreditChequeCollected)}`
+                : ''}
             </span>
           </button>
           <button

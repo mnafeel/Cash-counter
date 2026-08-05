@@ -210,7 +210,8 @@ export function buildCreditReportItems(data: AppData): CreditReportItem[] {
       pendingAmount: pending,
       amount: totalBill,
       status: sale.status === 'pending' ? 'pending' : 'paid',
-      date: sale.updatedAt ?? sale.createdAt,
+      // Open balance keeps its original credit date; only settled bills move to the pay date.
+      date: sale.status === 'pending' ? sale.createdAt : sale.updatedAt ?? sale.createdAt,
       payDetail:
         sale.status === 'pending'
           ? collected > 0
@@ -254,7 +255,8 @@ export function buildChequeReportItems(data: AppData): ChequeReportItem[] {
       name: sale.customerName?.trim() || 'Cheque sale',
       amount,
       approved: sale.status !== 'pending',
-      date: sale.updatedAt ?? sale.createdAt,
+      // Pending cheque stays on the date it was issued; approved ones move to the bank date.
+      date: sale.status === 'pending' ? sale.createdAt : sale.updatedAt ?? sale.createdAt,
       payDetail:
         sale.status === 'pending'
           ? `🧾 Cheque pending · ${formatMoney(amount)}`
@@ -386,9 +388,8 @@ export function salesSummaryForPreset(
   dateMode: SaleDateMode = 'collected',
   options?: SalesPresetOptions,
 ) {
-  return summarizeSalesBillRows(
-    salesBillsForPreset(data, preset, selectedDate, 'date-desc', rangeTo, dateMode, options),
-  )
+  const filter = salesFilterForPreset(preset, selectedDate, rangeTo, dateMode, options)
+  return summarizeSalesBillRows(buildSalesBillList(data, 'date-desc', filter), filter)
 }
 
 export function salesSameDaySummaryForPreset(

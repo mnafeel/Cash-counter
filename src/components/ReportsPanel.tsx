@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppData } from '../types'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { formatDate, formatMoney } from '../utils/format'
-import { formatCollectedSalesBreakdown, toInputDate, type ReportSort, type SaleDateMode, type SalesBillRow } from '../utils/salesReport'
+import { formatCollectedSalesBreakdown, toInputDate, isOldCreditChequeClearedRow, type ReportSort, type SaleDateMode, type SalesBillRow } from '../utils/salesReport'
 import {
   buildChequeReportItems,
   buildCreditReportItems,
@@ -14,6 +14,7 @@ import {
   salesSameDaySummaryForPreset,
   sameDaySalesCollectedLabel,
   salesSummaryForPreset,
+  salesFilterForPreset,
   summarizeChequeItems,
   summarizeCreditItems,
   summarizeNormalExpenses,
@@ -99,12 +100,55 @@ const CREDIT_SORT_OPTIONS: { id: CreditSort; label: string }[] = [
   { id: 'paid-desc', label: 'Paid↓' },
 ]
 
-type SalesExpandPanel = 'collected' | 'withCredit' | 'sameDay'
+type SalesExpandPanel = 'collected' | 'withCredit' | 'sameDay' | 'oldCreditCheque'
 
 function isWithCreditSaleRow(row: SalesBillRow): boolean {
+  if (row.hasCreditOrCheque || row.hasCredit || row.hasCheque) return true
   if (row.creditPending > 0 || row.chequePending > 0) return true
   const hay = `${row.payLabel} ${row.detailLabel}`.toLowerCase()
   return hay.includes('credit') || hay.includes('cheque') || hay.includes('💳') || hay.includes('🧾')
+}
+
+function isPeriodWithCreditSaleRow(
+  row: SalesBillRow,
+  dateMode: SaleDateMode,
+  fromDate?: string,
+  toDate?: string,
+): boolean {
+  if (!isWithCreditSaleRow(row)) return false
+  if (dateMode !== 'collected' || (!fromDate && !toDate)) return true
+  const filter = { fromDate, toDate, dateMode: 'collected' as const }
+  // Old credit/cheque cleared today → Old Credit & Cheque view, not main with-credit total/list.
+  if (isOldCreditChequeClearedRow(row, filter)) return false
+  // Pending opened this period, or edited this period without a part payment.
+  if (row.creditPending > 0 || row.chequePending > 0) return true
+  // Same-day credit/cheque bill collections (opened this period).
+  const openedAt = row.chequeDate ?? row.creditDate ?? row.createdDate
+  const createdDay = new Date(openedAt)
+  const created = new Date(
+    createdDay.getFullYear(),
+    createdDay.getMonth(),
+    createdDay.getDate(),
+  ).getTime()
+  if (fromDate) {
+    const [y, m, d] = fromDate.split('-').map(Number)
+    if (created < new Date(y, m - 1, d).getTime()) return false
+  }
+  if (toDate) {
+    const [y, m, d] = toDate.split('-').map(Number)
+    if (created > new Date(y, m - 1, d).getTime()) return false
+  }
+  return row.hasCheque || row.hasCredit
+}
+
+function isOldCreditChequeClearedTodayRow(
+  row: SalesBillRow,
+  dateMode: SaleDateMode,
+  fromDate?: string,
+  toDate?: string,
+): boolean {
+  if (dateMode !== 'collected' || (!fromDate && !toDate)) return false
+  return isOldCreditChequeClearedRow(row, { fromDate, toDate, dateMode: 'collected' })
 }
 
 interface ReportsPanelProps {
@@ -205,10 +249,19 @@ export default function ReportsPanel({
     [data, datePreset, selectedDate, salesSort, rangeTo, showSameDaySalesBox],
   )
 
-  const withCreditSalesBills = useMemo(
-    () => salesBills.filter(isWithCreditSaleRow),
-    [salesBills],
-  )
+  const withCreditSalesBills = useMemo(() => {
+    const filter = salesFilterForPreset(datePreset, selectedDate, rangeTo, salesDateMode)
+    return salesBills.filter((row) =>
+      isPeriodWithCreditSaleRow(row, salesDateMode, filter.fromDate, filter.toDate),
+    )
+  }, [salesBills, datePreset, selectedDate, rangeTo, salesDateMode])
+
+  const oldCreditChequeBills = useMemo(() => {
+    const filter = salesFilterForPreset(datePreset, selectedDate, rangeTo, salesDateMode)
+    return salesBills.filter((row) =>
+      isOldCreditChequeClearedTodayRow(row, salesDateMode, filter.fromDate, filter.toDate),
+    )
+  }, [salesBills, datePreset, selectedDate, rangeTo, salesDateMode])
 
   const showSalesCollectedAccordion =
     activeSection === 'sales' && salesDateMode === 'collected'
@@ -554,6 +607,7 @@ export default function ReportsPanel({
                 sameDaySales={sameDaySales}
                 sameDaySalesLabel={sameDaySalesLabel}
                 showSameDaySalesBox={showSameDaySalesBox}
+                oldCreditChequeCount={oldCreditChequeBills.length}
               />
             ) : null}
 
@@ -645,8 +699,10 @@ export default function ReportsPanel({
               panel={expandedSalesPanel}
               collectedRows={salesBills}
               withCreditRows={withCreditSalesBills}
+              oldCreditChequeRows={oldCreditChequeBills}
               sameDayRows={sameDaySalesBills}
               sameDaySalesLabel={sameDaySalesLabel}
+              salesTotals={salesTotals}
             />
           ) : null}
 
@@ -1023,6 +1079,7 @@ function SalesCollectedSummaryCards({
   sameDaySales,
   sameDaySalesLabel,
   showSameDaySalesBox,
+  oldCreditChequeCount,
 }: {
   expanded: SalesExpandPanel | null
   onToggle: (panel: SalesExpandPanel) => void
@@ -1030,11 +1087,12 @@ function SalesCollectedSummaryCards({
   sameDaySales: ReturnType<typeof salesSameDaySummaryForPreset> | null
   sameDaySalesLabel: string
   showSameDaySalesBox: boolean
+  oldCreditChequeCount: number
 }) {
   const gridClass =
     showSameDaySalesBox && sameDaySales
-      ? 'reports-summary--sales-triple'
-      : 'reports-summary--sales-double'
+      ? 'reports-summary--sales-quad'
+      : 'reports-summary--sales-triple'
 
   return (
     <div className={`reports-summary ${gridClass}`}>
@@ -1065,14 +1123,34 @@ function SalesCollectedSummaryCards({
         aria-expanded={expanded === 'withCredit'}
         onClick={() => onToggle('withCredit')}
       >
-        <span>With credit sales</span>
+        <span>With credit/cheque sale</span>
         <strong>{formatMoney(salesTotals.withCreditSales)}</strong>
         <small>
-          Credit {formatMoney(salesTotals.creditPending)} · Cheque{' '}
-          {formatMoney(salesTotals.chequePending)}
+          Sales collected {formatMoney(salesTotals.totalBills)} · Credit{' '}
+          {formatMoney(salesTotals.creditPending)} · Cheque{' '}
+          {formatMoney(salesTotals.chequePending)} · Total{' '}
+          {formatMoney(salesTotals.withCreditSales)}
         </small>
         <span className="reports-summary-card-chevron" aria-hidden="true">
           {expanded === 'withCredit' ? '▾' : '▸'}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        className={`reports-summary-card reports-summary-card--compact reports-summary-card--expandable ${
+          expanded === 'oldCreditCheque' ? 'reports-summary-card--active' : ''
+        }`}
+        aria-expanded={expanded === 'oldCreditCheque'}
+        onClick={() => onToggle('oldCreditCheque')}
+      >
+        <span>Old Credit &amp; Cheque</span>
+        <strong>{formatMoney(salesTotals.oldCreditChequeCollected)}</strong>
+        <small>
+          {oldCreditChequeCount} cleared today · already in Sales collected
+        </small>
+        <span className="reports-summary-card-chevron" aria-hidden="true">
+          {expanded === 'oldCreditCheque' ? '▾' : '▸'}
         </span>
       </button>
 
@@ -1100,18 +1178,207 @@ function SalesCollectedSummaryCards({
   )
 }
 
+function WithCreditChequeList({
+  rows,
+  salesTotals,
+}: {
+  rows: SalesBillRow[]
+  salesTotals: ReturnType<typeof salesSummaryForPreset>
+}) {
+  // Main with-credit list: pending on original open/edit date + same-day opened collections.
+  const chequeRows = rows.filter((row) => row.chequePending > 0)
+  const creditRows = rows.filter((row) => row.creditPending > 0)
+  const collectedRows = rows.filter((row) => {
+    if (row.collectedTotal <= 0 || !row.hasCreditOrCheque) return false
+    if (row.creditPending > 0 || row.chequePending > 0) return true
+    return true // already filtered to same-day opened by isPeriodWithCreditSaleRow
+  })
+
+  return (
+    <div className="reports-section reports-section--sales-expanded">
+      <p className="reports-list-meta">
+        Sales collected {formatMoney(salesTotals.totalBills)} · Credit{' '}
+        {formatMoney(salesTotals.creditPending)} · Cheque{' '}
+        {formatMoney(salesTotals.chequePending)} · Total{' '}
+        {formatMoney(salesTotals.withCreditSales)}
+      </p>
+      <p className="reports-list-meta">
+        Sales collected is that day&apos;s total. Credit and cheque are pending opened that day.
+        A part payment does not move the remaining balance to today. Old cleared amounts stay in
+        Sales collected / Old Credit &amp; Cheque.
+      </p>
+
+      {rows.length === 0 ? (
+        <p className="reports-empty">No credit or cheque sales for this period.</p>
+      ) : (
+        <>
+          {chequeRows.length > 0 ? (
+            <div className="reports-with-credit-block">
+              <p className="reports-with-credit-block-title">
+                Cheque · {formatMoney(salesTotals.chequePending)}
+              </p>
+              <ul className="reports-list">
+                {chequeRows.map((row) => {
+                  const chequeDateLabel = row.chequeDateLabel ?? row.createdDateLabel
+                  const updatedLabel = row.updatedDateLabel
+                  const openedSameDay =
+                    !updatedLabel || updatedLabel === chequeDateLabel
+                  return (
+                    <li key={`cheque-${row.id}`} className="reports-item">
+                      <div className="reports-item-head">
+                        <span className="reports-item-title">
+                          {row.customerName?.trim() || 'Cheque customer'}
+                        </span>
+                        <span className="reports-item-amount">
+                          {formatMoney(row.chequePending)}
+                        </span>
+                      </div>
+                      <div className="reports-item-meta">
+                        🧾 Cheque date {chequeDateLabel}
+                        {openedSameDay
+                          ? ' · Pending'
+                          : ` · Updated ${updatedLabel} · Pending`}
+                      </div>
+                      <div className="reports-item-meta reports-item-meta--detail">
+                        {row.detailLabel}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ) : null}
+
+          {creditRows.length > 0 ? (
+            <div className="reports-with-credit-block">
+              <p className="reports-with-credit-block-title">
+                Credit · {formatMoney(salesTotals.creditPending)}
+              </p>
+              <ul className="reports-list">
+                {creditRows.map((row) => {
+                  const creditDateLabel = row.creditDateLabel ?? row.createdDateLabel
+                  const updatedLabel = row.updatedDateLabel
+                  const openedSameDay =
+                    !updatedLabel || updatedLabel === creditDateLabel
+                  return (
+                    <li key={`credit-${row.id}`} className="reports-item">
+                      <div className="reports-item-head">
+                        <span className="reports-item-title">
+                          {row.customerName?.trim() || 'Credit customer'}
+                        </span>
+                        <span className="reports-item-amount">
+                          {formatMoney(row.creditPending)}
+                        </span>
+                      </div>
+                      <div className="reports-item-meta">
+                        💳 Credit date {creditDateLabel}
+                        {openedSameDay
+                          ? ' · Pending'
+                          : ` · Updated ${updatedLabel} · Pending`}
+                      </div>
+                      <div className="reports-item-meta reports-item-meta--detail">
+                        {row.detailLabel}
+                      </div>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ) : null}
+
+          {collectedRows.length > 0 ? (
+            <div className="reports-with-credit-block">
+              <p className="reports-with-credit-block-title">
+                Sales collected (that day&apos;s total includes these) ·{' '}
+                {formatMoney(salesTotals.totalBills)}
+              </p>
+              <ul className="reports-list">
+                {collectedRows.map((row) => (
+                  <li key={`collected-${row.id}`} className="reports-item">
+                    <div className="reports-item-head">
+                      <span className="reports-item-title">
+                        {row.customerName?.trim() || 'Sale'}
+                      </span>
+                      <span className="reports-item-amount">
+                        {formatMoney(row.collectedTotal)}
+                      </span>
+                    </div>
+                    <div className="reports-item-meta">
+                      Created {row.createdDateLabel} · Collected {row.dateLabel} ·{' '}
+                      {formatCollectedSalesBreakdown(row.cashTotal, row.bankTotal)}
+                      {row.hasCheque ? ' · Cheque' : ''}
+                      {row.hasCredit ? ' · Credit' : ''}
+                    </div>
+                    <div className="reports-item-meta reports-item-meta--detail">
+                      {row.detailLabel}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </>
+      )}
+    </div>
+  )
+}
+
+function OldCreditChequeList({
+  rows,
+  total,
+}: {
+  rows: SalesBillRow[]
+  total: number
+}) {
+  return (
+    <div className="reports-section reports-section--sales-expanded">
+      <p className="reports-list-meta">
+        Old credit &amp; cheque cleared today · {formatMoney(total)} · already counted in Sales
+        collected (that day&apos;s total)
+      </p>
+      {rows.length === 0 ? (
+        <p className="reports-empty">No old credit or cheque cleared in this period.</p>
+      ) : (
+        <ul className="reports-list">
+          {rows.map((row) => (
+            <li key={`old-${row.id}`} className="reports-item">
+              <div className="reports-item-head">
+                <span className="reports-item-title">
+                  {row.customerName?.trim() || 'Customer'}
+                </span>
+                <span className="reports-item-amount">{formatMoney(row.collectedTotal)}</span>
+              </div>
+              <div className="reports-item-meta">
+                {row.hasCheque ? '🧾 Cheque' : row.hasCredit ? '💳 Credit' : 'Sale'} · Opened{' '}
+                {row.chequeDateLabel ?? row.creditDateLabel ?? row.createdDateLabel} · Cleared{' '}
+                {row.dateLabel} ·{' '}
+                {formatCollectedSalesBreakdown(row.cashTotal, row.bankTotal)}
+              </div>
+              <div className="reports-item-meta reports-item-meta--detail">{row.detailLabel}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function SalesCollectedHistoryList({
   panel,
   collectedRows,
   withCreditRows,
+  oldCreditChequeRows,
   sameDayRows,
   sameDaySalesLabel,
+  salesTotals,
 }: {
   panel: SalesExpandPanel
   collectedRows: SalesBillRow[]
   withCreditRows: SalesBillRow[]
+  oldCreditChequeRows: SalesBillRow[]
   sameDayRows: SalesBillRow[]
   sameDaySalesLabel: string
+  salesTotals: ReturnType<typeof salesSummaryForPreset>
 }) {
   if (panel === 'collected') {
     return (
@@ -1123,11 +1390,13 @@ function SalesCollectedHistoryList({
     )
   }
   if (panel === 'withCredit') {
+    return <WithCreditChequeList rows={withCreditRows} salesTotals={salesTotals} />
+  }
+  if (panel === 'oldCreditCheque') {
     return (
-      <SalesBillList
-        rows={withCreditRows}
-        meta={`${withCreditRows.length} sale${withCreditRows.length === 1 ? '' : 's'} · With credit sales · credit & cheque bills`}
-        emptyMessage="No credit or cheque sales for this period."
+      <OldCreditChequeList
+        rows={oldCreditChequeRows}
+        total={salesTotals.oldCreditChequeCollected}
       />
     )
   }

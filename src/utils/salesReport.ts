@@ -49,6 +49,19 @@ export interface SalesBillRow {
   payLabel: string
   detailLabel: string
   groupId: string
+  /** Bill involves credit and/or cheque (pending or settled). */
+  hasCreditOrCheque: boolean
+  hasCredit: boolean
+  hasCheque: boolean
+  /** When the credit leg was opened (bill/cheque date). */
+  creditDate?: string
+  creditDateLabel?: string
+  /** When the cheque leg was opened (bill/cheque date). */
+  chequeDate?: string
+  chequeDateLabel?: string
+  /** Last update on the credit/cheque leg (for pending updated today). */
+  updatedDate?: string
+  updatedDateLabel?: string
 }
 
 export interface SalesBillSummary {
@@ -56,6 +69,10 @@ export interface SalesBillSummary {
   totalBills: number
   billTotal: number
   withCreditSales: number
+  /** That day's total sales collected (same as totalBills). */
+  withCreditCollected: number
+  /** Old credit/cheque bills (opened earlier) that were cleared/collected in this period. */
+  oldCreditChequeCollected: number
   cashTotal: number
   bankTotal: number
   chequeTotal: number
@@ -249,6 +266,72 @@ export function saleCreditPendingAmount(sale: Sale): number {
 export function saleChequePendingAmount(sale: Sale): number {
   if (!isChequePendingSale(sale)) return 0
   return sale.billAmount
+}
+
+function saleIsChequeRelated(sale: Sale): boolean {
+  if (sale.payType === 'cheque' || sale.pendingPayType === 'cheque') return true
+  if ((sale.chequeAmount ?? 0) > 0 || sale.chequeApproved === true) return true
+  return isChequePendingSale(sale)
+}
+
+function saleIsCreditRelated(sale: Sale): boolean {
+  if (sale.payType === 'credit' || sale.pendingPayType === 'credit') return true
+  if ((sale.creditAmount ?? 0) > 0) return true
+  return isCreditPendingSale(sale)
+}
+
+function saleIsCreditOrChequeRelated(sale: Sale): boolean {
+  return saleIsCreditRelated(sale) || saleIsChequeRelated(sale)
+}
+
+/**
+ * A pending credit/cheque balance belongs to the period it was opened in, or the
+ * period it was edited in. Collecting part of it (cash, bank or cheque approval)
+ * moves money only — the open balance keeps its original credit/cheque date.
+ */
+export function salePendingBelongsToPeriod(sale: Sale, filter?: SalesReportFilter): boolean {
+  if (!filter?.fromDate && !filter?.toDate) return true
+  if ((filter.dateMode ?? 'collected') === 'created') return true
+  if (isInDateRange(sale.createdAt, filter)) return true
+  if (!isInDateRange(sale.updatedAt ?? sale.createdAt, filter)) return false
+  return !saleHasCollectionInRange(sale, filter.fromDate, filter.toDate)
+}
+
+function saleCreditPendingForFilter(sale: Sale, filter?: SalesReportFilter): number {
+  const pending = saleCreditPendingAmount(sale)
+  if (pending <= 0) return 0
+  return salePendingBelongsToPeriod(sale, filter) ? pending : 0
+}
+
+function saleChequePendingForFilter(sale: Sale, filter?: SalesReportFilter): number {
+  const pending = saleChequePendingAmount(sale)
+  if (pending <= 0) return 0
+  return salePendingBelongsToPeriod(sale, filter) ? pending : 0
+}
+
+function latestIsoDate(dates: string[]): string | undefined {
+  if (dates.length === 0) return undefined
+  return dates.reduce((best, next) =>
+    new Date(next).getTime() > new Date(best).getTime() ? next : best,
+  )
+}
+
+function isIsoBeforeRange(iso: string, filter?: SalesReportFilter): boolean {
+  if (!filter?.fromDate) return false
+  return localDayTimestamp(iso) < inputDateTimestamp(filter.fromDate)
+}
+
+/** Credit/cheque bill opened before the period, but money collected in the period. */
+export function isOldCreditChequeClearedRow(
+  row: SalesBillRow,
+  filter?: SalesReportFilter,
+): boolean {
+  if (!filter?.fromDate && !filter?.toDate) return false
+  if (!row.hasCreditOrCheque && !row.hasCredit && !row.hasCheque) return false
+  if (row.collectedTotal <= 0) return false
+  if (row.creditPending > 0 || row.chequePending > 0) return false
+  const openedAt = row.chequeDate ?? row.creditDate ?? row.createdDate
+  return isIsoBeforeRange(openedAt, filter)
 }
 
 function buildSalesBillDetailLabel(sale: Sale): string {
@@ -489,8 +572,9 @@ function saleMatchesReportFilter(sale: Sale, filter?: SalesReportFilter): boolea
   }
 
   if (isPendingBalanceBill(sale)) {
-    const activityAt = sale.updatedAt ?? sale.createdAt
-    if (isInDateRange(activityAt, filter)) return true
+    // Open credit/cheque counts for the day it was created, or a true edit day —
+    // not the day a part payment / approve-to-bank bumps updatedAt.
+    return salePendingBelongsToPeriod(sale, filter)
   }
 
   if ((sale.paymentEvents?.length ?? 0) > 0 || getSalePaymentEvents(sale).length > 0) {
@@ -513,12 +597,18 @@ function groupOriginalBillAmount(parent: Sale, children: Sale[]): number {
   return parent.billAmount + children.reduce((sum, c) => sum + c.billAmount, 0)
 }
 
-function groupCreditPending(parent: Sale, children: Sale[]): number {
-  return saleCreditPendingAmount(parent) + children.reduce((sum, c) => sum + saleCreditPendingAmount(c), 0)
+function groupCreditPending(parent: Sale, children: Sale[], filter?: SalesReportFilter): number {
+  return (
+    saleCreditPendingForFilter(parent, filter) +
+    children.reduce((sum, c) => sum + saleCreditPendingForFilter(c, filter), 0)
+  )
 }
 
-function groupChequePending(parent: Sale, children: Sale[]): number {
-  return saleChequePendingAmount(parent) + children.reduce((sum, c) => sum + saleChequePendingAmount(c), 0)
+function groupChequePending(parent: Sale, children: Sale[], filter?: SalesReportFilter): number {
+  return (
+    saleChequePendingForFilter(parent, filter) +
+    children.reduce((sum, c) => sum + saleChequePendingForFilter(c, filter), 0)
+  )
 }
 
 function groupCustomerName(parent: Sale, children: Sale[]): string | undefined {
@@ -554,12 +644,17 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
     events.length > 0 ? events[events.length - 1].at : saleReportDate(sale, mode)
   const collected = collectedForSalesDisplay(saleCollectedForFilter(sale, filter))
   const billAmount = saleOriginalBillAmount(sale)
-  const creditPending = saleCreditPendingAmount(sale)
-  const chequePending = saleChequePendingAmount(sale)
+  const creditPendingAll = saleCreditPendingAmount(sale)
+  const chequePendingAll = saleChequePendingAmount(sale)
+  const creditPending = saleCreditPendingForFilter(sale, filter)
+  const chequePending = saleChequePendingForFilter(sale, filter)
   const payLabel =
     hasDateFilter && mode === 'collected'
       ? buildPeriodCollectedLabel(collected)
       : buildSalesBillDetailLabel(sale)
+  const hasCredit = saleIsCreditRelated(sale)
+  const hasCheque = saleIsChequeRelated(sale)
+  const updatedAt = sale.updatedAt ?? sale.createdAt
   return {
     id: sale.id,
     groupId: saleBillGroupId(sale),
@@ -576,7 +671,25 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
     chequeTotal: 0,
     customerName: sale.customerName,
     payLabel,
-    detailLabel: `Bill ${formatMoney(billAmount)} · ${payLabel}`,
+    hasCreditOrCheque: hasCredit || hasCheque,
+    hasCredit,
+    hasCheque,
+    creditDate: hasCredit ? sale.createdAt : undefined,
+    creditDateLabel: hasCredit ? formatDate(sale.createdAt) : undefined,
+    chequeDate: hasCheque ? sale.createdAt : undefined,
+    chequeDateLabel: hasCheque ? formatDate(sale.createdAt) : undefined,
+    updatedDate: hasCredit || hasCheque ? updatedAt : undefined,
+    updatedDateLabel: hasCredit || hasCheque ? formatDate(updatedAt) : undefined,
+    detailLabel:
+      hasDateFilter && mode === 'collected'
+        ? buildGroupedSalesBillDetailLabel(
+            sale,
+            billAmount,
+            collected.total,
+            creditPendingAll,
+            chequePendingAll,
+          )
+        : `Bill ${formatMoney(billAmount)} · ${payLabel}`,
   }
 }
 
@@ -604,12 +717,25 @@ function buildGroupedSalesBillRow(
     total: cashTotal + bankTotal + chequeTotal,
   })
   const collectedTotal = collected.total
-  const creditPending = groupCreditPending(parent, children)
-  const chequePending = groupChequePending(parent, children)
+  const creditPendingAll =
+    saleCreditPendingAmount(parent) + children.reduce((sum, c) => sum + saleCreditPendingAmount(c), 0)
+  const chequePendingAll =
+    saleChequePendingAmount(parent) + children.reduce((sum, c) => sum + saleChequePendingAmount(c), 0)
+  const creditPending = groupCreditPending(parent, children, filter)
+  const chequePending = groupChequePending(parent, children, filter)
   const date = inRange.reduce((latest, member) => {
     const memberDate = saleReportDate(member, mode)
     return !latest || new Date(memberDate).getTime() > new Date(latest).getTime() ? memberDate : latest
   }, '')
+  const creditMembers = members.filter((member) => saleIsCreditRelated(member))
+  const chequeMembers = members.filter((member) => saleIsChequeRelated(member))
+  const creditDate = latestIsoDate(creditMembers.map((m) => m.createdAt))
+  const chequeDate = latestIsoDate(chequeMembers.map((m) => m.createdAt))
+  const updatedDate = latestIsoDate(
+    [...creditMembers, ...chequeMembers].map((m) => m.updatedAt ?? m.createdAt),
+  )
+  const hasCredit = creditMembers.length > 0
+  const hasCheque = chequeMembers.length > 0
 
   return {
     id: parent.id,
@@ -626,19 +752,28 @@ function buildGroupedSalesBillRow(
     bankTotal: collected.bank,
     chequeTotal: 0,
     customerName: groupCustomerName(parent, children),
+    hasCreditOrCheque: hasCredit || hasCheque,
+    hasCredit,
+    hasCheque,
+    creditDate,
+    creditDateLabel: creditDate ? formatDate(creditDate) : undefined,
+    chequeDate,
+    chequeDateLabel: chequeDate ? formatDate(chequeDate) : undefined,
+    updatedDate,
+    updatedDateLabel: updatedDate ? formatDate(updatedDate) : undefined,
     payLabel: buildGroupedSalesBillDetailLabel(
       parent,
       billAmount,
       collectedTotal,
-      creditPending,
-      chequePending,
+      creditPendingAll,
+      chequePendingAll,
     ),
     detailLabel: buildGroupedSalesBillDetailLabel(
       parent,
       billAmount,
       collectedTotal,
-      creditPending,
-      chequePending,
+      creditPendingAll,
+      chequePendingAll,
     ),
   }
 }
@@ -699,7 +834,10 @@ export function buildSalesBillList(
   return sortSalesBillRows(rows, sort)
 }
 
-export function summarizeSalesBillRows(rows: SalesBillRow[]): SalesBillSummary {
+export function summarizeSalesBillRows(
+  rows: SalesBillRow[],
+  filter?: SalesReportFilter,
+): SalesBillSummary {
   const seenGroups = new Set<string>()
   const summary = rows.reduce(
     (acc, row) => {
@@ -720,6 +858,8 @@ export function summarizeSalesBillRows(rows: SalesBillRow[]): SalesBillSummary {
       totalBills: 0,
       billTotal: 0,
       withCreditSales: 0,
+      withCreditCollected: 0,
+      oldCreditChequeCollected: 0,
       cashTotal: 0,
       bankTotal: 0,
       chequeTotal: 0,
@@ -727,8 +867,32 @@ export function summarizeSalesBillRows(rows: SalesBillRow[]): SalesBillSummary {
       chequePending: 0,
     },
   )
-  summary.withCreditSales =
-    summary.totalBills + summary.creditPending + summary.chequePending
+
+  const hasDateFilter = Boolean(filter?.fromDate || filter?.toDate)
+  const mode = filter?.dateMode ?? 'collected'
+
+  if (hasDateFilter && mode === 'collected' && !filter?.sameDayCreatedAndPaid) {
+    // With credit/cheque sales for a day =
+    //   Sales collected (that day's total) + Credit pending + Cheque pending.
+    // Part payment / Approve to Bank does not move remaining balance onto today.
+    // Old credit/cheque cleared today is already inside Sales collected.
+    let openedInPeriod = 0
+    let oldCleared = 0
+    for (const row of rows) {
+      openedInPeriod += row.creditPending + row.chequePending
+      if (isOldCreditChequeClearedRow(row, filter)) {
+        oldCleared += row.collectedTotal
+      }
+    }
+    summary.withCreditCollected = summary.totalBills
+    summary.oldCreditChequeCollected = oldCleared
+    summary.withCreditSales = summary.totalBills + openedInPeriod
+  } else {
+    summary.withCreditCollected = summary.totalBills
+    summary.oldCreditChequeCollected = 0
+    summary.withCreditSales =
+      summary.totalBills + summary.creditPending + summary.chequePending
+  }
   return summary
 }
 
@@ -747,7 +911,7 @@ export function summarizeSales(rows: Pick<SalesPeriodRow, 'billCount' | 'totalBi
 export function getTodaySalesSummary(data: AppData): SalesBillSummary {
   const today = toInputDate()
   const filter: SalesReportFilter = { fromDate: today, toDate: today, dateMode: 'collected' }
-  return summarizeSalesBillRows(buildSalesBillList(data, 'date-desc', filter))
+  return summarizeSalesBillRows(buildSalesBillList(data, 'date-desc', filter), filter)
 }
 
 export function getTodaySameDaySalesSummary(data: AppData): SalesBillSummary {
@@ -758,7 +922,7 @@ export function getTodaySameDaySalesSummary(data: AppData): SalesBillSummary {
     dateMode: 'collected',
     sameDayCreatedAndPaid: true,
   }
-  return summarizeSalesBillRows(buildSalesBillList(data, 'date-desc', filter))
+  return summarizeSalesBillRows(buildSalesBillList(data, 'date-desc', filter), filter)
 }
 
 export function formatSalesBreakdown(

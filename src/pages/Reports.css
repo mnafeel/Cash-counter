@@ -699,7 +699,11 @@
 }
 
 .reports-summary--sales-triple {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.reports-summary--sales-quad {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .reports-summary--sales-double {
@@ -786,6 +790,23 @@
 .reports-section--sales-expanded {
   margin: 0;
   padding: 0;
+}
+
+.reports-with-credit-block {
+  margin-top: 8px;
+}
+
+.reports-with-credit-block:first-of-type {
+  margin-top: 4px;
+}
+
+.reports-with-credit-block-title {
+  margin: 0 0 4px;
+  padding: 0 2px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--cream);
 }
 
 .reports-summary-card-chevron {
@@ -1185,6 +1206,7 @@ html[data-short='true'] .reports-item {
   }
 
   .reports-summary--sales-triple,
+  .reports-summary--sales-quad,
   .reports-summary--sales-double {
     grid-template-columns: 1fr;
   }
@@ -1221,6 +1243,7 @@ html[data-short='true'] .reports-item {
 }
 
 html[data-screen='phone'] .reports-summary--sales-triple,
+html[data-screen='phone'] .reports-summary--sales-quad,
 html[data-screen='phone'] .reports-summary--sales-double,
 html[data-screen='phone'] .reports-summary--all {
   grid-template-columns: 1fr;

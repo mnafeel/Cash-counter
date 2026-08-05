@@ -23,7 +23,6 @@ import {
   summarizeNormalExpenses,
   type NormalExpenseHistoryItem,
 } from './normalExpenseHistory'
-import { buildDailyTotals } from './dailyTotals'
 import { buildSalesBillList, summarizeSalesBillRows } from './salesReport'
 import { formatMoney, formatReportTime } from './format'
 import { printHtmlReport } from './printHtmlReport'
@@ -503,20 +502,22 @@ export function buildDailySummaryTable(input: DailyReportInput): DailySummaryTab
   const cashSummary = summarizeCashActivity(dailyCashItems(data, selectedDate))
   const bankSummary = summarizeBankActivity(dailyBankItems(data, selectedDate))
   const expenseSummary = summarizeNormalExpenses(dailyExpenseItems(data, selectedDate))
-  const dailyTotals = buildDailyTotals(data, selectedDate, selectedDate)
+  const salesFilter = {
+    fromDate: selectedDate,
+    toDate: selectedDate,
+    dateMode: 'collected' as const,
+  }
   const salesSummary = summarizeSalesBillRows(
-    buildSalesBillList(data, 'date-desc', {
-      fromDate: selectedDate,
-      toDate: selectedDate,
-      dateMode: 'collected',
-    }),
+    buildSalesBillList(data, 'date-desc', salesFilter),
+    salesFilter,
   )
 
   const cashAmount = cashSummary.net
   const bankAmount = bankSummary.net
   const expenseAmount = expenseSummary.total
   const allTotal = cashAmount + bankAmount - expenseAmount
-  const withCreditSale = salesSummary.withCreditSales + dailyTotals.creditAddedInPeriod
+  // Already scoped to bills / credit opened on this day — do not add creditAddedInPeriod again.
+  const withCreditSale = salesSummary.withCreditSales
   const withoutCreditSale = salesSummary.totalBills
 
   const rows: DailySummaryAmountRow[] = [
@@ -524,8 +525,8 @@ export function buildDailySummaryTable(input: DailyReportInput): DailySummaryTab
     { label: 'Bank', amount: bankAmount },
     { label: 'Expense', amount: expenseAmount },
     { label: 'All Total', amount: allTotal, isTotal: true },
-    { label: 'With credit sale', amount: withCreditSale, isSales: true },
-    { label: 'Without credit sale', amount: withoutCreditSale, isSales: true },
+    { label: 'With credit/cheque sale', amount: withCreditSale, isSales: true },
+    { label: 'Without credit/cheque sale', amount: withoutCreditSale, isSales: true },
   ]
 
   return {

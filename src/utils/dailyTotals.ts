@@ -5,6 +5,7 @@ import {
   toInputDate,
   type SalesReportFilter,
 } from './salesReport'
+import { saleHasCollectionInRange } from './salePayment'
 import { buildCreditOverview } from './customerLedger'
 import { buildChequeOverview } from './chequeLedger'
 import {
@@ -70,22 +71,26 @@ function filterItemsByDateRange<T extends { date: string }>(
   return items.filter((item) => isInDateRange(item.date, fromDate, toDate))
 }
 
-function pendingBalanceActivityDate(sale: Sale): string {
-  return sale.updatedAt ?? sale.createdAt
+/**
+ * Open balance belongs to the day it was created, or the day it was edited.
+ * A part payment in the period does not move the remaining balance to that day.
+ */
+function pendingBelongsToPeriod(sale: Sale, fromDate: string, toDate: string): boolean {
+  if (isInDateRange(sale.createdAt, fromDate, toDate)) return true
+  if (!isInDateRange(sale.updatedAt ?? sale.createdAt, fromDate, toDate)) return false
+  return !saleHasCollectionInRange(sale, fromDate, toDate)
 }
 
 function pendingCreditAddedOnCreate(sale: Sale, fromDate: string, toDate: string): number {
-  if (!isInDateRange(pendingBalanceActivityDate(sale), fromDate, toDate)) return 0
   if (sale.status !== 'pending') return 0
   if (sale.payType !== 'credit' && sale.pendingPayType !== 'credit') return 0
-  return sale.billAmount
+  return pendingBelongsToPeriod(sale, fromDate, toDate) ? sale.billAmount : 0
 }
 
 function pendingChequeAddedOnCreate(sale: Sale, fromDate: string, toDate: string): number {
-  if (!isInDateRange(pendingBalanceActivityDate(sale), fromDate, toDate)) return 0
   if (sale.status !== 'pending') return 0
   if (sale.payType !== 'cheque' && sale.pendingPayType !== 'cheque') return 0
-  return sale.billAmount
+  return pendingBelongsToPeriod(sale, fromDate, toDate) ? sale.billAmount : 0
 }
 
 export function buildDailyTotals(
@@ -99,7 +104,7 @@ export function buildDailyTotals(
     dateMode: 'collected',
   }
   const salesRows = buildSalesBillList(data, 'date-desc', salesFilter)
-  const salesTotals = summarizeSalesBillRows(salesRows)
+  const salesTotals = summarizeSalesBillRows(salesRows, salesFilter)
 
   let cashCollected = 0
   let bankCollected = 0
