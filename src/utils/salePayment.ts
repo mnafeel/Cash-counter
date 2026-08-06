@@ -13,12 +13,16 @@ const breakdownCache = new Map<string, SaleCollectedBreakdown>()
 function saleCacheKey(sale: Sale): string {
   const eventsLen = sale.paymentEvents?.length ?? 0
   const ev = sale.paymentEvents?.[0]
+  const last = sale.paymentEvents?.[eventsLen - 1]
   const evKey = ev
-    ? `${ev.cash ?? 0}:${ev.bank ?? 0}:${ev.cheque ?? 0}:${ev.amount}`
+    ? `${ev.cash ?? 0}:${ev.bank ?? 0}:${ev.cheque ?? 0}:${ev.amount}:${ev.at}`
+    : ''
+  const lastKey = last
+    ? `${last.cash ?? 0}:${last.bank ?? 0}:${last.cheque ?? 0}:${last.amount}:${last.at}`
     : ''
   // Include cash/bank/cheque so sanitize (same updatedAt / event count) cannot
   // return a stale cached breakdown that still credits cheque money as cash.
-  return `${sale.id}:${sale.updatedAt ?? sale.createdAt}:${eventsLen}:${sale.status ?? 'paid'}:${sale.cashAmount ?? 0}:${sale.bankAmount ?? 0}:${sale.chequeAmount ?? 0}:${sale.chequeApproved ? 1 : 0}:${evKey}`
+  return `${sale.id}:${sale.updatedAt ?? sale.createdAt}:${eventsLen}:${sale.status ?? 'paid'}:${sale.cashAmount ?? 0}:${sale.bankAmount ?? 0}:${sale.chequeAmount ?? 0}:${sale.chequeApproved ? 1 : 0}:${evKey}:${lastKey}`
 }
 
 export function clearSalePaymentCaches(): void {
@@ -239,22 +243,32 @@ export function sanitizeChequeSaleCash(sale: Sale): Sale {
   }
 
   if (next.paymentEvents && next.paymentEvents.length > 0) {
-    const bankAt = [...(sale.paymentEvents ?? [])]
-      .reverse()
-      .find((e) => (e.bank ?? 0) > 0 || (e.cheque ?? 0) > 0)?.at
-    const at =
-      bankAt ??
-      sale.paymentEvents?.[sale.paymentEvents.length - 1]?.at ??
-      sale.updatedAt ??
-      sale.createdAt
-    next.paymentEvents = [
-      paymentEventFromNormalizedBreakdown(at, {
-        cash: 0,
-        bank: bankTotal,
-        cheque: 0,
-        total: bankTotal,
-      }),
-    ]
+    if (next.paymentEvents.length > 1) {
+      // Keep each approval slice — only strip duplicate cash off the events.
+      next.paymentEvents = next.paymentEvents.map((event) =>
+        normalizePaymentEvent({
+          ...event,
+          cash: undefined,
+        }),
+      )
+    } else {
+      const bankAt = [...(sale.paymentEvents ?? [])]
+        .reverse()
+        .find((e) => (e.bank ?? 0) > 0 || (e.cheque ?? 0) > 0)?.at
+      const at =
+        bankAt ??
+        sale.paymentEvents?.[sale.paymentEvents.length - 1]?.at ??
+        sale.updatedAt ??
+        sale.createdAt
+      next.paymentEvents = [
+        paymentEventFromNormalizedBreakdown(at, {
+          cash: 0,
+          bank: bankTotal,
+          cheque: cheque > 0 ? cheque : 0,
+          total: bankTotal,
+        }),
+      ]
+    }
   }
 
   return next
@@ -414,26 +428,27 @@ export function sanitizeSplitParentChildChequeOverlap(sales: Sale[]): Sale[] {
   })
 }
 
-/** Approved cheque in payment events / history rows → bank only. */
+/** Approved cheque in payment events — keep cheque marker, fold into bank for amount. */
 export function normalizePaymentEvent(event: SalePaymentEvent): SalePaymentEvent {
   const cash = event.cash ?? 0
-  const bank = event.bank ?? 0
-  const cheque = event.cheque ?? 0
-  if (cash === 0 && bank === 0 && cheque === 0) {
+  let bank = event.bank ?? 0
+  const chequeIn = event.cheque ?? 0
+  if (cash === 0 && bank === 0 && chequeIn === 0) {
     return event
   }
-  const normalized = normalizeCollectedBreakdown({
-    cash,
-    bank,
-    cheque,
-    total: event.amount > 0 ? event.amount : cash + bank + cheque,
-  })
+  // Preserve cheque-approve identity for Settings / History (1st / 2nd / 3rd cheque).
+  const chequeMarker = chequeIn > 0 ? chequeIn : 0
+  if (chequeMarker > 0) {
+    bank = bank >= chequeMarker ? bank : bank + chequeMarker
+  }
+  const total =
+    event.amount > 0 ? event.amount : cash + bank
   return {
     at: event.at,
-    amount: normalized.total,
-    cash: normalized.cash > 0 ? normalized.cash : undefined,
-    bank: normalized.bank > 0 ? normalized.bank : undefined,
-    cheque: normalized.cheque > 0 ? normalized.cheque : undefined,
+    amount: total,
+    cash: cash > 0 ? cash : undefined,
+    bank: bank > 0 ? bank : undefined,
+    cheque: chequeMarker > 0 ? chequeMarker : undefined,
     cancelled: event.cancelled || undefined,
     cancelledAt: event.cancelledAt,
   }
@@ -451,13 +466,20 @@ function paymentEventFromNormalizedBreakdown(
   at: string,
   breakdown: SaleCollectedBreakdown,
 ): SalePaymentEvent {
-  const normalized = normalizeCollectedBreakdown(breakdown)
+  const cash = breakdown.cash
+  let bank = breakdown.bank
+  const chequeMarker = breakdown.cheque > 0 ? breakdown.cheque : 0
+  if (chequeMarker > 0) {
+    bank = bank >= chequeMarker ? bank : bank + chequeMarker
+  }
+  const total = breakdown.total > 0 ? breakdown.total : cash + bank
   return {
     at,
-    amount: normalized.total,
-    cash: normalized.cash > 0 ? normalized.cash : undefined,
-    bank: normalized.bank > 0 ? normalized.bank : undefined,
-    cheque: normalized.cheque > 0 ? normalized.cheque : undefined,
+    amount: total,
+    cash: cash > 0 ? cash : undefined,
+    bank: bank > 0 ? bank : undefined,
+    // Keep cheque marker when this slice was a cheque approval.
+    cheque: chequeMarker > 0 ? chequeMarker : undefined,
   }
 }
 
@@ -600,14 +622,17 @@ export function repairSalePaymentEvents(sale: Sale): Sale {
   const repaired: SalePaymentEvent[] = []
   for (const event of sanitized.paymentEvents) {
     const prev = repaired[repaired.length - 1]
+    // Only drop exact clones (same timestamp + payload). Same-day equal amounts are
+    // valid when the customer pays two cheques of the same size on one day.
     const isDuplicate =
       prev &&
-      localDayTimestamp(prev.at) === localDayTimestamp(event.at) &&
+      prev.at === event.at &&
       prev.amount === event.amount &&
       (prev.cash ?? 0) === (event.cash ?? 0) &&
       (prev.bank ?? 0) === (event.bank ?? 0) &&
-      (prev.cheque ?? 0) === (event.cheque ?? 0)
-    if (!isDuplicate) repaired.push(event)
+      (prev.cheque ?? 0) === (event.cheque ?? 0) &&
+      Boolean(prev.cancelled) === Boolean(event.cancelled)
+    if (!isDuplicate) repaired.push(normalizePaymentEvent(event))
   }
 
   let next =
@@ -623,6 +648,7 @@ export function repairSalePaymentEvents(sale: Sale): Sale {
       const eventBreakdown = normalizeCollectedBreakdown(
         (next.paymentEvents ?? []).reduce(
           (acc, event) => {
+            if (event.cancelled) return acc
             acc.cash += event.cash ?? 0
             acc.bank += event.bank ?? 0
             acc.cheque += event.cheque ?? 0
@@ -637,14 +663,14 @@ export function repairSalePaymentEvents(sale: Sale): Sale {
         Math.abs(eventBreakdown.bank - fieldBreakdown.bank) < 0.01 &&
         Math.abs(eventBreakdown.total - fieldBreakdown.total) < 0.01
       if (!totalsMatch) {
-        // Keep dated partial approvals when events already explain the full collection.
-        const multiDay =
-          (next.paymentEvents?.length ?? 0) > 1 &&
-          Math.abs(eventBreakdown.total - fieldBreakdown.total) < 0.01
+        // Never collapse multi-slice cheque/credit approvals into one undated event.
+        if ((next.paymentEvents?.length ?? 0) > 1) {
+          return next
+        }
         const eventsAhead =
           (next.paymentEvents?.length ?? 0) > 0 &&
           eventBreakdown.total > fieldBreakdown.total + 0.01
-        if (multiDay || eventsAhead) {
+        if (eventsAhead) {
           return next
         }
         return {
@@ -717,8 +743,64 @@ export function saleCollectedComponentBreakdown(sale: Sale): SaleCollectedBreakd
   return result
 }
 
-/** Cash / bank / approved cheque already collected on a pending credit or cheque bill. */
-export function salePendingCreditPaidBreakdown(sale: Sale): {
+/**
+ * Active (non-cancelled) cash / pure-bank / approved-cheque parts on any sale.
+ * Used after cheque cancel so open balance = bill − still-active approvals.
+ */
+export function saleActiveCollectedParts(sale: Sale): {
+  cash: number
+  bank: number
+  cheque: number
+  total: number
+} {
+  const empty = { cash: 0, bank: 0, cheque: 0, total: 0 }
+
+  const chequeBill =
+    sale.payType === 'cheque' ||
+    sale.pendingPayType === 'cheque' ||
+    sale.chequeApproved === true ||
+    (sale.paymentEvents ?? []).some((e) => (e.cheque ?? 0) > 0)
+
+  const rawEvents = (sale.paymentEvents ?? []).filter(isActivePaymentEvent)
+  if (rawEvents.length > 0) {
+    let cash = 0
+    let bank = 0
+    let cheque = 0
+    for (const event of rawEvents) {
+      cash += event.cash ?? 0
+      const evCheque = event.cheque ?? 0
+      const evBank = event.bank ?? 0
+      if (evCheque > 0) {
+        cheque += evCheque
+        bank += Math.max(0, evBank - evCheque)
+      } else if (chequeBill && evBank > 0 && (event.cash ?? 0) <= 0) {
+        cheque += event.amount > 0 ? event.amount : evBank
+      } else {
+        bank += evBank
+      }
+    }
+    const total = cash + bank + cheque
+    if (total > 0) return { cash, bank, cheque, total }
+  }
+
+  if (sale.status === 'pending') {
+    return salePendingRawCollectedParts(sale)
+  }
+
+  const paid = salePaidCollectedBreakdown(sale)
+  if (paid.total <= 0) return empty
+  // paid breakdown is already cheque→bank folded; treat bank as cheque when cheque-origin.
+  if (chequeBill && paid.cash <= 0) {
+    return { cash: 0, bank: 0, cheque: paid.bank, total: paid.bank }
+  }
+  return { cash: paid.cash, bank: paid.bank, cheque: paid.cheque, total: paid.total }
+}
+
+/**
+ * Raw cash / pure-bank / approved-cheque parts on a pending bill (before folding cheque→bank).
+ * Used when appending the next partial approval so chequeAmount stays cumulative.
+ */
+export function salePendingRawCollectedParts(sale: Sale): {
   cash: number
   bank: number
   cheque: number
@@ -727,44 +809,60 @@ export function salePendingCreditPaidBreakdown(sale: Sale): {
   const empty = { cash: 0, bank: 0, cheque: 0, total: 0 }
   if (sale.status !== 'pending') return empty
 
+  const chequeBill =
+    sale.payType === 'cheque' ||
+    sale.pendingPayType === 'cheque' ||
+    sale.chequeApproved === true
+
+  const rawEvents = (sale.paymentEvents ?? []).filter(isActivePaymentEvent)
+  if (rawEvents.length > 0) {
+    let cash = 0
+    let bank = 0
+    let cheque = 0
+    for (const event of rawEvents) {
+      cash += event.cash ?? 0
+      const evCheque = event.cheque ?? 0
+      const evBank = event.bank ?? 0
+      if (evCheque > 0) {
+        cheque += evCheque
+        bank += Math.max(0, evBank - evCheque)
+      } else if (chequeBill && evBank > 0 && (event.cash ?? 0) <= 0) {
+        // Legacy approvals stored as bank-only after cheque→bank fold.
+        cheque += event.amount > 0 ? event.amount : evBank
+      } else {
+        bank += evBank
+      }
+    }
+    const total = cash + bank + cheque
+    if (total > 0) return { cash, bank, cheque, total }
+  }
+
   const cash = sale.cashAmount ?? 0
   let bank = sale.bankAmount ?? 0
   const cheque =
     sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
-  // Counter writes bankAmount = chequeAmount for approvals — count once.
   if (cheque > 0) bank = Math.max(0, bank - cheque)
-  const fromFields =
-    cash + bank + cheque > 0
-      ? normalizeCollectedBreakdown({ cash, bank, cheque, total: cash + bank + cheque })
-      : empty
-
-  // Bill-date / pending edits can wipe cash/bank fields while leaving paymentEvents intact.
-  const rawEvents = (sale.paymentEvents ?? []).filter(isActivePaymentEvent)
-  if (rawEvents.length > 0) {
-    const fromEvents = normalizeCollectedBreakdown(
-      rawEvents.reduce(
-        (acc, event) => {
-          acc.cash += event.cash ?? 0
-          acc.bank += event.bank ?? 0
-          acc.cheque += event.cheque ?? 0
-          acc.total += event.amount
-          return acc
-        },
-        { cash: 0, bank: 0, cheque: 0, total: 0 },
-      ),
-    )
-    if (fromEvents.total > fromFields.total + 0.01) return fromEvents
-  }
-
-  if (fromFields.total > 0) return fromFields
+  const total = cash + bank + cheque
+  if (total > 0) return { cash, bank, cheque, total }
 
   if (sale.paidAmount > 0) {
-    // Cheque pending must never infer paidAmount as cash.
     if (sale.pendingPayType === 'cheque' || sale.payType === 'cheque') {
-      return { cash: 0, bank: sale.paidAmount, cheque: 0, total: sale.paidAmount }
+      return { cash: 0, bank: 0, cheque: sale.paidAmount, total: sale.paidAmount }
     }
     return { cash: sale.paidAmount, bank: 0, cheque: 0, total: sale.paidAmount }
   }
 
   return empty
+}
+
+/** Cash / bank / approved cheque already collected on a pending credit or cheque bill. */
+export function salePendingCreditPaidBreakdown(sale: Sale): {
+  cash: number
+  bank: number
+  cheque: number
+  total: number
+} {
+  const raw = salePendingRawCollectedParts(sale)
+  if (raw.total <= 0) return { cash: 0, bank: 0, cheque: 0, total: 0 }
+  return normalizeCollectedBreakdown(raw)
 }

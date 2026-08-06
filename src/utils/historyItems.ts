@@ -86,6 +86,17 @@ function isSameLocalDay(a: Date, b: Date): boolean {
   )
 }
 
+/** Prefer “Today” / “Yesterday” so multi-day cheque updates are easy to scan. */
+function formatCollectionDayLabel(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  if (isSameLocalDay(d, now)) return 'Today'
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (isSameLocalDay(d, yesterday)) return 'Yesterday'
+  return formatDate(iso)
+}
+
 function isoMatchesHistoryDateFilter(
   iso: string,
   dateFilter: HistoryDateFilter,
@@ -1422,6 +1433,46 @@ export function historyItemListPaymentTypeText(
   dateFilter: HistoryDateFilter = 'all',
   selectedDate = '',
 ): string | undefined {
+  // Multi-day cheque/credit collections: show each approval with its date.
+  if (
+    item.type === 'sale' &&
+    item.paymentCollections &&
+    item.paymentCollections.length > 0
+  ) {
+    const collections =
+      dateFilter === 'all'
+        ? item.paymentCollections.filter((c) => c.amount > 0)
+        : item.paymentCollections.filter(
+            (c) =>
+              c.amount > 0 && isoMatchesHistoryDateFilter(c.at, dateFilter, selectedDate),
+          )
+
+    if (collections.length > 1 || (dateFilter !== 'all' && collections.length === 1)) {
+      const dated = collections.map((collection, index) => {
+        const normalized = normalizeCollectedBreakdown({
+          cash: collection.cash,
+          bank: collection.bank,
+          cheque: collection.cheque,
+          total: collection.amount,
+        })
+        const icon =
+          normalized.cash > 0 && normalized.bank <= 0
+            ? '💵'
+            : normalized.bank + normalized.cheque > 0
+              ? '🏦'
+              : '🧾'
+        const ordinal =
+          collections.length > 1
+            ? `${index === 0 ? '1st' : index === 1 ? '2nd' : index === 2 ? '3rd' : `${index + 1}th`} `
+            : ''
+        const when =
+          dateFilter === 'all' ? ` · ${formatCollectionDayLabel(collection.at)}` : ''
+        return `${ordinal}${icon} ${formatMoney(normalized.total)}${when}`
+      })
+      if (dated.length > 0) return dated.join(' · ')
+    }
+  }
+
   const parts = getHistoryItemListPaymentParts(item, dateFilter, selectedDate)
   if (parts.length > 0) {
     return parts
@@ -1459,17 +1510,44 @@ export function historyItemListPaymentTypeText(
 }
 
 /** Second line on History list — bill amount / short detail without payment time noise. */
-export function historyItemListRowSub(item: HistoryItem): string {
+export function historyItemListRowSub(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter = 'all',
+  selectedDate = '',
+): string {
   if (item.type === 'sale' || item.type === 'purchase') {
-    return historyItemListSubtitle(item)
+    return historyItemListSubtitle(item, dateFilter, selectedDate)
   }
   return item.sub
 }
 
-export function historyItemListSubtitle(item: HistoryItem): string {
+export function historyItemListSubtitle(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter = 'all',
+  selectedDate = '',
+): string {
   if (item.type === 'sale') {
     const bill = item.originalBillAmount ?? item.amount
-    if (item.isSplitGroup) return `Split bill · ${formatMoney(bill)}`
+    const dayAmount =
+      dateFilter === 'all'
+        ? 0
+        : historyItemAmountForDateFilter(item, dateFilter, selectedDate, false)
+    if (item.isSplitGroup) {
+      return dayAmount > 0
+        ? `Split bill · ${formatMoney(bill)} · Collected ${formatMoney(dayAmount)}`
+        : `Split bill · ${formatMoney(bill)}`
+    }
+    if (dayAmount > 0) {
+      return `Bill ${formatMoney(bill)} · Collected ${formatMoney(dayAmount)}`
+    }
+    const collections = (item.paymentCollections ?? []).filter((c) => c.amount > 0)
+    if (collections.length > 1) {
+      const parts = collections.map((c, i) => {
+        const ordinal = i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i + 1}th`
+        return `${ordinal} ${formatMoney(c.amount)}`
+      })
+      return `Bill ${formatMoney(bill)} · ${parts.join(' · ')}`
+    }
     return `Bill ${formatMoney(bill)}`
   }
   if (item.type === 'purchase') {
@@ -1488,8 +1566,43 @@ export function historyItemActivityLabel(item: HistoryItem): string {
   return formatDate(item.date)
 }
 
-/** Date line on History list rows — always shows bill created date for sales/purchases. */
-export function historyItemListDateLabel(item: HistoryItem): string {
+/** Date line on History list rows — bill created + each collection date when split across days. */
+export function historyItemListDateLabel(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter = 'all',
+  selectedDate = '',
+): string {
+  if (item.type === 'sale' && item.paymentCollections && item.paymentCollections.length > 0) {
+    const collections = item.paymentCollections.filter((c) => c.amount > 0)
+    const inFilter =
+      dateFilter === 'all'
+        ? collections
+        : collections.filter((c) => isoMatchesHistoryDateFilter(c.at, dateFilter, selectedDate))
+
+    if (dateFilter !== 'all' && inFilter.length > 0) {
+      const when = formatCollectionDayLabel(inFilter[inFilter.length - 1].at)
+      return `Collected ${when}`
+    }
+
+    if (collections.length > 1) {
+      const created = item.billCreatedAt ? `Bill ${formatDate(item.billCreatedAt)}` : null
+      const parts = collections.map((c, i) => {
+        const ordinal =
+          i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i + 1}th`
+        return `${ordinal} ${formatCollectionDayLabel(c.at)}`
+      })
+      return created ? `${created} · ${parts.join(' · ')}` : parts.join(' · ')
+    }
+
+    if (item.billCreatedAt) {
+      const created = formatDate(item.billCreatedAt)
+      if (collections.length === 1 && collections[0].at !== item.billCreatedAt) {
+        return `Created ${created} · Collected ${formatCollectionDayLabel(collections[0].at)}`
+      }
+      return `Created ${created}`
+    }
+  }
+
   if (item.billCreatedAt && (item.type === 'sale' || item.type === 'purchase')) {
     const created = formatDate(item.billCreatedAt)
     if (item.date !== item.billCreatedAt) {

@@ -511,7 +511,9 @@ export default function History() {
                       </div>
                     )}
                   </div>
-                  <span className="history-item-sub">{historyItemListRowSub(item)}</span>
+                  <span className="history-item-sub">
+                    {historyItemListRowSub(item, dateFilter, selectedDate)}
+                  </span>
                   <span className="history-item-meta">
                     {paymentDetail ? (
                       <span className="history-item-payment">{paymentDetail}</span>
@@ -523,10 +525,12 @@ export default function History() {
                         onClick={(e) => handleDateEditClick(item, e)}
                         aria-label="Edit bill on Counter"
                       >
-                        {historyItemListDateLabel(item)}
+                        {historyItemListDateLabel(item, dateFilter, selectedDate)}
                       </button>
                     ) : (
-                      <span className="history-item-date">{historyItemListDateLabel(item)}</span>
+                      <span className="history-item-date">
+                        {historyItemListDateLabel(item, dateFilter, selectedDate)}
+                      </span>
                     )}
                   </span>
                 </div>

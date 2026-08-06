@@ -39,6 +39,7 @@ import {
   cancelPurchaseCredit,
   cancelSaleCredit,
   cancelSaleCheque,
+  cancelSaleChequeAsUnpaid,
   collectPendingBill,
   clearAllLocalData,
   deleteExpense,
@@ -62,6 +63,7 @@ import {
   setReminderAlertSettings,
   setSaleReminder,
   settleLoan,
+  updateApprovedChequeEntryDate,
   setCustomerReminder,
   updateExpenseName,
   updateExpense,
@@ -200,9 +202,15 @@ interface CashContextValue {
   applyStaffSalaryAdvance: (input: { staffId: string; fromMonth: string }) => string | null
   updateExpenseStaffSalaryMonth: (expenseId: string, staffSalaryMonth: string) => void
   cancelApprovedCheque: (id: string, eventIndex?: number | null) => boolean
+  updateApprovedChequeDate: (
+    id: string,
+    eventIndex: number | null,
+    atIso: string,
+  ) => boolean
   cancelPurchaseCredit: (id: string) => void
   cancelSaleCredit: (id: string, relatedSaleIds?: string[]) => void
   cancelSaleCheque: (id: string, relatedSaleIds?: string[]) => void
+  cancelSaleChequeAsUnpaid: (id: string, relatedSaleIds?: string[]) => boolean
   setBillReminder: (id: string, reminderAt: string | null, reminderNote?: string | null) => void
   setCustomerReminder: (
     customerName: string,
@@ -802,6 +810,19 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const updateApprovedChequeDateHandler = useCallback(
+    (id: string, eventIndex: number | null, atIso: string): boolean => {
+      let ok = false
+      setData((prev) => {
+        const next = updateApprovedChequeEntryDate(prev, id, eventIndex, atIso)
+        ok = next !== prev
+        return next
+      })
+      return ok
+    },
+    [],
+  )
+
   const cancelPurchaseCreditBalance = useCallback((id: string) => {
     setData((prev) => cancelPurchaseCredit(prev, id))
   }, [])
@@ -813,6 +834,19 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const cancelSaleChequeBalance = useCallback((id: string, relatedSaleIds?: string[]) => {
     setData((prev) => cancelSaleCheque(prev, id, relatedSaleIds))
   }, [])
+
+  const cancelSaleChequeAsUnpaidHandler = useCallback(
+    (id: string, relatedSaleIds?: string[]): boolean => {
+      let ok = false
+      setData((prev) => {
+        const next = cancelSaleChequeAsUnpaid(prev, id, relatedSaleIds)
+        ok = next !== prev
+        return next
+      })
+      return ok
+    },
+    [],
+  )
 
   const setBillReminderHandler = useCallback(
     (id: string, reminderAt: string | null, reminderNote?: string | null) => {
@@ -1113,9 +1147,11 @@ export function CashProvider({ children }: { children: ReactNode }) {
       addSupplier,
       addSupplierItem,
       cancelApprovedCheque: cancelApprovedChequeSale,
+      updateApprovedChequeDate: updateApprovedChequeDateHandler,
       cancelPurchaseCredit: cancelPurchaseCreditBalance,
       cancelSaleCredit: cancelSaleCreditBalance,
       cancelSaleCheque: cancelSaleChequeBalance,
+      cancelSaleChequeAsUnpaid: cancelSaleChequeAsUnpaidHandler,
       setBillReminder: setBillReminderHandler,
       setCustomerReminder: setCustomerReminderHandler,
       updateReminderAlertSettings: updateReminderAlertSettingsHandler,
@@ -1172,9 +1208,11 @@ export function CashProvider({ children }: { children: ReactNode }) {
       addSupplier,
       addSupplierItem,
       cancelApprovedChequeSale,
+      updateApprovedChequeDateHandler,
       cancelPurchaseCreditBalance,
       cancelSaleCreditBalance,
       cancelSaleChequeBalance,
+      cancelSaleChequeAsUnpaidHandler,
       setBillReminderHandler,
       setCustomerReminderHandler,
       updateReminderAlertSettingsHandler,

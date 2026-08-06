@@ -750,6 +750,20 @@ html[data-screen='tablet'] .settings-info {
   gap: 6px;
 }
 
+.settings-cheque-cancel-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-cheque-cancel-group-title {
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--cream);
+  letter-spacing: 0.02em;
+}
+
 .settings-cheque-cancel-item {
   display: flex;
   align-items: flex-start;
@@ -815,6 +829,48 @@ html[data-screen='tablet'] .settings-info {
 
 .settings-cheque-cancel-btn:active {
   transform: scale(0.98);
+}
+
+.settings-cheque-cancel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-cheque-date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.settings-cheque-date-field input[type='date'] {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--cream);
+  font-size: 0.8rem;
+}
+
+.settings-cheque-cancel-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settings-cheque-cancel-btns .settings-cheque-cancel-btn {
+  flex: 1 1 auto;
+  min-width: 110px;
+  align-self: stretch;
+}
+
+.settings-cheque-cancel-btn--danger {
+  border-color: color-mix(in srgb, #c45c5c 55%, var(--border));
+  color: #f0b4b4;
 }
 
 .settings-cheque-cancel-status {

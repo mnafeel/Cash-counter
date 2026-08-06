@@ -2601,7 +2601,9 @@ export default function Counter() {
       changeAmount: payType === 'cash' ? changeAmount : 0,
       payType: payType === 'credit' ? 'cash' : payType,
       cashAmount: cashAmount > 0 ? cashAmount : undefined,
-      bankAmount: bankAmount > 0 ? bankAmount : undefined,
+      // Mirror cheque into bankAmount so approve path always clears to bank once.
+      bankAmount:
+        bankAmount > 0 ? bankAmount : chequeAmount > 0 ? chequeAmount : undefined,
       chequeAmount: chequeAmount > 0 ? chequeAmount : undefined,
       chequeApproved: payType === 'cheque' ? true : undefined,
       customerName: name,
