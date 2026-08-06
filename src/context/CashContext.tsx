@@ -206,6 +206,7 @@ interface CashContextValue {
     id: string,
     eventIndex: number | null,
     atIso: string,
+    options?: { applyToAll?: boolean },
   ) => boolean
   cancelPurchaseCredit: (id: string) => void
   cancelSaleCredit: (id: string, relatedSaleIds?: string[]) => void
@@ -811,10 +812,15 @@ export function CashProvider({ children }: { children: ReactNode }) {
   )
 
   const updateApprovedChequeDateHandler = useCallback(
-    (id: string, eventIndex: number | null, atIso: string): boolean => {
+    (
+      id: string,
+      eventIndex: number | null,
+      atIso: string,
+      options?: { applyToAll?: boolean },
+    ): boolean => {
       let ok = false
       setData((prev) => {
-        const next = updateApprovedChequeEntryDate(prev, id, eventIndex, atIso)
+        const next = updateApprovedChequeEntryDate(prev, id, eventIndex, atIso, options)
         ok = next !== prev
         return next
       })

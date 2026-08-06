@@ -38,6 +38,7 @@ import { normalizeTheme } from '../utils/theme'
 import { loanBankToBalance, loanCashToDrawer, loanRemainingAmount } from '../utils/loanLedger'
 import { getStaffMonthSummary, isStaffLinkableExpense, salaryMonthFromDate, type SalaryMonthKey } from '../utils/staffLedger'
 import { validateStaffLeaveInput, resolveStaffSalaryDays, normalizeStaffLeaveTypeValue, isSundayDate, isRedundantStaffLeaveRecord } from '../utils/staffAttendance'
+import { isoToDateInputValue } from '../utils/format'
 
 const defaultData: AppData = {
   openingBalance: 0,
@@ -2410,31 +2411,72 @@ export function cancelApprovedChequeEntry(
 }
 
 /**
- * Move one approved cheque slice to a different calendar day.
- * Updates paymentEvents[].at so History / Today Sales attribute that amount to the new date.
+ * Move one approved cheque slice (or every active slice) to a different calendar day.
+ * Updates paymentEvents[].at so History / Today Sales / bank activity all use the new date.
  */
 export function updateApprovedChequeEntryDate(
   data: AppData,
   saleId: string,
   eventIndex: number | null,
   atIso: string,
+  options?: { applyToAll?: boolean },
 ): AppData {
   const sale = data.sales.find((s) => s.id === saleId)
   if (!sale) return data
-  const parsed = new Date(atIso)
-  if (Number.isNaN(parsed.getTime())) return data
-  const at = parsed.toISOString()
+  if (Number.isNaN(new Date(atIso).getTime())) return data
+
+  // Normalize to local noon so the calendar day is stable across timezones.
+  const localDay = isoToDateInputValue(atIso)
+  const [y, mo, d] = localDay.split('-').map(Number)
+  if (!y || !mo || !d) return data
+  const at = new Date(y, mo - 1, d, 12, 0, 0, 0).toISOString()
   const now = new Date().toISOString()
+  const applyToAll = options?.applyToAll === true
+
+  const isChequeEvent = (event: SalePaymentEvent) =>
+    !event.cancelled &&
+    event.amount > 0 &&
+    ((event.cheque ?? 0) > 0 ||
+      (((event.bank ?? 0) > 0 || (event.cheque ?? 0) > 0) && (event.cash ?? 0) <= 0))
 
   let patched: Sale
+  const events = [...(sale.paymentEvents ?? [])]
 
-  if (eventIndex != null && sale.paymentEvents && sale.paymentEvents[eventIndex]) {
-    const target = sale.paymentEvents[eventIndex]
+  if (applyToAll) {
+    let changed = false
+    const nextEvents = events.map((event) => {
+      if (!isChequeEvent(event)) return event
+      if (isoToDateInputValue(event.at) === localDay) return event
+      changed = true
+      return { ...event, at }
+    })
+    if (!changed) {
+      if (events.length > 0) return data
+      const amount = getApprovedChequeAmount(sale)
+      if (amount <= 0) return data
+      patched = {
+        ...sale,
+        paymentEvents: [
+          normalizePaymentEvent({
+            at,
+            amount,
+            bank: amount,
+            cheque: amount,
+          }),
+        ],
+        chequeApproved: true,
+        updatedAt: now,
+      }
+    } else {
+      patched = { ...sale, paymentEvents: nextEvents, updatedAt: now }
+    }
+  } else if (eventIndex != null && events[eventIndex]) {
+    const target = events[eventIndex]
     if (target.cancelled || target.amount <= 0) return data
-    if (target.at === at) return data
+    if (isoToDateInputValue(target.at) === localDay) return data
     patched = {
       ...sale,
-      paymentEvents: sale.paymentEvents.map((event, index) =>
+      paymentEvents: events.map((event, index) =>
         index === eventIndex ? { ...event, at } : event,
       ),
       updatedAt: now,
@@ -2443,23 +2485,22 @@ export function updateApprovedChequeEntryDate(
     const amount = getApprovedChequeAmount(sale)
     if (amount <= 0) return data
 
-    const events = [...(sale.paymentEvents ?? [])]
     const chequeIndexes = events
       .map((event, index) => ({ event, index }))
-      .filter(
-        ({ event }) =>
-          !event.cancelled &&
-          event.amount > 0 &&
-          ((event.bank ?? 0) > 0 || (event.cheque ?? 0) > 0) &&
-          (event.cash ?? 0) <= 0,
-      )
+      .filter(({ event }) => isChequeEvent(event))
 
-    if (chequeIndexes.length === 1) {
-      const { index } = chequeIndexes[0]
-      if (events[index].at === at) return data
-      events[index] = { ...events[index], at }
-      patched = { ...sale, paymentEvents: events, updatedAt: now }
-    } else if (chequeIndexes.length === 0) {
+    if (chequeIndexes.length >= 1) {
+      // No index: move every active cheque slice (safer than updating only one).
+      let changed = false
+      const nextEvents = events.map((event) => {
+        if (!isChequeEvent(event)) return event
+        if (isoToDateInputValue(event.at) === localDay) return event
+        changed = true
+        return { ...event, at }
+      })
+      if (!changed) return data
+      patched = { ...sale, paymentEvents: nextEvents, updatedAt: now }
+    } else {
       const created = normalizePaymentEvent({
         at,
         amount,
@@ -2472,11 +2513,10 @@ export function updateApprovedChequeEntryDate(
         chequeApproved: true,
         updatedAt: now,
       }
-    } else {
-      return data
     }
   }
 
+  clearSalePaymentCaches()
   const next = {
     ...data,
     sales: data.sales.map((s) => (s.id === saleId ? patched : s)),

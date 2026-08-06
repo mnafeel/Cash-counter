@@ -748,12 +748,15 @@ export default function Settings() {
     setTimeout(() => setChequeCancelStatus(''), 4000)
   }
 
-  function handleUpdateApprovedChequeDate(entry: {
-    id: string
-    saleId: string
-    eventIndex: number | null
-    at: string
-  }) {
+  function handleUpdateApprovedChequeDate(
+    entry: {
+      id: string
+      saleId: string
+      eventIndex: number | null
+      at: string
+    },
+    applyToAll = false,
+  ) {
     const dateValue = chequeDateDrafts[entry.id] ?? isoToDateInputValue(entry.at)
     const atIso = dateInputValueToIso(dateValue, entry.at)
     if (!dateValue || !atIso) {
@@ -761,18 +764,29 @@ export default function Settings() {
       setTimeout(() => setChequeCancelStatus(''), 4000)
       return
     }
-    const ok = updateApprovedChequeDate(entry.saleId, entry.eventIndex, atIso)
+    const ok = updateApprovedChequeDate(entry.saleId, entry.eventIndex, atIso, {
+      applyToAll,
+    })
     setChequeCancelStatus(
       ok
-        ? 'Cheque date updated — this amount now counts in that day’s sales.'
+        ? applyToAll
+          ? 'All cheque dates on this bill updated — sales & History use the new day.'
+          : 'Cheque date updated — this amount now counts in that day’s sales & History.'
         : 'Date unchanged. Pick a different day and try again.',
     )
     setChequeDateDrafts((prev) => {
       const next = { ...prev }
-      delete next[entry.id]
+      // Clear drafts for every row on this bill when applying to all.
+      if (applyToAll) {
+        for (const key of Object.keys(next)) {
+          if (key.startsWith(`${entry.saleId}:`) || key === entry.saleId) delete next[key]
+        }
+      } else {
+        delete next[entry.id]
+      }
       return next
     })
-    setTimeout(() => setChequeCancelStatus(''), 4000)
+    setTimeout(() => setChequeCancelStatus(''), 5000)
   }
 
   function handleCancelSaleCredit(id: string, relatedSaleIds?: string[]) {
@@ -1863,9 +1877,11 @@ export default function Settings() {
               <div className="settings-cheque-cancel-head">
                 <h3>Approved cheques</h3>
                 <p>
-                  Each partial approval is its own cheque (1st / 2nd / 3rd). Cancel cheque removes
-                  only that slice. <strong>Cancel all · unpaid</strong> removes the whole bill as if
-                  nothing was paid.
+                  Each partial approval is its own cheque (1st / 2nd / 3rd). Change the sales date so
+                  History and that day’s sales move with it. <strong>Save date</strong> updates one
+                  cheque; <strong>Update all dates</strong> applies the same day to every cheque on
+                  that bill. Cancel cheque removes only that slice. <strong>Cancel all · unpaid</strong>{' '}
+                  removes the whole bill as if nothing was paid.
                 </p>
               </div>
               {approvedCheques.length === 0 ? (
@@ -1928,10 +1944,19 @@ export default function Settings() {
                                   <button
                                     type="button"
                                     className="btn btn-secondary settings-cheque-cancel-btn"
-                                    onClick={() => handleUpdateApprovedChequeDate(entry)}
+                                    onClick={() => handleUpdateApprovedChequeDate(entry, false)}
                                   >
                                     Save date
                                   </button>
+                                  {isFirstOfBill ? (
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary settings-cheque-cancel-btn"
+                                      onClick={() => handleUpdateApprovedChequeDate(entry, true)}
+                                    >
+                                      Update all dates
+                                    </button>
+                                  ) : null}
                                   <button
                                     type="button"
                                     className="btn btn-secondary settings-cheque-cancel-btn settings-cheque-cancel-btn--danger"
