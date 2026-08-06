@@ -5,11 +5,10 @@ import { isPurchaseExpense } from './expenseBillLabels'
 import { purchasePaidComponents } from './purchaseHistory'
 import type { NormalExpenseHistoryItem } from './normalExpenseHistory'
 import type { PurchaseHistoryItem } from './purchaseHistory'
-import type { LoanOutflowItem } from './loanLedger'
 
 export type ExpenseTimelineSort = 'time-desc' | 'time-asc'
 
-export type ExpenseTimelineKind = 'expense' | 'purchase' | 'no1-purchase' | 'loan'
+export type ExpenseTimelineKind = 'expense' | 'purchase' | 'no1-purchase'
 
 export interface ExpenseTimelineEntry {
   kind: ExpenseTimelineKind
@@ -38,7 +37,6 @@ function purchaseTypeLabel(kind: ExpenseTimelineKind): string {
 
 export function expenseTimelineKindLabel(kind: ExpenseTimelineKind): string {
   if (kind === 'expense') return 'Expense'
-  if (kind === 'loan') return 'Loan'
   return purchaseTypeLabel(kind)
 }
 
@@ -94,11 +92,6 @@ export function summarizeExpenseTimeline(entries: ExpenseTimelineEntry[]) {
         acc.expenseCount += 1
         acc.expenseCash += entry.cashAmount ?? 0
         acc.expenseBank += entry.bankAmount ?? 0
-      } else if (entry.kind === 'loan') {
-        acc.loanTotal += entry.amount
-        acc.loanCount += 1
-        acc.loanCash += entry.cashAmount ?? 0
-        acc.loanBank += entry.bankAmount ?? 0
       } else if (entry.kind === 'no1-purchase') {
         acc.no1Total += entry.no1Amount ?? entry.amount
         acc.no1Count += 1
@@ -124,10 +117,6 @@ export function summarizeExpenseTimeline(entries: ExpenseTimelineEntry[]) {
       purchaseCount: 0,
       purchaseCash: 0,
       purchaseBank: 0,
-      loanTotal: 0,
-      loanCount: 0,
-      loanCash: 0,
-      loanBank: 0,
       no1Total: 0,
       no1Count: 0,
     },
@@ -155,7 +144,6 @@ export function buildExpenseTimelineEntriesFromData(
   normalItems: NormalExpenseHistoryItem[],
   purchaseItems: PurchaseHistoryItem[],
   sort: ExpenseTimelineSort = 'time-desc',
-  loanItems: LoanOutflowItem[] = [],
 ): ExpenseTimelineEntry[] {
   const expenseById = new Map(
     data.expenses
@@ -200,19 +188,6 @@ export function buildExpenseTimelineEntriesFromData(
         bankAmount: parts.bank,
       }
     }),
-    ...loanItems.map((item) => ({
-      kind: 'loan' as const,
-      id: item.id,
-      date: item.date,
-      sortTime: new Date(item.date).getTime(),
-      title: item.name,
-      detail: item.kind === 'given' ? 'Loan given' : 'Loan returned',
-      amount: item.amount,
-      payLabel: item.payLabel,
-      payDetail: item.kind === 'given' ? `Loan given · ${item.payLabel}` : `Loan returned · ${item.payLabel}`,
-      cashAmount: item.cashAmount,
-      bankAmount: item.bankAmount,
-    })),
   ]
 
   entries.sort((a, b) =>
@@ -236,7 +211,6 @@ export function buildExpenseTimelineRows(
     ['Expense total', summary.expenseTotal],
     [`${NO1_BILL_LABEL} total`, summary.no1Total],
     ['Purchase total', summary.purchaseTotal],
-    ['Loan total', summary.loanTotal],
     ['Count', summary.count],
     [],
     ['No', 'Date', 'Time', 'Type', 'Name', 'Details', 'Amount', 'Payment', 'Pay detail'],

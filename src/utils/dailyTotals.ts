@@ -17,11 +17,6 @@ import {
   buildPurchaseHistoryItems,
   summarizePurchases,
 } from './purchaseHistory'
-import {
-  buildLoanOutflowItems,
-  filterLoanOutflowItems,
-  summarizeLoanOutflows,
-} from './loanLedger'
 
 export interface DailyTotalsSummary {
   fromDate: string
@@ -45,11 +40,9 @@ export interface DailyTotalsSummary {
   purchaseCount: number
   expenseTotal: number
   expenseCount: number
-  loanOutflowTotal: number
-  loanOutflowCount: number
   moneyAddedTotal: number
   moneyAddedCount: number
-  /** sales collected + money added − expenses − purchases − loan outflows */
+  /** sales collected + money added − expenses − purchases */
   netInflow: number
 }
 
@@ -141,9 +134,6 @@ export function buildDailyTotals(
   )
   const expenseTotals = summarizeNormalExpenses(expenseItems)
 
-  const loanOutflowItems = filterLoanOutflowItems(buildLoanOutflowItems(data), fromDate, toDate)
-  const loanOutflowTotals = summarizeLoanOutflows(loanOutflowItems)
-
   const moneyAddedItems = data.expenses.filter(
     (e) =>
       e.kind === 'add' &&
@@ -155,11 +145,7 @@ export function buildDailyTotals(
   const chequeOverview = buildChequeOverview(data)
 
   const netInflow =
-    salesTotals.totalBills +
-    moneyAddedTotal -
-    expenseTotals.total -
-    purchaseTotals.total -
-    loanOutflowTotals.total
+    salesTotals.totalBills + moneyAddedTotal - expenseTotals.total - purchaseTotals.total
 
   return {
     fromDate,
@@ -179,8 +165,6 @@ export function buildDailyTotals(
     purchaseCount: purchaseTotals.count,
     expenseTotal: expenseTotals.total,
     expenseCount: expenseTotals.count,
-    loanOutflowTotal: loanOutflowTotals.total,
-    loanOutflowCount: loanOutflowTotals.count,
     moneyAddedTotal,
     moneyAddedCount: moneyAddedItems.length,
     netInflow,

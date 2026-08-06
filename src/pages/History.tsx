@@ -17,8 +17,8 @@ import {
   getHistoryListPaymentPartIcon,
   getHistoryListPaymentPartLabel,
   getHistoryTypeLabel,
+  historyItemAmountForDateFilter,
   historyItemCreatedTime,
-  historyItemFilteredAmount,
   historyItemSortTime,
   historyItemActivityLabel,
   historyItemListDateLabel,
@@ -50,7 +50,6 @@ const FILTER_OPTIONS: { id: HistoryFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'sale', label: 'Bills' },
   { id: 'expense', label: 'Expenses' },
-  { id: 'loan', label: 'Loans' },
   { id: 'purchase', label: 'Purchases' },
   { id: 'deposit', label: 'Added' },
   { id: 'transfer', label: 'Transfer' },
@@ -79,7 +78,6 @@ const DATE_FILTER_OPTIONS: { id: DateFilter; label: string }[] = [
 const TYPE_SUMMARY: { id: HistoryItemType; label: string; icon: string; sign: string }[] = [
   { id: 'sale', label: 'Bills', icon: '💵', sign: '+' },
   { id: 'expense', label: 'Expenses', icon: '📤', sign: '-' },
-  { id: 'loan', label: 'Loans', icon: '🤝', sign: '' },
   { id: 'purchase', label: 'Purchases', icon: '🛒', sign: '-' },
   { id: 'deposit', label: 'Added', icon: '📥', sign: '+' },
   { id: 'transfer', label: 'Transfer', icon: '🔄', sign: '' },
@@ -210,20 +208,8 @@ export default function History() {
       const bUpdated = historyItemSortTime(b)
       const aCreated = historyItemCreatedTime(a)
       const bCreated = historyItemCreatedTime(b)
-      const aAmount = historyItemFilteredAmount(
-        a,
-        dateFilter,
-        selectedDate,
-        paymentFilter,
-        purchasePaidDisplay,
-      )
-      const bAmount = historyItemFilteredAmount(
-        b,
-        dateFilter,
-        selectedDate,
-        paymentFilter,
-        purchasePaidDisplay,
-      )
+      const aAmount = historyItemAmountForDateFilter(a, dateFilter, selectedDate, purchasePaidDisplay)
+      const bAmount = historyItemAmountForDateFilter(b, dateFilter, selectedDate, purchasePaidDisplay)
       if (sort === 'date-desc') return bUpdated - aUpdated
       if (sort === 'created-desc') return bCreated - aCreated
       if (sort === 'date-asc') return aUpdated - bUpdated
@@ -252,7 +238,7 @@ export default function History() {
     let next = allItems.filter((item) => item.type !== 'purchase')
     next = next.filter((item) => filter === 'all' || item.type === filter)
     next = next.filter((item) => matchesHistoryDateFilter(item, dateFilter, selectedDate))
-    next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter, dateFilter, selectedDate))
+    next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter))
     next = next.filter((item) => matchesHistorySearch(item, search))
     return sortItems(next, false)
   }, [allItems, filter, paymentFilter, sort, dateFilter, selectedDate, search])
@@ -266,7 +252,7 @@ export default function History() {
       (item) => item.type === 'purchase' && (item.paidAmount ?? 0) > 0,
     )
     next = next.filter((item) => matchesHistoryDateFilter(item, dateFilter, selectedDate))
-    next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter, dateFilter, selectedDate))
+    next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter))
     next = next.filter((item) => matchesHistorySearch(item, search))
     return sortItems(next, true)
   }, [allItems, showPurchaseHistory, filter, paymentFilter, sort, dateFilter, selectedDate, search])
@@ -292,17 +278,16 @@ export default function History() {
     }
     const items = showPurchaseHistory ? combinedItems : normalItems
     for (const item of items) {
-      totals[item.type].sum += historyItemFilteredAmount(
+      totals[item.type].sum += historyItemAmountForDateFilter(
         item,
         dateFilter,
         selectedDate,
-        paymentFilter,
         showPurchaseHistory && item.type === 'purchase',
       )
       totals[item.type].count += 1
     }
     return totals
-  }, [combinedItems, normalItems, showPurchaseHistory, dateFilter, selectedDate, paymentFilter])
+  }, [combinedItems, normalItems, showPurchaseHistory, dateFilter, selectedDate])
 
   const summaryTypes =
     filter === 'all'
@@ -425,20 +410,14 @@ export default function History() {
         {listItems.map((item) => {
           const key = editKey(item)
           const isEditing = editingKey === key
-          const displayAmount = historyItemFilteredAmount(
+          const displayAmount = historyItemAmountForDateFilter(
             item,
             dateFilter,
             selectedDate,
-            paymentFilter,
             purchasePaidRows && item.type === 'purchase',
           )
           const dateEditable = canEditBillFromHistory(item)
-          const paymentDetail = historyItemListPaymentTypeText(
-            item,
-            dateFilter,
-            selectedDate,
-            paymentFilter,
-          )
+          const paymentDetail = historyItemListPaymentTypeText(item, dateFilter, selectedDate)
 
           return (
             <li
