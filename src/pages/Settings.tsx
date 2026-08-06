@@ -34,7 +34,7 @@ import {
   type CloudRemoteSummary,
 } from '../firebase/sync'
 import type { AppData } from '../types'
-import { getApprovedChequeAmount, getCurrentBalance, getBankBalance, isLocalDataEmpty, listApprovedCheques, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
+import { getApprovedChequeAmount, getCurrentBalance, getBankBalance, isLocalDataEmpty, listApprovedChequeEntries, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
 import { clearAllLocalBackupSnapshots } from '../storage/localBackup'
 import {
   dateTimeInputValuesToIso,
@@ -326,7 +326,7 @@ export default function Settings() {
     return () => setCloudRemoteSummaryListener(null)
   }, [cloudUser, refreshCloudRemoteSummaryState])
 
-  const approvedCheques = useMemo(() => listApprovedCheques(data), [data])
+  const approvedCheques = useMemo(() => listApprovedChequeEntries(data), [data])
   const pendingCreditSales = useMemo(() => listPendingCreditSales(data), [data.sales])
   const pendingChequeSales = useMemo(() => listPendingChequeSales(data), [data.sales])
   const reminderAlertSettings = useMemo(() => getReminderAlertSettings(data), [data])
@@ -719,11 +719,11 @@ export default function Settings() {
     setTimeout(() => setDailyReportStatus(''), 5000)
   }
 
-  function handleCancelApprovedCheque(id: string) {
-    const ok = cancelApprovedCheque(id)
+  function handleCancelApprovedCheque(saleId: string, eventIndex: number | null) {
+    const ok = cancelApprovedCheque(saleId, eventIndex)
     setChequeCancelStatus(
       ok
-        ? 'Cheque cancelled — removed from bank and moved back to pending.'
+        ? 'Cheque cancelled — removed from bank; open balance updated in History.'
         : 'Could not cancel this cheque. Refresh and try again.',
     )
     setTimeout(() => setChequeCancelStatus(''), 4000)
@@ -749,8 +749,8 @@ export default function Settings() {
     if (editingBillDateId === id) cancelBillDateEdit()
     setPendingChequeCancelStatus(
       hadPayment
-        ? 'Cheque cancelled — partial payment kept as collected.'
-        : 'Cheque bill removed — balance cleared.',
+        ? 'Cheque cancelled — payment kept; remaining shown as credit balance.'
+        : 'Cheque cancelled — full amount moved to credit balance.',
     )
     setTimeout(() => setPendingChequeCancelStatus(''), 4000)
   }
@@ -1695,8 +1695,8 @@ export default function Settings() {
               <div className="settings-cheque-cancel-head">
                 <h3>Pending cheque bills</h3>
                 <p>
-                  Cancel removes open cheque bills; partial payments are kept as collected. Set cheque
-                  reminders from Home → Cheque Dashboard.
+                  Cancel open cheque: collected money stays; remaining amount moves to credit
+                  balance (not cheque pending).
                 </p>
               </div>
               {pendingChequeSales.length === 0 ? (
@@ -1758,55 +1758,48 @@ export default function Settings() {
             <section className="settings-cheque-cancel">
               <div className="settings-cheque-cancel-head">
                 <h3>Approved cheques</h3>
-                <p>Cancel moves cheque back to pending and removes it from bank balance.</p>
+                <p>
+                  Each bank approval is listed separately (1st / 2nd / 3rd). Cancel removes that
+                  amount from bank and puts the exact balance back on the bill.
+                </p>
               </div>
               {approvedCheques.length === 0 ? (
                 <p className="settings-cheque-cancel-empty">No approved cheques.</p>
               ) : (
                 <ul className="settings-cheque-cancel-list">
-                  {approvedCheques.map((sale) => {
-                    const amount = getApprovedChequeAmount(sale)
-                    const when = sale.updatedAt ?? sale.createdAt
-                    const billName = getSaleCustomerName(sale, data.sales)
-                    const openBalance = sale.status === 'pending' ? sale.billAmount : 0
-                    const otherPaid = saleCollectedAmount(sale) - amount
-                    const total =
-                      sale.originalBillAmount ??
-                      (openBalance > 0 ? openBalance + Math.max(0, otherPaid) + amount : sale.billAmount)
-                    const label =
-                      sale.status === 'pending'
-                        ? sale.payType === 'credit' || sale.pendingPayType === 'credit'
-                          ? 'Credit · cheque → bank'
-                          : 'Cheque → bank · open'
-                        : sale.payType === 'split'
-                          ? 'Split · cheque → bank'
-                          : 'Cheque → bank'
-                    return (
-                      <li key={sale.id} className="settings-cheque-cancel-item">
+                  {approvedCheques.map((entry) => (
+                      <li key={entry.id} className="settings-cheque-cancel-item">
                         <div className="settings-cheque-cancel-meta">
-                          <strong>{billName || '—'}</strong>
+                          <strong>{entry.customerName || '—'}</strong>
                           <span className="settings-cheque-cancel-amount">
-                            Cheque {formatMoney(amount)}
+                            {entry.partLabel ? `${entry.partLabel} · ` : ''}
+                            Cheque {formatMoney(entry.amount)}
                           </span>
-                          {openBalance > 0 ? (
+                          {entry.openBalance > 0 ? (
                             <span className="settings-cheque-cancel-sub">
-                              Open {formatMoney(openBalance)} · Bill {formatMoney(total)}
+                              Open {formatMoney(entry.openBalance)} · Bill{' '}
+                              {formatMoney(entry.billTotal)}
                             </span>
-                          ) : null}
+                          ) : (
+                            <span className="settings-cheque-cancel-sub">
+                              Bill {formatMoney(entry.billTotal)}
+                            </span>
+                          )}
                           <span className="settings-cheque-cancel-sub">
-                            {label} · {formatDate(when)}
+                            {entry.label} · {formatDate(entry.at)}
                           </span>
                         </div>
                         <button
                           type="button"
                           className="btn btn-secondary settings-cheque-cancel-btn"
-                          onClick={() => handleCancelApprovedCheque(sale.id)}
+                          onClick={() =>
+                            handleCancelApprovedCheque(entry.saleId, entry.eventIndex)
+                          }
                         >
                           Cancel
                         </button>
                       </li>
-                    )
-                  })}
+                    ))}
                 </ul>
               )}
               {chequeCancelStatus ? (

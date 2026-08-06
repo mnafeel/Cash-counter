@@ -35,6 +35,7 @@ import {
   applyPartialBalanceSaleCollection,
   applyPurchaseCreditPayment,
   cancelApprovedCheque,
+  cancelApprovedChequeEntry,
   cancelPurchaseCredit,
   cancelSaleCredit,
   cancelSaleCheque,
@@ -198,7 +199,7 @@ interface CashContextValue {
   removeStaffLeave: (leaveId: string) => void
   applyStaffSalaryAdvance: (input: { staffId: string; fromMonth: string }) => string | null
   updateExpenseStaffSalaryMonth: (expenseId: string, staffSalaryMonth: string) => void
-  cancelApprovedCheque: (id: string) => boolean
+  cancelApprovedCheque: (id: string, eventIndex?: number | null) => boolean
   cancelPurchaseCredit: (id: string) => void
   cancelSaleCredit: (id: string, relatedSaleIds?: string[]) => void
   cancelSaleCheque: (id: string, relatedSaleIds?: string[]) => void
@@ -785,15 +786,21 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => addSupplierItemToData(prev, name, item))
   }, [])
 
-  const cancelApprovedChequeSale = useCallback((id: string): boolean => {
-    let ok = false
-    setData((prev) => {
-      const next = cancelApprovedCheque(prev, id)
-      ok = next !== prev
-      return next
-    })
-    return ok
-  }, [])
+  const cancelApprovedChequeSale = useCallback(
+    (id: string, eventIndex?: number | null): boolean => {
+      let ok = false
+      setData((prev) => {
+        const next =
+          eventIndex === undefined
+            ? cancelApprovedCheque(prev, id)
+            : cancelApprovedChequeEntry(prev, id, eventIndex)
+        ok = next !== prev
+        return next
+      })
+      return ok
+    },
+    [],
+  )
 
   const cancelPurchaseCreditBalance = useCallback((id: string) => {
     setData((prev) => cancelPurchaseCredit(prev, id))

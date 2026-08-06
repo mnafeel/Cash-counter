@@ -2289,34 +2289,7 @@ export default function Counter() {
       const collected = cashSplitAmount + bankSplitAmount + chequeSplitAmount
       const chequeBill = data.sales.find((sale) => sale.id === collectingChequeId)
       if (collected > 0) {
-        if (collected < chequeCollectDueAmount) {
-          recordChequeCollection(name, collectingChequeId)
-        } else {
-          collectPendingSale(collectingChequeId, {
-            billAmount: chequeCollectDueAmount,
-            originalBillAmount: originalBillHint ?? billAmount,
-            paidAmount: collected,
-            changeAmount: 0,
-            payType:
-              cashSplitAmount > 0 && (bankSplitAmount > 0 || chequeSplitAmount > 0)
-                ? 'split'
-                : chequeSplitAmount > 0
-                  ? 'cheque'
-                  : bankSplitAmount > 0
-                    ? 'bank'
-                    : 'cash',
-            cashAmount: cashSplitAmount > 0 ? cashSplitAmount : undefined,
-            bankAmount:
-              bankSplitAmount > 0
-                ? bankSplitAmount
-                : chequeSplitAmount > 0
-                  ? chequeSplitAmount
-                  : undefined,
-            chequeAmount: chequeSplitAmount > 0 ? chequeSplitAmount : undefined,
-            chequeApproved: chequeSplitAmount > 0 ? true : undefined,
-            customerName: name,
-          })
-        }
+        recordChequeCollection(name, collectingChequeId)
       }
       if (creditSplitAmount > 0) {
         recordSale({
@@ -2419,10 +2392,9 @@ export default function Counter() {
     const name = customerName.trim() || undefined
     const amount = splitSiblingChequePending
 
-    collectPendingSale(siblingChequePendingId, {
-      billAmount: amount,
-      originalBillAmount: originalBillHint ?? billAmount,
-      paidAmount: amount,
+    collectChequePayment(siblingChequePendingId, {
+      dueAmount: amount,
+      collected: amount,
       changeAmount: 0,
       payType: 'cheque',
       chequeAmount: amount,
@@ -2456,15 +2428,15 @@ export default function Counter() {
       !isLoadedChequePending
 
     if (isLoadedChequePending && loadedPendingId) {
-      collectPendingSale(loadedPendingId, {
-        billAmount: approvedCheque,
-        originalBillAmount: originalBillHint ?? billAmount,
-        paidAmount: approvedCheque,
+      const due = loadedBill?.billAmount ?? approvedCheque
+      collectChequePayment(loadedPendingId, {
+        dueAmount: due,
+        collected: Math.min(approvedCheque, due),
         changeAmount: 0,
         payType: 'cheque',
-        chequeAmount: approvedCheque,
+        chequeAmount: Math.min(approvedCheque, due),
         chequeApproved: true,
-        bankAmount: approvedCheque,
+        bankAmount: Math.min(approvedCheque, due),
         customerName: name,
       })
       setSavedAction('collect')
@@ -2473,15 +2445,16 @@ export default function Counter() {
     }
 
     if (collectingCreditId) {
-      collectPendingSale(collectingCreditId, {
-        billAmount: splitTotal,
-        originalBillAmount: billAmount,
-        paidAmount: approvedCheque,
+      const creditBill = data.sales.find((sale) => sale.id === collectingCreditId)
+      const due = creditBill?.billAmount ?? approvedCheque
+      collectCreditPayment(collectingCreditId, {
+        dueAmount: due,
+        collected: Math.min(approvedCheque, due),
         changeAmount: 0,
         payType: 'cheque',
-        chequeAmount: approvedCheque,
+        chequeAmount: Math.min(approvedCheque, due),
         chequeApproved: true,
-        bankAmount: approvedCheque,
+        bankAmount: Math.min(approvedCheque, due),
         customerName: name,
       })
       setSavedAction('collect')
@@ -2585,7 +2558,6 @@ export default function Counter() {
           : 0
 
     if (collected <= 0) return false
-    if (collected >= chequeCollectDueAmount) return false
 
     const submitPayment = collectChequePayment
 
@@ -2803,60 +2775,7 @@ export default function Counter() {
       if (recordChequeCollection(name, collectingChequeId)) {
         setSavedAction('collect')
         setTimeout(resetForm, 900)
-        return
       }
-
-      if (payType === 'split') {
-        const collected = cashSplitAmount + bankSplitAmount + chequeSplitAmount
-        collectPendingSale(collectingChequeId, {
-          billAmount: chequeCollectDueAmount,
-          originalBillAmount: originalBillHint ?? billAmount,
-          paidAmount: collected,
-          changeAmount: 0,
-          payType:
-            cashSplitAmount > 0 && (bankSplitAmount > 0 || chequeSplitAmount > 0)
-              ? 'split'
-              : bankSplitAmount > 0 && chequeSplitAmount > 0
-                ? 'split'
-                : chequeSplitAmount > 0
-                  ? 'cheque'
-                  : bankSplitAmount > 0
-                    ? 'bank'
-                    : 'cash',
-          cashAmount: cashSplitAmount > 0 ? cashSplitAmount : undefined,
-          bankAmount:
-            bankSplitAmount > 0
-              ? bankSplitAmount
-              : chequeSplitAmount > 0
-                ? chequeSplitAmount
-                : undefined,
-          chequeAmount: chequeSplitAmount > 0 ? chequeSplitAmount : undefined,
-          chequeApproved: chequeSplitAmount > 0 ? true : undefined,
-          customerName: name,
-        })
-        setSavedAction('collect')
-        setTimeout(resetForm, 900)
-        return
-      }
-
-      const cashAmount = payType === 'cash' ? paidAmount : 0
-      const bankAmount = payType === 'bank' ? paidAmount : payType === 'cheque' ? paidAmount : 0
-      const chequeAmount = payType === 'cheque' ? paidAmount : 0
-
-      collectPendingSale(collectingChequeId, {
-        billAmount: chequeCollectDueAmount,
-        originalBillAmount: originalBillHint ?? billAmount,
-        paidAmount: payType === 'cash' ? giveAmount : paidAmount,
-        changeAmount: payType === 'cash' ? changeAmount : 0,
-        payType,
-        cashAmount: cashAmount > 0 ? cashAmount : undefined,
-        bankAmount: bankAmount > 0 ? bankAmount : undefined,
-        chequeAmount: chequeAmount > 0 ? chequeAmount : undefined,
-        chequeApproved: payType === 'cheque' ? true : undefined,
-        customerName: name,
-      })
-      setSavedAction('collect')
-      setTimeout(resetForm, 900)
       return
     }
 

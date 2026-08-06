@@ -15,6 +15,8 @@ export interface ChequePurchaseRow {
   customerName: string
   date: string
   dateLabel: string
+  billDate: string
+  billDateLabel: string
   billAmount: number
   paidAmount: number
   chequePending: number
@@ -126,8 +128,11 @@ function buildGroupRow(parent: Sale, children: Sale[]): ChequePurchaseRow | null
   )
   if (!customerName) return null
 
-  const date = parent.updatedAt ?? parent.createdAt
-  const detail = buildPayDetail(parent, billAmount, paidAmount, chequePending, 'Cheque')
+  const date = parent.createdAt
+  const detail = buildPayDetail(parent, billAmount, paidAmount, chequePending, 'Cheque', [
+    parent,
+    ...children,
+  ])
 
   return {
     id: parent.id,
@@ -135,6 +140,8 @@ function buildGroupRow(parent: Sale, children: Sale[]): ChequePurchaseRow | null
     customerName,
     date,
     dateLabel: formatDate(date),
+    billDate: parent.createdAt,
+    billDateLabel: formatDate(parent.createdAt),
     billAmount: billAmount || parent.billAmount + children.reduce((sum, c) => sum + c.billAmount, 0),
     paidAmount,
     chequePending,
@@ -153,7 +160,7 @@ function buildSingleRow(sale: Sale): ChequePurchaseRow | null {
   const customerName = resolveCustomerLabel([sale.customerName], chequePending > 0 || chequeInvolved)
   if (!customerName) return null
 
-  const date = sale.updatedAt ?? sale.createdAt
+  const date = sale.createdAt
   const detail = buildPayDetail(sale, billAmount, paidAmount, chequePending, 'Cheque')
 
   return {
@@ -162,6 +169,8 @@ function buildSingleRow(sale: Sale): ChequePurchaseRow | null {
     customerName,
     date,
     dateLabel: formatDate(date),
+    billDate: sale.createdAt,
+    billDateLabel: formatDate(sale.createdAt),
     billAmount,
     paidAmount,
     chequePending,

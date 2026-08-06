@@ -434,7 +434,17 @@ export function normalizePaymentEvent(event: SalePaymentEvent): SalePaymentEvent
     cash: normalized.cash > 0 ? normalized.cash : undefined,
     bank: normalized.bank > 0 ? normalized.bank : undefined,
     cheque: normalized.cheque > 0 ? normalized.cheque : undefined,
+    cancelled: event.cancelled || undefined,
+    cancelledAt: event.cancelledAt,
   }
+}
+
+export function isActivePaymentEvent(event: SalePaymentEvent): boolean {
+  return event.cancelled !== true
+}
+
+export function activeSalePaymentEvents(sale: Sale): SalePaymentEvent[] {
+  return getSalePaymentEvents(sale).filter(isActivePaymentEvent)
 }
 
 function paymentEventFromNormalizedBreakdown(
@@ -627,6 +637,16 @@ export function repairSalePaymentEvents(sale: Sale): Sale {
         Math.abs(eventBreakdown.bank - fieldBreakdown.bank) < 0.01 &&
         Math.abs(eventBreakdown.total - fieldBreakdown.total) < 0.01
       if (!totalsMatch) {
+        // Keep dated partial approvals when events already explain the full collection.
+        const multiDay =
+          (next.paymentEvents?.length ?? 0) > 1 &&
+          Math.abs(eventBreakdown.total - fieldBreakdown.total) < 0.01
+        const eventsAhead =
+          (next.paymentEvents?.length ?? 0) > 0 &&
+          eventBreakdown.total > fieldBreakdown.total + 0.01
+        if (multiDay || eventsAhead) {
+          return next
+        }
         return {
           ...next,
           paymentEvents: [
@@ -645,7 +665,9 @@ export function salePaymentEventsInRange(
   fromDate?: string,
   toDate?: string,
 ): SalePaymentEvent[] {
-  return getSalePaymentEvents(sale).filter((event) => isIsoInDateRange(event.at, fromDate, toDate))
+  return getSalePaymentEvents(sale).filter(
+    (event) => isActivePaymentEvent(event) && isIsoInDateRange(event.at, fromDate, toDate),
+  )
 }
 
 export function saleHasCollectionInRange(
@@ -659,24 +681,7 @@ export function saleHasCollectionInRange(
 /** Cash / bank / approved cheque already collected on a sale (including partial pending credit). */
 export function saleCollectedAmount(sale: Sale): number {
   if (sale.status === 'pending') {
-    const cash = sale.cashAmount ?? 0
-    const cheque =
-      sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
-    let bank = sale.bankAmount ?? 0
-    // Counter writes bankAmount = chequeAmount for approvals — count once.
-    if (cheque > 0) bank = Math.max(0, bank - cheque)
-    const splitChequeDupCash =
-      sale.payType === 'split' &&
-      cheque > 0 &&
-      cash > 0 &&
-      Math.abs(cash - cheque) < 0.01
-    const paid = (splitChequeDupCash ? 0 : cash) + bank + cheque
-    if (paid > 0) return paid
-    if (sale.paidAmount > 0) {
-      if (sale.pendingPayType === 'cheque' || sale.payType === 'cheque') return sale.paidAmount
-      return sale.paidAmount
-    }
-    return 0
+    return salePendingCreditPaidBreakdown(sale).total
   }
 
   return saleCollectedComponentBreakdown(sale).total
@@ -690,16 +695,18 @@ export function saleCollectedComponentBreakdown(sale: Sale): SaleCollectedBreakd
   const events = getSalePaymentEvents(sale)
   let result: SaleCollectedBreakdown
   if (events.length > 0) {
-    const raw = events.reduce(
-      (acc, event) => {
-        acc.cash += event.cash ?? 0
-        acc.bank += event.bank ?? 0
-        acc.cheque += event.cheque ?? 0
-        acc.total += event.amount
-        return acc
-      },
-      { cash: 0, bank: 0, cheque: 0, total: 0 },
-    )
+    const raw = events
+      .filter(isActivePaymentEvent)
+      .reduce(
+        (acc, event) => {
+          acc.cash += event.cash ?? 0
+          acc.bank += event.bank ?? 0
+          acc.cheque += event.cheque ?? 0
+          acc.total += event.amount
+          return acc
+        },
+        { cash: 0, bank: 0, cheque: 0, total: 0 },
+      )
     result = normalizeCollectedBreakdown(raw)
   } else if (sale.status === 'pending') {
     result = normalizeCollectedBreakdown(salePendingCreditPaidBreakdown(sale))
@@ -726,8 +733,30 @@ export function salePendingCreditPaidBreakdown(sale: Sale): {
     sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
   // Counter writes bankAmount = chequeAmount for approvals — count once.
   if (cheque > 0) bank = Math.max(0, bank - cheque)
-  const total = cash + bank + cheque
-  if (total > 0) return normalizeCollectedBreakdown({ cash, bank, cheque, total })
+  const fromFields =
+    cash + bank + cheque > 0
+      ? normalizeCollectedBreakdown({ cash, bank, cheque, total: cash + bank + cheque })
+      : empty
+
+  // Bill-date / pending edits can wipe cash/bank fields while leaving paymentEvents intact.
+  const rawEvents = (sale.paymentEvents ?? []).filter(isActivePaymentEvent)
+  if (rawEvents.length > 0) {
+    const fromEvents = normalizeCollectedBreakdown(
+      rawEvents.reduce(
+        (acc, event) => {
+          acc.cash += event.cash ?? 0
+          acc.bank += event.bank ?? 0
+          acc.cheque += event.cheque ?? 0
+          acc.total += event.amount
+          return acc
+        },
+        { cash: 0, bank: 0, cheque: 0, total: 0 },
+      ),
+    )
+    if (fromEvents.total > fromFields.total + 0.01) return fromEvents
+  }
+
+  if (fromFields.total > 0) return fromFields
 
   if (sale.paidAmount > 0) {
     // Cheque pending must never infer paidAmount as cash.

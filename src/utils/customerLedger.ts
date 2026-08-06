@@ -18,6 +18,9 @@ export interface CustomerPurchaseRow {
   customerName: string
   date: string
   dateLabel: string
+  /** Bill creation timestamp (ISO). */
+  billDate: string
+  billDateLabel: string
   billAmount: number
   paidAmount: number
   creditPending: number
@@ -25,7 +28,7 @@ export interface CustomerPurchaseRow {
   payDetail: string
   /** Cash / bank / cheque collected so far. */
   paidBreakdown?: string
-  /** Per-day collection lines from payment events. */
+  /** Bill date + each payment/approval date on its own line. */
   paymentHistory?: string
 }
 
@@ -113,18 +116,130 @@ function saleCollectedPayDetail(sale: Sale): string {
   return salePayDetail(sale)
 }
 
-function salePaymentHistoryDetail(sale: Sale): string | undefined {
+function eventAmountParts(event: { cash?: number; bank?: number; cheque?: number }): string {
+  const parts: string[] = []
+  if ((event.cash ?? 0) > 0) parts.push(`💵 ${formatMoney(event.cash ?? 0)}`)
+  if ((event.bank ?? 0) > 0) parts.push(`🏦 ${formatMoney(event.bank ?? 0)}`)
+  if ((event.cheque ?? 0) > 0) parts.push(`🧾 ${formatMoney(event.cheque ?? 0)}`)
+  return parts.join(' · ')
+}
+
+function isChequeOriginSaleForHistory(sale: Sale): boolean {
+  return sale.payType === 'cheque' || sale.pendingPayType === 'cheque'
+}
+
+function paymentEventScheduleLabel(
+  sale: Sale,
+  event: { cash?: number; bank?: number; cheque?: number; cancelled?: boolean },
+  index: number,
+  total: number,
+): string {
+  const cash = event.cash ?? 0
+  const bank = event.bank ?? 0
+  const cheque = event.cheque ?? 0
+  const chequeOrigin = isChequeOriginSaleForHistory(sale)
+  const ordinal =
+    index === 0 ? '1st' : index === 1 ? '2nd' : index === 2 ? '3rd' : `${index + 1}th`
+
+  if (event.cancelled) {
+    if (chequeOrigin && cash <= 0 && (bank > 0 || cheque > 0)) {
+      return total <= 1 ? 'Cheque cancelled' : `${ordinal} cheque cancelled`
+    }
+    return total <= 1 ? 'Payment cancelled' : `${ordinal} payment cancelled`
+  }
+
+  if (chequeOrigin && cash <= 0 && (bank > 0 || cheque > 0)) {
+    if (total <= 1) return 'Cheque approved'
+    return `${ordinal} cheque approved`
+  }
+
+  if (total <= 1) return 'Payment'
+  return `${ordinal} payment`
+}
+
+/** Bill created date + each collection/approval dated separately. */
+export function salePaymentHistoryDetail(
+  sale: Sale,
+  billAmount?: number,
+  openLabel: 'Credit' | 'Cheque' | 'Bill' = 'Bill',
+): string | undefined {
   const events = getSalePaymentEvents(sale).filter((event) => event.amount > 0)
-  if (events.length === 0) return undefined
-  return events
-    .map((event) => {
-      const parts: string[] = []
-      if ((event.cash ?? 0) > 0) parts.push(`💵 ${formatMoney(event.cash ?? 0)}`)
-      if ((event.bank ?? 0) > 0) parts.push(`🏦 ${formatMoney(event.bank ?? 0)}`)
-      if ((event.cheque ?? 0) > 0) parts.push(`🧾 ${formatMoney(event.cheque ?? 0)}`)
-      return `${formatDate(event.at)} · ${parts.join(' · ')}`
-    })
-    .join(' · ')
+  const lines: string[] = [
+    `Bill ${formatDate(sale.createdAt)} · ${formatMoney(billAmount ?? sale.originalBillAmount ?? sale.billAmount)}`,
+  ]
+
+  if (events.length === 0) {
+    if (sale.status === 'pending') {
+      lines.push(
+        `${openLabel} pending · ${formatMoney(sale.billAmount)}`,
+      )
+      return lines.join('\n')
+    }
+    return lines.join('\n')
+  }
+
+  events.forEach((event, index) => {
+    const label = paymentEventScheduleLabel(sale, event, index, events.length)
+    const parts = eventAmountParts(event)
+    if (event.cancelled) {
+      lines.push(
+        `${label} · ${formatDate(event.cancelledAt ?? event.at)} · ${formatMoney(event.amount)}`,
+      )
+      return
+    }
+    lines.push(`${label} · ${formatDate(event.at)}${parts ? ` · ${parts}` : ` · ${formatMoney(event.amount)}`}`)
+  })
+
+  if (sale.status === 'pending' && sale.billAmount > 0) {
+    lines.push(`${openLabel} pending · ${formatMoney(sale.billAmount)}`)
+  }
+
+  return lines.join('\n')
+}
+
+/** Merge dated payment lines from parent + split children. */
+export function mergeSalePaymentHistoryDetail(
+  sales: Sale[],
+  billAmount: number,
+  openLabel: 'Credit' | 'Cheque' | 'Bill' = 'Bill',
+): string | undefined {
+  const primary = sales[0]
+  if (!primary) return undefined
+
+  const allEvents = sales
+    .flatMap((sale) =>
+      getSalePaymentEvents(sale)
+        .filter((event) => event.amount > 0)
+        .map((event) => ({ sale, event })),
+    )
+    .sort((a, b) => new Date(a.event.at).getTime() - new Date(b.event.at).getTime())
+
+  const lines: string[] = [
+    `Bill ${formatDate(primary.createdAt)} · ${formatMoney(billAmount)}`,
+  ]
+
+  if (allEvents.length === 0) {
+    const openPending = sales.reduce((sum, sale) => {
+      if (sale.status !== 'pending') return sum
+      return sum + sale.billAmount
+    }, 0)
+    if (openPending > 0) lines.push(`${openLabel} pending · ${formatMoney(openPending)}`)
+    return lines.join('\n')
+  }
+
+  allEvents.forEach(({ sale, event }, index) => {
+    const label = paymentEventScheduleLabel(sale, event, index, allEvents.length)
+    const parts = eventAmountParts(event)
+    lines.push(`${label} · ${formatDate(event.at)}${parts ? ` · ${parts}` : ` · ${formatMoney(event.amount)}`}`)
+  })
+
+  const openPending = sales.reduce((sum, sale) => {
+    if (sale.status !== 'pending') return sum
+    return sum + sale.billAmount
+  }, 0)
+  if (openPending > 0) lines.push(`${openLabel} pending · ${formatMoney(openPending)}`)
+
+  return lines.join('\n')
 }
 
 export function buildPayDetail(
@@ -133,9 +248,13 @@ export function buildPayDetail(
   paidAmount: number,
   openPending: number,
   openLabel: 'Credit' | 'Cheque' = 'Credit',
+  relatedSales?: Sale[],
 ): { payDetail: string; paidBreakdown?: string; paymentHistory?: string } {
   const paidBreakdown = paidAmount > 0 ? saleCollectedPayDetail(sale) : undefined
-  const paymentHistory = salePaymentHistoryDetail(sale)
+  const paymentHistory =
+    relatedSales && relatedSales.length > 1
+      ? mergeSalePaymentHistoryDetail(relatedSales, billAmount, openLabel)
+      : salePaymentHistoryDetail(sale, billAmount, openLabel)
   const payDetail =
     openPending > 0
       ? `Bill ${formatMoney(billAmount)} · Paid ${formatMoney(paidAmount)}${paidBreakdown ? ` (${paidBreakdown})` : ''} · ${openLabel} ${formatMoney(openPending)}`
@@ -184,8 +303,11 @@ function buildGroupPurchaseRow(parent: Sale, children: Sale[]): CustomerPurchase
   )
   if (!customerName) return null
 
-  const date = parent.updatedAt ?? parent.createdAt
-  const detail = buildPayDetail(parent, billAmount, paidAmount, creditPending)
+  const date = parent.createdAt
+  const detail = buildPayDetail(parent, billAmount, paidAmount, creditPending, 'Credit', [
+    parent,
+    ...children,
+  ])
 
   return {
     id: parent.id,
@@ -193,6 +315,8 @@ function buildGroupPurchaseRow(parent: Sale, children: Sale[]): CustomerPurchase
     customerName,
     date,
     dateLabel: formatDate(date),
+    billDate: parent.createdAt,
+    billDateLabel: formatDate(parent.createdAt),
     billAmount: billAmount || parent.billAmount + children.reduce((sum, c) => sum + c.billAmount, 0),
     paidAmount,
     creditPending,
@@ -211,7 +335,7 @@ function buildSinglePurchaseRow(sale: Sale): CustomerPurchaseRow | null {
   const customerName = resolveCustomerLabel([sale.customerName], creditPending > 0 || creditInvolved)
   if (!customerName) return null
 
-  const date = sale.updatedAt ?? sale.createdAt
+  const date = sale.createdAt
   const detail = buildPayDetail(sale, billAmount, paidAmount, creditPending)
 
   return {
@@ -220,6 +344,8 @@ function buildSinglePurchaseRow(sale: Sale): CustomerPurchaseRow | null {
     customerName,
     date,
     dateLabel: formatDate(date),
+    billDate: sale.createdAt,
+    billDateLabel: formatDate(sale.createdAt),
     billAmount,
     paidAmount,
     creditPending,

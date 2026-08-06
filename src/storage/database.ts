@@ -1795,6 +1795,16 @@ export function updatePendingBill(
     sales: data.sales.map((s) => {
       if (s.id !== id || s.status !== 'pending') return s
 
+      const isBalanceBill =
+        s.payType === 'credit' ||
+        s.payType === 'cheque' ||
+        s.pendingPayType === 'credit' ||
+        s.pendingPayType === 'cheque' ||
+        updates.payType === 'credit' ||
+        updates.payType === 'cheque' ||
+        (s.paymentEvents?.length ?? 0) > 0
+      const priorCollected = isBalanceBill ? salePendingCreditPaidBreakdown(s) : null
+
       const patched = {
         ...s,
         billAmount: updates.billAmount,
@@ -1807,16 +1817,19 @@ export function updatePendingBill(
             ? updates.cashAmount
             : updates.payType === 'split'
               ? updates.cashAmount
-              : updates.payType === 'credit' || s.payType === 'credit'
-                ? s.cashAmount
+              : updates.payType === 'credit' || s.payType === 'credit' || isBalanceBill
+                ? s.cashAmount ?? (priorCollected && priorCollected.cash > 0 ? priorCollected.cash : undefined)
                 : undefined,
         bankAmount:
           updates.bankAmount !== undefined
             ? updates.bankAmount
             : updates.payType === 'split'
               ? updates.bankAmount
-              : updates.payType === 'credit' || s.payType === 'credit'
-                ? s.bankAmount
+              : updates.payType === 'credit' || s.payType === 'credit' || isBalanceBill
+                ? s.bankAmount ??
+                  (priorCollected && priorCollected.bank + priorCollected.cheque > 0
+                    ? priorCollected.bank + priorCollected.cheque
+                    : undefined)
                 : undefined,
         chequeAmount:
           updates.chequeAmount !== undefined
@@ -1826,7 +1839,12 @@ export function updatePendingBill(
               : updates.payType === 'cheque' ||
                   (updates.payType == null &&
                     (s.payType === 'cheque' || s.pendingPayType === 'cheque'))
-                ? updates.billAmount
+                ? // Open cheque face = remaining due only when nothing has been collected yet.
+                  priorCollected && priorCollected.total > 0
+                  ? s.chequeApproved
+                    ? s.chequeAmount
+                    : undefined
+                  : updates.billAmount
                 : updates.payType === 'credit' || s.payType === 'credit'
                   ? s.chequeAmount
                   : undefined,
@@ -1847,7 +1865,9 @@ export function updatePendingBill(
             : updates.payType === 'credit'
               ? undefined
               : s.chequeApproved,
-        paidAmount: updates.paidAmount ?? s.paidAmount,
+        paidAmount:
+          updates.paidAmount ??
+          (priorCollected && priorCollected.total > 0 ? priorCollected.total : s.paidAmount),
       }
 
       const financialChanged =
@@ -1989,6 +2009,19 @@ export function isApprovedChequeSale(sale: Sale): boolean {
 }
 
 export function getApprovedChequeAmount(sale: Sale): number {
+  const events = (sale.paymentEvents ?? []).filter(
+    (event) =>
+      !event.cancelled &&
+      ((event.bank ?? 0) > 0 || (event.cheque ?? 0) > 0) &&
+      (event.cash ?? 0) <= 0,
+  )
+  const isChequeOrigin =
+    sale.payType === 'cheque' ||
+    sale.pendingPayType === 'cheque' ||
+    sale.chequeApproved === true
+  if (isChequeOrigin && events.length > 0) {
+    return events.reduce((sum, event) => sum + event.amount, 0)
+  }
   if (sale.chequeApproved && (sale.chequeAmount ?? 0) > 0) {
     return sale.chequeAmount ?? 0
   }
@@ -1996,6 +2029,107 @@ export function getApprovedChequeAmount(sale: Sale): number {
     return sale.chequeAmount ?? sale.billAmount
   }
   return 0
+}
+
+export interface ApprovedChequeEntry {
+  /** Unique row id for Settings list. */
+  id: string
+  saleId: string
+  /** Index in sale.paymentEvents; null = legacy whole-sale cheque. */
+  eventIndex: number | null
+  amount: number
+  at: string
+  customerName?: string
+  openBalance: number
+  billTotal: number
+  label: string
+  partLabel?: string
+}
+
+/** One row per approved cheque slice (supports 2–3 partial approvals on one bill). */
+export function listApprovedChequeEntries(data: AppData): ApprovedChequeEntry[] {
+  const entries: ApprovedChequeEntry[] = []
+
+  for (const sale of data.sales) {
+    const isChequeOrigin =
+      sale.payType === 'cheque' ||
+      sale.pendingPayType === 'cheque' ||
+      sale.chequeApproved === true
+    if (!isChequeOrigin && sale.payType !== 'split') continue
+
+    const events = sale.paymentEvents ?? []
+    const chequeEvents = events
+      .map((event, index) => ({ event, index }))
+      .filter(
+        ({ event }) =>
+          !event.cancelled &&
+          ((event.bank ?? 0) > 0 || (event.cheque ?? 0) > 0) &&
+          (event.cash ?? 0) <= 0 &&
+          event.amount > 0,
+      )
+
+    const billTotal =
+      sale.originalBillAmount ??
+      (sale.status === 'pending'
+        ? sale.billAmount + saleCollectedAmount(sale)
+        : sale.billAmount)
+    const openBalance = sale.status === 'pending' ? sale.billAmount : 0
+    const name = sale.customerName
+
+    if (chequeEvents.length > 0 && (isChequeOrigin || sale.payType === 'split')) {
+      // For split parents, only list events that came from cheque approval.
+      const listable =
+        sale.payType === 'split'
+          ? chequeEvents.filter(() => sale.chequeApproved || (sale.chequeAmount ?? 0) > 0)
+          : chequeEvents
+      const totalParts = listable.length
+      listable.forEach(({ event, index }, part) => {
+        const ordinal =
+          part === 0 ? '1st' : part === 1 ? '2nd' : part === 2 ? '3rd' : `${part + 1}th`
+        entries.push({
+          id: `${sale.id}:${index}`,
+          saleId: sale.id,
+          eventIndex: index,
+          amount: event.amount,
+          at: event.at,
+          customerName: name,
+          openBalance,
+          billTotal,
+          label:
+            sale.status === 'pending'
+              ? 'Cheque → bank · open'
+              : sale.payType === 'split'
+                ? 'Split · cheque → bank'
+                : 'Cheque → bank',
+          partLabel: totalParts > 1 ? `${ordinal} cheque` : undefined,
+        })
+      })
+      continue
+    }
+
+    const amount = getApprovedChequeAmount(sale)
+    if (amount <= 0) continue
+    entries.push({
+      id: sale.id,
+      saleId: sale.id,
+      eventIndex: null,
+      amount,
+      at: sale.updatedAt ?? sale.createdAt,
+      customerName: name,
+      openBalance,
+      billTotal,
+      label:
+        sale.status === 'pending'
+          ? sale.payType === 'credit' || sale.pendingPayType === 'credit'
+            ? 'Credit · cheque → bank'
+            : 'Cheque → bank · open'
+          : sale.payType === 'split'
+            ? 'Split · cheque → bank'
+            : 'Cheque → bank',
+    })
+  }
+
+  return entries.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
 }
 
 export function listApprovedCheques(data: AppData): Sale[] {
@@ -2067,7 +2201,7 @@ export function cancelSaleCredit(
   })
 }
 
-/** Clear open cheque bill — deletes unpaid bills or finalizes partial collections. */
+/** Clear open cheque bill — keeps collections; remaining becomes credit balance (not cheque pending). */
 export function cancelSaleCheque(
   data: AppData,
   id: string,
@@ -2077,26 +2211,79 @@ export function cancelSaleCheque(
   if (!sale || !isPendingChequeSale(sale)) return data
 
   const collected = saleCollectedAmount(sale)
+  const remaining = sale.billAmount
+  const originalBillAmount = sale.originalBillAmount ?? remaining + collected
+  const now = new Date().toISOString()
+  const prior = salePendingCreditPaidBreakdown(sale)
+
+  // Nothing collected — convert full open cheque to credit balance.
   if (collected <= 0) {
-    return deleteSale(data, id, relatedSaleIds)
+    if (remaining <= 0) {
+      return deleteSale(data, id, relatedSaleIds)
+    }
+    const next: AppData = {
+      ...data,
+      sales: data.sales.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              payType: 'credit',
+              pendingPayType: 'credit',
+              billAmount: remaining,
+              originalBillAmount,
+              creditAmount: remaining,
+              chequeAmount: undefined,
+              chequeApproved: undefined,
+              bankAmount: undefined,
+              cashAmount: undefined,
+              paidAmount: 0,
+              updatedAt: now,
+            }
+          : s,
+      ),
+    }
+    saveData(next)
+    return next
   }
 
-  const cash = sale.cashAmount ?? 0
-  const bank = sale.bankAmount ?? 0
-  const cheque =
-    sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
-  const originalBillAmount = sale.originalBillAmount ?? sale.billAmount + collected
+  // Partial collections kept; open cheque remainder becomes credit balance.
+  if (remaining > 0) {
+    const next: AppData = {
+      ...data,
+      sales: data.sales.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              payType: 'credit',
+              pendingPayType: 'credit',
+              billAmount: remaining,
+              originalBillAmount,
+              creditAmount: remaining,
+              cashAmount: prior.cash > 0 ? prior.cash : undefined,
+              bankAmount: prior.bank + prior.cheque > 0 ? prior.bank + prior.cheque : undefined,
+              chequeAmount: undefined,
+              chequeApproved: undefined,
+              paidAmount: collected,
+              updatedAt: now,
+            }
+          : s,
+      ),
+    }
+    saveData(next)
+    return next
+  }
 
+  // Fully collected already — finalize as paid.
   return collectPendingBill(data, id, {
     billAmount: originalBillAmount,
     originalBillAmount,
     paidAmount: collected,
     changeAmount: 0,
-    payType: payTypeFromCollectedTotals(cash, bank, cheque, 'cheque'),
-    cashAmount: cash || undefined,
-    bankAmount: bank || undefined,
-    chequeAmount: cheque || undefined,
-    chequeApproved: cheque > 0 ? true : undefined,
+    payType: payTypeFromCollectedTotals(prior.cash, prior.bank, prior.cheque, 'cheque'),
+    cashAmount: prior.cash || undefined,
+    bankAmount: prior.bank + prior.cheque > 0 ? prior.bank + prior.cheque : undefined,
+    chequeAmount: prior.cheque || undefined,
+    chequeApproved: prior.cheque > 0 ? true : undefined,
     customerName: sale.customerName,
   })
 }
@@ -2108,6 +2295,113 @@ function revertPendingPayTypes(sale: Sale): { payType: PayType; pendingPayType: 
   return { payType: 'cheque', pendingPayType: 'cheque' }
 }
 
+function syncSaleFieldsFromActiveEvents(sale: Sale): Sale {
+  const prior = salePendingCreditPaidBreakdown(sale)
+  const originalBillAmount =
+    sale.originalBillAmount ??
+    (sale.status === 'pending' ? sale.billAmount + prior.total : sale.billAmount)
+  const remaining = Math.max(0, originalBillAmount - prior.total)
+  const activeCheque = getApprovedChequeAmount({ ...sale, status: sale.status })
+  if (remaining <= 0 && prior.total > 0) {
+    return {
+      ...sale,
+      status: 'paid',
+      billAmount: originalBillAmount,
+      originalBillAmount,
+      paidAmount: prior.total,
+      cashAmount: prior.cash > 0 ? prior.cash : undefined,
+      bankAmount: prior.bank + prior.cheque > 0 ? prior.bank + prior.cheque : undefined,
+      chequeAmount: activeCheque > 0 ? activeCheque : undefined,
+      chequeApproved: activeCheque > 0 ? true : undefined,
+      creditAmount: undefined,
+    }
+  }
+  return {
+    ...sale,
+    status: 'pending',
+    billAmount: remaining,
+    originalBillAmount,
+    paidAmount: prior.total,
+    cashAmount: prior.cash > 0 ? prior.cash : undefined,
+    bankAmount: prior.bank + prior.cheque > 0 ? prior.bank + prior.cheque : undefined,
+    chequeAmount: activeCheque > 0 ? activeCheque : remaining > 0 ? remaining : undefined,
+    chequeApproved: activeCheque > 0 ? true : undefined,
+    creditAmount: sale.pendingPayType === 'credit' || sale.payType === 'credit' ? remaining : undefined,
+    payType: sale.payType === 'credit' ? 'credit' : 'cheque',
+    pendingPayType: sale.pendingPayType === 'credit' ? 'credit' : 'cheque',
+  }
+}
+
+/** Cancel one approved cheque slice (or whole legacy cheque) and reopen that amount as balance. */
+export function cancelApprovedChequeEntry(
+  data: AppData,
+  saleId: string,
+  eventIndex: number | null,
+): AppData {
+  const sale = data.sales.find((s) => s.id === saleId)
+  if (!sale) return data
+  const now = new Date().toISOString()
+
+  if (eventIndex != null && sale.paymentEvents && sale.paymentEvents[eventIndex]) {
+    const target = sale.paymentEvents[eventIndex]
+    if (target.cancelled || target.amount <= 0) return data
+
+    const events = sale.paymentEvents.map((event, index) =>
+      index === eventIndex
+        ? { ...event, cancelled: true, cancelledAt: now }
+        : event,
+    )
+    let patched: Sale = {
+      ...sale,
+      paymentEvents: events,
+      updatedAt: now,
+    }
+    patched = syncSaleFieldsFromActiveEvents(patched)
+    // Cancelled slice returns as open cheque balance (exact amount).
+    if (patched.status === 'pending') {
+      const cancelledAmt = target.amount
+      const activeCollected = salePendingCreditPaidBreakdown(patched).total
+      const originalBillAmount = patched.originalBillAmount ?? activeCollected + patched.billAmount
+      // Ensure cancelled amount is included in open balance.
+      const openNeeded = Math.max(patched.billAmount, cancelledAmt)
+      const openBalance = Math.max(0, originalBillAmount - activeCollected)
+      patched = {
+        ...patched,
+        billAmount: openBalance > 0 ? openBalance : openNeeded,
+        originalBillAmount,
+        payType: 'cheque',
+        pendingPayType: 'cheque',
+        creditAmount: undefined,
+        chequeAmount:
+          getApprovedChequeAmount(patched) > 0
+            ? getApprovedChequeAmount(patched)
+            : undefined,
+      }
+    } else {
+      // Was fully paid — reopen only the cancelled slice as pending cheque.
+      patched = {
+        ...patched,
+        status: 'pending',
+        payType: 'cheque',
+        pendingPayType: 'cheque',
+        billAmount: target.amount,
+        originalBillAmount: sale.originalBillAmount ?? sale.billAmount,
+        creditAmount: undefined,
+      }
+      patched = syncSaleFieldsFromActiveEvents(patched)
+    }
+
+    const next = {
+      ...data,
+      sales: data.sales.map((s) => (s.id === saleId ? patched : s)),
+    }
+    saveData(next)
+    return next
+  }
+
+  return cancelApprovedCheque(data, saleId)
+}
+
 export function cancelApprovedCheque(data: AppData, id: string): AppData {
   const sale = data.sales.find((s) => s.id === id)
   if (!sale || !isApprovedChequeSale(sale)) return data
@@ -2115,6 +2409,23 @@ export function cancelApprovedCheque(data: AppData, id: string): AppData {
   const now = new Date().toISOString()
   const chequeAmt = getApprovedChequeAmount(sale)
   if (chequeAmt <= 0) return data
+
+  // Prefer cancelling via payment events when multiple approvals exist.
+  const events = sale.paymentEvents ?? []
+  const activeChequeIndexes = events
+    .map((event, index) => ({ event, index }))
+    .filter(
+      ({ event }) =>
+        !event.cancelled &&
+        event.amount > 0 &&
+        ((event.bank ?? 0) > 0 || (event.cheque ?? 0) > 0) &&
+        (event.cash ?? 0) <= 0,
+    )
+  if (activeChequeIndexes.length > 0) {
+    // Cancel the latest approval slice first (Settings row without index).
+    const latest = activeChequeIndexes[activeChequeIndexes.length - 1]
+    return cancelApprovedChequeEntry(data, id, latest.index)
+  }
 
   if (sale.status === 'pending' && sale.chequeApproved) {
     const cash = sale.cashAmount ?? 0
@@ -2130,6 +2441,7 @@ export function cancelApprovedCheque(data: AppData, id: string): AppData {
               chequeApproved: undefined,
               bankAmount: bank > 0 ? bank : undefined,
               paidAmount: totalPaid,
+              billAmount: s.billAmount + chequeAmt,
               updatedAt: now,
             }
           : s,
@@ -2156,7 +2468,7 @@ export function cancelApprovedCheque(data: AppData, id: string): AppData {
       parentSplitId: sale.id,
       customerName: sale.customerName,
       status: 'pending',
-      createdAt: now,
+      createdAt: sale.createdAt,
       updatedAt: now,
     }
 
@@ -2182,9 +2494,9 @@ export function cancelApprovedCheque(data: AppData, id: string): AppData {
   }
 
   const revert = revertPendingPayTypes(sale)
-  const reopenDue = revert.pendingPayType === 'credit'
-    ? sale.originalBillAmount ?? sale.billAmount
-    : chequeAmt
+  const priorCollected = saleCollectedAmount(sale) - chequeAmt
+  const originalBillAmount = sale.originalBillAmount ?? sale.billAmount
+  const reopenDue = Math.max(0, originalBillAmount - Math.max(0, priorCollected))
   const next = {
     ...data,
     sales: data.sales.map((s) =>
@@ -2194,15 +2506,22 @@ export function cancelApprovedCheque(data: AppData, id: string): AppData {
             status: 'pending' as const,
             payType: revert.payType,
             pendingPayType: revert.pendingPayType,
-            billAmount: reopenDue,
-            originalBillAmount: s.originalBillAmount,
-            paidAmount: 0,
+            billAmount: reopenDue > 0 ? reopenDue : chequeAmt,
+            originalBillAmount,
+            paidAmount: Math.max(0, priorCollected),
             changeAmount: 0,
             chequeApproved: undefined,
             bankAmount: undefined,
             cashAmount: undefined,
-            chequeAmount: revert.payType === 'cheque' ? reopenDue : undefined,
-            creditAmount: revert.pendingPayType === 'credit' ? reopenDue : undefined,
+            chequeAmount: revert.payType === 'cheque' ? (reopenDue > 0 ? reopenDue : chequeAmt) : undefined,
+            creditAmount: revert.pendingPayType === 'credit' ? (reopenDue > 0 ? reopenDue : chequeAmt) : undefined,
+            paymentEvents: (s.paymentEvents ?? []).map((event) =>
+              !event.cancelled &&
+              ((event.bank ?? 0) > 0 || (event.cheque ?? 0) > 0) &&
+              (event.cash ?? 0) <= 0
+                ? { ...event, cancelled: true, cancelledAt: now }
+                : event,
+            ),
             updatedAt: now,
           }
         : s,
@@ -2351,19 +2670,22 @@ export function applyPartialBalanceSaleCollection(
 
   const remaining = due - collected
   const now = new Date().toISOString()
-  const prevCash = sale.cashAmount ?? 0
-  const prevBank = sale.bankAmount ?? 0
-  const prevCheque =
-    sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
+  // Prefer paymentEvents when bill edits wiped cash/bank fields on the pending row.
+  const prior = salePendingCreditPaidBreakdown(sale)
+  const prevCash = prior.cash
+  const prevBank = prior.bank
+  const prevCheque = prior.cheque
 
   const addCash = payment.cashAmount ?? (payment.payType === 'cash' ? collected : 0)
-  const addBank = payment.bankAmount ?? (payment.payType === 'bank' ? collected : 0)
+  const addBankRaw = payment.bankAmount ?? (payment.payType === 'bank' ? collected : 0)
   const addCheque =
     payment.payType === 'cheque' && payment.chequeApproved
       ? payment.chequeAmount ?? collected
       : payment.chequeApproved
         ? payment.chequeAmount ?? 0
         : 0
+  // Avoid double-counting when Counter sends bankAmount = chequeAmount on approve.
+  const addBank = addCheque > 0 ? Math.max(0, addBankRaw - addCheque) : addBankRaw
 
   const totalCash = prevCash + addCash
   const totalBank = prevBank + addBank
@@ -2397,7 +2719,8 @@ export function applyPartialBalanceSaleCollection(
       changeAmount: payment.changeAmount ?? 0,
       payType: settledPayType,
       cashAmount: totalCash || undefined,
-      bankAmount: totalBank || undefined,
+      // Store approved cheque inside bankAmount as well so field totals match events.
+      bankAmount: totalBank + totalCheque > 0 ? totalBank + totalCheque : undefined,
       chequeAmount: totalCheque || undefined,
       chequeApproved: totalCheque > 0 ? true : undefined,
       customerName: payment.customerName,
@@ -2414,9 +2737,10 @@ export function applyPartialBalanceSaleCollection(
       payType: balancePayType,
       pendingPayType: balancePayType,
       cashAmount: totalCash || undefined,
-      bankAmount: totalBank || undefined,
+      bankAmount: totalBank + totalCheque > 0 ? totalBank + totalCheque : undefined,
+      // Keep approved cheque amount separate from remaining open balance.
       chequeAmount: totalCheque || undefined,
-      chequeApproved: totalCheque > 0 ? payment.chequeApproved ?? true : sale.chequeApproved,
+      chequeApproved: totalCheque > 0 ? true : undefined,
       creditAmount: isCheque ? undefined : remaining,
       customerName: payment.customerName ?? sale.customerName,
       status: 'pending',
@@ -2539,38 +2863,98 @@ export function collectPendingBill(
     sales: data.sales.map((s) => {
       if (s.id !== id || s.status !== 'pending') return s
 
+      const prior = salePendingCreditPaidBreakdown(s)
+      const addCash = sale.cashAmount ?? 0
+      const addBank = sale.bankAmount ?? 0
+      const addCheque =
+        sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
+      const incoming = normalizeCollectedBreakdown({
+        cash: addCash,
+        bank: addBank,
+        cheque: addCheque,
+        total: addCash + addBank + addCheque,
+      })
+      const clearlyCumulative = incoming.total > prior.total + 0.01
+      const matchesPriorOnly = Math.abs(incoming.total - prior.total) < 0.01
+      const originalBill =
+        sale.originalBillAmount ?? s.originalBillAmount ?? s.billAmount + prior.total
+      const settledAsFullOriginal = Math.abs(sale.billAmount - originalBill) < 0.01
+      // Incoming already covers prior totals → caller passed cumulative fields.
+      // Incoming equal to prior while settling only the remaining due → this payment only.
+      const alreadyIncludesPrior =
+        prior.total <= 0 ||
+        clearlyCumulative ||
+        (matchesPriorOnly && settledAsFullOriginal)
+
+      const totalCash = alreadyIncludesPrior ? incoming.cash : prior.cash + incoming.cash
+      const totalBank = alreadyIncludesPrior ? incoming.bank : prior.bank + incoming.bank
+      const totalCheque = alreadyIncludesPrior
+        ? addCheque
+        : prior.cheque + addCheque
+      const totalPaid = normalizeCollectedBreakdown({
+        cash: totalCash,
+        bank: totalBank,
+        cheque: totalCheque,
+        total: totalCash + totalBank + totalCheque,
+      }).total
+
+      const originalBillAmount =
+        sale.originalBillAmount ??
+        s.originalBillAmount ??
+        (prior.total > 0 ? s.billAmount + prior.total : sale.billAmount)
+      const settledBillAmount =
+        sale.originalBillAmount ??
+        (prior.total > 0 && sale.billAmount + 0.01 < originalBillAmount
+          ? originalBillAmount
+          : sale.billAmount)
+
+      const settledFields = {
+        ...sale,
+        billAmount: settledBillAmount,
+        originalBillAmount,
+        paidAmount: Math.max(sale.paidAmount, totalPaid),
+        cashAmount: totalCash || undefined,
+        bankAmount: totalBank || undefined,
+        chequeAmount: totalCheque || undefined,
+        chequeApproved:
+          totalCheque > 0
+            ? sale.chequeApproved ?? true
+            : sale.payType === 'cheque'
+              ? sale.chequeApproved
+              : undefined,
+      }
+
       const settled: Sale = {
         ...s,
-        ...sale,
-        originalBillAmount:
-          sale.originalBillAmount ?? s.originalBillAmount ?? sale.billAmount,
+        ...settledFields,
         pendingPayType:
           s.pendingPayType ??
           (s.payType === 'credit' || s.payType === 'cheque' ? s.payType : undefined),
         status: 'paid' as const,
-        creditAmount: sale.payType === 'split' ? sale.creditAmount : undefined,
+        creditAmount: settledFields.payType === 'split' ? settledFields.creditAmount : undefined,
         chequeApproved:
-          sale.payType === 'split' || sale.payType === 'cheque'
-            ? sale.chequeApproved ?? (sale.payType === 'cheque' ? true : undefined)
+          settledFields.payType === 'split' || settledFields.payType === 'cheque'
+            ? settledFields.chequeApproved ??
+              (settledFields.payType === 'cheque' ? true : undefined)
             : undefined,
         updatedAt: now,
       }
 
       const priorEvents = original?.paymentEvents ?? []
-      const cash = sale.cashAmount ?? 0
-      const bank = sale.bankAmount ?? 0
-      const cheque =
-        sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
 
       if (priorEvents.length > 0) {
-        const event = paymentEvent ?? buildIncrementalPaymentEvent(original, sale, now)
+        const event =
+          paymentEvent ??
+          (alreadyIncludesPrior
+            ? buildIncrementalPaymentEvent(original, settledFields, now)
+            : paymentEventFromCollected(now, addCash, addBank, addCheque))
         if (event.amount > 0) {
           return appendSalePaymentEvent({ ...settled, paymentEvents: priorEvents }, event)
         }
         return { ...settled, paymentEvents: priorEvents }
       }
 
-      const correctedEvent = paymentEventFromCollected(now, cash, bank, cheque)
+      const correctedEvent = paymentEventFromCollected(now, totalCash, totalBank, totalCheque)
       return {
         ...settled,
         paymentEvents: correctedEvent.amount > 0 ? [correctedEvent] : [],
@@ -2774,7 +3158,20 @@ export function updateSaleBill(
       chequeAmount = undefined
     } else if (resolvedPayType === 'cheque') {
       creditAmount = undefined
-      chequeAmount = billAmount
+      const alreadyCollected = saleCollectedAmount(sale)
+      // Remaining due lives in billAmount. Do not overwrite approved/collected cheque fields.
+      if (alreadyCollected > 0 || (sale.paymentEvents?.length ?? 0) > 0) {
+        chequeAmount = sale.chequeApproved ? sale.chequeAmount : undefined
+        if (bankAmount == null && alreadyCollected > 0) {
+          const prior = salePendingCreditPaidBreakdown(sale)
+          bankAmount =
+            prior.bank + prior.cheque > 0 ? prior.bank + prior.cheque : alreadyCollected
+          cashAmount = prior.cash > 0 ? prior.cash : cashAmount
+          paidAmount = Math.max(paidAmount, alreadyCollected)
+        }
+      } else {
+        chequeAmount = billAmount
+      }
     }
 
     return updatePendingBill(working, id, {

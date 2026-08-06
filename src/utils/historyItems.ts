@@ -657,29 +657,60 @@ function buildSplitTimeline(parent: Sale, children: Sale[]): HistoryReceiptEvent
   for (const child of children) {
     const kind = childBillKind(child)
     const part = kind === 'credit' ? 'Credit' : kind === 'cheque' ? 'Cheque' : 'Bill'
+    const childBillAmount = child.originalBillAmount ?? child.billAmount
     events.push({
       label: `${part} bill created`,
       date: child.createdAt,
-      amount: child.billAmount,
+      amount: childBillAmount,
       type: child.status === 'pending' ? 'pending' : 'pending-created',
     })
-    if (child.status === 'pending') {
-      const partial = collectedPaymentAmount(child)
-      if (
-        partial > 0 &&
-        child.updatedAt != null &&
-        child.updatedAt !== child.createdAt &&
-        (isCreditBill(child) || isChequeBill(child))
-      ) {
-        events.push({
-          label: `${part} payment · ${partialCollectionMethodLabel(child) || 'Partial'}`,
-          detail: partialCollectionAmountBreakdown(child) || undefined,
-          date: child.updatedAt,
-          amount: partial,
-          type: 'collected',
-        })
+
+    const childPayments = getSalePaymentEvents(child).filter((event) => event.amount > 0)
+    childPayments.forEach((event, index) => {
+      const normalized = normalizeCollectedBreakdown({
+        cash: event.cash ?? 0,
+        bank: event.bank ?? 0,
+        cheque: event.cheque ?? 0,
+        total: event.amount,
+      })
+      const ordinal =
+        index === 0 ? '1st' : index === 1 ? '2nd' : index === 2 ? '3rd' : `${index + 1}th`
+      let label: string
+      if (kind === 'cheque' && normalized.cash <= 0) {
+        label =
+          childPayments.length <= 1
+            ? 'Cheque approved to bank'
+            : `${ordinal} cheque approved to bank`
+      } else {
+        const method = normalized.cash > 0 && normalized.bank > 0
+          ? 'Cash + Bank'
+          : normalized.cash > 0
+            ? 'Cash'
+            : 'Bank'
+        label =
+          childPayments.length <= 1
+            ? `${part} payment · ${method}`
+            : `${ordinal} ${part.toLowerCase()} payment · ${method}`
       }
-    } else {
+      events.push({
+        label,
+        date: event.at,
+        amount: normalized.total,
+        type: 'collected',
+      })
+    })
+
+    if (child.status === 'pending') {
+      events.push({
+        label: `${part} pending`,
+        date:
+          childPayments.length > 0
+            ? childPayments[childPayments.length - 1].at
+            : child.createdAt,
+        amount: child.billAmount,
+        type: 'pending',
+      })
+    } else if (childPayments.length === 0) {
       const paidAt = child.updatedAt ?? child.createdAt
       const collected = collectedPaymentAmount(child)
       if (kind === 'cheque') {
@@ -957,66 +988,111 @@ function buildSaleReceiptLines(sale: Sale): HistoryReceiptLine[] {
 }
 
 function buildSaleTimeline(sale: Sale): HistoryReceiptEvent[] {
+  const billAmount = sale.originalBillAmount ?? sale.billAmount
   const events: HistoryReceiptEvent[] = [
     {
       label: 'Bill created',
       date: sale.createdAt,
-      amount: sale.originalBillAmount ?? sale.billAmount,
+      amount: billAmount,
       type: 'bill-created',
     },
   ]
-  if (sale.status === 'pending') {
-    const partialCollected = collectedPaymentAmount(sale)
-    const hasPartialPayment =
-      partialCollected > 0 &&
-      sale.updatedAt != null &&
-      sale.updatedAt !== sale.createdAt &&
-      (isCreditBill(sale) || isChequeBill(sale))
 
-    if (hasPartialPayment) {
-      const paymentEvent = balancePaymentEventLabel(sale)
+  const paymentEvents = getSalePaymentEvents(sale).filter((event) => event.amount > 0)
+  const chequeOrigin = isChequeBill(sale)
+  const creditOrigin = isCreditBill(sale)
+
+  paymentEvents.forEach((event, index) => {
+    const normalized = normalizeCollectedBreakdown({
+      cash: event.cash ?? 0,
+      bank: event.bank ?? 0,
+      cheque: event.cheque ?? 0,
+      total: event.amount,
+    })
+    const ordinal =
+      index === 0 ? '1st' : index === 1 ? '2nd' : index === 2 ? '3rd' : `${index + 1}th`
+    const methodParts: string[] = []
+    if (normalized.cash > 0) methodParts.push('Cash')
+    if (normalized.bank > 0) methodParts.push(chequeOrigin ? 'Cheque → Bank' : 'Bank')
+
+    if (event.cancelled) {
       events.push({
-        label: paymentEvent.label,
-        detail: paymentEvent.detail,
-        date: sale.updatedAt ?? sale.createdAt,
-        amount: partialCollected,
-        type: 'collected',
+        label:
+          paymentEvents.filter((e) => (e.bank ?? 0) > 0 || (e.cheque ?? 0) > 0).length <= 1
+            ? 'Cheque cancelled'
+            : `${ordinal} cheque cancelled`,
+        detail: `Was approved ${formatDate(event.at)}`,
+        date: event.cancelledAt ?? event.at,
+        amount: normalized.total || event.amount,
+        type: 'pending',
       })
+      return
     }
 
-    events.push({
-      label: isCreditBill(sale)
-        ? 'Credit pending'
-        : isChequeBill(sale)
-          ? 'Cheque pending'
-          : `${saleReceiptLabel(sale)} pending`,
-      date: hasPartialPayment ? sale.updatedAt ?? sale.createdAt : sale.createdAt,
-      amount: sale.billAmount,
-      type: 'pending',
-    })
-  } else {
-    const method = collectionMethodLabel(sale)
-    const collectedAt = sale.updatedAt ?? sale.createdAt
-    let label = `${saleReceiptLabel(sale)} collected`
-    if (isCreditBill(sale)) {
-      label = `Credit paid · ${method}`
-    } else if (isChequeBill(sale)) {
-      label = `Cheque paid · ${method}`
+    let label: string
+    if (chequeOrigin && normalized.cash <= 0 && normalized.bank > 0) {
+      label =
+        paymentEvents.filter((e) => !e.cancelled).length <= 1
+          ? 'Cheque approved'
+          : `${ordinal} cheque approved`
+    } else if (creditOrigin) {
+      label =
+        paymentEvents.filter((e) => !e.cancelled).length <= 1
+          ? `Credit payment${methodParts.length ? ` · ${methodParts.join(' + ')}` : ''}`
+          : `${ordinal} credit payment${methodParts.length ? ` · ${methodParts.join(' + ')}` : ''}`
+    } else {
+      label =
+        paymentEvents.filter((e) => !e.cancelled).length <= 1
+          ? `Payment${methodParts.length ? ` · ${methodParts.join(' + ')}` : ''}`
+          : `${ordinal} payment${methodParts.length ? ` · ${methodParts.join(' + ')}` : ''}`
     }
 
     events.push({
       label,
-      date: collectedAt,
+      detail:
+        normalized.cash > 0 && normalized.bank > 0
+          ? `💵 ${formatMoney(normalized.cash)} · 🏦 ${formatMoney(normalized.bank)}`
+          : undefined,
+      date: event.at,
+      amount: normalized.total,
+      type: 'collected',
+    })
+  })
+
+  if (sale.status === 'pending') {
+    events.push({
+      label: creditOrigin
+        ? 'Credit pending'
+        : chequeOrigin
+          ? 'Cheque pending'
+          : `${saleReceiptLabel(sale)} pending`,
+      date:
+        paymentEvents.length > 0
+          ? paymentEvents[paymentEvents.length - 1].at
+          : sale.createdAt,
+      amount: sale.billAmount,
+      type: 'pending',
+    })
+  } else if (paymentEvents.length === 0) {
+    const method = collectionMethodLabel(sale)
+    let label = `${saleReceiptLabel(sale)} collected`
+    if (creditOrigin) label = `Credit paid · ${method}`
+    else if (chequeOrigin) label = `Cheque paid · ${method}`
+
+    events.push({
+      label,
+      date: sale.updatedAt ?? sale.createdAt,
       amount: collectedPaymentAmount(sale),
       type: 'collected',
     })
   }
+
   return events
 }
 
 function buildSalePaymentCollections(sale: Sale): HistoryItem['paymentCollections'] {
   return getSalePaymentEvents(sale)
-    .filter((event) => event.amount > 0)
+    .filter((event) => event.amount > 0 && !event.cancelled)
     .map((event) => {
       const normalized = normalizeCollectedBreakdown({
         cash: event.cash ?? 0,

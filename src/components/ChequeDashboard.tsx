@@ -341,7 +341,7 @@ function ChequeCustomerDetail({
             {summary.chequeBills.map((purchase) => (
               <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit">
                 <div className="customer-purchase-head">
-                  <strong>{purchase.dateLabel}</strong>
+                  <strong>Bill {purchase.billDateLabel}</strong>
                   <span>{formatMoney(purchase.chequePending)}</span>
                 </div>
                 <div className="customer-purchase-meta">{purchase.payDetail}</div>
@@ -367,7 +367,7 @@ function ChequeCustomerDetail({
               className={`customer-purchase-item ${purchase.chequePending > 0 ? 'customer-purchase-item--credit' : ''}`}
             >
               <div className="customer-purchase-head">
-                <strong>{purchase.dateLabel}</strong>
+                <strong>Bill {purchase.billDateLabel}</strong>
                 <span>{formatMoney(purchase.billAmount)}</span>
               </div>
               <div className="customer-purchase-meta">{purchase.payDetail}</div>

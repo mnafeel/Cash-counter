@@ -7,6 +7,9 @@ export interface SalePaymentEvent {
   cash?: number
   bank?: number
   cheque?: number
+  /** Set when this cheque/bank approval is cancelled in Settings. */
+  cancelled?: boolean
+  cancelledAt?: string
 }
 
 export interface Sale {

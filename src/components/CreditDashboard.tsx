@@ -342,7 +342,7 @@ function CreditCustomerDetail({
             {summary.creditBills.map((purchase) => (
               <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit">
                 <div className="customer-purchase-head">
-                  <strong>{purchase.dateLabel}</strong>
+                  <strong>Bill {purchase.billDateLabel}</strong>
                   <span>{formatMoney(purchase.creditPending)}</span>
                 </div>
                 <div className="customer-purchase-meta">{purchase.payDetail}</div>
@@ -368,7 +368,7 @@ function CreditCustomerDetail({
               className={`customer-purchase-item ${purchase.creditPending > 0 ? 'customer-purchase-item--credit' : ''}`}
             >
               <div className="customer-purchase-head">
-                <strong>{purchase.dateLabel}</strong>
+                <strong>Bill {purchase.billDateLabel}</strong>
                 <span>{formatMoney(purchase.billAmount)}</span>
               </div>
               <div className="customer-purchase-meta">{purchase.payDetail}</div>
