@@ -195,6 +195,70 @@ export function historyItemAmountForDateFilter(
   return historyItemDisplayAmount(item, purchasePaidOnly)
 }
 
+/** Cash or bank portion for a history row (approved cheque counts as bank). */
+export function historyItemChannelAmount(
+  item: HistoryItem,
+  channel: 'cash' | 'bank',
+  dateFilter: HistoryDateFilter = 'all',
+  selectedDate = '',
+): number {
+  const breakdown = historyItemCollectionBreakdownForDateFilter(item, dateFilter, selectedDate)
+  if (breakdown && (breakdown.cash > 0 || breakdown.bank > 0 || breakdown.cheque > 0)) {
+    return channel === 'cash' ? breakdown.cash : breakdown.bank + breakdown.cheque
+  }
+
+  if (item.receiptLines && item.receiptLines.length > 0) {
+    let sum = 0
+    for (const line of item.receiptLines) {
+      if (line.status === 'pending') continue
+      if (channel === 'cash' && line.label === 'Cash') sum += line.amount
+      if (
+        channel === 'bank' &&
+        (line.label === 'Bank' || line.label === 'Cheque')
+      ) {
+        sum += line.amount
+      }
+    }
+    if (sum > 0) return sum
+  }
+
+  const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
+  const cashOnly =
+    modes.includes('cash') &&
+    !modes.includes('bank') &&
+    !modes.includes('cheque') &&
+    !modes.includes('split')
+  const bankOnly =
+    (modes.includes('bank') || modes.includes('cheque')) &&
+    !modes.includes('cash') &&
+    !modes.includes('split')
+
+  if (channel === 'cash' && (cashOnly || item.paymentMode === 'cash')) {
+    return historyItemAmountForDateFilter(item, dateFilter, selectedDate, item.type === 'purchase')
+  }
+  if (channel === 'bank' && (bankOnly || item.paymentMode === 'bank' || item.paymentMode === 'cheque')) {
+    return historyItemAmountForDateFilter(item, dateFilter, selectedDate, item.type === 'purchase')
+  }
+
+  return 0
+}
+
+/**
+ * Amount for History list/totals — when Cash or Bank filter is on, only that channel.
+ */
+export function historyItemFilteredAmount(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter,
+  selectedDate: string,
+  paymentFilter: HistoryPaymentFilter = 'all',
+  purchasePaidOnly = false,
+): number {
+  if (paymentFilter === 'cash' || paymentFilter === 'bank') {
+    return historyItemChannelAmount(item, paymentFilter, dateFilter, selectedDate)
+  }
+  return historyItemAmountForDateFilter(item, dateFilter, selectedDate, purchasePaidOnly)
+}
+
 export function historyItemCollectionBreakdownForDateFilter(
   item: HistoryItem,
   dateFilter: HistoryDateFilter,
@@ -1422,7 +1486,24 @@ export function historyItemListPaymentTypeText(
   item: HistoryItem,
   dateFilter: HistoryDateFilter = 'all',
   selectedDate = '',
+  paymentFilter: HistoryPaymentFilter = 'all',
 ): string | undefined {
+  // Cash / Bank filter: show both sides of a split, selected channel first.
+  if (paymentFilter === 'cash' || paymentFilter === 'bank') {
+    const cashAmount = historyItemChannelAmount(item, 'cash', dateFilter, selectedDate)
+    const bankAmount = historyItemChannelAmount(item, 'bank', dateFilter, selectedDate)
+    const parts: string[] = []
+    if (paymentFilter === 'cash') {
+      if (cashAmount > 0) parts.push(`💵 ${formatMoney(cashAmount)}`)
+      if (bankAmount > 0) parts.push(`🏦 ${formatMoney(bankAmount)}`)
+    } else {
+      if (bankAmount > 0) parts.push(`🏦 ${formatMoney(bankAmount)}`)
+      if (cashAmount > 0) parts.push(`💵 ${formatMoney(cashAmount)}`)
+    }
+    if (parts.length > 0) return parts.join(' · ')
+    return undefined
+  }
+
   // Multi-day cheque/credit collections: show each approval with its date.
   if (
     item.type === 'sale' &&
@@ -1826,9 +1907,9 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
     const remainingPart = remaining > 0 ? ` · Balance ${formatMoney(remaining)}` : ''
 
     if (loan.kind === 'lend') {
-      const giveTag = loan.paySource === 'bank' ? '🏦 Bank expense' : '💵 Cash expense'
+      const giveTag = loan.paySource === 'bank' ? '🏦 Bank' : '💵 Cash'
       loanItems.push({
-        type: 'expense',
+        type: 'loan',
         id: `${loan.id}-give`,
         amount: loan.amount,
         name: loan.personName,
@@ -1873,7 +1954,7 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
         })
       } else {
         loanItems.push({
-          type: 'expense',
+          type: 'loan',
           id: `${loan.id}-settle-${index}`,
           amount: event.amount,
           name: loan.personName,
@@ -1957,6 +2038,8 @@ export function matchesHistorySearch(item: HistoryItem, query: string): boolean 
 export function matchesHistoryPaymentFilter(
   item: HistoryItem,
   paymentFilter: HistoryPaymentFilter,
+  dateFilter: HistoryDateFilter = 'all',
+  selectedDate = '',
 ): boolean {
   if (paymentFilter === 'all') return true
   if (paymentFilter === 'pending') {
@@ -1977,6 +2060,10 @@ export function matchesHistoryPaymentFilter(
           (line.label === 'Bank' && (line.detail ?? '').toLowerCase().includes('cheque')),
       ) ?? false
     )
+  }
+  if (paymentFilter === 'cash' || paymentFilter === 'bank') {
+    // Prefer real channel amount so split bills only appear under sides that paid.
+    return historyItemChannelAmount(item, paymentFilter, dateFilter, selectedDate) > 0
   }
   const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
   return modes.includes(paymentFilter)

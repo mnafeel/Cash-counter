@@ -10,6 +10,8 @@ export interface HistoryTotalsSummary {
   expenseCount: number
   purchases: number
   purchaseCount: number
+  loanOutflows: number
+  loanOutflowCount: number
   moneyAdded: number
   addedCount: number
   transferCount: number
@@ -18,7 +20,7 @@ export interface HistoryTotalsSummary {
   salesCredit: number
   /** Pending cheque only — approved cheque is counted in salesBank. */
   salesCheque: number
-  /** bills collected + money added − expenses − purchases */
+  /** bills collected + money added − expenses − purchases − loan outflows */
   netTotal: number
 }
 
@@ -85,6 +87,8 @@ export function buildHistoryTotals(
     expenseCount: 0,
     purchases: 0,
     purchaseCount: 0,
+    loanOutflows: 0,
+    loanOutflowCount: 0,
     moneyAdded: 0,
     addedCount: 0,
     transferCount: 0,
@@ -109,6 +113,15 @@ export function buildHistoryTotals(
     } else if (item.type === 'purchase') {
       totals.purchases += amount
       totals.purchaseCount += 1
+    } else if (item.type === 'loan') {
+      // Money out: loan given, or repayments on loans we took.
+      if (
+        item.sub?.includes('Loan given') ||
+        item.sub?.includes('Loan returned')
+      ) {
+        totals.loanOutflows += amount
+        totals.loanOutflowCount += 1
+      }
     } else if (item.type === 'deposit') {
       totals.moneyAdded += amount
       totals.addedCount += 1
@@ -117,7 +130,12 @@ export function buildHistoryTotals(
     }
   }
 
-  totals.netTotal = totals.billsCollected + totals.moneyAdded - totals.expenses - totals.purchases
+  totals.netTotal =
+    totals.billsCollected +
+    totals.moneyAdded -
+    totals.expenses -
+    totals.purchases -
+    totals.loanOutflows
   return totals
 }
 

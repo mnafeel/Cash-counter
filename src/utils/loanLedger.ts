@@ -212,3 +212,87 @@ export function summarizeLoanReportItems(items: LoanListItem[]): LoanReportSumma
     settledCount,
   }
 }
+
+/** Money that left the drawer as a loan (given) or loan repayment (returned). */
+export interface LoanOutflowHistoryItem {
+  id: string
+  amount: number
+  date: string
+  name: string
+  kind: 'given' | 'returned'
+  paySource: LoanPaySource
+  note?: string
+}
+
+export interface LoanOutflowSummary {
+  total: number
+  count: number
+  givenTotal: number
+  givenCount: number
+  returnedTotal: number
+  returnedCount: number
+}
+
+export function buildLoanOutflowHistoryItems(data: AppData): LoanOutflowHistoryItem[] {
+  const items: LoanOutflowHistoryItem[] = []
+  for (const loan of data.loans ?? []) {
+    if (loan.kind === 'lend') {
+      items.push({
+        id: `${loan.id}-give`,
+        amount: loan.amount,
+        date: loan.createdAt,
+        name: loan.personName,
+        kind: 'given',
+        paySource: loan.paySource,
+        note: loan.note,
+      })
+      continue
+    }
+    for (const [index, event] of loanSettlementEvents(loan).entries()) {
+      items.push({
+        id: `${loan.id}-return-${event.id ?? index}`,
+        amount: event.amount,
+        date: event.at,
+        name: loan.personName,
+        kind: 'returned',
+        paySource: event.paySource,
+        note: loan.note,
+      })
+    }
+  }
+  return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+}
+
+export function filterLoanOutflowHistoryItems(
+  items: LoanOutflowHistoryItem[],
+  dateFilter: CashDateFilter,
+  selectedDate: string,
+  rangeTo?: string,
+): LoanOutflowHistoryItem[] {
+  return items.filter((item) =>
+    matchesCashDateFilter(item.date, dateFilter, selectedDate, rangeTo),
+  )
+}
+
+export function summarizeLoanOutflows(items: LoanOutflowHistoryItem[]): LoanOutflowSummary {
+  const summary: LoanOutflowSummary = {
+    total: 0,
+    count: 0,
+    givenTotal: 0,
+    givenCount: 0,
+    returnedTotal: 0,
+    returnedCount: 0,
+  }
+  for (const item of items) {
+    summary.total += item.amount
+    summary.count += 1
+    if (item.kind === 'given') {
+      summary.givenTotal += item.amount
+      summary.givenCount += 1
+    } else {
+      summary.returnedTotal += item.amount
+      summary.returnedCount += 1
+    }
+  }
+  return summary
+}

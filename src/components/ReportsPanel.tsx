@@ -38,10 +38,14 @@ import type { CreditReportItem, ChequeReportItem } from '../utils/reportsHub'
 import type { NormalExpenseHistoryItem } from '../utils/normalExpenseHistory'
 import { buildCreditOverview } from '../utils/customerLedger'
 import {
+  buildLoanOutflowHistoryItems,
   buildLoanReportItems,
+  filterLoanOutflowHistoryItems,
   filterLoanReportItems,
+  summarizeLoanOutflows,
   summarizeLoanReportItems,
   type LoanListItem,
+  type LoanOutflowHistoryItem,
 } from '../utils/loanLedger'
 import {
   buildActiveChequeReminders,
@@ -305,6 +309,16 @@ export default function ReportsPanel({
     return filterNormalExpenseHistoryItems(items, datePreset, selectedDate, rangeTo)
   }, [data, datePreset, selectedDate, rangeTo])
   const expenseTotals = useMemo(() => summarizeNormalExpenses(expenseItems), [expenseItems])
+  const loanOutflowItems = useMemo(() => {
+    const items = buildLoanOutflowHistoryItems(data)
+    return filterLoanOutflowHistoryItems(items, datePreset, selectedDate, rangeTo)
+  }, [data, datePreset, selectedDate, rangeTo])
+  const loanOutflowTotals = useMemo(
+    () => summarizeLoanOutflows(loanOutflowItems),
+    [loanOutflowItems],
+  )
+  const combinedExpenseTotal =
+    expenseTotals.total + purchaseTotals.total + loanOutflowTotals.total
 
   const creditItems = useMemo(() => {
     const items = buildCreditReportItems(data)
@@ -576,9 +590,11 @@ export default function ReportsPanel({
               <div className="reports-summary reports-summary--all reports-summary--overview">
                 <div className="reports-summary-card reports-summary-card--orange">
                   <span>Total expense</span>
-                  <strong>{formatMoney(expenseTotals.total)}</strong>
+                  <strong>{formatMoney(combinedExpenseTotal)}</strong>
                   <small>
-                    {expenseTotals.count} expense{expenseTotals.count === 1 ? '' : 's'}
+                    Normal {formatMoney(expenseTotals.total)} · Purchase{' '}
+                    {formatMoney(purchaseTotals.total)} · Loan{' '}
+                    {formatMoney(loanOutflowTotals.total)}
                   </small>
                 </div>
                 <div className="reports-summary-card reports-summary-card--green">
@@ -663,9 +679,11 @@ export default function ReportsPanel({
                 {activeSection === 'expense' && (
                   <div className="reports-summary-card reports-summary-card--orange">
                     <span>Expense</span>
-                    <strong>{formatMoney(expenseTotals.total)}</strong>
+                    <strong>{formatMoney(combinedExpenseTotal)}</strong>
                     <small>
-                      {expenseTotals.count} normal expense{expenseTotals.count === 1 ? '' : 's'}
+                      Normal {formatMoney(expenseTotals.total)} · Purchase{' '}
+                      {formatMoney(purchaseTotals.total)} · Loan{' '}
+                      {formatMoney(loanOutflowTotals.total)}
                     </small>
                   </div>
                 )}
@@ -843,14 +861,15 @@ export default function ReportsPanel({
               {activeSection === 'all' ? (
                 <div className="reports-section-head">
                   <h2>📤 Expense</h2>
-                  <strong>{formatMoney(expenseTotals.total)}</strong>
+                  <strong>{formatMoney(combinedExpenseTotal)}</strong>
                 </div>
               ) : null}
             <section className="reports-section">
               <p className="reports-list-meta">
-                {expenseItems.length} normal expense{expenseItems.length === 1 ? '' : 's'} · tap for details
+                Normal {formatMoney(expenseTotals.total)} · Purchase {formatMoney(purchaseTotals.total)} ·
+                Loan {formatMoney(loanOutflowTotals.total)} · tap for details
               </p>
-              {expenseItems.length === 0 ? (
+              {expenseItems.length === 0 && loanOutflowItems.length === 0 ? (
                 <p className="reports-empty">No expenses for this period.</p>
               ) : (
                 <ul className="reports-list">
@@ -861,6 +880,15 @@ export default function ReportsPanel({
                       index={index + 1}
                       expanded={expandedReportKey === `expense:${row.id}`}
                       onToggle={() => toggleReportExpand(`expense:${row.id}`)}
+                    />
+                  ))}
+                  {loanOutflowItems.map((row, index) => (
+                    <LoanOutflowReportRow
+                      key={row.id}
+                      row={row}
+                      index={index + 1}
+                      expanded={expandedReportKey === `loan-out:${row.id}`}
+                      onToggle={() => toggleReportExpand(`loan-out:${row.id}`)}
                     />
                   ))}
                 </ul>
@@ -1566,6 +1594,51 @@ function ExpenseReportRow({
             { label: 'Date', value: formatDate(row.date) },
             { label: 'Amount', value: formatMoney(row.amount) },
             { label: 'Payment', value: row.payDetail },
+          ]}
+        />
+      ) : null}
+    </li>
+  )
+}
+
+function LoanOutflowReportRow({
+  row,
+  index,
+  expanded,
+  onToggle,
+}: {
+  row: LoanOutflowHistoryItem
+  index: number
+  expanded: boolean
+  onToggle: () => void
+}) {
+  const kindLabel = row.kind === 'given' ? 'Loan given' : 'Loan returned'
+  const payLabel = row.paySource === 'bank' ? '🏦 Bank' : '💵 Cash'
+  return (
+    <li
+      className={`reports-item reports-item--tap ${expanded ? 'reports-item--expanded' : ''}`}
+      data-report-key={`loan-out:${row.id}`}
+    >
+      <button type="button" className="reports-item-btn" onClick={onToggle}>
+        <div className="reports-item-head">
+          <span className="reports-item-title">
+            Loan #{index} · {row.name}
+          </span>
+          <span className="reports-item-amount">{formatMoney(row.amount)}</span>
+        </div>
+        <div className="reports-item-meta">
+          {formatDate(row.date)} · {kindLabel} · {payLabel}
+        </div>
+      </button>
+      {expanded ? (
+        <ReportDetailGrid
+          rows={[
+            { label: 'Name', value: row.name },
+            { label: 'Date', value: formatDate(row.date) },
+            { label: 'Amount', value: formatMoney(row.amount) },
+            { label: 'Type', value: kindLabel },
+            { label: 'Payment', value: payLabel },
+            ...(row.note ? [{ label: 'Note', value: row.note }] : []),
           ]}
         />
       ) : null}
