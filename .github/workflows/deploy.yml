@@ -5,21 +5,29 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Publish the built app to main (root + /docs).
+# Avoids actions/deploy-pages OIDC, which fails during GitHub Pages key outages
+# ("No keys from key endpoint match the id token").
+#
+# One-time repo setting (if live site still stuck):
+#   Settings → Pages → Build and deployment
+#   Source: Deploy from a branch
+#   Branch: main  /  Folder: / (root)
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  build-and-publish:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -40,50 +48,6 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build
 
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-      - name: Upload build
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
-          retention-days: 1
-
-  # Live site (github.io) only updates when this job succeeds.
-  # Built files are also published to main by deploy-main (source of truth on GitHub).
-  deploy-pages:
-    needs: build
-    runs-on: ubuntu-latest
-    # Don't fail the whole workflow when GitHub Pages is in outage —
-    # deploy-main still publishes the built app to the repo.
-    continue-on-error: true
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-  deploy-main:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout main
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-
-      - name: Download build
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist
-
       - name: Publish built app to main branch
         run: |
           set -e
@@ -95,6 +59,7 @@ jobs:
           cp dist/favicon.png favicon.png
           cp dist/logo.png logo.png
           touch .nojekyll
+          touch docs/.nojekyll
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -f index.html assets docs favicon.png logo.png .nojekyll
