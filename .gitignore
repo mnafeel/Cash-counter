@@ -29,3 +29,4 @@ serviceAccountKey.json
 *.njsproj
 *.sln
 *.sw?
+docs/.DS_Store
