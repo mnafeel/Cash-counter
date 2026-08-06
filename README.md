@@ -1,4 +1,4 @@
-# cash-counter-1
+# Cash-counter
 
 A responsive cash counter app for phone, tablet, and desktop. Track bills, customer payments, change, expenses, and drawer balance — all saved locally on your device.
 
@@ -12,7 +12,7 @@ A responsive cash counter app for phone, tablet, and desktop. Track bills, custo
 
 ## Live app (GitHub Pages)
 
-**https://mnafeel.github.io/cash-counter-1/**
+**https://mnafeel.github.io/Cash-counter/**
 
 Every push to `main` builds and publishes the app to the `main` branch. In repo **Settings → Pages**, set source to **Deploy from a branch** → `main` → `/ (root)`.
 

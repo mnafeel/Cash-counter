@@ -149,7 +149,7 @@ function tallyApiProxy(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/cash-counter-1/' : '/',
+  base: command === 'build' ? '/Cash-counter/' : '/',
   build: {
     rollupOptions: {
       output: {
