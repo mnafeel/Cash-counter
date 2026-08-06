@@ -1,4 +1,5 @@
 import type { AppData, Loan, LoanKind, LoanPaySource, LoanSettlementEvent, LoanStatus } from '../types'
+import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
 import { formatDate } from './format'
 
 export interface LoanOverview {
