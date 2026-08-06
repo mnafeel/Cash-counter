@@ -52,9 +52,14 @@ jobs:
           path: dist
           retention-days: 1
 
+  # Live site (github.io) only updates when this job succeeds.
+  # Built files are also published to main by deploy-main (source of truth on GitHub).
   deploy-pages:
     needs: build
     runs-on: ubuntu-latest
+    # Don't fail the whole workflow when GitHub Pages is in outage —
+    # deploy-main still publishes the built app to the repo.
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
