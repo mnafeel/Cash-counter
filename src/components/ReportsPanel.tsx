@@ -252,14 +252,14 @@ export default function ReportsPanel({
   const withCreditSalesBills = useMemo(() => {
     const filter = salesFilterForPreset(datePreset, selectedDate, rangeTo, salesDateMode)
     return salesBills.filter((row) =>
-      isPeriodWithCreditSaleRow(row, salesDateMode, filter.fromDate, filter.toDate),
+      isPeriodWithCreditSaleRow(row, salesDateMode, filter?.fromDate, filter?.toDate),
     )
   }, [salesBills, datePreset, selectedDate, rangeTo, salesDateMode])
 
   const oldCreditChequeBills = useMemo(() => {
     const filter = salesFilterForPreset(datePreset, selectedDate, rangeTo, salesDateMode)
     return salesBills.filter((row) =>
-      isOldCreditChequeClearedTodayRow(row, salesDateMode, filter.fromDate, filter.toDate),
+      isOldCreditChequeClearedTodayRow(row, salesDateMode, filter?.fromDate, filter?.toDate),
     )
   }, [salesBills, datePreset, selectedDate, rangeTo, salesDateMode])
 

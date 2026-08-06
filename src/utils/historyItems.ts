@@ -369,16 +369,6 @@ function partialCollectionDetailLabel(sale: Sale): string {
   return method || 'Partial'
 }
 
-function balancePaymentEventLabel(sale: Sale): { label: string; detail?: string } {
-  const kind = isCreditBill(sale) ? 'Credit' : isChequeBill(sale) ? 'Cheque' : 'Bill'
-  const method = partialCollectionMethodLabel(sale)
-  const amounts = partialCollectionAmountBreakdown(sale)
-  return {
-    label: method ? `${kind} payment · ${method}` : `${kind} payment`,
-    detail: amounts || undefined,
-  }
-}
-
 function collectedPaymentAmount(sale: Sale): number {
   return saleCollectedAmount(sale)
 }

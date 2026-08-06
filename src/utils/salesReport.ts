@@ -280,10 +280,6 @@ function saleIsCreditRelated(sale: Sale): boolean {
   return isCreditPendingSale(sale)
 }
 
-function saleIsCreditOrChequeRelated(sale: Sale): boolean {
-  return saleIsCreditRelated(sale) || saleIsChequeRelated(sale)
-}
-
 /**
  * A pending credit/cheque balance belongs to the period it was opened in, or the
  * period it was edited in. Collecting part of it (cash, bank or cheque approval)
