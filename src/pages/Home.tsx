@@ -27,6 +27,7 @@ import {
   buildCashActivityItems,
   cashClosingLabel,
   cashOpeningLabel,
+  matchesCashDateFilter,
   summarizeCashActivityForPeriod,
   type CashDateFilter,
 } from '../utils/cashActivity'
@@ -54,6 +55,10 @@ import {
   getTopPurchaseShop,
   summarizePurchases,
 } from '../utils/purchaseHistory'
+import {
+  buildLoanOutflowItems,
+  summarizeLoanOutflows,
+} from '../utils/loanLedger'
 import { buildDailyTotalsForPreset } from '../utils/dailyTotals'
 import ReportsPanel, { type ReportSection } from '../components/ReportsPanel'
 import CustomerDashboard, { type CustomerListFilter } from '../components/CustomerDashboard'
@@ -241,6 +246,16 @@ export default function Home() {
   const periodPurchaseSummary = useMemo(
     () => summarizePurchases(periodPurchaseItems),
     [periodPurchaseItems],
+  )
+  const periodLoanOutflowItems = useMemo(() => {
+    const items = buildLoanOutflowItems(dashData)
+    return items.filter((item) =>
+      matchesCashDateFilter(item.date, homeDayPreset, homeDayDate),
+    )
+  }, [dashData, homeDayPreset, homeDayDate])
+  const periodLoanOutflowSummary = useMemo(
+    () => summarizeLoanOutflows(periodLoanOutflowItems),
+    [periodLoanOutflowItems],
   )
   const periodTopShop = useMemo(
     () => getTopPurchaseShop(periodPurchaseItems),
@@ -716,7 +731,11 @@ export default function Home() {
           >
             <span className="stat-label">Expenses</span>
             <span className="stat-value stat-value--orange">
-              {formatMoney(periodExpenseSummary.total + periodPurchaseSummary.total)}
+              {formatMoney(
+                periodExpenseSummary.total +
+                  periodPurchaseSummary.total +
+                  periodLoanOutflowSummary.total,
+              )}
             </span>
             <span className="stat-meta">
               Normal {formatMoney(periodExpenseSummary.total)} · {periodExpenseItems.length} items
@@ -724,6 +743,10 @@ export default function Home() {
             <span className="stat-meta stat-meta--breakdown">
               + Purchase {formatMoney(periodPurchaseSummary.total)} ·{' '}
               {periodPurchaseItems.length} items
+            </span>
+            <span className="stat-meta stat-meta--breakdown">
+              + Loan {formatMoney(periodLoanOutflowSummary.total)} ·{' '}
+              {periodLoanOutflowSummary.count} items
             </span>
           </button>
           <button
