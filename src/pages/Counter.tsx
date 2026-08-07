@@ -359,8 +359,7 @@ export default function Counter() {
   const chequeSplitCountsCredit =
     Boolean(collectingChequeId) && payType === 'split' && !chequeCollectCreditMode
 
-  const showSplitCashGive =
-    showFullSplitGrid && cashSplitAmount > 0 && Boolean(collectingCreditId)
+  const showSplitCashGive = showFullSplitGrid && cashSplitAmount > 0
 
   const hideChequeSplitGive = showFullSplitGrid && chequeCollectLayout
 
@@ -373,9 +372,9 @@ export default function Counter() {
   const splitTotal =
     payType === 'split'
       ? collectingCreditId
-        ? creditCollectDueAmount
+        ? roundOffAmount ?? creditCollectDueAmount
         : collectingChequeId
-          ? chequeCollectDueAmount
+          ? roundOffAmount ?? chequeCollectDueAmount
           : paidAmount > 0
             ? paidAmount
             : dueAmount
@@ -801,7 +800,8 @@ export default function Counter() {
                 (cashSplitAmount > 0 ||
                   bankSplitAmount > 0 ||
                   chequeSplitAmount > 0 ||
-                  creditSplitAmount > 0)
+                  creditSplitAmount > 0) &&
+                (cashSplitAmount === 0 || giveAmount === 0 || giveAmount >= cashSplitAmount)
               : false)
 
   const canSavePending = dueAmount > 0 && savedAction === null
@@ -872,9 +872,18 @@ export default function Counter() {
     splitChequeApprovedAmount <= 0 &&
     splitSiblingChequePending <= 0
 
-  const billRoundOptions = useMemo(() => getBillRoundOptions(billAmount), [billAmount])
-  const showRoundChips =
-    !balanceOnlyMode && billAmount > 0 && billRoundOptions.length > 0
+  const roundBaseAmount =
+    collectingCreditId
+      ? creditCollectDueAmount
+      : collectingChequeId
+        ? chequeCollectDueAmount
+        : billAmount
+
+  const billRoundOptions = useMemo(
+    () => getBillRoundOptions(roundBaseAmount),
+    [roundBaseAmount],
+  )
+  const showRoundChips = roundBaseAmount > 0 && billRoundOptions.length > 0
 
   const customerPaidPreview =
     payType === 'split'
@@ -992,6 +1001,12 @@ export default function Counter() {
       return
     }
     const cash = parseAmount(nextCashStr)
+    if (cash > 0) {
+      setGiveStr((prev) => {
+        const prevGive = parseAmount(prev)
+        return prevGive >= cash ? prev : nextCashStr
+      })
+    }
     let bank = parseAmount(bankSplitStr)
     if (bank > 0) {
       bank = Math.min(bank, Math.max(0, room - cash))
@@ -1297,6 +1312,10 @@ export default function Counter() {
       return
     }
     if (activeField === 'cashSplit') {
+      if (showSplitCashGive && cashSplitAmount > 0) {
+        setActiveField('give')
+        return
+      }
       setActiveField(nextUnlockedSplitField('cashSplit'))
       return
     }
@@ -1910,6 +1929,9 @@ export default function Counter() {
 
     if (bill.payType === 'split') {
       const childPending = findSplitChildPending(data.sales, bill.id)
+      const original = bill.originalBillAmount ?? bill.billAmount
+      const collected = bill.billAmount
+      if (original > collected) setRoundOffAmount(collected)
       setBillStr(String(amount))
       setPayType('split')
       setCashSplitStr(bill.cashAmount ? formatSplitPart(bill.cashAmount) : '')
@@ -1938,7 +1960,13 @@ export default function Counter() {
         setCreditSplitStr(bill.creditAmount ? formatSplitPart(bill.creditAmount) : '')
         setSplitSiblingCreditPending(0)
       }
-      setActiveField('cashSplit')
+      if (bill.cashAmount && bill.cashAmount > 0) {
+        const giveTotal = bill.cashAmount + (bill.changeAmount ?? 0)
+        setGiveStr(giveTotal > bill.cashAmount ? String(giveTotal) : '')
+        setActiveField('give')
+      } else {
+        setActiveField('cashSplit')
+      }
       return
     }
 
@@ -2205,11 +2233,14 @@ export default function Counter() {
       chequeOnParentOnly || splitChequeApprovedAmount > 0
     const splitSaleId = loadedPendingId ?? crypto.randomUUID()
 
+    const splitCashChangeAmount =
+      cashSplitAmount > 0 ? Math.max(0, giveAmount - cashSplitAmount) : 0
+
     const salePayload = {
       billAmount: splitTotal,
       originalBillAmount: billAmount,
       paidAmount: cashSplitAmount,
-      changeAmount: 0,
+      changeAmount: splitCashChangeAmount,
       payType: 'split' as const,
       cashAmount: cashSplitAmount,
       bankAmount,
@@ -2231,7 +2262,7 @@ export default function Counter() {
         originalBillAmount: billAmount,
         billAmount: splitTotal,
         paidAmount: cashSplitAmount,
-        changeAmount: 0,
+        changeAmount: splitCashChangeAmount,
         payType: 'split',
         cashAmount: cashSplitAmount > 0 ? cashSplitAmount : undefined,
         bankAmount: bankAmount > 0 ? bankAmount : undefined,
