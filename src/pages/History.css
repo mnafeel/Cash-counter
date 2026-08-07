@@ -1134,6 +1134,16 @@
   background: rgba(200, 170, 100, 0.9);
 }
 
+.history-receipt-timeline-item--total .history-receipt-timeline-dot {
+  background: var(--success-text);
+  box-shadow: 0 0 0 2px rgba(90, 160, 110, 0.35);
+}
+
+.history-receipt-timeline-item--total .history-receipt-timeline-label,
+.history-receipt-timeline-item--total .history-receipt-timeline-amount {
+  font-weight: 800;
+}
+
 .history-receipt-timeline-body {
   flex: 1;
   min-width: 0;
@@ -1266,12 +1276,24 @@
   line-height: 1.4;
 }
 
+.history-receipt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
 .history-receipt-edit-btn {
   width: 100%;
   min-height: 36px;
   margin-top: 0;
   font-size: 0.72rem;
   font-weight: 700;
+}
+
+.history-receipt-edit-btn--danger {
+  border-color: color-mix(in srgb, var(--danger-border, #c44) 55%, var(--border));
+  color: var(--danger-border, #e88);
 }
 
 .history-receipt-foot {

@@ -552,6 +552,46 @@ export function saleCollectionTimestamp(sale: Sale): string {
   return sale.createdAt
 }
 
+/** Latest active payment event timestamp. */
+export function saleLastPaymentEventAt(sale: Sale): string | undefined {
+  const events = getSalePaymentEvents(sale).filter((e) => !e.cancelled && e.amount > 0)
+  if (events.length === 0) return undefined
+  return events[events.length - 1].at
+}
+
+/** Timestamp for a specific channel collection (cash or bank/cheque). */
+export function saleChannelCollectionAt(
+  sale: Sale,
+  channel: 'cash' | 'bank',
+): string | undefined {
+  const events = getSalePaymentEvents(sale).filter((e) => !e.cancelled && e.amount > 0)
+  const match = [...events]
+    .reverse()
+    .find((e) =>
+      channel === 'cash' ? (e.cash ?? 0) > 0 : (e.bank ?? 0) > 0 || (e.cheque ?? 0) > 0,
+    )
+  return match?.at
+}
+
+/** Best date to show for collection in History/receipt — prefers paymentEvents over updatedAt. */
+export function saleDisplayCollectionAt(sale: Sale, channel?: 'cash' | 'bank'): string {
+  if (channel) {
+    const channelAt = saleChannelCollectionAt(sale, channel)
+    if (channelAt) return channelAt
+  }
+  const lastAt = saleLastPaymentEventAt(sale)
+  if (lastAt) return lastAt
+  if (
+    sale.status === 'pending' &&
+    sale.updatedAt &&
+    sale.updatedAt !== sale.createdAt &&
+    saleCollectedAmount(sale) > 0
+  ) {
+    return sale.updatedAt
+  }
+  return sale.createdAt
+}
+
 export function paymentEventFromCollectedBreakdown(
   at: string,
   breakdown: SaleCollectedBreakdown,

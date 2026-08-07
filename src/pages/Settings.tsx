@@ -34,7 +34,7 @@ import {
   type CloudRemoteSummary,
 } from '../firebase/sync'
 import type { AppData } from '../types'
-import { getApprovedChequeAmount, getCurrentBalance, getBankBalance, isLocalDataEmpty, listApprovedChequeEntries, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
+import { getApprovedChequeAmount, getCurrentBalance, getBankBalance, isLocalDataEmpty, listApprovedChequeEntries, listPaidCreditSales, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
 import { clearAllLocalBackupSnapshots } from '../storage/localBackup'
 import {
   dateInputValueToIso,
@@ -213,6 +213,7 @@ export default function Settings() {
     cancelSaleCredit,
     cancelSaleCheque,
     cancelSaleChequeAsUnpaid,
+    cancelSaleCreditAsUnpaid,
     setBillReminder,
     setCustomerReminder,
     updateReminderAlertSettings,
@@ -347,6 +348,7 @@ export default function Settings() {
     return groups
   }, [approvedCheques])
   const pendingCreditSales = useMemo(() => listPendingCreditSales(data), [data.sales])
+  const paidCreditSales = useMemo(() => listPaidCreditSales(data), [data.sales])
   const pendingChequeSales = useMemo(() => listPendingChequeSales(data), [data.sales])
   const reminderAlertSettings = useMemo(() => getReminderAlertSettings(data), [data])
   const [alertSettingsStatus, setAlertSettingsStatus] = useState('')
@@ -798,6 +800,26 @@ export default function Settings() {
       hadPayment
         ? 'Credit cancelled — partial payment kept as collected.'
         : 'Credit bill removed — balance cleared.',
+    )
+    setTimeout(() => setCreditCancelStatus(''), 4000)
+  }
+
+  function handleCancelSaleCreditAsUnpaid(id: string, relatedSaleIds?: string[]) {
+    const sale = data.sales.find((s) => s.id === id)
+    const billName = sale ? getSaleCustomerName(sale, data.sales) : ''
+    const total =
+      sale?.originalBillAmount ??
+      (sale ? sale.billAmount + saleCollectedAmount(sale) : 0)
+    const okConfirm = window.confirm(
+      `Cancel ${billName || 'this credit bill'} as unpaid?\n\nBill ${formatMoney(total)} will be removed. All credit collections leave cash/bank — same as if nothing was paid.`,
+    )
+    if (!okConfirm) return
+    const ok = cancelSaleCreditAsUnpaid(id, relatedSaleIds)
+    if (editingBillDateId === id) cancelBillDateEdit()
+    setCreditCancelStatus(
+      ok
+        ? 'Credit bill cancelled as unpaid — removed from cash/bank and History.'
+        : 'Could not cancel this credit bill.',
     )
     setTimeout(() => setCreditCancelStatus(''), 4000)
   }
@@ -1721,8 +1743,9 @@ export default function Settings() {
               <div className="settings-cheque-cancel-head">
                 <h3>Pending credit bills</h3>
                 <p>
-                  Cancel removes open credit. Unpaid bills are deleted; partial payments are kept as
-                  collected. Set credit reminders from Home → Credit Dashboard.
+                  <strong>Cancel</strong> clears open credit and keeps partial payments as collected.
+                  <strong> Cancel all · unpaid</strong> removes the whole bill (like nothing was paid)
+                  — collected amounts leave cash/bank.
                 </p>
               </div>
               {pendingCreditSales.length === 0 ? (
@@ -1771,13 +1794,24 @@ export default function Settings() {
                             <span className="settings-cheque-cancel-sub">📝 {creditReminderNote}</span>
                           ) : null}
                         </div>
-                        <button
-                          type="button"
-                          className="btn btn-secondary settings-cheque-cancel-btn"
-                          onClick={() => handleCancelSaleCredit(sale.id, relatedSaleIds)}
-                        >
-                          Cancel
-                        </button>
+                        <div className="settings-cheque-cancel-btns">
+                          <button
+                            type="button"
+                            className="btn btn-secondary settings-cheque-cancel-btn"
+                            onClick={() => handleCancelSaleCredit(sale.id, relatedSaleIds)}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary settings-cheque-cancel-btn settings-cheque-cancel-btn--danger"
+                            onClick={() =>
+                              handleCancelSaleCreditAsUnpaid(sale.id, relatedSaleIds)
+                            }
+                          >
+                            Cancel all · unpaid
+                          </button>
+                        </div>
                       </li>
                     )
                   })}
@@ -1786,6 +1820,51 @@ export default function Settings() {
               {creditCancelStatus ? (
                 <p className="settings-cheque-cancel-status">{creditCancelStatus}</p>
               ) : null}
+            </section>
+
+            <section className="settings-cheque-cancel settings-paid-credit">
+              <div className="settings-cheque-cancel-head">
+                <h3>Paid credit bills</h3>
+                <p>
+                  Fully collected credit bills. <strong>Cancel all · unpaid</strong> removes the
+                  whole bill as if nothing was paid — collections leave cash/bank.
+                </p>
+              </div>
+              {paidCreditSales.length === 0 ? (
+                <p className="settings-cheque-cancel-empty">No paid credit bills.</p>
+              ) : (
+                <ul className="settings-cheque-cancel-list">
+                  {paidCreditSales.map((sale) => {
+                    const collected = saleCollectedAmount(sale)
+                    const total = sale.originalBillAmount ?? sale.billAmount
+                    const when = sale.updatedAt ?? sale.createdAt
+                    const relatedSaleIds = sale.parentSplitId
+                      ? [sale.parentSplitId, sale.id]
+                      : [sale.id]
+                    const billName = getSaleCustomerName(sale, data.sales)
+                    return (
+                      <li key={sale.id} className="settings-cheque-cancel-item settings-cheque-cancel-item--stack">
+                        <div className="settings-cheque-cancel-meta">
+                          <strong>{billName || '—'}</strong>
+                          <span className="settings-cheque-cancel-amount">
+                            Bill {formatMoney(total)} · Paid {formatMoney(collected)}
+                          </span>
+                          <span className="settings-cheque-cancel-sub">{formatDate(when)}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-secondary settings-cheque-cancel-btn settings-cheque-cancel-btn--danger"
+                          onClick={() =>
+                            handleCancelSaleCreditAsUnpaid(sale.id, relatedSaleIds)
+                          }
+                        >
+                          Cancel all · unpaid
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
             </section>
 
             <section className="settings-cheque-cancel settings-pending-cheque">

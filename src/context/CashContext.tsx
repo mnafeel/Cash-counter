@@ -40,6 +40,7 @@ import {
   cancelSaleCredit,
   cancelSaleCheque,
   cancelSaleChequeAsUnpaid,
+  cancelSaleCreditAsUnpaid,
   collectPendingBill,
   clearAllLocalData,
   deleteExpense,
@@ -212,6 +213,7 @@ interface CashContextValue {
   cancelSaleCredit: (id: string, relatedSaleIds?: string[]) => void
   cancelSaleCheque: (id: string, relatedSaleIds?: string[]) => void
   cancelSaleChequeAsUnpaid: (id: string, relatedSaleIds?: string[]) => boolean
+  cancelSaleCreditAsUnpaid: (id: string, relatedSaleIds?: string[]) => boolean
   setBillReminder: (id: string, reminderAt: string | null, reminderNote?: string | null) => void
   setCustomerReminder: (
     customerName: string,
@@ -854,6 +856,19 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const cancelSaleCreditAsUnpaidHandler = useCallback(
+    (id: string, relatedSaleIds?: string[]): boolean => {
+      let ok = false
+      setData((prev) => {
+        const next = cancelSaleCreditAsUnpaid(prev, id, relatedSaleIds)
+        ok = next !== prev
+        return next
+      })
+      return ok
+    },
+    [],
+  )
+
   const setBillReminderHandler = useCallback(
     (id: string, reminderAt: string | null, reminderNote?: string | null) => {
       setData((prev) => setSaleReminder(prev, id, reminderAt, reminderNote))
@@ -1158,6 +1173,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       cancelSaleCredit: cancelSaleCreditBalance,
       cancelSaleCheque: cancelSaleChequeBalance,
       cancelSaleChequeAsUnpaid: cancelSaleChequeAsUnpaidHandler,
+      cancelSaleCreditAsUnpaid: cancelSaleCreditAsUnpaidHandler,
       setBillReminder: setBillReminderHandler,
       setCustomerReminder: setCustomerReminderHandler,
       updateReminderAlertSettings: updateReminderAlertSettingsHandler,
@@ -1219,6 +1235,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       cancelSaleCreditBalance,
       cancelSaleChequeBalance,
       cancelSaleChequeAsUnpaidHandler,
+      cancelSaleCreditAsUnpaidHandler,
       setBillReminderHandler,
       setCustomerReminderHandler,
       updateReminderAlertSettingsHandler,

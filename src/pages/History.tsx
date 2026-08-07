@@ -10,6 +10,11 @@ import { buildPurchaseCreditItems } from '../utils/purchaseHistory'
 import { counterBillPath, resolveHistoryItemBillId } from '../utils/counterBillRoute'
 import { readBillEditMode } from '../utils/billEditMode'
 import {
+  isPaidCreditOriginSale,
+  isPendingCreditSale,
+} from '../storage/database'
+import { saleCollectedAmount } from '../utils/salePayment'
+import {
   buildHistoryItems,
   getHistoryPaymentLabel,
   getHistoryPaymentSortKey,
@@ -121,7 +126,12 @@ function editKey(item: HistoryItem): string {
 }
 
 export default function History() {
-  const { data, updateHistoryName } = useCash()
+  const {
+    data,
+    updateHistoryName,
+    cancelSaleCredit,
+    cancelSaleCreditAsUnpaid,
+  } = useCash()
   const navigate = useNavigate()
   const goBack = useAppPageBack()
   const location = useLocation()
@@ -363,6 +373,37 @@ export default function History() {
     if (!billId) return
     setReceiptItem(null)
     navigate(counterBillPath(billId))
+  }
+
+  function receiptRelatedSaleIds(item: HistoryItem): string[] {
+    return item.groupSaleIds ?? [item.id]
+  }
+
+  function handleReceiptCancelCredit(item: HistoryItem) {
+    const sale = data.sales.find((s) => s.id === item.id)
+    if (!sale || !isPendingCreditSale(sale)) return
+    cancelSaleCredit(item.id, receiptRelatedSaleIds(item))
+    setReceiptItem(null)
+  }
+
+  function handleReceiptCancelCreditAsUnpaid(item: HistoryItem) {
+    const sale = data.sales.find((s) => s.id === item.id)
+    if (!sale) return
+    const billName = item.name?.trim() || 'this credit bill'
+    const total = item.originalBillAmount ?? sale.billAmount + saleCollectedAmount(sale)
+    const okConfirm = window.confirm(
+      `Cancel ${billName} as unpaid?\n\nBill ${formatMoney(total)} will be removed. All collections leave cash/bank — same as if nothing was paid.`,
+    )
+    if (!okConfirm) return
+    cancelSaleCreditAsUnpaid(item.id, receiptRelatedSaleIds(item))
+    setReceiptItem(null)
+  }
+
+  function canCancelCreditFromReceipt(item: HistoryItem): boolean {
+    if (item.type !== 'sale' || !billEditMode) return false
+    const sale = data.sales.find((s) => s.id === item.id)
+    if (!sale) return false
+    return isPendingCreditSale(sale) || isPaidCreditOriginSale(sale)
   }
 
   function handleNameEditClick(item: HistoryItem, e: MouseEvent) {
@@ -920,7 +961,8 @@ export default function History() {
 
             <div className="history-receipt-body">
             <div className="history-receipt-meta">
-              {receiptItem.billCreatedAt ? (
+              {receiptItem.billCreatedAt &&
+              !(receiptItem.receiptTimeline && receiptItem.receiptTimeline.length > 0) ? (
                 <div className="history-receipt-row">
                   <span>Bill created</span>
                   <strong>{formatDate(receiptItem.billCreatedAt)}</strong>
@@ -963,6 +1005,27 @@ export default function History() {
                   ) : null
                 })()
               ) : null}
+              {receiptItem.type === 'sale' &&
+              receiptItem.paymentCollections &&
+              receiptItem.paymentCollections.filter((c) => c.amount > 0).length > 0 &&
+              !(receiptItem.receiptTimeline && receiptItem.receiptTimeline.length > 0)
+                ? receiptItem.paymentCollections
+                    .filter((c) => c.amount > 0)
+                    .map((collection, idx, arr) => (
+                      <div key={`${collection.at}-${idx}`} className="history-receipt-row">
+                        <span>
+                          {arr.length > 1
+                            ? `${idx === 0 ? '1st' : idx === 1 ? '2nd' : idx === 2 ? '3rd' : `${idx + 1}th`} collected`
+                            : collection.cash > 0 && collection.bank <= 0
+                              ? 'Cash collected'
+                              : collection.bank > 0 && collection.cash <= 0
+                                ? 'Bank collected'
+                                : 'Collected'}
+                        </span>
+                        <strong>{formatDate(collection.at)}</strong>
+                      </div>
+                    ))
+                : null}
               {receiptItem.completedAt ? (
                 <div className="history-receipt-row">
                   <span>
@@ -1085,20 +1148,50 @@ export default function History() {
             ) : null}
 
             {receiptItem.type === 'sale' && billEditMode ? (
-              <button
-                type="button"
-                className="btn btn-secondary history-receipt-edit-btn"
-                onClick={() => openSaleBillEditor(receiptItem)}
-              >
-                Edit bill on Counter
-              </button>
+              <div className="history-receipt-actions">
+                <button
+                  type="button"
+                  className="btn btn-secondary history-receipt-edit-btn"
+                  onClick={() => openSaleBillEditor(receiptItem)}
+                >
+                  Edit bill on Counter
+                </button>
+                {canCancelCreditFromReceipt(receiptItem) ? (
+                  <>
+                    {(() => {
+                      const sale = data.sales.find((s) => s.id === receiptItem.id)
+                      return sale && isPendingCreditSale(sale) ? (
+                        <button
+                          type="button"
+                          className="btn btn-secondary history-receipt-edit-btn"
+                          onClick={() => handleReceiptCancelCredit(receiptItem)}
+                        >
+                          Cancel credit
+                        </button>
+                      ) : null
+                    })()}
+                    <button
+                      type="button"
+                      className="btn btn-secondary history-receipt-edit-btn history-receipt-edit-btn--danger"
+                      onClick={() => handleReceiptCancelCreditAsUnpaid(receiptItem)}
+                    >
+                      Cancel all · unpaid
+                    </button>
+                  </>
+                ) : null}
+              </div>
             ) : null}
             </div>
 
             <div className="history-receipt-foot">
               <span>{getHistoryTypeLabel(receiptItem.type)}</span>
               <strong>
-                {receiptItem.type === 'expense' || receiptItem.type === 'purchase' ? '-' : '+'}
+                {receiptItem.type === 'expense' ||
+                receiptItem.type === 'purchase' ||
+                (receiptItem.type === 'loan' &&
+                  (receiptItem.sub?.includes('given') || receiptItem.sub?.includes('returned')))
+                  ? '-'
+                  : '+'}
                 {formatMoney(
                   receiptItem.type === 'purchase' && (receiptItem.paidAmount ?? 0) > 0
                     ? receiptItem.paidAmount ?? 0

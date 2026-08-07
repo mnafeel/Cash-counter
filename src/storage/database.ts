@@ -2172,6 +2172,23 @@ export function listPendingCreditSales(data: AppData): Sale[] {
     )
 }
 
+/** Fully paid bill that originated as customer credit (not cheque). */
+export function isPaidCreditOriginSale(sale: Sale): boolean {
+  if (sale.status !== 'paid') return false
+  if (getApprovedChequeAmount(sale) > 0 && sale.pendingPayType !== 'credit') return false
+  return sale.pendingPayType === 'credit' || sale.payType === 'credit'
+}
+
+export function listPaidCreditSales(data: AppData): Sale[] {
+  return data.sales
+    .filter(isPaidCreditOriginSale)
+    .sort(
+      (a, b) =>
+        new Date(b.updatedAt ?? b.createdAt).getTime() -
+        new Date(a.updatedAt ?? a.createdAt).getTime(),
+    )
+}
+
 export function listPendingChequeSales(data: AppData): Sale[] {
   return data.sales
     .filter(isPendingChequeSale)
@@ -2206,8 +2223,10 @@ export function cancelSaleCredit(
   const cheque =
     sale.chequeApproved && (sale.chequeAmount ?? 0) > 0 ? sale.chequeAmount ?? 0 : 0
   const originalBillAmount = sale.originalBillAmount ?? sale.billAmount + collected
+  const openCredit = sale.billAmount
+  const now = new Date().toISOString()
 
-  return collectPendingBill(data, id, {
+  const next = collectPendingBill(data, id, {
     billAmount: originalBillAmount,
     originalBillAmount,
     paidAmount: collected,
@@ -2219,6 +2238,43 @@ export function cancelSaleCredit(
     chequeApproved: cheque > 0 ? true : undefined,
     customerName: sale.customerName,
   })
+
+  if (openCredit <= 0) return next
+
+  return {
+    ...next,
+    sales: next.sales.map((s) =>
+      s.id === id
+        ? {
+            ...s,
+            creditCancelledAt: now,
+            creditCancelledAmount: openCredit,
+          }
+        : s,
+    ),
+  }
+}
+
+/**
+ * Full credit cancel as if nothing was paid:
+ * removes the bill and all its credit collections from cash/bank / History.
+ */
+export function cancelSaleCreditAsUnpaid(
+  data: AppData,
+  id: string,
+  relatedSaleIds?: string[],
+): AppData {
+  const sale = data.sales.find((s) => s.id === id)
+  if (!sale) return data
+
+  const creditInvolved =
+    isPendingCreditSale(sale) ||
+    isPaidCreditOriginSale(sale) ||
+    sale.pendingPayType === 'credit' ||
+    sale.payType === 'credit'
+  if (!creditInvolved) return data
+
+  return deleteSale(data, id, relatedSaleIds)
 }
 
 /** Clear open cheque bill — keeps collections; remaining becomes credit balance (not cheque pending). */

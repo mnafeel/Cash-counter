@@ -38,6 +38,9 @@ export interface Sale {
   updatedAt?: string
   /** Per payment collection — used so later credit pay-down only counts on that day. */
   paymentEvents?: SalePaymentEvent[]
+  /** Open credit balance cleared via Settings / History cancel (partial collection kept). */
+  creditCancelledAt?: string
+  creditCancelledAmount?: number
   /** Follow-up date to remind about collecting this pending bill. */
   reminderAt?: string
   /** Optional note shown with reminder alerts. */
