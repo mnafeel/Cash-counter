@@ -14,7 +14,7 @@ A responsive cash counter app for phone, tablet, and desktop. Track bills, custo
 
 **https://mnafeel.github.io/Cash-counter/**
 
-Every push to `main` builds the app and deploys via GitHub Actions. In repo **Settings → Pages**, set source to **GitHub Actions** (not “Deploy from branch”).
+Every push to `main` builds and publishes the app to the `main` branch. In repo **Settings → Pages**, set source to **Deploy from a branch** → `main` → `/ (root)`.
 
 ### Run locally
 
