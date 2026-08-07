@@ -381,14 +381,15 @@ export default function Counter() {
       : 0
 
   const creditCollectDisplayAmount = useMemo(() => {
-    if (!collectingCreditId) return 0
+    if (!collectingCreditId && !effectiveCollectingCreditId) return 0
     return Math.max(
       0,
-      creditCollectDueAmount - cashSplitAmount - bankSplitAmount - chequeSplitAmount,
+      splitTotal - cashSplitAmount - bankSplitAmount - chequeSplitAmount,
     )
   }, [
     collectingCreditId,
-    creditCollectDueAmount,
+    effectiveCollectingCreditId,
+    splitTotal,
     cashSplitAmount,
     bankSplitAmount,
     chequeSplitAmount,
@@ -426,12 +427,12 @@ export default function Counter() {
     if (!collectingChequeId || !chequeCollectCreditMode) return 0
     return Math.max(
       0,
-      chequeCollectDueAmount - cashSplitAmount - bankSplitAmount - chequeSplitAmount,
+      splitTotal - cashSplitAmount - bankSplitAmount - chequeSplitAmount,
     )
   }, [
     collectingChequeId,
     chequeCollectCreditMode,
-    chequeCollectDueAmount,
+    splitTotal,
     cashSplitAmount,
     bankSplitAmount,
     chequeSplitAmount,
@@ -595,7 +596,7 @@ export default function Counter() {
         return total > 0 ? total : 0
       }
       if (splitPaidTotal > 0) return splitPaidTotal
-      if (collectingCreditId) return creditCollectDueAmount
+      if (collectingCreditId) return splitTotal
       if (balanceOnlyMode && payType === 'split') return 0
       return splitTotal > 0 ? splitTotal : 0
     }
@@ -1228,20 +1229,12 @@ export default function Counter() {
     }
 
     if (collectingCreditId) {
-      setCreditSplitStr(nextCreditStr)
-      const credit = parseAmount(nextCreditStr)
-      let bank = parseAmount(bankSplitStr)
-      let cash = parseAmount(cashSplitStr)
-      const room = Math.max(0, total - credit)
-      if (cash > 0) {
-        cash = Math.min(cash, room)
-        setCashSplitStr(formatSplitPart(cash))
-        bank = Math.min(bank, Math.max(0, room - cash))
-        setBankSplitStr(formatSplitPart(bank))
-      } else if (bank > 0) {
-        bank = Math.min(bank, room)
-        setBankSplitStr(formatSplitPart(bank))
-      }
+      const cash = parseAmount(cashSplitStr)
+      const bank = parseAmount(bankSplitStr)
+      const cheque = chequeSplitAmount
+      setCreditSplitStr(
+        formatSplitPart(Math.max(0, total - cash - bank - cheque)),
+      )
       return
     }
 
@@ -2020,8 +2013,13 @@ export default function Counter() {
   }
 
   function updateCreditPendingBill(id: string, name?: string) {
-    const amount =
-      creditSplitAmount > 0 ? creditSplitAmount : creditCollectDueAmount
+    const amount = collectingCreditId
+      ? creditCollectDisplayAmount > 0
+        ? creditCollectDisplayAmount
+        : splitTotal
+      : creditSplitAmount > 0
+        ? creditSplitAmount
+        : roundOffAmount ?? creditCollectDueAmount
     updatePendingSale(id, {
       billAmount: amount,
       originalBillAmount: originalBillHint ?? billAmount,
@@ -2682,7 +2680,11 @@ export default function Counter() {
     if (collectingChequeId) {
       if (chequeCollectCreditMode) {
         const amount =
-          creditSplitAmount > 0 ? creditSplitAmount : chequeCollectDueAmount
+          creditSplitAmount > 0
+            ? creditSplitAmount
+            : chequeCollectCreditRemainder > 0
+              ? chequeCollectCreditRemainder
+              : splitTotal
         updatePendingSale(collectingChequeId, {
           billAmount: amount,
           originalBillAmount: originalBillHint ?? billAmount,
@@ -3318,7 +3320,13 @@ export default function Counter() {
                   {collectingCreditId ? 'To Pay' : collectingChequeId ? 'Cheque due' : 'Balance'}
                 </span>
                 <span className="counter-readonly-value">
-                  {formatMoney(balanceDueAmount ?? billAmount)}
+                  {formatMoney(
+                    collectingCreditId
+                      ? splitTotal
+                      : collectingChequeId
+                        ? roundOffAmount ?? chequeCollectDueAmount
+                        : balanceDueAmount ?? billAmount,
+                  )}
                 </span>
                 {collectingCreditId && creditCollectCustomerName ? (
                   <span className="counter-balance-hint counter-balance-hint--customer">
@@ -3775,7 +3783,12 @@ export default function Counter() {
                     if (cashSplitStr) applySplitCash(cashSplitStr, amt)
                     else if (bankSplitStr) applySplitBank(bankSplitStr, amt)
                     else if (chequeSplitStr) applySplitCheque(chequeSplitStr, amt)
-                    else if (creditSplitStr) applySplitCredit(creditSplitStr, amt)
+                    else if (
+                      collectingCreditId ||
+                      (collectingChequeId && chequeCollectCreditMode)
+                    ) {
+                      setCreditSplitStr(formatSplitPart(amt))
+                    } else if (creditSplitStr) applySplitCredit(creditSplitStr, amt)
                     else openSplitMode()
                   } else if (paymentStep) setPaidStr(String(amt))
                   else if (needsGive(payType)) setActiveField('give')
