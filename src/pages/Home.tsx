@@ -59,6 +59,10 @@ import {
   filterLoanOutflowHistoryItems,
   summarizeLoanOutflows,
 } from '../utils/loanLedger'
+import {
+  summarizePeriodExpenseChannels,
+  type ExpensePayChannelFilter,
+} from '../utils/expenseTimeline'
 import { buildDailyTotalsForPreset } from '../utils/dailyTotals'
 import ReportsPanel, { type ReportSection } from '../components/ReportsPanel'
 import CustomerDashboard, { type CustomerListFilter } from '../components/CustomerDashboard'
@@ -146,6 +150,7 @@ export default function Home() {
   const [reportSection, setReportSection] = useState<ReportSection | undefined>()
   const [homeDayFilter, setHomeDayFilter] = useState<HomeDayFilter>('today')
   const [homeSelectedDate, setHomeSelectedDate] = useState('')
+  const [homeExpenseChannel, setHomeExpenseChannel] = useState<ExpensePayChannelFilter>('all')
   const noteInputRef = useRef<HTMLInputElement>(null)
 
   function openPurchaseHistory() {
@@ -255,6 +260,26 @@ export default function Home() {
     () => summarizeLoanOutflows(periodLoanOutflowItems),
     [periodLoanOutflowItems],
   )
+  const periodExpenseChannels = useMemo(
+    () =>
+      summarizePeriodExpenseChannels(
+        dashData,
+        periodExpenseItems,
+        periodPurchaseItems,
+        periodLoanOutflowItems,
+      ),
+    [dashData, periodExpenseItems, periodPurchaseItems, periodLoanOutflowItems],
+  )
+  const periodExpenseCombinedTotal =
+    periodExpenseSummary.total +
+    periodPurchaseSummary.total +
+    periodLoanOutflowSummary.total
+  const homeExpenseDisplayAmount =
+    homeExpenseChannel === 'cash'
+      ? periodExpenseChannels.cash
+      : homeExpenseChannel === 'bank'
+        ? periodExpenseChannels.bank
+        : periodExpenseCombinedTotal
   const periodTopShop = useMemo(
     () => getTopPurchaseShop(periodPurchaseItems),
     [periodPurchaseItems],
@@ -729,11 +754,38 @@ export default function Home() {
           >
             <span className="stat-label">Expenses</span>
             <span className="stat-value stat-value--orange">
-              {formatMoney(
-                periodExpenseSummary.total +
-                  periodPurchaseSummary.total +
-                  periodLoanOutflowSummary.total,
-              )}
+              {formatMoney(homeExpenseDisplayAmount)}
+            </span>
+            <div
+              className="home-expense-channel-toggle"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => e.stopPropagation()}
+              role="group"
+              aria-label="Expense payment channel"
+            >
+              {(
+                [
+                  { id: 'all' as const, label: 'All' },
+                  { id: 'cash' as const, label: '💵 Cash' },
+                  { id: 'bank' as const, label: '🏦 Bank' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`home-expense-channel-chip ${homeExpenseChannel === opt.id ? 'home-expense-channel-chip--active' : ''}`}
+                  onClick={() => setHomeExpenseChannel(opt.id)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <span className="stat-meta stat-meta--breakdown">
+              {homeExpenseChannel === 'all'
+                ? `💵 Cash ${formatMoney(periodExpenseChannels.cash)} · 🏦 Bank ${formatMoney(periodExpenseChannels.bank)}`
+                : homeExpenseChannel === 'cash'
+                  ? `Cash out · ${periodExpenseChannels.count} items · All ${formatMoney(periodExpenseCombinedTotal)}`
+                  : `Bank out · ${periodExpenseChannels.count} items · All ${formatMoney(periodExpenseCombinedTotal)}`}
             </span>
             <span className="stat-meta">
               Normal {formatMoney(periodExpenseSummary.total)} · {periodExpenseItems.length} items

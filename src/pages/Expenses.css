@@ -11,6 +11,33 @@
   box-sizing: border-box;
 }
 
+.expenses-corner-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cream-dim);
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.expenses-corner-btn-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.expenses-corner-btn:active {
+  border-color: var(--cream);
+  color: var(--cream);
+}
+
 .expenses-page-head {
   flex-shrink: 0;
   padding: 2px 0 0;
@@ -41,7 +68,6 @@
   flex-direction: column;
   gap: var(--page-gap);
   min-width: 0;
-  max-height: min(42vh, 320px);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -596,10 +622,6 @@
   text-align: center;
 }
 
-html[data-screen='tablet'] .expenses-form {
-  max-height: min(38vh, 280px);
-}
-
 html[data-screen='tablet'] .expenses-top {
   gap: 4px;
 }
@@ -640,10 +662,6 @@ html[data-screen='tablet'] .expenses-actions .btn {
     display: none;
   }
 
-  .expenses-form {
-    max-height: min(36vh, 200px);
-  }
-
   .expenses-top {
     gap: 3px;
   }
@@ -678,10 +696,6 @@ html[data-short='true'] .expenses-page {
 
 html[data-short='true'] .expenses-page-sub {
   display: none;
-}
-
-html[data-short='true'] .expenses-form {
-  max-height: min(40vh, 240px);
 }
 
 html[data-short='true'] .expense-name,

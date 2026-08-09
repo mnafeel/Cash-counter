@@ -941,7 +941,41 @@ export function groupPurchasesBySupplier(
   return Array.from(map.values())
     .map((group) => ({
       ...group,
-      items: group.items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+      items: group.items.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     }))
     .sort((a, b) => b.total - a.total)
+}
+
+export function sortPurchaseSupplierGroups(
+  groups: PurchaseSupplierGroup[],
+  order: 'spend' | 'name',
+): PurchaseSupplierGroup[] {
+  const sorted = [...groups]
+  if (order === 'name') {
+    sorted.sort((a, b) => a.shopName.localeCompare(b.shopName, undefined, { sensitivity: 'base' }))
+  } else {
+    sorted.sort((a, b) => b.total - a.total)
+  }
+  return sorted
+}
+
+export function purchaseItemPaidChannel(
+  data: AppData,
+  item: PurchaseHistoryItem,
+): { cash: number; bank: number } {
+  const expense = data.expenses.find((entry) => entry.id === item.id)
+  if (!expense) return { cash: 0, bank: 0 }
+  const paid = purchasePaidComponents(expense)
+  return { cash: paid.cash, bank: paid.bank + paid.cheque }
+}
+
+export function purchaseItemMatchesPayChannel(
+  data: AppData,
+  item: PurchaseHistoryItem,
+  channel: 'all' | 'cash' | 'bank',
+): boolean {
+  if (channel === 'all') return true
+  const parts = purchaseItemPaidChannel(data, item)
+  if (channel === 'cash') return parts.cash > 0
+  return parts.bank > 0
 }

@@ -4,7 +4,9 @@ import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
+import ExpenseHistoryPanel from '../components/ExpenseHistoryPanel'
 import { useAppPageBack } from '../hooks/useAppPageBack'
+import { usePageEscape } from '../hooks/usePageEscape'
 import type { ExpensePayType } from '../types'
 import { formatMoney, parseAmount } from '../utils/format'
 import {
@@ -61,6 +63,7 @@ export default function Expenses() {
   const [linkToSalary, setLinkToSalary] = useState(true)
   const [staffSalaryMonth, setStaffSalaryMonth] = useState(currentSalaryMonth())
   const salaryMonthOptions = useMemo(() => listSalaryMonthPickerOptions(), [])
+  const [showExpenseHistory, setShowExpenseHistory] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const paySectionRef = useRef<HTMLDivElement>(null)
   const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
@@ -184,9 +187,9 @@ export default function Expenses() {
     setHighlightedAmountIndex(-1)
   }
 
-  function openAmountDropdown(preselect = true) {
+  function openAmountDropdown() {
     setAmountDropdownOpen(true)
-    setHighlightedAmountIndex(preselect && amountSuggestions.length > 0 ? 0 : -1)
+    setHighlightedAmountIndex(-1)
   }
 
   function handleSave() {
@@ -244,9 +247,9 @@ export default function Expenses() {
     }, 900)
   }
 
-  function openNameDropdown(preselectRecent = !name.trim()) {
+  function openNameDropdown() {
     setNameDropdownOpen(true)
-    setHighlightedNameIndex(preselectRecent && recentExpenseOptions.length > 0 ? 0 : -1)
+    setHighlightedNameIndex(-1)
   }
 
   function openNameDropdownFromPointer() {
@@ -419,12 +422,37 @@ export default function Expenses() {
     focusField('pay')
   }
 
+  function handlePageBack() {
+    if (showExpenseHistory) {
+      setShowExpenseHistory(false)
+      return
+    }
+    goBack()
+  }
+
+  usePageEscape(handlePageBack, !showExpenseHistory)
+
   return (
     <div className="expenses-page page-shell">
-      <PageCorners left={<PageBackButton onClick={goBack} ariaLabel="Back" />} />
+      <PageCorners
+        left={<PageBackButton onClick={handlePageBack} ariaLabel="Back" />}
+        right={
+          <button
+            type="button"
+            className="expenses-corner-btn"
+            onClick={() => setShowExpenseHistory(true)}
+            aria-label="Expense history"
+          >
+            <span className="expenses-corner-btn-icon" aria-hidden="true">
+              📋
+            </span>
+            <span>History</span>
+          </button>
+        }
+      />
       <header className="expenses-page-head page-head--corners">
         <h1 className="expenses-page-title">Expenses</h1>
-        <p className="expenses-page-sub">Normal cash or bank expenses only · not purchases</p>
+        <p className="expenses-page-sub">Record expenses · History includes purchases</p>
       </header>
 
       <div className="expenses-form">
@@ -715,6 +743,12 @@ export default function Expenses() {
           {!saved ? <span className="btn-shortcut">Alt+S</span> : null}
         </button>
       </div>
+
+      <ExpenseHistoryPanel
+        open={showExpenseHistory}
+        onClose={() => setShowExpenseHistory(false)}
+        data={data}
+      />
     </div>
   )
 }

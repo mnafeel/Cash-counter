@@ -13,7 +13,9 @@ import {
   groupPurchasesBySupplier,
   listPurchaseHistoryMonthOptions,
   matchesPurchaseHistorySearch,
+  purchaseItemMatchesPayChannel,
   PURCHASE_CASH_LABEL,
+  sortPurchaseSupplierGroups,
   summarizeSupplierPurchaseFile,
   type PurchaseDateFilter,
   type PurchaseHistoryItem,
@@ -73,7 +75,9 @@ export default function PurchaseHistoryPanel({
   const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null)
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
   const [showCreditPage, setShowCreditPage] = useState(false)
-  const [supplierSort, setSupplierSort] = useState<'newest' | 'oldest'>('newest')
+  const [supplierSort, setSupplierSort] = useState<'newest' | 'oldest'>('oldest')
+  const [supplierGroupOrder, setSupplierGroupOrder] = useState<'name' | 'spend'>('name')
+  const [payChannel, setPayChannel] = useState<'all' | 'cash' | 'bank'>('all')
   const [exportStatus, setExportStatus] = useState('')
   const creditPanelRef = useRef<PurchaseCreditPanelHandle>(null)
 
@@ -102,7 +106,7 @@ export default function PurchaseHistoryPanel({
     [data, allItems],
   )
   const allSupplierGroups = useMemo(() => {
-    const groups = groupPurchasesBySupplier(allItems)
+    const groups = sortPurchaseSupplierGroups(groupPurchasesBySupplier(allItems), supplierGroupOrder)
     if (!search.trim() || selectedSupplierKey) return groups
     const q = search.toLowerCase().trim()
     return groups.filter(
@@ -110,7 +114,7 @@ export default function PurchaseHistoryPanel({
         group.shopName.toLowerCase().includes(q) ||
         group.items.some((item) => matchesPurchaseHistorySearch(item, search)),
     )
-  }, [allItems, search, selectedSupplierKey])
+  }, [allItems, search, selectedSupplierKey, supplierGroupOrder])
   const allSupplierGroupSummaries = useMemo(() => {
     const map = new Map<string, SupplierPurchaseFileSummary>()
     for (const group of allSupplierGroups) {
@@ -119,8 +123,11 @@ export default function PurchaseHistoryPanel({
     return map
   }, [allSupplierGroups, data])
   const paymentHistoryItems = useMemo(
-    () => [...dateFilteredItems].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-    [dateFilteredItems],
+    () =>
+      [...dateFilteredItems]
+        .filter((item) => purchaseItemMatchesPayChannel(data, item, payChannel))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+    [dateFilteredItems, data, payChannel],
   )
   const selectedSupplier = useMemo((): PurchaseSupplierGroup | null => {
     if (!selectedSupplierKey) return null
@@ -164,9 +171,11 @@ export default function PurchaseHistoryPanel({
 
   const supplierHistoryItems = useMemo(() => {
     if (!selectedSupplierKey) return []
-    if (!search.trim()) return supplierAllItems
-    return supplierAllItems.filter((item) => matchesPurchaseHistorySearch(item, search))
-  }, [selectedSupplierKey, supplierAllItems, search])
+    const items = !search.trim()
+      ? supplierAllItems
+      : supplierAllItems.filter((item) => matchesPurchaseHistorySearch(item, search))
+    return items.filter((item) => purchaseItemMatchesPayChannel(data, item, payChannel))
+  }, [selectedSupplierKey, supplierAllItems, search, data, payChannel])
 
   const supplierAllFileSummary = useMemo(() => {
     if (!selectedSupplierKey || supplierAllItems.length === 0) return null
@@ -666,6 +675,26 @@ export default function PurchaseHistoryPanel({
             aria-label="Search purchase history"
           />
 
+          <div className="purchase-hist-pay-channel">
+            <span className="purchase-hist-pay-channel-label">Pay</span>
+            {(
+              [
+                { id: 'all', label: 'All' },
+                { id: 'cash', label: '💵 Cash' },
+                { id: 'bank', label: '🏦 Bank' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                className={`purchase-hist-date-chip ${payChannel === opt.id ? 'purchase-hist-date-chip--active' : ''}`}
+                onClick={() => setPayChannel(opt.id)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
           <div className="purchase-hist-dates">
             {DATE_OPTIONS.map((opt) => (
               <button
@@ -850,7 +879,24 @@ export default function PurchaseHistoryPanel({
                 <h4 className="purchase-hist-suppliers-title">Suppliers</h4>
                 <span className="purchase-hist-suppliers-count">{allSupplierGroups.length}</span>
               </div>
-              <p className="purchase-hist-suppliers-hint">Tap a supplier to open bills and see details</p>
+              <div className="purchase-hist-supplier-sort purchase-hist-supplier-sort--list">
+                <span>Order</span>
+                <button
+                  type="button"
+                  className={`purchase-hist-date-chip ${supplierGroupOrder === 'name' ? 'purchase-hist-date-chip--active' : ''}`}
+                  onClick={() => setSupplierGroupOrder('name')}
+                >
+                  A–Z
+                </button>
+                <button
+                  type="button"
+                  className={`purchase-hist-date-chip ${supplierGroupOrder === 'spend' ? 'purchase-hist-date-chip--active' : ''}`}
+                  onClick={() => setSupplierGroupOrder('spend')}
+                >
+                  By spend
+                </button>
+              </div>
+              <p className="purchase-hist-suppliers-hint">Tap a supplier to open bills · oldest first inside each dealer</p>
               {renderSupplierGroupsList()}
             </section>
           )

@@ -151,6 +151,21 @@ export function buildExpenseNamePickerOptions(data: AppData, limit = 12): Expens
 }
 
 /** Filter expenses by typed name — each match shows with its recorded time. */
+/** Letter-by-letter match — prefix matches rank before substring matches. */
+export function searchNamesByPrefix(names: string[], query: string, limit = 12): string[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return names.slice(0, limit)
+  const prefix: string[] = []
+  const contains: string[] = []
+  for (const name of names) {
+    const lower = name.toLowerCase()
+    if (lower === q) continue
+    if (lower.startsWith(q)) prefix.push(name)
+    else if (lower.includes(q)) contains.push(name)
+  }
+  return [...prefix, ...contains].slice(0, limit)
+}
+
 export function searchExpenseNamePickerOptions(
   data: AppData,
   query: string,
@@ -162,13 +177,33 @@ export function searchExpenseNamePickerOptions(
   const options: ExpenseNamePickerOption[] = []
   const seenNames = new Set<string>()
 
-  for (let i = 0; i < data.expenses.length; i++) {
-    const expense = data.expenses[i]
-    if (!isNormalExpenseRecord(expense)) continue
-    const raw = expense.name.trim()
-    if (!raw.toLowerCase().includes(q)) continue
-    options.push(expenseToPickerOption(data, expense))
-    seenNames.add(raw.toLowerCase())
+  const rankedNames = searchNamesByPrefix(
+    data.expenses
+      .filter(isNormalExpenseRecord)
+      .map((expense) => expense.name.trim())
+      .filter(Boolean),
+    q,
+    limit * 2,
+  )
+
+  for (const raw of rankedNames) {
+    const lower = raw.toLowerCase()
+    if (seenNames.has(lower)) continue
+    const fromHistory = findRecentExpenseNameOption(data, raw)
+    if (fromHistory) {
+      options.push(fromHistory)
+      seenNames.add(lower)
+      if (options.length >= limit) break
+      continue
+    }
+    for (let i = 0; i < data.expenses.length; i++) {
+      const expense = data.expenses[i]
+      if (!isNormalExpenseRecord(expense)) continue
+      if (expense.name.trim().toLowerCase() !== lower) continue
+      options.push(expenseToPickerOption(data, expense))
+      seenNames.add(lower)
+      break
+    }
     if (options.length >= limit) break
   }
 

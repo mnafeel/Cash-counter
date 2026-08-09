@@ -23,6 +23,7 @@ import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { toInputDate } from '../utils/salesReport'
+import { searchNamesByPrefix } from '../utils/normalExpenseHistory'
 import './PurchaseExpense.css'
 
 type BillSlot = 1 | 2
@@ -481,14 +482,9 @@ export default function PurchaseExpense() {
   }, [description, visibleItemOptions])
 
   const filteredNameSuggestions = useMemo(() => {
-    const query = name.trim().toLowerCase()
+    const query = name.trim()
     if (!query) return supplierOptions.slice(0, 10)
-    return supplierOptions
-      .filter((item) => {
-        const lower = item.toLowerCase()
-        return lower.includes(query) && lower !== query
-      })
-      .slice(0, 10)
+    return searchNamesByPrefix(supplierOptions, query, 10)
   }, [name, supplierOptions])
 
   const supplierPendingByName = useMemo(() => {

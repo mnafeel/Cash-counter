@@ -1003,6 +1003,26 @@
   color: var(--cream-dim);
 }
 
+.purchase-hist-supplier-sort--list {
+  margin: 4px 0 2px;
+}
+
+.purchase-hist-pay-channel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+.purchase-hist-pay-channel-label {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .purchase-hist-supplier-list-total {
   display: flex;
   align-items: center;

@@ -3,6 +3,7 @@ import { formatDate, formatTime } from './format'
 import type { AppData, Expense } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import { purchasePaidComponents } from './purchaseHistory'
+import type { LoanOutflowHistoryItem } from './loanLedger'
 import type { NormalExpenseHistoryItem } from './normalExpenseHistory'
 import type { PurchaseHistoryItem } from './purchaseHistory'
 
@@ -196,6 +197,78 @@ export function buildExpenseTimelineEntriesFromData(
       : a.sortTime - b.sortTime || a.amount - b.amount,
   )
   return entries
+}
+
+export type ExpensePayChannelFilter = 'all' | 'cash' | 'bank'
+
+export interface PeriodExpenseChannelSummary {
+  cash: number
+  bank: number
+  total: number
+  count: number
+}
+
+export function summarizePeriodExpenseChannels(
+  data: AppData,
+  normalItems: NormalExpenseHistoryItem[],
+  purchaseItems: PurchaseHistoryItem[],
+  loanItems: LoanOutflowHistoryItem[],
+): PeriodExpenseChannelSummary {
+  const expenseById = new Map(
+    data.expenses
+      .filter((expense) => (!expense.kind || expense.kind === 'expense') && !isPurchaseExpense(expense))
+      .map((expense) => [expense.id, expense]),
+  )
+
+  let cash = 0
+  let bank = 0
+  let count = 0
+
+  for (const item of normalItems) {
+    const expense = expenseById.get(item.id)
+    const parts = expense ? normalExpenseCashBank(expense) : { cash: item.amount, bank: 0 }
+    cash += parts.cash
+    bank += parts.bank
+    count += 1
+  }
+
+  for (const item of purchaseItems) {
+    const parts = purchaseItemCashBank(data, item)
+    cash += parts.cash
+    bank += parts.bank
+    count += 1
+  }
+
+  for (const item of loanItems) {
+    if (item.kind !== 'given') continue
+    if (item.paySource === 'bank') bank += item.amount
+    else cash += item.amount
+    count += 1
+  }
+
+  return { cash, bank, total: cash + bank, count }
+}
+
+export function expenseTimelineEntryChannel(entry: ExpenseTimelineEntry): 'cash' | 'bank' | 'none' {
+  const cash = entry.cashAmount ?? 0
+  const bank = entry.bankAmount ?? 0
+  if (cash > 0 && bank <= 0) return 'cash'
+  if (bank > 0 && cash <= 0) return 'bank'
+  if (cash > 0 && bank > 0) return 'cash'
+  return 'none'
+}
+
+export function filterExpenseTimelineByPayChannel(
+  entries: ExpenseTimelineEntry[],
+  channel: ExpensePayChannelFilter,
+): ExpenseTimelineEntry[] {
+  if (channel === 'all') return entries
+  return entries.filter((entry) => {
+    const cash = entry.cashAmount ?? 0
+    const bank = entry.bankAmount ?? 0
+    if (channel === 'cash') return cash > 0
+    return bank > 0
+  })
 }
 
 export function buildExpenseTimelineRows(

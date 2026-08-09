@@ -1425,6 +1425,30 @@ html[data-screen='desktop'] .home-pin-digit {
   color: var(--cream-dim);
 }
 
+.home-expense-channel-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 2px;
+}
+
+.home-expense-channel-chip {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 0, 0, 0.18);
+  color: var(--cream-dim);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.home-expense-channel-chip--active {
+  border-color: rgba(255, 180, 100, 0.55);
+  background: rgba(255, 160, 80, 0.16);
+  color: var(--cream);
+}
+
 .home-report-panel {
   max-height: min(88vh, 680px);
 }

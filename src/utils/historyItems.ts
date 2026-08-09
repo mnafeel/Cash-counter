@@ -1516,13 +1516,25 @@ function receiptLinePaymentMode(
   label: string,
   status?: HistoryReceiptLine['status'],
 ): HistoryListPaymentPart['mode'] | null {
-  if (label === 'Cash') return 'cash'
-  if (label === 'Bank') return 'bank'
-  if (label === 'Cheque') {
-    // Approved cheque has cleared — show under bank, not as a separate cheque total.
+  const lower = label.toLowerCase()
+  if (label === 'Cash' || lower.includes('cash received') || lower.includes('credit payment · cash')) {
+    return 'cash'
+  }
+  if (
+    label === 'Bank' ||
+    lower.includes('bank received') ||
+    lower.includes('credit payment · bank') ||
+    lower.includes('cheque approved')
+  ) {
+    return status === 'pending' && lower.includes('cheque pending') ? 'cheque' : 'bank'
+  }
+  if (label === 'Cheque' || lower.includes('cheque pending')) {
     return status === 'paid' ? 'bank' : 'cheque'
   }
-  if (label === 'Credit' || label === 'Credit balance') return 'credit'
+  if (label === 'Credit' || lower.includes('credit balance')) return 'credit'
+  if (lower.includes('bill created') || lower.includes('total collected') || lower.includes('cancelled')) {
+    return null
+  }
   return null
 }
 
@@ -1554,12 +1566,23 @@ export function getHistoryItemListPaymentParts(
     // Keep open pending cheque / credit lines visible alongside collected amounts.
     for (const line of item.receiptLines ?? []) {
       if (line.status !== 'pending') continue
-      if (line.label === 'Cheque') mergeListPaymentPart(bucket, 'cheque', line.amount, 'pending')
-      if (line.label === 'Credit') mergeListPaymentPart(bucket, 'credit', line.amount, 'pending')
+      const lower = line.label.toLowerCase()
+      if (line.label === 'Cheque' || lower.includes('cheque pending')) {
+        mergeListPaymentPart(bucket, 'cheque', line.amount, 'pending')
+      }
+      if (line.label === 'Credit' || lower.includes('credit balance')) {
+        mergeListPaymentPart(bucket, 'credit', line.amount, 'pending')
+      }
     }
   } else if (item.receiptLines?.length) {
     for (const line of item.receiptLines) {
-      if (line.label === 'Paid' || line.label === 'Bill total' || line.label === 'Purchase') {
+      if (
+        line.label === 'Paid' ||
+        line.label === 'Bill total' ||
+        line.label === 'Purchase' ||
+        line.label === 'Bill created' ||
+        line.label === 'Total collected'
+      ) {
         continue
       }
       const mode = receiptLinePaymentMode(line.label, line.status)
@@ -1665,8 +1688,12 @@ export function historyItemListPaymentTypeText(
     return parts
       .map((part) => {
         const icon = getHistoryListPaymentPartIcon(part.mode)
-        const pending = part.status === 'pending' ? ' pending' : ''
-        return `${icon} ${formatMoney(part.amount)}${pending}`
+        if (part.status === 'pending') {
+          if (part.mode === 'cheque') return `${icon} ${formatMoney(part.amount)} · Cheque pending`
+          if (part.mode === 'credit') return `${icon} ${formatMoney(part.amount)} · Credit pending`
+          return `${icon} ${formatMoney(part.amount)} pending`
+        }
+        return `${icon} ${formatMoney(part.amount)}`
       })
       .join(' · ')
   }

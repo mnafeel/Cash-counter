@@ -19,9 +19,18 @@ import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { getBillRoundOptions } from '../utils/roundSuggestions'
+import { searchNamesByPrefix } from '../utils/normalExpenseHistory'
 import './Counter.css'
 
-type ActiveField = 'bill' | 'give' | 'paid' | 'cashSplit' | 'bankSplit' | 'chequeSplit' | 'creditSplit'
+type ActiveField =
+  | 'bill'
+  | 'give'
+  | 'paid'
+  | 'cashSplit'
+  | 'bankSplit'
+  | 'chequeSplit'
+  | 'creditSplit'
+  | 'roundCustom'
 
 const COUNTER_PAY_TYPES: PayType[] = ['cash', 'bank', 'credit', 'split', 'cheque']
 const CREDIT_COLLECT_PAY_TYPES: PayType[] = ['cash', 'bank', 'credit', 'split', 'cheque']
@@ -39,6 +48,7 @@ function keyboardHint(activeField: ActiveField): string {
   if (activeField === 'bankSplit') return 'Bank'
   if (activeField === 'chequeSplit') return 'Cheque'
   if (activeField === 'creditSplit') return 'Credit'
+  if (activeField === 'roundCustom') return 'Custom round amount'
   return 'Amount'
 }
 
@@ -168,6 +178,8 @@ export default function Counter() {
   const [chequeSplitStr, setChequeSplitStr] = useState('')
   const [creditSplitStr, setCreditSplitStr] = useState('')
   const [roundOffAmount, setRoundOffAmount] = useState<number | null>(null)
+  const [roundOtherActive, setRoundOtherActive] = useState(false)
+  const [roundCustomStr, setRoundCustomStr] = useState('')
   const [paymentStep, setPaymentStep] = useState(false)
   const [payType, setPayType] = useState<PayType>('cash')
   const [customerName, setCustomerName] = useState('')
@@ -232,14 +244,9 @@ export default function Counter() {
   }, [data.sales])
 
   const filteredNameSuggestions = useMemo(() => {
-    const query = customerName.trim().toLowerCase()
+    const query = customerName.trim()
     if (!query) return customerNameSuggestions.slice(0, 8)
-    return customerNameSuggestions
-      .filter((name) => {
-        const lower = name.toLowerCase()
-        return lower.includes(query) && lower !== query
-      })
-      .slice(0, 8)
+    return searchNamesByPrefix(customerNameSuggestions, query, 8)
   }, [customerName, customerNameSuggestions])
 
   const customerPendingByName = useMemo(() => {
@@ -884,7 +891,36 @@ export default function Counter() {
     () => getBillRoundOptions(roundBaseAmount),
     [roundBaseAmount],
   )
-  const showRoundChips = roundBaseAmount > 0 && billRoundOptions.length > 0
+  const showRoundChips = roundBaseAmount > 0
+
+  function applyRoundCollectAmount(amt: number) {
+    if (amt <= 0 || amt > roundBaseAmount) return
+    setRoundOffAmount(amt)
+    setRoundOtherActive(false)
+    setRoundCustomStr('')
+    if (payType === 'split') {
+      setPaidStr(String(amt))
+      if (cashSplitStr) applySplitCash(cashSplitStr, amt)
+      else if (bankSplitStr) applySplitBank(bankSplitStr, amt)
+      else if (chequeSplitStr) applySplitCheque(chequeSplitStr, amt)
+      else if (collectingCreditId || (collectingChequeId && chequeCollectCreditMode)) {
+        setCreditSplitStr(formatSplitPart(amt))
+      } else if (creditSplitStr) applySplitCredit(creditSplitStr, amt)
+      else openSplitMode()
+    } else if (paymentStep) setPaidStr(String(amt))
+    else if (needsGive(payType)) setActiveField('give')
+    else openPaymentStep()
+  }
+
+  function applyCustomRoundAmount() {
+    const amt = parseAmount(roundCustomStr)
+    if (amt <= 0 || amt > roundBaseAmount) return
+    applyRoundCollectAmount(amt)
+    if (payType === 'split') setActiveField('cashSplit')
+    else if (needsGive(payType)) setActiveField('give')
+    else if (paymentStep) setActiveField('paid')
+    else setActiveField('bill')
+  }
 
   const customerPaidPreview =
     payType === 'split'
@@ -1324,6 +1360,10 @@ export default function Counter() {
       setActiveField(nextUnlockedSplitField('creditSplit'))
       return
     }
+    if (activeField === 'roundCustom') {
+      applyCustomRoundAmount()
+      return
+    }
   }
 
   function handlePayTypeChange(type: PayType) {
@@ -1500,6 +1540,8 @@ export default function Counter() {
       const next = applyNumpadAction(billStr, action)
       setBillStr(next)
       setRoundOffAmount(null)
+      setRoundOtherActive(false)
+      setRoundCustomStr('')
       if (payType === 'split') {
         const newDue = parseAmount(next)
         if (newDue > 0) {
@@ -1540,6 +1582,8 @@ export default function Counter() {
     } else if (activeField === 'creditSplit') {
       if (isSplitFieldLocked('creditSplit')) return
       applySplitCredit(applyNumpadAction(creditSplitStr, action))
+    } else if (activeField === 'roundCustom') {
+      setRoundCustomStr((prev) => applyNumpadAction(prev, action))
     }
   }
 
@@ -1570,6 +1614,8 @@ export default function Counter() {
     setChequeSplitStr('')
     setCreditSplitStr('')
     setRoundOffAmount(null)
+    setRoundOtherActive(false)
+    setRoundCustomStr('')
     setPaymentStep(false)
     setPayType('cash')
     setCustomerName('')
@@ -3776,24 +3822,14 @@ export default function Counter() {
               <RoundTypeChips
                 label="Round down"
                 options={billRoundOptions}
-                onSelect={(amt) => {
-                  setRoundOffAmount(amt)
-                  if (payType === 'split') {
-                    setPaidStr(String(amt))
-                    if (cashSplitStr) applySplitCash(cashSplitStr, amt)
-                    else if (bankSplitStr) applySplitBank(bankSplitStr, amt)
-                    else if (chequeSplitStr) applySplitCheque(chequeSplitStr, amt)
-                    else if (
-                      collectingCreditId ||
-                      (collectingChequeId && chequeCollectCreditMode)
-                    ) {
-                      setCreditSplitStr(formatSplitPart(amt))
-                    } else if (creditSplitStr) applySplitCredit(creditSplitStr, amt)
-                    else openSplitMode()
-                  } else if (paymentStep) setPaidStr(String(amt))
-                  else if (needsGive(payType)) setActiveField('give')
-                  else openPaymentStep()
+                onSelect={(amt) => applyRoundCollectAmount(amt)}
+                onOtherSelect={() => {
+                  setRoundOtherActive(true)
+                  setRoundCustomStr(roundOffAmount != null ? String(roundOffAmount) : '')
+                  setActiveField('roundCustom')
                 }}
+                otherActive={roundOtherActive}
+                otherValue={roundCustomStr}
                 activeAmount={roundOffAmount ?? undefined}
                 compact
               />
