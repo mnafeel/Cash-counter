@@ -310,12 +310,28 @@ function appendChequeSaleStructuredEvents(
     }
   })
 
-  const chequeAtEstablishment = totalBill - cashTotal
-  if (chequeAtEstablishment > 0.01) {
+  let chequeApprovedTotal = 0
+  activeEvents.forEach((event) => {
+    const normalized = normalizeCollectedBreakdown({
+      cash: event.cash ?? 0,
+      bank: event.bank ?? 0,
+      cheque: event.cheque ?? 0,
+      total: event.amount,
+    })
+    chequeApprovedTotal += normalized.bank + normalized.cheque
+  })
+
+  const chequeAtEstablishment = Math.max(0, totalBill - cashTotal)
+  const pendingAmount =
+    sale.status === 'pending'
+      ? Math.min(sale.billAmount, Math.max(0, chequeAtEstablishment - chequeApprovedTotal))
+      : 0
+
+  if (pendingAmount > 0.01) {
     createReceiptDraft(drafts, RECEIPT_SEQ.CHEQUE_PENDING, {
       label: 'Cheque pending',
       date: activeEvents[0]?.at ?? sale.createdAt,
-      amount: chequeAtEstablishment,
+      amount: pendingAmount,
       type: 'pending-created',
       detail: formatDate(activeEvents[0]?.at ?? sale.createdAt),
     })
