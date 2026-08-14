@@ -8,6 +8,7 @@ import NumberKeyboard from '../components/NumberKeyboard'
 import { formatMoney, parseAmount, formatDate } from '../utils/format'
 import { applyNumpadAction, applyPinAction, normalizePin, type NumpadAction } from '../utils/numpad'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import type { ExpensePayType, TransferDirection } from '../types'
 import {
   buildHistoryItems,
@@ -125,14 +126,26 @@ export default function Home() {
   const [panelSaved, setPanelSaved] = useState(false)
   const [panelError, setPanelError] = useState('')
   const [showDeleteRecords, setShowDeleteRecords] = useState(false)
-  const [deleteRecordSearch, setDeleteRecordSearch] = useState('')
+  const {
+    value: deleteRecordSearch,
+    setValue: setDeleteRecordSearch,
+    deferredValue: deferredDeleteRecordSearch,
+  } = useDeferredSearch()
   const [deleteRecordFilter, setDeleteRecordFilter] = useState<HistoryFilter>('all')
   const [showCashHistory, setShowCashHistory] = useState(false)
-  const [cashHistorySearch, setCashHistorySearch] = useState('')
+  const {
+    value: cashHistorySearch,
+    setValue: setCashHistorySearch,
+    deferredValue: deferredCashHistorySearch,
+  } = useDeferredSearch()
   const [cashDateFilter, setCashDateFilter] = useState<CashDateFilter>('today')
   const [cashSelectedDate, setCashSelectedDate] = useState('')
   const [showBankHistory, setShowBankHistory] = useState(false)
-  const [bankHistorySearch, setBankHistorySearch] = useState('')
+  const {
+    value: bankHistorySearch,
+    setValue: setBankHistorySearch,
+    deferredValue: deferredBankHistorySearch,
+  } = useDeferredSearch()
   const [bankDateFilter, setBankDateFilter] = useState<BankDateFilter>('today')
   const [bankSelectedDate, setBankSelectedDate] = useState('')
   const [showReports, setShowReports] = useState(false)
@@ -299,7 +312,7 @@ export default function Home() {
   const cashActivitySummary = cashPeriod.summary
 
   const filteredCashActivityItems = useMemo(() => {
-    const q = cashHistorySearch.trim().toLowerCase()
+    const q = deferredCashHistorySearch.trim().toLowerCase()
     if (!q) return cashActivityItems
     return cashActivityItems.filter((item) => {
       if (item.label.toLowerCase().includes(q)) return true
@@ -307,7 +320,7 @@ export default function Home() {
       if (String(item.amount).includes(q)) return true
       return false
     })
-  }, [cashActivityItems, cashHistorySearch])
+  }, [cashActivityItems, deferredCashHistorySearch])
 
   const allBankActivityItems = useMemo(() => buildBankActivityItems(dashData), [dashData])
   const bankPeriod = useMemo(
@@ -318,7 +331,7 @@ export default function Home() {
   const bankActivitySummary = bankPeriod.summary
 
   const filteredBankActivityItems = useMemo(() => {
-    const q = bankHistorySearch.trim().toLowerCase()
+    const q = deferredBankHistorySearch.trim().toLowerCase()
     if (!q) return bankActivityItems
     return bankActivityItems.filter((item) => {
       if (item.label.toLowerCase().includes(q)) return true
@@ -326,7 +339,7 @@ export default function Home() {
       if (String(item.amount).includes(q)) return true
       return false
     })
-  }, [bankActivityItems, bankHistorySearch])
+  }, [bankActivityItems, deferredBankHistorySearch])
 
   const cashOpeningToday = cashPeriod.opening
   const bankOpeningToday = bankPeriod.opening
@@ -338,13 +351,17 @@ export default function Home() {
   const cashPeriodClose = cashClosingPeriod
   const bankPeriodClose = bankClosingPeriod
 
-  const recordsForDelete = useMemo(() => {
+  const deleteRecordBaseItems = useMemo(() => {
     if (!showDeleteRecords) return []
     return buildHistoryItems(dashData)
       .filter((item) => deleteRecordFilter === 'all' || item.type === deleteRecordFilter)
-      .filter((item) => matchesHistorySearch(item, deleteRecordSearch))
+  }, [dashData, showDeleteRecords, deleteRecordFilter])
+
+  const recordsForDelete = useMemo(() => {
+    return deleteRecordBaseItems
+      .filter((item) => matchesHistorySearch(item, deferredDeleteRecordSearch))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-  }, [dashData, showDeleteRecords, deleteRecordFilter, deleteRecordSearch])
+  }, [deleteRecordBaseItems, deferredDeleteRecordSearch])
 
   function handleDeleteRecord(
     type: HistoryItemType,

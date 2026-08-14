@@ -4,6 +4,7 @@ import { useCash } from '../context/CashContext'
 import PurchaseHistoryPanel from '../components/PurchaseHistoryPanel'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { formatDate, formatMoney } from '../utils/format'
 import { buildPurchaseCreditItems } from '../utils/purchaseHistory'
@@ -140,7 +141,7 @@ export default function History() {
   const [sort, setSort] = useState<HistorySort>('date-desc')
   const [dateFilter, setDateFilter] = useState<DateFilter>('all')
   const [selectedDate, setSelectedDate] = useState('')
-  const [search, setSearch] = useState('')
+  const { value: search, setValue: setSearch, deferredValue: deferredSearch } = useDeferredSearch()
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [receiptItem, setReceiptItem] = useState<HistoryItem | null>(null)
@@ -263,9 +264,9 @@ export default function History() {
     next = next.filter((item) => filter === 'all' || item.type === filter)
     next = next.filter((item) => matchesHistoryDateFilter(item, dateFilter, selectedDate))
     next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter, dateFilter, selectedDate))
-    next = next.filter((item) => matchesHistorySearch(item, search))
+    next = next.filter((item) => matchesHistorySearch(item, deferredSearch))
     return sortItems(next, false)
-  }, [allItems, filter, paymentFilter, sort, dateFilter, selectedDate, search])
+  }, [allItems, filter, paymentFilter, sort, dateFilter, selectedDate, deferredSearch])
 
   const purchaseItems = useMemo(() => {
     if (!showPurchaseHistory) return []
@@ -277,9 +278,9 @@ export default function History() {
     )
     next = next.filter((item) => matchesHistoryDateFilter(item, dateFilter, selectedDate))
     next = next.filter((item) => matchesHistoryPaymentFilter(item, paymentFilter, dateFilter, selectedDate))
-    next = next.filter((item) => matchesHistorySearch(item, search))
+    next = next.filter((item) => matchesHistorySearch(item, deferredSearch))
     return sortItems(next, true)
-  }, [allItems, showPurchaseHistory, filter, paymentFilter, sort, dateFilter, selectedDate, search])
+  }, [allItems, showPurchaseHistory, filter, paymentFilter, sort, dateFilter, selectedDate, deferredSearch])
 
   const combinedItems = useMemo(() => {
     if (!showPurchaseHistory) return normalItems

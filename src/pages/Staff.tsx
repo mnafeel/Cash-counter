@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCash } from '../context/CashContext'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import {
@@ -52,7 +53,7 @@ export default function Staff() {
   const now = new Date()
   const [year, setYear] = useState(staffDefaultYear(now))
   const [monthKey, setMonthKey] = useState<SalaryMonthKey>(currentSalaryMonth())
-  const [query, setQuery] = useState('')
+  const { value: query, setValue: setQuery, deferredValue: deferredQuery } = useDeferredSearch()
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null)
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState('')
@@ -103,9 +104,10 @@ export default function Staff() {
 
   const monthOptions = useMemo(() => listMonthOptionsForYear(year), [year])
   const salaryMonthPickerOptions = useMemo(() => listSalaryMonthPickerOptions(), [])
+  const monthSummaries = useMemo(() => buildStaffMonthSummaries(data, monthKey), [data, monthKey])
   const summaries = useMemo(
-    () => searchStaffSummaries(buildStaffMonthSummaries(data, monthKey), query),
-    [data, monthKey, query],
+    () => searchStaffSummaries(monthSummaries, deferredQuery),
+    [monthSummaries, deferredQuery],
   )
   const overview = useMemo(() => buildStaffOverview(data, monthKey), [data, monthKey])
   const selectedSummary = useMemo(

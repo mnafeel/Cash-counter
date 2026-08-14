@@ -74,6 +74,8 @@ export interface HistoryItem {
     bank: number
     cheque: number
   }>
+  /** Precomputed lowercase haystack for fast search filtering. */
+  searchHaystack?: string
 }
 
 export type HistoryDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'date'
@@ -2252,7 +2254,11 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
     }
   }
 
-  return [...saleItems, ...expenseItems, ...purchaseItems, ...loanItems]
+  const items: HistoryItem[] = [...saleItems, ...expenseItems, ...purchaseItems, ...loanItems]
+  for (const item of items) {
+    item.searchHaystack = buildHistorySearchHaystack(item)
+  }
+  return items
 }
 
 /** Timestamp for sorting — last update / collection when available. */
@@ -2285,9 +2291,7 @@ export function historyItemSaleAmount(item: HistoryItem): number {
   return item.amount
 }
 
-export function matchesHistorySearch(item: HistoryItem, query: string): boolean {
-  if (!query) return true
-  const q = query.toLowerCase().trim()
+export function buildHistorySearchHaystack(item: HistoryItem): string {
   const receiptHaystack =
     item.receiptLines
       ?.map(
@@ -2297,7 +2301,7 @@ export function matchesHistorySearch(item: HistoryItem, query: string): boolean 
       .join(' ') ?? ''
   const timelineHaystack =
     item.receiptTimeline?.map((e) => `${e.label} ${formatDate(e.date)}`).join(' ') ?? ''
-  const haystack = [
+  return [
     item.name,
     item.sub,
     receiptHaystack,
@@ -2315,6 +2319,12 @@ export function matchesHistorySearch(item: HistoryItem, query: string): boolean 
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
+}
+
+export function matchesHistorySearch(item: HistoryItem, query: string): boolean {
+  if (!query) return true
+  const q = query.toLowerCase().trim()
+  const haystack = item.searchHaystack ?? buildHistorySearchHaystack(item)
   return haystack.includes(q)
 }
 

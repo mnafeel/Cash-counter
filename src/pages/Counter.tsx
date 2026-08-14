@@ -5,6 +5,9 @@ import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips, { type PayType } from '../components/PayTypeChips'
 import PendingBillsPanel from '../components/PendingBillsPanel'
+import CounterCustomerNameField, {
+  type CounterCustomerNameFieldHandle,
+} from '../components/CounterCustomerNameField'
 import RoundTypeChips from '../components/RoundTypeChips'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import type { Sale } from '../types'
@@ -20,7 +23,6 @@ import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { getBillRoundOptions } from '../utils/roundSuggestions'
-import { searchNamesByPrefix } from '../utils/normalExpenseHistory'
 import './Counter.css'
 
 type ActiveField =
@@ -183,13 +185,10 @@ export default function Counter() {
   const [roundCustomStr, setRoundCustomStr] = useState('')
   const [paymentStep, setPaymentStep] = useState(false)
   const [payType, setPayType] = useState<PayType>('cash')
-  const [customerName, setCustomerName] = useState('')
   const [activeField, setActiveField] = useState<ActiveField>('bill')
   const [savedAction, setSavedAction] = useState<SavedAction>(null)
   const [loadedPendingId, setLoadedPendingId] = useState<string | null>(null)
   const [nameSectionFocus, setNameSectionFocus] = useState(false)
-  const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
-  const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
   const [chequeListOpen, setChequeListOpen] = useState(false)
   const [highlightedChequeIndex, setHighlightedChequeIndex] = useState(-1)
   const [creditListOpen, setCreditListOpen] = useState(false)
@@ -211,25 +210,13 @@ export default function Counter() {
   const [originalBillHint, setOriginalBillHint] = useState<number | null>(null)
   const [pendingSectionFocus, setPendingSectionFocus] = useState(false)
   const [highlightedPendingIndex, setHighlightedPendingIndex] = useState<number | null>(null)
-  const customerNameInputRef = useRef<HTMLInputElement>(null)
+  const customerNameFieldRef = useRef<CounterCustomerNameFieldHandle>(null)
   const creditExitTimerRef = useRef<number | null>(null)
   const pendingPanelRef = useRef<HTMLElement>(null)
-  const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
-  const nameSuggestionsListRef = useRef<HTMLUListElement>(null)
 
-  useEffect(() => {
-    if (highlightedNameIndex < 0) return
-    const item = activeNameSuggestionRef.current
-    const list = nameSuggestionsListRef.current
-    if (!item || !list) return
-    const itemTop = item.offsetTop
-    const itemBottom = itemTop + item.offsetHeight
-    if (itemTop < list.scrollTop) {
-      list.scrollTop = itemTop
-    } else if (itemBottom > list.scrollTop + list.clientHeight) {
-      list.scrollTop = itemBottom - list.clientHeight
-    }
-  }, [highlightedNameIndex])
+  function getCustomerName(): string {
+    return customerNameFieldRef.current?.getValue().trim() ?? ''
+  }
 
   const customerSummaries = useMemo(() => buildCustomerSummaries(data), [data])
 
@@ -243,12 +230,6 @@ export default function Counter() {
     }
     return Array.from(seen.values())
   }, [data.sales])
-
-  const filteredNameSuggestions = useMemo(() => {
-    const query = customerName.trim()
-    if (!query) return customerNameSuggestions.slice(0, 8)
-    return searchNamesByPrefix(customerNameSuggestions, query, 8)
-  }, [customerName, customerNameSuggestions])
 
   const customerPendingByName = useMemo(() => {
     const map = new Map<string, number>()
@@ -284,7 +265,7 @@ export default function Counter() {
   )
   const creditCollectCustomerName = collectingCreditBill
     ? (getSaleCustomerName(collectingCreditBill, data.sales)?.trim() ||
-        customerName.trim() ||
+        getCustomerName() ||
         '')
     : ''
 
@@ -334,66 +315,29 @@ export default function Counter() {
     return null
   }, [collectingCreditId, loadedPendingBill])
 
-  const customerBarTags = useMemo(() => {
-    const tags: Array<{ key: string; label: string; kind: 'old-credit' | 'old-cheque' | 'credit' | 'cheque' }> =
-      []
-    const key = customerName.trim().toLowerCase()
-
-    const splitCreditOpen = parseAmount(creditSplitStr) > 0
-    const splitChequeOpen = parseAmount(chequeSplitStr) > 0
-
-    const showCreditSession =
+  const showCreditSession = useMemo(
+    () =>
       Boolean(collectingCreditId || effectiveCollectingCreditId) ||
       payType === 'credit' ||
-      (payType === 'split' && splitCreditOpen) ||
-      (loadedPendingBill != null && isCreditPendingBill(loadedPendingBill))
-    const showChequeSession =
+      (payType === 'split' && parseAmount(creditSplitStr) > 0) ||
+      (loadedPendingBill != null && isCreditPendingBill(loadedPendingBill)),
+    [
+      collectingCreditId,
+      effectiveCollectingCreditId,
+      payType,
+      creditSplitStr,
+      loadedPendingBill,
+    ],
+  )
+
+  const showChequeSession = useMemo(
+    () =>
       Boolean(effectiveCollectingChequeId) ||
       payType === 'cheque' ||
-      (payType === 'split' && splitChequeOpen) ||
-      (loadedPendingBill != null && isChequePendingBill(loadedPendingBill))
-
-    if (key) {
-      const oldCredit = customerPendingByName.get(key) ?? 0
-      const oldCheque = customerChequePendingByName.get(key) ?? 0
-      if (oldCredit > 0) {
-        tags.push({
-          key: 'old-credit',
-          label: `Old Credit · ${formatMoney(oldCredit)}`,
-          kind: 'old-credit',
-        })
-      }
-      if (oldCheque > 0) {
-        tags.push({
-          key: 'old-cheque',
-          label: `Old Cheque · ${formatMoney(oldCheque)}`,
-          kind: 'old-cheque',
-        })
-      }
-    }
-
-    if (showCreditSession) tags.push({ key: 'credit', label: 'Credit', kind: 'credit' })
-    if (showChequeSession) tags.push({ key: 'cheque', label: 'Cheque', kind: 'cheque' })
-
-    return tags
-  }, [
-    customerName,
-    customerPendingByName,
-    customerChequePendingByName,
-    collectingCreditId,
-    effectiveCollectingCreditId,
-    effectiveCollectingChequeId,
-    payType,
-    creditSplitStr,
-    chequeSplitStr,
-    loadedPendingBill,
-  ])
-
-  function customerBarTagLabel(tag: (typeof customerBarTags)[number]): string {
-    if (tag.kind === 'credit') return 'Credit'
-    if (tag.kind === 'cheque') return 'Cheque'
-    return tag.label
-  }
+      (payType === 'split' && parseAmount(chequeSplitStr) > 0) ||
+      (loadedPendingBill != null && isChequePendingBill(loadedPendingBill)),
+    [effectiveCollectingChequeId, payType, chequeSplitStr, loadedPendingBill],
+  )
 
   const creditCollectPayTypes = useMemo(
     (): PayType[] => (collectingCreditId ? CREDIT_COLLECT_PAY_TYPES : COUNTER_PAY_TYPES),
@@ -1684,7 +1628,7 @@ export default function Counter() {
     setRoundCustomStr('')
     setPaymentStep(false)
     setPayType('cash')
-    setCustomerName('')
+    customerNameFieldRef.current?.setValue('')
     setActiveField('bill')
     setSavedAction(null)
     setLoadedPendingId(null)
@@ -1705,7 +1649,7 @@ export default function Counter() {
   }
 
   function buildPendingPayload() {
-    const name = customerName.trim() || undefined
+    const name = getCustomerName() || undefined
     const due = payType === 'split' ? splitTotal : dueAmount
     const base = {
       billAmount: due,
@@ -1819,7 +1763,7 @@ export default function Counter() {
     setGiveStr('')
     setPaidStr('')
     setRoundOffAmount(null)
-    setCustomerName(getSaleCustomerName(bill, data.sales) ?? '')
+    customerNameFieldRef.current?.setValue(getSaleCustomerName(bill, data.sales) ?? '')
     setPayType(type)
     setPaymentStep(true)
     setSavedAction(null)
@@ -2020,7 +1964,7 @@ export default function Counter() {
     setBalanceDueAmount(null)
     setOriginalBillHint(null)
     setLoadedPendingId(bill.id)
-    setCustomerName(getSaleCustomerName(bill, data.sales) ?? '')
+    customerNameFieldRef.current?.setValue(getSaleCustomerName(bill, data.sales) ?? '')
     setPaymentStep(true)
     setSavedAction(null)
     setGiveStr('')
@@ -2412,7 +2356,7 @@ export default function Counter() {
 
   function handleSplitCreditPending() {
     if (!canSendSplitCreditPending) return
-    const name = customerName.trim() || undefined
+    const name = getCustomerName() || undefined
     const activeCreditCollectId = collectingCreditId ?? effectiveCollectingCreditId
 
     if (activeCreditCollectId) {
@@ -2461,7 +2405,7 @@ export default function Counter() {
 
   function handleSplitChequePending() {
     if (!canSendSplitChequePending) return
-    const name = customerName.trim() || undefined
+    const name = getCustomerName() || undefined
     const loadedBill = loadedPendingId
       ? data.sales.find((sale) => sale.id === loadedPendingId)
       : undefined
@@ -2518,7 +2462,7 @@ export default function Counter() {
 
   function handleSplitCreditChequePending() {
     if (!canSendSplitBothPending) return
-    const name = customerName.trim() || undefined
+    const name = getCustomerName() || undefined
     if (isSplitComplete || loadedPendingId) {
       saveSplitCollected(name, { createCreditPending: true, createChequePending: true })
     } else {
@@ -2530,7 +2474,7 @@ export default function Counter() {
 
   function handleApproveSiblingCheque() {
     if (!canApproveSiblingCheque || !siblingChequePendingId) return
-    const name = customerName.trim() || undefined
+    const name = getCustomerName() || undefined
     const amount = splitSiblingChequePending
 
     collectChequePayment(siblingChequePendingId, {
@@ -2555,7 +2499,7 @@ export default function Counter() {
 
   function handleSplitChequeApprove() {
     if (!canSplitChequeApprove) return
-    const name = customerName.trim() || undefined
+    const name = getCustomerName() || undefined
     const approvedCheque = chequeSplitAmount
     const loadedBill = loadedPendingId
       ? data.sales.find((sale) => sale.id === loadedPendingId)
@@ -2775,7 +2719,7 @@ export default function Counter() {
   function handleSavePending() {
     if (!canSavePending) return
 
-    const name = customerName.trim() || undefined
+    const name = getCustomerName() || undefined
     const activeCreditCollectId = collectingCreditId ?? effectiveCollectingCreditId
 
     if (activeCreditCollectId) {
@@ -2908,7 +2852,7 @@ export default function Counter() {
   function handleSave() {
     if (!isValid) return
 
-    const name = customerName.trim() || undefined
+    const name = getCustomerName() || undefined
     const activeCreditCollectId = collectingCreditId ?? effectiveCollectingCreditId
 
     if (activeCreditCollectId) {
@@ -3072,14 +3016,14 @@ export default function Counter() {
   function focusNameSection() {
     setNameSectionFocus(true)
     clearPendingSection()
-    customerNameInputRef.current?.focus()
-    customerNameInputRef.current?.select()
+    customerNameFieldRef.current?.focus()
+    customerNameFieldRef.current?.select()
   }
 
   function focusPendingSection() {
     setPendingSectionFocus(true)
     setNameSectionFocus(false)
-    customerNameInputRef.current?.blur()
+    customerNameFieldRef.current?.blur()
 
     const panel = pendingPanelRef.current
     if (panel) {
@@ -3105,11 +3049,11 @@ export default function Counter() {
     const fromOtherSection =
       nameSectionFocus ||
       pendingSectionFocus ||
-      document.activeElement === customerNameInputRef.current
+      customerNameFieldRef.current?.isFocused()
 
     setNameSectionFocus(false)
     clearPendingSection()
-    customerNameInputRef.current?.blur()
+    customerNameFieldRef.current?.blur()
 
     if (fromOtherSection) {
       jumpToAmountField()
@@ -3779,110 +3723,16 @@ export default function Counter() {
             </div>
           )}
 
-          <div className={`counter-customer ${nameSectionFocus ? 'counter-customer--focused' : ''}`}>
-            <div className="counter-customer-row">
-              <label className="counter-customer-label" htmlFor="customer-name">
-                Customer Name <span className="counter-shortcut-hint">Alt+N</span>
-              </label>
-              <input
-                ref={customerNameInputRef}
-                id="customer-name"
-                type="text"
-                className="counter-customer-input"
-                value={customerName}
-                onChange={(e) => {
-                  setCustomerName(e.target.value)
-                  setNameDropdownOpen(true)
-                  setHighlightedNameIndex(-1)
-                }}
-                onFocus={() => {
-                  setNameSectionFocus(true)
-                  setNameDropdownOpen(true)
-                  setHighlightedNameIndex(-1)
-                  clearPendingSection()
-                }}
-                onBlur={() => {
-                  setNameSectionFocus(false)
-                  setNameDropdownOpen(false)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    setNameDropdownOpen(false)
-                    setHighlightedNameIndex(-1)
-                    return
-                  }
-                  if (!nameDropdownOpen || filteredNameSuggestions.length === 0) return
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault()
-                    setHighlightedNameIndex((prev) => (prev + 1) % filteredNameSuggestions.length)
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault()
-                    setHighlightedNameIndex((prev) =>
-                      prev <= 0 ? filteredNameSuggestions.length - 1 : prev - 1,
-                    )
-                  } else if (e.key === 'Enter' && highlightedNameIndex >= 0) {
-                    e.preventDefault()
-                    setCustomerName(filteredNameSuggestions[highlightedNameIndex])
-                    setNameDropdownOpen(false)
-                    setHighlightedNameIndex(-1)
-                  }
-                }}
-                placeholder="Optional"
-                autoComplete="off"
-              />
-              {customerBarTags.length > 0 ? (
-                <div className="counter-customer-tags counter-customer-tags--inline" role="status" aria-live="polite">
-                  {customerBarTags.map((tag) => (
-                    <span
-                      key={tag.key}
-                      className={`counter-customer-tag counter-customer-tag--${tag.kind}`}
-                      title={tag.label}
-                    >
-                      {customerBarTagLabel(tag)}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-            {nameDropdownOpen && filteredNameSuggestions.length > 0 && (
-              <ul ref={nameSuggestionsListRef} className="counter-customer-suggestions" role="listbox">
-                {filteredNameSuggestions.map((name, index) => {
-                  const creditDue = customerPendingByName.get(name.toLowerCase()) ?? 0
-                  const chequeDue = customerChequePendingByName.get(name.toLowerCase()) ?? 0
-                  return (
-                  <li key={name}>
-                    <button
-                      type="button"
-                      ref={index === highlightedNameIndex ? activeNameSuggestionRef : null}
-                      className={`counter-customer-suggestion ${index === highlightedNameIndex ? 'counter-customer-suggestion--active' : ''}`}
-                      onMouseEnter={() => setHighlightedNameIndex(index)}
-                      onMouseDown={(e) => {
-                        e.preventDefault()
-                        setCustomerName(name)
-                        setNameDropdownOpen(false)
-                        setHighlightedNameIndex(-1)
-                      }}
-                    >
-                      <span>{name}</span>
-                      <span className="counter-customer-suggestion-tags">
-                        {creditDue > 0 ? (
-                          <span className="counter-customer-suggestion-pending">
-                            Old Credit {formatMoney(creditDue)}
-                          </span>
-                        ) : null}
-                        {chequeDue > 0 ? (
-                          <span className="counter-customer-suggestion-pending counter-customer-suggestion-pending--cheque">
-                            Old Cheque {formatMoney(chequeDue)}
-                          </span>
-                        ) : null}
-                      </span>
-                    </button>
-                  </li>
-                  )
-                })}
-              </ul>
-            )}
-          </div>
+          <CounterCustomerNameField
+            ref={customerNameFieldRef}
+            customerNameSuggestions={customerNameSuggestions}
+            customerPendingByName={customerPendingByName}
+            customerChequePendingByName={customerChequePendingByName}
+            showCreditSession={showCreditSession}
+            showChequeSession={showChequeSession}
+            onFocusSection={clearPendingSection}
+            onFocusChange={setNameSectionFocus}
+          />
 
           <div className="counter-pay">
             <PayTypeChips

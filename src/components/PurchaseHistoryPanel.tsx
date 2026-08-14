@@ -4,6 +4,7 @@ import type { AppData } from '../types'
 import { useCash } from '../context/CashContext'
 import { findExistingSupplierName } from '../storage/database'
 import { usePageEscape } from '../hooks/usePageEscape'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { downloadPurchaseExpenseItemsSpreadsheet } from '../utils/expenseRangeExport'
 import { formatDate, formatMoney } from '../utils/format'
 import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
@@ -74,7 +75,7 @@ export default function PurchaseHistoryPanel({
   const [selectedMonth, setSelectedMonth] = useState('')
   const [rangeFrom, setRangeFrom] = useState(() => toInputDate())
   const [rangeTo, setRangeTo] = useState(() => toInputDate())
-  const [search, setSearch] = useState('')
+  const { value: search, setValue: setSearch, deferredValue: deferredSearch } = useDeferredSearch()
   const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null)
   const [editingSupplierName, setEditingSupplierName] = useState(false)
   const [supplierNameDraft, setSupplierNameDraft] = useState('')
@@ -110,23 +111,26 @@ export default function PurchaseHistoryPanel({
     () => summarizeSupplierPurchaseFile(data, allItems),
     [data, allItems],
   )
-  const allSupplierGroups = useMemo(() => {
-    const groups = sortPurchaseSupplierGroups(groupPurchasesBySupplier(allItems), supplierGroupOrder)
-    if (!search.trim() || selectedSupplierKey) return groups
-    const q = search.toLowerCase().trim()
-    return groups.filter(
-      (group) =>
-        group.shopName.toLowerCase().includes(q) ||
-        group.items.some((item) => matchesPurchaseHistorySearch(item, search)),
-    )
-  }, [allItems, search, selectedSupplierKey, supplierGroupOrder])
+  const baseSupplierGroups = useMemo(
+    () => sortPurchaseSupplierGroups(groupPurchasesBySupplier(allItems), supplierGroupOrder),
+    [allItems, supplierGroupOrder],
+  )
   const allSupplierGroupSummaries = useMemo(() => {
     const map = new Map<string, SupplierPurchaseFileSummary>()
-    for (const group of allSupplierGroups) {
+    for (const group of baseSupplierGroups) {
       map.set(group.shopKey, summarizeSupplierPurchaseFile(data, group.items))
     }
     return map
-  }, [allSupplierGroups, data])
+  }, [baseSupplierGroups, data])
+  const allSupplierGroups = useMemo(() => {
+    if (!deferredSearch.trim() || selectedSupplierKey) return baseSupplierGroups
+    const q = deferredSearch.toLowerCase().trim()
+    return baseSupplierGroups.filter(
+      (group) =>
+        group.shopName.toLowerCase().includes(q) ||
+        group.items.some((item) => matchesPurchaseHistorySearch(item, deferredSearch)),
+    )
+  }, [baseSupplierGroups, deferredSearch, selectedSupplierKey])
   const paymentHistoryItems = useMemo(
     () =>
       [...dateFilteredItems]
@@ -207,11 +211,11 @@ export default function PurchaseHistoryPanel({
 
   const supplierHistoryItems = useMemo(() => {
     if (!selectedSupplierKey) return []
-    const items = !search.trim()
+    const items = !deferredSearch.trim()
       ? supplierAllItems
-      : supplierAllItems.filter((item) => matchesPurchaseHistorySearch(item, search))
+      : supplierAllItems.filter((item) => matchesPurchaseHistorySearch(item, deferredSearch))
     return items.filter((item) => purchaseItemMatchesPayChannel(data, item, payChannel))
-  }, [selectedSupplierKey, supplierAllItems, search, data, payChannel])
+  }, [selectedSupplierKey, supplierAllItems, deferredSearch, data, payChannel])
 
   const supplierAllFileSummary = useMemo(() => {
     if (!selectedSupplierKey || supplierAllItems.length === 0) return null

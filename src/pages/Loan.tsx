@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, useCallback } from 'react'
 import { useCash } from '../context/CashContext'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import AmountDisplay from '../components/AmountDisplay'
 import BillReminderModal from '../components/BillReminderModal'
 import NumberKeyboard from '../components/NumberKeyboard'
@@ -37,7 +38,7 @@ export default function Loan() {
   } = useCash()
 
   const [tab, setTab] = useState<LoanTab>('pending')
-  const [query, setQuery] = useState('')
+  const { value: query, setValue: setQuery, deferredValue: deferredQuery } = useDeferredSearch()
   const [formMode, setFormMode] = useState<FormMode>(null)
   const [personName, setPersonName] = useState('')
   const [amountStr, setAmountStr] = useState('')
@@ -53,7 +54,8 @@ export default function Loan() {
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   const overview = useMemo(() => buildLoanOverview(data), [data])
-  const list = useMemo(() => searchLoans(buildLoanList(data, tab), query), [data, tab, query])
+  const loanList = useMemo(() => buildLoanList(data, tab), [data, tab])
+  const list = useMemo(() => searchLoans(loanList, deferredQuery), [loanList, deferredQuery])
   const amount = parseAmount(amountStr)
   const formOpen = formMode !== null
   const reminderLoan = useMemo(

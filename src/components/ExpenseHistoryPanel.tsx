@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { AppData } from '../types'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { NO1_EXPENSE_LABEL } from '../utils/expenseBillLabels'
 import { downloadExpenseAndNo1PurchaseSpreadsheet, filterNo1PurchaseItems } from '../utils/expenseRangeExport'
 import { formatDate, formatMoney, formatTime } from '../utils/format'
@@ -63,7 +64,7 @@ export default function ExpenseHistoryPanel({
   const [payChannel, setPayChannel] = useState<ExpensePayChannelFilter>('all')
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [exportStatus, setExportStatus] = useState('')
-  const [search, setSearch] = useState('')
+  const { value: search, setValue: setSearch, deferredValue: deferredSearch } = useDeferredSearch()
 
   const normalItems = useMemo(
     () => filterNormalExpenseHistoryItems(buildNormalExpenseHistoryItems(data), 'range', rangeFrom, rangeTo),
@@ -82,7 +83,7 @@ export default function ExpenseHistoryPanel({
     [data, normalItems, purchaseItems, sort],
   )
   const filteredTimeline = useMemo(() => {
-    const q = search.trim().toLowerCase()
+    const q = deferredSearch.trim().toLowerCase()
     const searched = !q
       ? timeline
       : timeline.filter((entry) => {
@@ -93,7 +94,7 @@ export default function ExpenseHistoryPanel({
           return false
         })
     return filterExpenseTimelineByPayChannel(searched, payChannel)
-  }, [timeline, search, payChannel])
+  }, [timeline, deferredSearch, payChannel])
   const summary = useMemo(() => summarizeExpenseTimeline(filteredTimeline), [filteredTimeline])
   const periodLabel = expensePeriodLabel(rangeFrom, rangeTo)
 

@@ -45,6 +45,7 @@ import {
   isoToTimeInputValue,
   parseAmount,
 } from '../utils/format'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { buildHistoryItems, getHistoryPaymentLabel, historyItemSortTime, matchesHistorySearch, type HistoryItem } from '../utils/historyItems'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount } from '../utils/salePayment'
@@ -271,7 +272,11 @@ export default function Settings() {
   const [folderBackupBusy, setFolderBackupBusy] = useState(false)
   const folderBackupSupported = isFolderBackupSupported()
   const backupFileInputRef = useRef<HTMLInputElement>(null)
-  const [billEditSearch, setBillEditSearch] = useState('')
+  const {
+    value: billEditSearch,
+    setValue: setBillEditSearch,
+    deferredValue: deferredBillEditSearch,
+  } = useDeferredSearch()
   const [billEditFilter, setBillEditFilter] = useState<BillEditFilter>('all')
   const [billEditOpen, setBillEditOpen] = useState(false)
   const [billEditMode, setBillEditMode] = useState(() => readBillEditMode())
@@ -390,7 +395,7 @@ export default function Settings() {
     () => filterNo1PurchaseItems(expenseExportPurchaseItems).length,
     [expenseExportPurchaseItems],
   )
-  const billEditItems = useMemo(() => {
+  const billEditSaleItems = useMemo(() => {
     return buildHistoryItems(data)
       .filter((item) => item.type === 'sale')
       .filter((item) => {
@@ -398,9 +403,13 @@ export default function Settings() {
         const pending = billIsPending(item, data.sales)
         return billEditFilter === 'pending' ? pending : !pending
       })
-      .filter((item) => matchesHistorySearch(item, billEditSearch))
+  }, [data, billEditFilter])
+
+  const billEditItems = useMemo(() => {
+    return billEditSaleItems
+      .filter((item) => matchesHistorySearch(item, deferredBillEditSearch))
       .sort((a, b) => historyItemSortTime(b) - historyItemSortTime(a))
-  }, [data, billEditFilter, billEditSearch])
+  }, [billEditSaleItems, deferredBillEditSearch])
 
   const billEditCount = useMemo(
     () => buildHistoryItems(data).filter((item) => item.type === 'sale').length,

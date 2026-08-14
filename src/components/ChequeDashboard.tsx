@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AppData, ReminderAlertSettings } from '../types'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { formatMoney, formatDate } from '../utils/format'
 import {
   buildChequeCustomerSummaries,
@@ -44,7 +45,7 @@ export default function ChequeDashboard({
   onSetCustomerReminder,
   onSaveAlertSettings,
 }: ChequeDashboardProps) {
-  const [query, setQuery] = useState('')
+  const { value: query, setValue: setQuery, deferredValue: deferredQuery } = useDeferredSearch()
   const [listFilter, setListFilter] = useState<ChequeListFilter>(initialFilter)
   const [selectedName, setSelectedName] = useState<string | null>(initialCustomer ?? null)
   const [detailDateMode, setDetailDateMode] = useState<DetailDateFilterMode>('all')
@@ -74,7 +75,7 @@ export default function ChequeDashboard({
     () => (listFilter === 'cheque' ? filterCustomersWithCheque(summaries) : summaries),
     [summaries, listFilter],
   )
-  const filtered = useMemo(() => searchChequeCustomerSummaries(baseList, query), [baseList, query])
+  const filtered = useMemo(() => searchChequeCustomerSummaries(baseList, deferredQuery), [baseList, deferredQuery])
   const selected = useMemo(
     () => (selectedName ? getChequeCustomerSummary(summaries, selectedName) : undefined),
     [summaries, selectedName],

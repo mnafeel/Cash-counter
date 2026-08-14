@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { AppData, ReminderAlertSettings } from '../types'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { formatMoney, formatDate } from '../utils/format'
 import {
   buildCreditOverview,
@@ -45,7 +46,7 @@ export default function CreditDashboard({
   onSetCustomerReminder,
   onSaveAlertSettings,
 }: CreditDashboardProps) {
-  const [query, setQuery] = useState('')
+  const { value: query, setValue: setQuery, deferredValue: deferredQuery } = useDeferredSearch()
   const [listFilter, setListFilter] = useState<CreditListFilter>(initialFilter)
   const [selectedName, setSelectedName] = useState<string | null>(initialCustomer ?? null)
   const [detailDateMode, setDetailDateMode] = useState<DetailDateFilterMode>('all')
@@ -75,7 +76,7 @@ export default function CreditDashboard({
     () => (listFilter === 'credit' ? filterCustomersWithCredit(summaries) : summaries),
     [summaries, listFilter],
   )
-  const filtered = useMemo(() => searchCustomerSummaries(baseList, query), [baseList, query])
+  const filtered = useMemo(() => searchCustomerSummaries(baseList, deferredQuery), [baseList, deferredQuery])
   const selected = useMemo(
     () => (selectedName ? getCustomerSummary(summaries, selectedName) : undefined),
     [summaries, selectedName],

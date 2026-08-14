@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AppData } from '../types'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
 import { formatDate, formatMoney } from '../utils/format'
 import {
@@ -31,7 +32,7 @@ export interface PurchaseCreditPanelHandle {
 const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCreditPanelProps>(
   function PurchaseCreditPanel({ data, embedded = false, onClose, onUpdateBill }, ref) {
     const navigate = useNavigate()
-    const [search, setSearch] = useState('')
+    const { value: search, setValue: setSearch, deferredValue: deferredSearch } = useDeferredSearch()
     const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null)
     const [expandedCreditId, setExpandedCreditId] = useState<string | null>(null)
     const [selectedMonth, setSelectedMonth] = useState<string>('all')
@@ -44,9 +45,9 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
       [purchaseCreditItems],
     )
     const filteredSuppliers = useMemo(() => {
-      if (!search.trim()) return supplierGroups
-      return supplierGroups.filter((group) => matchesPurchaseCreditSupplier(group, search))
-    }, [supplierGroups, search])
+      if (!deferredSearch.trim()) return supplierGroups
+      return supplierGroups.filter((group) => matchesPurchaseCreditSupplier(group, deferredSearch))
+    }, [supplierGroups, deferredSearch])
     const selectedSupplier = useMemo((): PurchaseCreditSupplierGroup | null => {
       if (!selectedSupplierKey) return null
       return supplierGroups.find((group) => group.shopKey === selectedSupplierKey) ?? null
@@ -58,11 +59,11 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
     const supplierCreditItems = useMemo(() => {
       if (!selectedSupplier) return []
       let items = filterPurchaseCreditItemsByMonth(selectedSupplier.items, selectedMonth)
-      if (search.trim()) {
-        items = items.filter((item) => matchesPurchaseCreditItem(item, search))
+      if (deferredSearch.trim()) {
+        items = items.filter((item) => matchesPurchaseCreditItem(item, deferredSearch))
       }
       return items
-    }, [selectedSupplier, selectedMonth, search])
+    }, [selectedSupplier, selectedMonth, deferredSearch])
     const supplierSummary = useMemo(
       () => summarizePurchaseCreditItems(supplierCreditItems),
       [supplierCreditItems],
