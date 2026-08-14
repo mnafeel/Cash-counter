@@ -2837,6 +2837,8 @@ export function applyPartialBalanceSaleCollection(
     chequeApproved?: boolean
     customerName?: string
     changeAmount?: number
+    /** Rounded collect figure — remainder vs full due is waived, not left on balance. */
+    collectTarget?: number
   },
 ): AppData {
   const sale = data.sales.find((s) => s.id === id && s.status === 'pending')
@@ -2845,10 +2847,15 @@ export function applyPartialBalanceSaleCollection(
   const isCheque = isPendingChequeSale(sale)
 
   const due = sale.billAmount
+  const collectTarget = Math.min(
+    payment.collectTarget != null && payment.collectTarget > 0 ? payment.collectTarget : due,
+    due,
+  )
   const collected = Math.min(Math.max(0, payment.collected), due)
   if (collected <= 0) return data
 
-  const remaining = due - collected
+  // Round-down remainder is waived (discount), not left on credit/cheque balance.
+  const remaining = Math.max(0, collectTarget - collected)
   const now = new Date().toISOString()
   // Prefer paymentEvents when bill edits wiped cash/bank fields on the pending row.
   // Use raw parts so cumulative chequeAmount stays correct across partial approvals.
@@ -2887,6 +2894,9 @@ export function applyPartialBalanceSaleCollection(
 
   if (remaining <= 0) {
     const originalBillAmount = sale.originalBillAmount ?? due + (totalPaid - collected)
+    const roundWaived = Math.max(0, due - collectTarget)
+    const settledBillAmount =
+      roundWaived > 0 && collectTarget > 0 ? collectTarget : originalBillAmount
     const settledPayType = payTypeFromCollectedTotals(
       totalCash,
       totalBank,
@@ -2894,7 +2904,7 @@ export function applyPartialBalanceSaleCollection(
       payment.payType,
     )
     return collectPendingBill(data, id, {
-      billAmount: originalBillAmount,
+      billAmount: settledBillAmount,
       originalBillAmount,
       paidAmount: totalPaid,
       changeAmount: payment.changeAmount ?? 0,
@@ -2913,7 +2923,8 @@ export function applyPartialBalanceSaleCollection(
     {
       ...sale,
       billAmount: remaining,
-      originalBillAmount: sale.originalBillAmount ?? remaining + totalPaid,
+      originalBillAmount:
+        sale.originalBillAmount ?? (due > collectTarget ? due : remaining + totalPaid),
       paidAmount: totalPaid,
       payType: balancePayType,
       pendingPayType: balancePayType,

@@ -54,6 +54,18 @@ export function getCustomerPayOptions(billAmount: number): number[] {
   return [...new Set(suggestions)].sort((a, b) => a - b).slice(0, 8)
 }
 
+/** Amount waived when collecting a lower round-down figure instead of the full bill. */
+export function roundWaivedAmount(fullBill: number, collectTarget: number): number {
+  if (fullBill <= 0 || collectTarget >= fullBill) return 0
+  return fullBill - collectTarget
+}
+
+/** Collect target after an optional round-down (defaults to the full bill). */
+export function effectiveCollectTarget(fullBill: number, roundOff: number | null | undefined): number {
+  if (roundOff != null && roundOff > 0 && roundOff < fullBill) return roundOff
+  return fullBill
+}
+
 /** @deprecated use getBillRoundOptions */
 export function getBillRoundSuggestions(billAmount: number): number[] {
   return getBillRoundOptions(billAmount).map((o) => o.amount)

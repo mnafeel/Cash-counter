@@ -247,6 +247,7 @@ interface CashContextValue {
       chequeApproved?: boolean
       customerName?: string
       changeAmount?: number
+      collectTarget?: number
     },
   ) => void
   collectCreditPayment: (
@@ -261,6 +262,7 @@ interface CashContextValue {
       chequeApproved?: boolean
       customerName?: string
       changeAmount?: number
+      collectTarget?: number
     },
   ) => void
   addSupplier: (name: string) => void
@@ -994,6 +996,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         chequeApproved?: boolean
         customerName?: string
         changeAmount?: number
+        collectTarget?: number
       },
     ) => {
       setData((prev) => {
@@ -1008,6 +1011,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
           chequeApproved: payment.chequeApproved,
           customerName: payment.customerName,
           changeAmount: payment.changeAmount,
+          collectTarget: payment.collectTarget,
         })
       })
     },
