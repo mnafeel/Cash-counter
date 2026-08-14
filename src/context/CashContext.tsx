@@ -73,6 +73,8 @@ import {
   updatePendingBill,
   updateSaleBill,
   updateSaleCustomerName,
+  renameCustomer,
+  renameSupplier,
 } from '../storage/database'
 import { setCloudRemoteListener } from '../firebase/sync'
 import {
@@ -269,6 +271,8 @@ interface CashContextValue {
     name: string,
     relatedSaleIds?: string[],
   ) => void
+  renameCustomerProfile: (fromName: string, toName: string) => boolean
+  renameSupplierProfile: (shopKey: string, newName: string) => boolean
   updateExpense: (
     id: string,
     expense: {
@@ -1026,6 +1030,33 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const renameCustomerProfileHandler = useCallback((fromName: string, toName: string) => {
+    const from = fromName.trim()
+    const to = toName.trim()
+    if (!from || !to) return false
+
+    let changed = false
+    setData((prev) => {
+      const next = renameCustomer(prev, from, to)
+      if (next !== prev) changed = true
+      return next
+    })
+    return changed
+  }, [])
+
+  const renameSupplierProfileHandler = useCallback((shopKey: string, newName: string) => {
+    const trimmed = newName.trim()
+    if (!shopKey.trim() || !trimmed) return false
+
+    let changed = false
+    setData((prev) => {
+      const next = renameSupplier(prev, shopKey, trimmed)
+      if (next !== prev) changed = true
+      return next
+    })
+    return changed
+  }, [])
+
   const updateExpenseHandler = useCallback(
     (
       id: string,
@@ -1181,6 +1212,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       collectCreditPayment: collectBalancePaymentHandler,
       collectChequePayment: collectBalancePaymentHandler,
       updateHistoryName,
+      renameCustomerProfile: renameCustomerProfileHandler,
+      renameSupplierProfile: renameSupplierProfileHandler,
       updateExpense: updateExpenseHandler,
       updateSaleBill: updateSaleBillHandler,
       editPaidSalePayment: editPaidSalePaymentHandler,
@@ -1242,6 +1275,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       applyPurchaseCreditPaymentHandler,
       collectBalancePaymentHandler,
       updateHistoryName,
+      renameCustomerProfileHandler,
+      renameSupplierProfileHandler,
       updateExpenseHandler,
       updateSaleBillHandler,
       editPaidSalePaymentHandler,

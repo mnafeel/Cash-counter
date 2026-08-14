@@ -1,6 +1,7 @@
 import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap } from '../types'
 import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
-import { collectSplitNameTargets } from '../utils/saleCustomerName'
+import { buildCustomerSummaries } from '../utils/customerLedger'
+import { collectSplitNameTargets, getSaleCustomerName } from '../utils/saleCustomerName'
 import { stripExpenseBillSuffix, isPurchaseExpense } from '../utils/expenseBillLabels'
 import {
   buildCreditPaymentUpdate,
@@ -3483,6 +3484,157 @@ export function updateExpenseName(data: AppData, id: string, name: string): AppD
     expenses: data.expenses.map((e) =>
       e.id === id ? { ...e, name: trimmed || defaultExpenseName(e) } : e,
     ),
+  }
+  saveData(next)
+  return next
+}
+
+function customerNameKey(name: string): string {
+  return name.trim().toLowerCase()
+}
+
+export function findExistingCustomerName(data: AppData, name: string): string | undefined {
+  const key = customerNameKey(name)
+  if (!key) return undefined
+  for (const summary of buildCustomerSummaries(data)) {
+    if (customerNameKey(summary.name) === key) return summary.name
+  }
+  return undefined
+}
+
+function mergeCustomerReminderEntries(
+  target: NonNullable<CustomerReminderMap[string]>,
+  source: NonNullable<CustomerReminderMap[string]>,
+): NonNullable<CustomerReminderMap[string]> {
+  return {
+    creditReminderAt: target.creditReminderAt ?? source.creditReminderAt,
+    creditReminderNote: target.creditReminderNote ?? source.creditReminderNote,
+    chequeReminderAt: target.chequeReminderAt ?? source.chequeReminderAt,
+    chequeReminderNote: target.chequeReminderNote ?? source.chequeReminderNote,
+  }
+}
+
+function migrateCustomerReminders(
+  data: AppData,
+  fromName: string,
+  toName: string,
+): AppData {
+  const reminders = { ...(data.customerReminders ?? {}) }
+  const fromKey = Object.keys(reminders).find((key) => customerNameKey(key) === customerNameKey(fromName))
+  if (!fromKey) return data
+
+  const fromEntry = reminders[fromKey]
+  const toKey = Object.keys(reminders).find((key) => customerNameKey(key) === customerNameKey(toName))
+
+  if (toKey && toKey !== fromKey) {
+    reminders[toKey] = mergeCustomerReminderEntries(reminders[toKey] ?? {}, fromEntry)
+    delete reminders[fromKey]
+  } else {
+    delete reminders[fromKey]
+    reminders[toName] = fromEntry
+  }
+
+  return {
+    ...data,
+    customerReminders: Object.keys(reminders).length > 0 ? reminders : undefined,
+  }
+}
+
+/** Rename a customer — moves all sales (and reminders) to the new name. */
+export function renameCustomer(data: AppData, fromName: string, toName: string): AppData {
+  const from = fromName.trim()
+  const to = toName.trim()
+  if (!from || !to || customerNameKey(from) === customerNameKey(to)) return data
+
+  const targetIds = new Set<string>()
+  for (const sale of data.sales) {
+    const label = getSaleCustomerName(sale, data.sales)?.trim()
+    if (!label || customerNameKey(label) !== customerNameKey(from)) continue
+    for (const id of collectSplitNameTargets(data, sale.id)) {
+      targetIds.add(id)
+    }
+  }
+
+  if (targetIds.size === 0) return data
+
+  const existing = findExistingCustomerName(data, to)
+  const canonicalTo =
+    existing && customerNameKey(existing) !== customerNameKey(from) ? existing : to
+
+  let next: AppData = {
+    ...data,
+    sales: data.sales.map((sale) =>
+      targetIds.has(sale.id) ? { ...sale, customerName: canonicalTo } : sale,
+    ),
+  }
+  next = migrateCustomerReminders(next, from, canonicalTo)
+  saveData(next)
+  return next
+}
+
+function renameExpenseShopName(expenseName: string, newShop: string): string {
+  const shop = stripExpenseBillSuffix(expenseName)
+  const suffix = expenseName.trim().slice(shop.length)
+  return `${newShop.trim()}${suffix}`
+}
+
+export function findExistingSupplierName(data: AppData, name: string): string | undefined {
+  const key = customerNameKey(name)
+  if (!key) return undefined
+  for (const supplier of data.suppliers ?? []) {
+    if (customerNameKey(supplier.name) === key) return supplier.name
+  }
+  for (const expense of data.expenses) {
+    if (!isPurchaseExpense(expense)) continue
+    const shop = stripExpenseBillSuffix(expense.name)
+    if (customerNameKey(shop) === key) return shop
+  }
+  return undefined
+}
+
+/** Rename a supplier — updates all purchase expenses and the supplier registry. */
+export function renameSupplier(data: AppData, shopKey: string, newName: string): AppData {
+  const trimmed = newName.trim()
+  const fromKey = shopKey.trim().toLowerCase()
+  if (!trimmed || !fromKey || fromKey === customerNameKey(trimmed)) return data
+
+  const existing = findExistingSupplierName(data, trimmed)
+  const canonicalTo =
+    existing && customerNameKey(existing) !== fromKey ? existing : trimmed
+
+  const nextExpenses = data.expenses.map((expense) => {
+    if (!isPurchaseExpense(expense)) return expense
+    const shop = stripExpenseBillSuffix(expense.name)
+    if (shop.trim().toLowerCase() !== fromKey) return expense
+    return {
+      ...expense,
+      name: renameExpenseShopName(expense.name, canonicalTo),
+      updatedAt: new Date().toISOString(),
+    }
+  })
+
+  let suppliers = [...(data.suppliers ?? [])]
+  const fromIdx = suppliers.findIndex((entry) => customerNameKey(entry.name) === fromKey)
+  const toIdx = suppliers.findIndex((entry) => customerNameKey(entry.name) === customerNameKey(canonicalTo))
+
+  if (fromIdx >= 0) {
+    const fromSupplier = suppliers[fromIdx]
+    if (toIdx >= 0 && toIdx !== fromIdx) {
+      const toSupplier = suppliers[toIdx]
+      const mergedItems = [...new Set([...(toSupplier.items ?? []), ...(fromSupplier.items ?? [])])]
+      suppliers[toIdx] = { ...toSupplier, items: mergedItems }
+      suppliers.splice(fromIdx, 1)
+    } else {
+      suppliers[fromIdx] = { ...fromSupplier, name: canonicalTo }
+    }
+  } else if (toIdx < 0) {
+    suppliers.push({ name: canonicalTo, items: [] })
+  }
+
+  const next: AppData = {
+    ...data,
+    expenses: nextExpenses,
+    suppliers: suppliers.length > 0 ? suppliers : undefined,
   }
   saveData(next)
   return next

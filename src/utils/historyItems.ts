@@ -783,6 +783,31 @@ export function getHistoryTypeLabel(type: HistoryItemType): string {
   return 'Expense'
 }
 
+/** Sale row label — pending bills show Credit/Cheque Pending instead of generic Bill Collected. */
+export function getHistoryItemTypeLabel(item: HistoryItem): string {
+  if (item.type !== 'sale') return getHistoryTypeLabel(item.type)
+
+  const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
+  const hasPendingLine =
+    item.receiptLines?.some((line) => line.status === 'pending') ?? false
+
+  if (modes.includes('cheque') || item.paymentMode === 'cheque') return 'Cheque Pending'
+  if (modes.includes('credit') || item.paymentMode === 'credit') return 'Credit Pending'
+
+  if (hasPendingLine || item.paymentMode === 'pending') {
+    const haystack = (item.receiptLines ?? [])
+      .map((line) => line.label.toLowerCase())
+      .join(' ')
+    if (haystack.includes('cheque pending')) return 'Cheque Pending'
+    if (haystack.includes('credit balance') || haystack.includes('credit pending')) {
+      return 'Credit Pending'
+    }
+  }
+
+  if (hasPendingLine) return 'Bill Pending'
+  return getHistoryTypeLabel(item.type)
+}
+
 const PAYMENT_MODE_LABELS: Record<HistoryPaymentMode, string> = {
   cash: 'Cash',
   bank: 'Bank',
@@ -980,7 +1005,11 @@ function salePayLabel(sale: Sale): string {
 }
 
 function paidCollectionDetail(sale: Sale): string | undefined {
-  if (sale.status === 'pending') return 'Pending'
+  if (sale.status === 'pending') {
+    if (isChequeBill(sale)) return 'Cheque pending'
+    if (isCreditBill(sale)) return 'Credit pending'
+    return 'Pending'
+  }
   const { cash, bank } = saleCollectedComponentBreakdown(sale)
 
   const parts: string[] = []
@@ -1348,7 +1377,11 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
         : ''
     const paidPart =
       sale.status === 'pending'
-        ? 'Pending · '
+        ? isChequeBill(sale)
+          ? 'Cheque pending · '
+          : isCreditBill(sale)
+            ? 'Credit pending · '
+            : 'Pending · '
         : sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque'
           ? `Paid ${paidDetail ?? payLabel} · `
           : `Give ${formatMoney(sale.paidAmount)} · ${paidDetail ?? payLabel} · `
@@ -1366,8 +1399,10 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
       ? `Paid ${formatMoney(collected)}`
       : sale.status === 'pending' && (isCreditBill(sale) || isChequeBill(sale))
         ? collected > 0
-          ? `Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · Pending ${formatMoney(sale.billAmount)}`
-          : `Pending ${formatMoney(sale.billAmount)}`
+          ? `Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · ${
+              isChequeBill(sale) ? 'Cheque' : 'Credit'
+            } pending ${formatMoney(sale.billAmount)}`
+          : `${isChequeBill(sale) ? 'Cheque' : 'Credit'} pending ${formatMoney(sale.billAmount)}`
         : undefined
 
   return {
@@ -2272,7 +2307,7 @@ export function matchesHistorySearch(item: HistoryItem, query: string): boolean 
     formatMoney(item.amount),
     item.originalBillAmount ? formatMoney(item.originalBillAmount) : '',
     formatDate(item.date),
-    getHistoryTypeLabel(item.type),
+    getHistoryItemTypeLabel(item),
     item.isSplitGroup ? 'split' : '',
     item.paymentMode ? getHistoryPaymentLabel(item.paymentMode) : '',
     ...(item.paymentModes ?? []).map(getHistoryPaymentLabel),

@@ -14,6 +14,7 @@ import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/bi
 import CustomerReminderControl from './CustomerReminderControl'
 import DetailDateFilter, { type DetailDateFilterMode } from './DetailDateFilter'
 import { filterByDetailDate } from '../utils/detailDateFilter'
+import { findExistingCustomerName } from '../storage/database'
 import { toInputDate } from '../utils/salesReport'
 import Portal from './Portal'
 import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
@@ -32,6 +33,7 @@ interface CustomerDashboardProps {
     kind: 'credit' | 'cheque',
     reminderAt: string | null,
   ) => void
+  onRenameCustomer?: (fromName: string, toName: string) => boolean
   onSaveAlertSettings?: (settings: ReminderAlertSettings) => void
 }
 
@@ -42,6 +44,7 @@ export default function CustomerDashboard({
   initialCustomer,
   initialFilter = 'all',
   onSetCustomerReminder,
+  onRenameCustomer,
   onSaveAlertSettings,
 }: CustomerDashboardProps) {
   const [query, setQuery] = useState('')
@@ -205,6 +208,8 @@ export default function CustomerDashboard({
                 summary={filteredSelected}
                 data={data}
                 onSetCustomerReminder={onSetCustomerReminder}
+                onRenameCustomer={onRenameCustomer}
+                onRenamed={(nextName) => setSelectedName(nextName)}
                 onSaveAlertSettings={onSaveAlertSettings}
               />
             </div>
@@ -276,19 +281,105 @@ function CustomerDetail({
   summary,
   data,
   onSetCustomerReminder,
+  onRenameCustomer,
+  onRenamed,
   onSaveAlertSettings,
 }: {
   summary: CustomerSummary
   data: AppData
   onSetCustomerReminder: CustomerDashboardProps['onSetCustomerReminder']
+  onRenameCustomer?: CustomerDashboardProps['onRenameCustomer']
+  onRenamed?: (name: string) => void
   onSaveAlertSettings?: CustomerDashboardProps['onSaveAlertSettings']
 }) {
   const creditReminderAt = getCustomerReminderAt(data, summary.name, 'credit')
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState(summary.name)
+
+  useEffect(() => {
+    if (!editingName) setNameDraft(summary.name)
+  }, [summary.name, editingName])
+
+  function saveCustomerRename() {
+    const next = nameDraft.trim()
+    if (!next || next === summary.name) {
+      setEditingName(false)
+      return
+    }
+    if (!onRenameCustomer) return
+
+    const existing = findExistingCustomerName(data, next)
+    if (
+      existing &&
+      existing.trim().toLowerCase() !== summary.name.trim().toLowerCase()
+    ) {
+      const ok = window.confirm(
+        `A customer named "${existing}" already exists. Merge all bills and reminders into that profile?`,
+      )
+      if (!ok) return
+    }
+
+    const saved = onRenameCustomer(summary.name, next)
+    if (saved) {
+      const canonical =
+        existing &&
+        existing.trim().toLowerCase() !== summary.name.trim().toLowerCase()
+          ? existing
+          : next
+      onRenamed?.(canonical)
+      setEditingName(false)
+    }
+  }
 
   return (
     <>
       <div className="customer-detail-head">
-        <h2>{summary.name}</h2>
+        {editingName ? (
+          <form
+            className="customer-rename-form"
+            onSubmit={(e) => {
+              e.preventDefault()
+              saveCustomerRename()
+            }}
+          >
+            <input
+              type="text"
+              className="customer-rename-input"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              aria-label="Customer name"
+              autoFocus
+            />
+            <button type="submit" className="customer-rename-save" aria-label="Save name">
+              ✓
+            </button>
+            <button
+              type="button"
+              className="customer-rename-cancel"
+              onClick={() => {
+                setNameDraft(summary.name)
+                setEditingName(false)
+              }}
+              aria-label="Cancel rename"
+            >
+              ✕
+            </button>
+          </form>
+        ) : (
+          <div className="customer-detail-title-row">
+            <h2>{summary.name}</h2>
+            {onRenameCustomer ? (
+              <button
+                type="button"
+                className="customer-rename-btn"
+                onClick={() => setEditingName(true)}
+                aria-label="Edit customer name"
+              >
+                ✎
+              </button>
+            ) : null}
+          </div>
+        )}
         <p>
           {summary.purchaseCount} purchases in period · {summary.creditTimes} credit bills · Last visit{' '}
           {summary.lastPurchaseLabel}

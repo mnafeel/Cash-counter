@@ -317,15 +317,14 @@ function isIsoBeforeRange(iso: string, filter?: SalesReportFilter): boolean {
   return localDayTimestamp(iso) < inputDateTimestamp(filter.fromDate)
 }
 
-/** Credit/cheque bill opened before the period, but money collected in the period. */
+/** Credit/cheque bill opened before the period, with money collected in the period. */
 export function isOldCreditChequeClearedRow(
   row: SalesBillRow,
   filter?: SalesReportFilter,
 ): boolean {
   if (!filter?.fromDate && !filter?.toDate) return false
-  if (!row.hasCreditOrCheque && !row.hasCredit && !row.hasCheque) return false
   if (row.collectedTotal <= 0) return false
-  if (row.creditPending > 0 || row.chequePending > 0) return false
+  if (!row.hasCreditOrCheque && !row.hasCredit && !row.hasCheque) return false
   const openedAt = row.chequeDate ?? row.creditDate ?? row.createdDate
   return isIsoBeforeRange(openedAt, filter)
 }
@@ -632,6 +631,16 @@ function buildPeriodCollectedLabel(collected: SaleCollectedBreakdown): string {
   return `Paid ${formatMoney(display.total)} · ${formatCollectedSalesBreakdown(display.cash, display.bank)}`
 }
 
+function saleWasOpenedAsCreditOrCheque(sale: Sale): boolean {
+  if (saleIsCreditRelated(sale) || saleIsChequeRelated(sale)) return true
+  if (sale.pendingPayType === 'credit' || sale.pendingPayType === 'cheque') return true
+  const original = sale.originalBillAmount ?? 0
+  if (original > sale.billAmount + 0.01 && (sale.paymentEvents?.length ?? 0) > 0) return true
+  return (sale.paymentEvents ?? []).some(
+    (event) => !event.cancelled && event.amount > 0 && (event.cheque ?? 0) > 0,
+  )
+}
+
 function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesBillRow {
   const mode = filter?.dateMode ?? 'collected'
   const hasDateFilter = Boolean(filter?.fromDate || filter?.toDate)
@@ -650,6 +659,7 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
       : buildSalesBillDetailLabel(sale)
   const hasCredit = saleIsCreditRelated(sale)
   const hasCheque = saleIsChequeRelated(sale)
+  const hasCreditOrCheque = hasCredit || hasCheque || saleWasOpenedAsCreditOrCheque(sale)
   const updatedAt = sale.updatedAt ?? sale.createdAt
   return {
     id: sale.id,
@@ -667,7 +677,7 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
     chequeTotal: 0,
     customerName: sale.customerName,
     payLabel,
-    hasCreditOrCheque: hasCredit || hasCheque,
+    hasCreditOrCheque,
     hasCredit,
     hasCheque,
     creditDate: hasCredit ? sale.createdAt : undefined,

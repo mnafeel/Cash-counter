@@ -303,6 +303,72 @@
   color: var(--text-muted);
 }
 
+.customer-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.customer-detail-title-row h2 {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.customer-rename-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.customer-rename-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.customer-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.72rem;
+}
+
+.customer-rename-save,
+.customer-rename-cancel {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+
+.customer-rename-save {
+  background: rgba(80, 140, 90, 0.25);
+  color: #9fd4a5;
+}
+
+.customer-rename-cancel {
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+}
+
 .customer-detail-head {
   padding: 8px;
   border-radius: var(--radius-sm);

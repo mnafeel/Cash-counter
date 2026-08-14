@@ -21,7 +21,7 @@ import {
   getHistoryItemListPaymentParts,
   getHistoryListPaymentPartIcon,
   getHistoryListPaymentPartLabel,
-  getHistoryTypeLabel,
+  getHistoryItemTypeLabel,
   historyItemCreatedTime,
   historyItemFilteredAmount,
   historyItemSortTime,
@@ -504,7 +504,7 @@ export default function History() {
                 <span className="history-item-icon">{historyIcon(item.type)}</span>
                 <div className="history-item-info">
                   <div className="history-item-top">
-                    <span className="history-item-type">{getHistoryTypeLabel(item.type)}</span>
+                    <span className="history-item-type">{getHistoryItemTypeLabel(item)}</span>
                     {isEditing ? (
                       <form
                         className="history-name-edit"
@@ -907,7 +907,7 @@ export default function History() {
             <div className="history-receipt-head">
               <div className="history-receipt-head-main">
                 <span className={`history-receipt-type history-receipt-type--${receiptItem.type}`}>
-                  {getHistoryTypeLabel(receiptItem.type)}
+                  {getHistoryItemTypeLabel(receiptItem)}
                 </span>
                 <h3>
                   {receiptItem.isSplitGroup ? 'Split bill' : 'Receipt'}
@@ -1100,7 +1100,7 @@ export default function History() {
                         )
                       : [
                           {
-                            label: getHistoryTypeLabel(receiptItem.type),
+                            label: getHistoryItemTypeLabel(receiptItem),
                             amount: receiptItem.amount,
                             status: 'paid' as const,
                             detail: receiptItem.sub,
@@ -1114,7 +1114,7 @@ export default function History() {
                         ? receiptItem.receiptLines
                         : [
                             {
-                              label: getHistoryTypeLabel(receiptItem.type),
+                              label: getHistoryItemTypeLabel(receiptItem),
                               amount: receiptItem.amount,
                               status: 'paid' as const,
                               detail: receiptItem.sub,
@@ -1184,7 +1184,7 @@ export default function History() {
             </div>
 
             <div className="history-receipt-foot">
-              <span>{getHistoryTypeLabel(receiptItem.type)}</span>
+              <span>{getHistoryItemTypeLabel(receiptItem)}</span>
               <strong>
                 {receiptItem.type === 'expense' ||
                 receiptItem.type === 'purchase' ||

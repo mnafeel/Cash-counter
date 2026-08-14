@@ -220,13 +220,85 @@
   position: relative;
   flex-shrink: 0;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   padding: 3px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   min-width: 0;
+}
+
+.counter-customer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.counter-customer-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.counter-customer-tags--inline {
+  flex: 0 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  max-width: min(100%, 11rem);
+  margin-left: auto;
+}
+
+.counter-customer-tag {
+  flex-shrink: 0;
+  max-width: 9.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.46rem;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 2px 5px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.counter-customer-tag--credit,
+.counter-customer-tag--cheque {
+  max-width: 4.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.counter-customer-tag--old-credit,
+.counter-customer-tag--old-cheque {
+  color: rgba(230, 190, 100, 0.95);
+  background: rgba(120, 90, 40, 0.18);
+  border-color: rgba(200, 170, 100, 0.22);
+}
+
+.counter-customer-tag--credit {
+  color: rgba(180, 220, 255, 0.95);
+  background: rgba(40, 80, 120, 0.22);
+  border-color: rgba(120, 170, 220, 0.28);
+}
+
+.counter-customer-tag--cheque {
+  color: rgba(220, 200, 255, 0.95);
+  background: rgba(80, 50, 120, 0.22);
+  border-color: rgba(170, 140, 220, 0.28);
+}
+
+.counter-customer-suggestion-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .counter-customer-suggestions {
@@ -280,6 +352,10 @@
   opacity: 0.92;
 }
 
+.counter-customer-suggestion-pending--cheque {
+  color: rgba(210, 190, 255, 0.92);
+}
+
 .counter-customer-pending-hint {
   margin: 2px 0 0;
   padding: 3px 6px;
@@ -325,8 +401,8 @@
 }
 
 .counter-customer-input {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 72px;
+  min-width: 56px;
   padding: 4px 6px;
   background: var(--brown-dark);
   border: 1px solid var(--border);

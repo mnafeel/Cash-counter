@@ -1172,10 +1172,10 @@ function SalesCollectedSummaryCards({
         aria-expanded={expanded === 'oldCreditCheque'}
         onClick={() => onToggle('oldCreditCheque')}
       >
-        <span>Old Credit &amp; Cheque</span>
+        <span>Old Credit &amp; Cheque &amp; Pending</span>
         <strong>{formatMoney(salesTotals.oldCreditChequeCollected)}</strong>
         <small>
-          {oldCreditChequeCount} cleared today · already in Sales collected
+          {oldCreditChequeCount} from earlier pending · already in Sales collected
         </small>
         <span className="reports-summary-card-chevron" aria-hidden="true">
           {expanded === 'oldCreditCheque' ? '▾' : '▸'}
@@ -1232,8 +1232,8 @@ function WithCreditChequeList({
       </p>
       <p className="reports-list-meta">
         Sales collected is that day&apos;s total. Credit and cheque are pending opened that day.
-        A part payment does not move the remaining balance to today. Old cleared amounts stay in
-        Sales collected / Old Credit &amp; Cheque.
+        A part payment does not move the remaining balance to today. Older pending collected today stays in
+        Sales collected / Old Credit &amp; Cheque &amp; Pending.
       </p>
 
       {rows.length === 0 ? (
@@ -1361,11 +1361,11 @@ function OldCreditChequeList({
   return (
     <div className="reports-section reports-section--sales-expanded">
       <p className="reports-list-meta">
-        Old credit &amp; cheque cleared today · {formatMoney(total)} · already counted in Sales
+        Old credit, cheque &amp; pending collected today · {formatMoney(total)} · already counted in Sales
         collected (that day&apos;s total)
       </p>
       {rows.length === 0 ? (
-        <p className="reports-empty">No old credit or cheque cleared in this period.</p>
+        <p className="reports-empty">No old credit, cheque or pending collected in this period.</p>
       ) : (
         <ul className="reports-list">
           {rows.map((row) => (

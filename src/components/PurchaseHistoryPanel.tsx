@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import type { AppData } from '../types'
+import { useCash } from '../context/CashContext'
+import { findExistingSupplierName } from '../storage/database'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { downloadPurchaseExpenseItemsSpreadsheet } from '../utils/expenseRangeExport'
 import { formatDate, formatMoney } from '../utils/format'
@@ -64,6 +66,7 @@ export default function PurchaseHistoryPanel({
   embeddedActionLabel = 'Open Purchase',
 }: PurchaseHistoryPanelProps) {
   const navigate = useNavigate()
+  const { renameSupplierProfile } = useCash()
   const fullscreen = variant === 'fullscreen'
   const embedded = variant === 'embedded'
   const [dateFilter, setDateFilter] = useState<PurchasePanelDateFilter>('all')
@@ -73,6 +76,8 @@ export default function PurchaseHistoryPanel({
   const [rangeTo, setRangeTo] = useState(() => toInputDate())
   const [search, setSearch] = useState('')
   const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null)
+  const [editingSupplierName, setEditingSupplierName] = useState(false)
+  const [supplierNameDraft, setSupplierNameDraft] = useState('')
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
   const [showCreditPage, setShowCreditPage] = useState(false)
   const [supplierSort, setSupplierSort] = useState<'newest' | 'oldest'>('oldest')
@@ -163,6 +168,37 @@ export default function PurchaseHistoryPanel({
       items: shopItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
     }
   }, [selectedSupplierKey, allItems])
+
+  useEffect(() => {
+    if (!selectedSupplier) {
+      setEditingSupplierName(false)
+      return
+    }
+    if (!editingSupplierName) setSupplierNameDraft(selectedSupplier.shopName)
+  }, [selectedSupplier, editingSupplierName])
+
+  const saveSupplierRename = useCallback(() => {
+    if (!selectedSupplier) return
+    const next = supplierNameDraft.trim()
+    if (!next || next === selectedSupplier.shopName) {
+      setEditingSupplierName(false)
+      return
+    }
+    const existing = findExistingSupplierName(data, next)
+    if (
+      existing &&
+      existing.trim().toLowerCase() !== selectedSupplier.shopName.trim().toLowerCase()
+    ) {
+      const ok = window.confirm(
+        `A supplier named "${existing}" already exists. Merge all purchases into that supplier?`,
+      )
+      if (!ok) return
+    }
+    if (renameSupplierProfile(selectedSupplier.shopKey, next)) {
+      setSelectedSupplierKey(next.trim().toLowerCase())
+      setEditingSupplierName(false)
+    }
+  }, [data, renameSupplierProfile, selectedSupplier, supplierNameDraft])
 
   const supplierAllItems = useMemo(() => {
     if (!selectedSupplierKey) return []
@@ -656,7 +692,57 @@ export default function PurchaseHistoryPanel({
           <>
         <div className="purchase-hist-top">
           <div className="purchase-hist-head page-head--corners">
-            <h3>{selectedSupplier ? selectedSupplier.shopName : 'Purchase History'}</h3>
+            {selectedSupplier ? (
+              editingSupplierName ? (
+                <form
+                  className="purchase-hist-supplier-rename"
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    saveSupplierRename()
+                  }}
+                >
+                  <input
+                    type="text"
+                    className="purchase-hist-supplier-rename-input"
+                    value={supplierNameDraft}
+                    onChange={(e) => setSupplierNameDraft(e.target.value)}
+                    aria-label="Supplier name"
+                    autoFocus
+                  />
+                  <button type="submit" className="purchase-hist-supplier-rename-save" aria-label="Save supplier name">
+                    ✓
+                  </button>
+                  <button
+                    type="button"
+                    className="purchase-hist-supplier-rename-cancel"
+                    onClick={() => {
+                      setSupplierNameDraft(selectedSupplier.shopName)
+                      setEditingSupplierName(false)
+                    }}
+                    aria-label="Cancel rename"
+                  >
+                    ✕
+                  </button>
+                </form>
+              ) : (
+                <div className="purchase-hist-supplier-title-row">
+                  <h3>{selectedSupplier.shopName}</h3>
+                  <button
+                    type="button"
+                    className="purchase-hist-supplier-edit-btn"
+                    onClick={() => {
+                      setSupplierNameDraft(selectedSupplier.shopName)
+                      setEditingSupplierName(true)
+                    }}
+                    aria-label="Edit supplier name"
+                  >
+                    ✎
+                  </button>
+                </div>
+              )
+            ) : (
+              <h3>Purchase History</h3>
+            )}
             {selectedSupplier ? (
               <p className="purchase-hist-supplier-sub">
                 {supplierAllFileSummary?.billCount ?? 0} bills · all time · by bill date

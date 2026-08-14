@@ -112,7 +112,7 @@ function homeDaySelectedDate(filter: HomeDayFilter, selectedDate: string): strin
 
 export default function Home() {
   const navigate = useNavigate()
-  const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense, removeLoan, homeUnlocked, unlockHome, setCustomerReminder, updateReminderAlertSettings } =
+  const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense, removeLoan, homeUnlocked, unlockHome, setCustomerReminder, updateReminderAlertSettings, renameCustomerProfile } =
     useCash()
   const dashData = homeUnlocked ? data : LOCKED_DASHBOARD_DATA
   const [pinStr, setPinStr] = useState('')
@@ -743,7 +743,7 @@ export default function Home() {
               {formatMoney(salesSummary.chequePending)} · Total{' '}
               {formatMoney(salesSummary.withCreditSales)}
               {salesSummary.oldCreditChequeCollected > 0
-                ? ` · Old cleared ${formatMoney(salesSummary.oldCreditChequeCollected)}`
+                ? ` · Old pending ${formatMoney(salesSummary.oldCreditChequeCollected)}`
                 : ''}
             </span>
           </button>
@@ -1308,6 +1308,7 @@ export default function Home() {
           initialFilter={customerFilter}
           initialCustomer={customerInitialName}
           onSetCustomerReminder={setCustomerReminder}
+          onRenameCustomer={renameCustomerProfile}
           onSaveAlertSettings={updateReminderAlertSettings}
         />
       ) : null}

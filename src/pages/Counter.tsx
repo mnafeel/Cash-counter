@@ -15,6 +15,7 @@ import {
   getEffectiveSaleReminderNote,
 } from '../utils/customerReminders'
 import { buildCustomerSummaries } from '../utils/customerLedger'
+import { buildChequeCustomerSummaries } from '../utils/chequeLedger'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
@@ -259,11 +260,15 @@ export default function Counter() {
     return map
   }, [customerSummaries])
 
-  const customerOpenCreditTotal = useMemo(() => {
-    const key = customerName.trim().toLowerCase()
-    if (!key) return 0
-    return customerPendingByName.get(key) ?? 0
-  }, [customerName, customerPendingByName])
+  const customerChequePendingByName = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const summary of buildChequeCustomerSummaries(data)) {
+      if (summary.totalChequePending > 0) {
+        map.set(summary.name.trim().toLowerCase(), summary.totalChequePending)
+      }
+    }
+    return map
+  }, [data])
 
   const chequePendingBills = useMemo(
     () => pendingBills.filter(isChequePendingBill),
@@ -328,6 +333,67 @@ export default function Counter() {
     }
     return null
   }, [collectingCreditId, loadedPendingBill])
+
+  const customerBarTags = useMemo(() => {
+    const tags: Array<{ key: string; label: string; kind: 'old-credit' | 'old-cheque' | 'credit' | 'cheque' }> =
+      []
+    const key = customerName.trim().toLowerCase()
+
+    const splitCreditOpen = parseAmount(creditSplitStr) > 0
+    const splitChequeOpen = parseAmount(chequeSplitStr) > 0
+
+    const showCreditSession =
+      Boolean(collectingCreditId || effectiveCollectingCreditId) ||
+      payType === 'credit' ||
+      (payType === 'split' && splitCreditOpen) ||
+      (loadedPendingBill != null && isCreditPendingBill(loadedPendingBill))
+    const showChequeSession =
+      Boolean(effectiveCollectingChequeId) ||
+      payType === 'cheque' ||
+      (payType === 'split' && splitChequeOpen) ||
+      (loadedPendingBill != null && isChequePendingBill(loadedPendingBill))
+
+    if (key) {
+      const oldCredit = customerPendingByName.get(key) ?? 0
+      const oldCheque = customerChequePendingByName.get(key) ?? 0
+      if (oldCredit > 0) {
+        tags.push({
+          key: 'old-credit',
+          label: `Old Credit · ${formatMoney(oldCredit)}`,
+          kind: 'old-credit',
+        })
+      }
+      if (oldCheque > 0) {
+        tags.push({
+          key: 'old-cheque',
+          label: `Old Cheque · ${formatMoney(oldCheque)}`,
+          kind: 'old-cheque',
+        })
+      }
+    }
+
+    if (showCreditSession) tags.push({ key: 'credit', label: 'Credit', kind: 'credit' })
+    if (showChequeSession) tags.push({ key: 'cheque', label: 'Cheque', kind: 'cheque' })
+
+    return tags
+  }, [
+    customerName,
+    customerPendingByName,
+    customerChequePendingByName,
+    collectingCreditId,
+    effectiveCollectingCreditId,
+    effectiveCollectingChequeId,
+    payType,
+    creditSplitStr,
+    chequeSplitStr,
+    loadedPendingBill,
+  ])
+
+  function customerBarTagLabel(tag: (typeof customerBarTags)[number]): string {
+    if (tag.kind === 'credit') return 'Credit'
+    if (tag.kind === 'cheque') return 'Cheque'
+    return tag.label
+  }
 
   const creditCollectPayTypes = useMemo(
     (): PayType[] => (collectingCreditId ? CREDIT_COLLECT_PAY_TYPES : COUNTER_PAY_TYPES),
@@ -3714,63 +3780,76 @@ export default function Counter() {
           )}
 
           <div className={`counter-customer ${nameSectionFocus ? 'counter-customer--focused' : ''}`}>
-            <label className="counter-customer-label" htmlFor="customer-name">
-              Customer Name <span className="counter-shortcut-hint">Alt+N</span>
-            </label>
-            <input
-              ref={customerNameInputRef}
-              id="customer-name"
-              type="text"
-              className="counter-customer-input"
-              value={customerName}
-              onChange={(e) => {
-                setCustomerName(e.target.value)
-                setNameDropdownOpen(true)
-                setHighlightedNameIndex(-1)
-              }}
-              onFocus={() => {
-                setNameSectionFocus(true)
-                setNameDropdownOpen(true)
-                setHighlightedNameIndex(-1)
-                clearPendingSection()
-              }}
-              onBlur={() => {
-                setNameSectionFocus(false)
-                setNameDropdownOpen(false)
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setNameDropdownOpen(false)
+            <div className="counter-customer-row">
+              <label className="counter-customer-label" htmlFor="customer-name">
+                Customer Name <span className="counter-shortcut-hint">Alt+N</span>
+              </label>
+              <input
+                ref={customerNameInputRef}
+                id="customer-name"
+                type="text"
+                className="counter-customer-input"
+                value={customerName}
+                onChange={(e) => {
+                  setCustomerName(e.target.value)
+                  setNameDropdownOpen(true)
                   setHighlightedNameIndex(-1)
-                  return
-                }
-                if (!nameDropdownOpen || filteredNameSuggestions.length === 0) return
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault()
-                  setHighlightedNameIndex((prev) => (prev + 1) % filteredNameSuggestions.length)
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault()
-                  setHighlightedNameIndex((prev) =>
-                    prev <= 0 ? filteredNameSuggestions.length - 1 : prev - 1,
-                  )
-                } else if (e.key === 'Enter' && highlightedNameIndex >= 0) {
-                  e.preventDefault()
-                  setCustomerName(filteredNameSuggestions[highlightedNameIndex])
-                  setNameDropdownOpen(false)
+                }}
+                onFocus={() => {
+                  setNameSectionFocus(true)
+                  setNameDropdownOpen(true)
                   setHighlightedNameIndex(-1)
-                }
-              }}
-              placeholder="Optional"
-              autoComplete="off"
-            />
-            {customerOpenCreditTotal > 0 ? (
-              <p className="counter-customer-pending-hint" role="status">
-                Open credit · {formatMoney(customerOpenCreditTotal)} pending
-              </p>
-            ) : null}
+                  clearPendingSection()
+                }}
+                onBlur={() => {
+                  setNameSectionFocus(false)
+                  setNameDropdownOpen(false)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setNameDropdownOpen(false)
+                    setHighlightedNameIndex(-1)
+                    return
+                  }
+                  if (!nameDropdownOpen || filteredNameSuggestions.length === 0) return
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setHighlightedNameIndex((prev) => (prev + 1) % filteredNameSuggestions.length)
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setHighlightedNameIndex((prev) =>
+                      prev <= 0 ? filteredNameSuggestions.length - 1 : prev - 1,
+                    )
+                  } else if (e.key === 'Enter' && highlightedNameIndex >= 0) {
+                    e.preventDefault()
+                    setCustomerName(filteredNameSuggestions[highlightedNameIndex])
+                    setNameDropdownOpen(false)
+                    setHighlightedNameIndex(-1)
+                  }
+                }}
+                placeholder="Optional"
+                autoComplete="off"
+              />
+              {customerBarTags.length > 0 ? (
+                <div className="counter-customer-tags counter-customer-tags--inline" role="status" aria-live="polite">
+                  {customerBarTags.map((tag) => (
+                    <span
+                      key={tag.key}
+                      className={`counter-customer-tag counter-customer-tag--${tag.kind}`}
+                      title={tag.label}
+                    >
+                      {customerBarTagLabel(tag)}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
             {nameDropdownOpen && filteredNameSuggestions.length > 0 && (
               <ul ref={nameSuggestionsListRef} className="counter-customer-suggestions" role="listbox">
-                {filteredNameSuggestions.map((name, index) => (
+                {filteredNameSuggestions.map((name, index) => {
+                  const creditDue = customerPendingByName.get(name.toLowerCase()) ?? 0
+                  const chequeDue = customerChequePendingByName.get(name.toLowerCase()) ?? 0
+                  return (
                   <li key={name}>
                     <button
                       type="button"
@@ -3785,14 +3864,22 @@ export default function Counter() {
                       }}
                     >
                       <span>{name}</span>
-                      {(customerPendingByName.get(name.toLowerCase()) ?? 0) > 0 ? (
-                        <span className="counter-customer-suggestion-pending">
-                          {formatMoney(customerPendingByName.get(name.toLowerCase()) ?? 0)} due
-                        </span>
-                      ) : null}
+                      <span className="counter-customer-suggestion-tags">
+                        {creditDue > 0 ? (
+                          <span className="counter-customer-suggestion-pending">
+                            Old Credit {formatMoney(creditDue)}
+                          </span>
+                        ) : null}
+                        {chequeDue > 0 ? (
+                          <span className="counter-customer-suggestion-pending counter-customer-suggestion-pending--cheque">
+                            Old Cheque {formatMoney(chequeDue)}
+                          </span>
+                        ) : null}
+                      </span>
                     </button>
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
           </div>
