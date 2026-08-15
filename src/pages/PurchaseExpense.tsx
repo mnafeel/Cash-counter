@@ -18,10 +18,11 @@ import {
   purchaseCreditAmount,
   purchasePaidAmount,
 } from '../utils/purchaseHistory'
-import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { usePageEscape } from '../hooks/usePageEscape'
+import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
 import { toInputDate } from '../utils/salesReport'
 import { searchNamesByPrefix } from '../utils/normalExpenseHistory'
 import './PurchaseExpense.css'
@@ -366,8 +367,9 @@ function billStateForLoad(expense: Expense, mode: 'open' | 'update'): BillFormSt
 }
 
 export default function PurchaseExpense() {
+  const routeActive = useIsActiveRoute('/purchase')
   const { recordExpenses, updateExpense, addSupplier, applyPurchaseCreditPayment, data } = useCash()
-  const goBack = useAppPageBack()
+  const goBack = useAppPageBack('/', { route: '/purchase' })
   const [searchParams, setSearchParams] = useSearchParams()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -1168,13 +1170,13 @@ export default function PurchaseExpense() {
   const stableNumpadPress = useCallback((action: NumpadAction) => {
     numpadHandlerRef.current(action)
   }, [])
-  useNumpadKeyboard(stableNumpadPress, !saved)
+  useRouteNumpadKeyboard('/purchase', stableNumpadPress, !saved)
 
   const saveHandlerRef = useRef(handleSave)
   saveHandlerRef.current = handleSave
 
   useEffect(() => {
-    if (saved) return
+    if (!routeActive || saved) return
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
       if (e.code === 'KeyS') {
@@ -1185,7 +1187,7 @@ export default function PurchaseExpense() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [saved, isValid])
+  }, [saved, isValid, routeActive])
 
   const topGridClass = splitMode
     ? creditUpdateActiveSlot
@@ -1530,7 +1532,7 @@ export default function PurchaseExpense() {
     goBack()
   }, [goBack, showPurchaseHistory])
 
-  usePageEscape(handlePageBack, !showPurchaseHistory)
+  usePageEscape(handlePageBack, routeActive && !showPurchaseHistory)
 
   return (
     <div className="purchase-page expenses-page page-shell">

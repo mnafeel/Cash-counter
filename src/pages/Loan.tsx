@@ -13,11 +13,12 @@ import {
   type LoanListItem,
 } from '../utils/loanLedger'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
-import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { usePageEscape } from '../hooks/usePageEscape'
+import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
 import './Loan.css'
 
 type LoanTab = 'pending' | 'settled'
@@ -25,7 +26,8 @@ type FormMode = 'give' | 'take' | null
 type FormField = 'name' | 'amount'
 
 export default function Loan() {
-  const goBack = useAppPageBack()
+  const routeActive = useIsActiveRoute('/loan')
+  const goBack = useAppPageBack('/', { route: '/loan' })
   const {
     data,
     balance,
@@ -99,7 +101,7 @@ export default function Loan() {
 
   const numpadHandlerRef = useRef(handleFormNumpad)
   numpadHandlerRef.current = handleFormNumpad
-  useNumpadKeyboard((action) => numpadHandlerRef.current(action), formOpen)
+  useRouteNumpadKeyboard('/loan', (action) => numpadHandlerRef.current(action), formOpen)
 
   function handleSubmitForm() {
     const amount = parseAmount(amountStr)
@@ -182,7 +184,7 @@ export default function Loan() {
     goBack()
   }, [formMode, settlingId, goBack])
 
-  usePageEscape(handleClose)
+  usePageEscape(handleClose, routeActive)
 
   return (
     <div className="loan-page page-shell">

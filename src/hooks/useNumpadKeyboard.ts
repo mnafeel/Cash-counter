@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { NumpadAction } from '../utils/numpad'
+import { useIsActiveRoute } from './useIsActiveRoute'
 
 function isTypingTarget(el: EventTarget | null): boolean {
   if (!el || !(el instanceof HTMLElement)) return false
@@ -39,4 +40,14 @@ export function useNumpadKeyboard(
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onPress, enabled])
+}
+
+/** Numpad keys only while this route tab is visible (avoids cross-tab input with keep-alive). */
+export function useRouteNumpadKeyboard(
+  routePrefix: string,
+  onPress: (action: NumpadAction) => void,
+  enabled = true,
+) {
+  const routeActive = useIsActiveRoute(routePrefix)
+  useNumpadKeyboard(onPress, enabled && routeActive)
 }

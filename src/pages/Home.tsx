@@ -7,7 +7,7 @@ import BigAmount from '../components/BigAmount'
 import NumberKeyboard from '../components/NumberKeyboard'
 import { formatMoney, parseAmount, formatDate } from '../utils/format'
 import { applyNumpadAction, applyPinAction, normalizePin, type NumpadAction } from '../utils/numpad'
-import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import type { ExpensePayType, TransferDirection } from '../types'
 import {
@@ -477,7 +477,8 @@ export default function Home() {
   panelHandlerRef.current = handlePanelNumpad
   const panelOpen = addTarget !== null || transferDirection !== null
 
-  useNumpadKeyboard(
+  useRouteNumpadKeyboard(
+    '/',
     (action) => {
       if (!homeUnlocked) pinHandlerRef.current(action)
       else if (panelOpen && !panelSaved) panelHandlerRef.current(action)

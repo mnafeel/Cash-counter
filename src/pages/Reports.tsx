@@ -6,7 +6,7 @@ import { useAppPageBack } from '../hooks/useAppPageBack'
 
 export default function Reports() {
   const { data, setCustomerReminder, updateReminderAlertSettings } = useCash()
-  const goBack = useAppPageBack()
+  const goBack = useAppPageBack('/', { route: '/reports' })
   const [customerName, setCustomerName] = useState<string | undefined>()
 
   return (

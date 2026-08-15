@@ -17,7 +17,8 @@ import {
   type ExpenseNamePickerOption,
 } from '../utils/normalExpenseHistory'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
-import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
 import {
   currentSalaryMonth,
   findStaffByName,
@@ -47,7 +48,8 @@ function formatSplitPart(amount: number): string {
 }
 
 export default function Expenses() {
-  const goBack = useAppPageBack()
+  const routeActive = useIsActiveRoute('/expenses')
+  const goBack = useAppPageBack('/', { route: '/expenses' })
   const { recordExpense, data } = useCash()
   const [amountStr, setAmountStr] = useState('')
   const [cashSplitStr, setCashSplitStr] = useState('')
@@ -311,7 +313,7 @@ export default function Expenses() {
   }, [highlightedAmountIndex])
 
   useEffect(() => {
-    if (activeField !== 'amount' || !amountDropdownOpen || amountSuggestions.length === 0) return
+    if (!routeActive || activeField !== 'amount' || !amountDropdownOpen || amountSuggestions.length === 0) return
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -342,7 +344,7 @@ export default function Expenses() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeField, amountDropdownOpen, amountSuggestions, highlightedAmountIndex])
+  }, [activeField, amountDropdownOpen, amountSuggestions, highlightedAmountIndex, routeActive])
 
   function handleEnter() {
     focusField(nextExpenseField(activeField, splitMode))
@@ -373,13 +375,13 @@ export default function Expenses() {
   const stableNumpadPress = useCallback((action: NumpadAction) => {
     numpadHandlerRef.current(action)
   }, [])
-  useNumpadKeyboard(stableNumpadPress, !saved)
+  useRouteNumpadKeyboard('/expenses', stableNumpadPress, !saved)
 
   const saveHandlerRef = useRef(handleSave)
   saveHandlerRef.current = handleSave
 
   useEffect(() => {
-    if (saved) return
+    if (!routeActive || saved) return
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
@@ -393,7 +395,7 @@ export default function Expenses() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [saved, isValid])
+  }, [saved, isValid, routeActive])
 
   function handleClear() {
     setAmountStr('')
@@ -430,7 +432,7 @@ export default function Expenses() {
     goBack()
   }
 
-  usePageEscape(handlePageBack, !showExpenseHistory)
+  usePageEscape(handlePageBack, routeActive && !showExpenseHistory)
 
   return (
     <div className="expenses-page page-shell">

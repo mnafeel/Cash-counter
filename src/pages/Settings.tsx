@@ -108,7 +108,7 @@ import { UNNAMED_CREDIT_CUSTOMER } from '../utils/customerLedger'
 import { getReminderAlertSettings, getSaleReminderKind } from '../utils/billReminders'
 import { getEffectiveSaleReminderAt, getEffectiveSaleReminderNote } from '../utils/customerReminders'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
-import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import './Settings.css'
@@ -192,7 +192,7 @@ const DAILY_REPORT_DOWNLOAD_GROUPS: {
 ]
 
 export default function Settings() {
-  const goBack = useAppPageBack()
+  const goBack = useAppPageBack('/', { route: '/settings' })
   const {
     data,
     balance,
@@ -499,7 +499,7 @@ export default function Settings() {
 
   const numpadHandlerRef = useRef(handleNumpad)
   numpadHandlerRef.current = handleNumpad
-  useNumpadKeyboard((action) => numpadHandlerRef.current(action))
+  useRouteNumpadKeyboard('/settings', (action) => numpadHandlerRef.current(action))
 
   function historyReportMeta() {
     return {

@@ -6,6 +6,7 @@ import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { usePageEscape } from '../hooks/usePageEscape'
+import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
 import { formatDate, formatMoney } from '../utils/format'
 import { buildPurchaseCreditItems } from '../utils/purchaseHistory'
 import { counterBillPath, resolveHistoryItemBillId } from '../utils/counterBillRoute'
@@ -134,7 +135,8 @@ export default function History() {
     cancelSaleCreditAsUnpaid,
   } = useCash()
   const navigate = useNavigate()
-  const goBack = useAppPageBack()
+  const goBack = useAppPageBack('/', { route: '/history' })
+  const routeActive = useIsActiveRoute('/history')
   const location = useLocation()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [paymentFilter, setPaymentFilter] = useState<HistoryPaymentFilter>('all')
@@ -206,7 +208,7 @@ export default function History() {
     goBack()
   }, [goBack, receiptItem, purchaseCreditListOpen, editingKey])
 
-  usePageEscape(handlePageBack, !purchaseOnlyMode)
+  usePageEscape(handlePageBack, routeActive && !purchaseOnlyMode)
 
   const allItems = useMemo(() => buildHistoryItems(data), [data])
   const purchaseCreditItems = useMemo(() => buildPurchaseCreditItems(data), [data])

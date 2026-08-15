@@ -9,7 +9,8 @@ import CounterCustomerNameField, {
   type CounterCustomerNameFieldHandle,
 } from '../components/CounterCustomerNameField'
 import RoundTypeChips from '../components/RoundTypeChips'
-import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
+import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
 import type { Sale } from '../types'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import { isReminderDue } from '../utils/billReminders'
@@ -171,6 +172,7 @@ function resolveLoadedPendingBill(
 type SavedAction = 'collect' | 'pending' | null
 
 export default function Counter() {
+  const routeActive = useIsActiveRoute('/counter')
   const { recordSale, updatePendingSale, collectPendingSale, collectCreditPayment, collectChequePayment, editPaidSalePayment, pendingBills, data, setBillReminder, updateReminderAlertSettings } = useCash()
   const [searchParams, setSearchParams] = useSearchParams()
   const [billStr, setBillStr] = useState('')
@@ -1626,7 +1628,8 @@ export default function Counter() {
   const stableNumpadPress = useCallback((action: NumpadAction) => {
     numpadHandlerRef.current(action)
   }, [])
-  useNumpadKeyboard(
+  useRouteNumpadKeyboard(
+    '/counter',
     stableNumpadPress,
     !isSaving && !pendingSectionFocus,
   )
@@ -3133,7 +3136,7 @@ export default function Counter() {
   selectPendingBillRef.current = selectPendingBill
 
   useEffect(() => {
-    if (!pendingSectionFocus) return
+    if (!routeActive || !pendingSectionFocus) return
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.altKey || e.ctrlKey || e.metaKey) return
@@ -3169,7 +3172,7 @@ export default function Counter() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [pendingSectionFocus])
+  }, [pendingSectionFocus, routeActive])
 
   useEffect(() => {
     if (!pendingSectionFocus || highlightedPendingIndex == null) return
@@ -3183,7 +3186,7 @@ export default function Counter() {
   }, [pendingSectionFocus, highlightedPendingIndex, pendingBills])
 
   useEffect(() => {
-    if (!chequeListOpen && !creditListOpen) return
+    if (!routeActive || (!chequeListOpen && !creditListOpen)) return
 
     const onPointerDown = (e: PointerEvent) => {
       const target = e.target
@@ -3198,10 +3201,10 @@ export default function Counter() {
 
     window.addEventListener('pointerdown', onPointerDown)
     return () => window.removeEventListener('pointerdown', onPointerDown)
-  }, [chequeListOpen, creditListOpen])
+  }, [chequeListOpen, creditListOpen, routeActive])
 
   useEffect(() => {
-    if (!chequeListOpen) return
+    if (!routeActive || !chequeListOpen) return
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.altKey || e.ctrlKey || e.metaKey) return
@@ -3244,7 +3247,7 @@ export default function Counter() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [chequeListOpen])
+  }, [chequeListOpen, routeActive])
 
   useEffect(() => {
     if (!chequeListOpen || highlightedChequeIndex < 0) return
@@ -3261,7 +3264,7 @@ export default function Counter() {
   }, [chequeListOpen, highlightedChequeIndex])
 
   useEffect(() => {
-    if (!creditListOpen) return
+    if (!routeActive || !creditListOpen) return
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.altKey || e.ctrlKey || e.metaKey) return
@@ -3304,7 +3307,7 @@ export default function Counter() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [creditListOpen])
+  }, [creditListOpen, routeActive])
 
   useEffect(() => {
     if (!creditListOpen || highlightedCreditIndex < 0) return
@@ -3321,7 +3324,7 @@ export default function Counter() {
   }, [creditListOpen, highlightedCreditIndex])
 
   useEffect(() => {
-    if (isSaving) return
+    if (!routeActive || isSaving) return
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
@@ -3379,7 +3382,7 @@ export default function Counter() {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isSaving, isValid, canSavePending])
+  }, [isSaving, isValid, canSavePending, routeActive])
 
   const payTypeChipValue: PayType =
     effectiveCollectingChequeId && chequeCollectCreditMode && payType === 'split'

@@ -39,7 +39,7 @@ import { printStaffSalaryReport } from '../utils/staffSalaryReport'
 import './Staff.css'
 
 export default function Staff() {
-  const goBack = useAppPageBack()
+  const goBack = useAppPageBack('/', { route: '/staff' })
   const {
     data,
     addStaff,
