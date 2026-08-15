@@ -4,6 +4,7 @@ import { loanSettlementEvents } from './loanLedger'
 import { purchasePaidComponents } from './purchaseHistory'
 import { getSalePaymentEvents, saleCollectionTimestamp, sanitizeSplitParentChildChequeOverlap, isChequeOriginSale } from './salePayment'
 import { saleCashCollected, saleBankCollected, saleChequeToBankCollected } from './salesReport'
+import { memoByDataRef } from './memoByDataRef'
 
 export type CashDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'date' | 'range'
 
@@ -271,7 +272,7 @@ function pushLoanItems(items: CashActivityItem[], loan: Loan) {
   }
 }
 
-export function buildCashActivityItems(data: AppData): CashActivityItem[] {
+function buildCashActivityItemsUncached(data: AppData): CashActivityItem[] {
   const items: CashActivityItem[] = []
   const sales = sanitizeSplitParentChildChequeOverlap(data.sales)
   for (const sale of sales) pushSaleItems(items, sale)
@@ -279,6 +280,8 @@ export function buildCashActivityItems(data: AppData): CashActivityItem[] {
   for (const loan of data.loans ?? []) pushLoanItems(items, loan)
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
+
+export const buildCashActivityItems = memoByDataRef(buildCashActivityItemsUncached)
 
 export function summarizeCashActivity(items: CashActivityItem[]) {
   let cashIn = 0

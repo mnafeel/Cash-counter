@@ -14,6 +14,7 @@ import {
   type CashDateFilter,
   matchesCashDateFilter,
 } from './cashActivity'
+import { memoByDataRef } from './memoByDataRef'
 
 export type { CashDateFilter as BankDateFilter, CashActivityItem as BankActivityItem }
 export { matchesCashDateFilter as matchesBankDateFilter }
@@ -194,7 +195,7 @@ function pushLoanItems(items: CashActivityItem[], loan: Loan) {
   }
 }
 
-export function buildBankActivityItems(data: AppData): CashActivityItem[] {
+function buildBankActivityItemsUncached(data: AppData): CashActivityItem[] {
   const items: CashActivityItem[] = []
   const sales = sanitizeSplitParentChildChequeOverlap(data.sales)
   for (const sale of sales) pushSaleItems(items, sale)
@@ -202,6 +203,8 @@ export function buildBankActivityItems(data: AppData): CashActivityItem[] {
   for (const loan of data.loans ?? []) pushLoanItems(items, loan)
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
+
+export const buildBankActivityItems = memoByDataRef(buildBankActivityItemsUncached)
 
 export function summarizeBankActivity(items: CashActivityItem[]) {
   let bankIn = 0

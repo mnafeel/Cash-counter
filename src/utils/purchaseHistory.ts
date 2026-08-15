@@ -7,6 +7,7 @@ import {
 } from './expenseBillLabels'
 import { formatDate, formatMoney } from './format'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
+import { memoByDataRef } from './memoByDataRef'
 
 export type PurchaseDateFilter = CashDateFilter
 
@@ -470,7 +471,7 @@ function purchasePayDetail(expense: Expense): string {
   return `💵 ${PURCHASE_CASH_LABEL} ${formatMoney(expense.amount)}`
 }
 
-export function buildPurchaseCreditItems(data: AppData): PurchaseCreditItem[] {
+function buildPurchaseCreditItemsUncached(data: AppData): PurchaseCreditItem[] {
   const items: PurchaseCreditItem[] = []
 
   for (const expense of data.expenses) {
@@ -496,6 +497,8 @@ export function buildPurchaseCreditItems(data: AppData): PurchaseCreditItem[] {
 
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
+
+export const buildPurchaseCreditItems = memoByDataRef(buildPurchaseCreditItemsUncached)
 
 export interface PurchaseCreditSupplierGroup {
   shopName: string

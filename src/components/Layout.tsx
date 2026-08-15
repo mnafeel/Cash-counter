@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { startTransition, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import KeepAliveOutlet from './KeepAliveOutlet'
 import { useCashBooting } from '../context/CashContext'
 import { useDeviceSize } from '../hooks/useDeviceSize'
 import { useHomePinLock } from '../hooks/useHomePinLock'
@@ -7,6 +8,7 @@ import AppBootScreen from './AppBootScreen'
 import ReminderAlertsNotifier from './ReminderAlertsNotifier'
 import CloudStatusNotifier from './CloudStatusNotifier'
 import { initReminderNotificationSound } from '../utils/reminderNotificationSound'
+import { normalizeRoutePath } from '../utils/hashRoute'
 import './Layout.css'
 
 const navItems = [
@@ -17,9 +19,16 @@ const navItems = [
 ]
 
 function getNavIndex(pathname: string): number {
-  if (pathname === '/' || pathname === '') return 0
-  const idx = navItems.findIndex((item) => item.to !== '/' && pathname.startsWith(item.to))
+  const path = normalizeRoutePath(pathname)
+  if (path === '/' || path === '') return 0
+  const idx = navItems.findIndex((item) => item.to !== '/' && path.startsWith(item.to))
   return idx >= 0 ? idx : 0
+}
+
+function isNavActive(pathname: string, to: string): boolean {
+  const path = normalizeRoutePath(pathname)
+  if (to === '/') return path === '/' || path === ''
+  return path === to || path.startsWith(`${to}/`)
 }
 
 export default function Layout() {
@@ -41,7 +50,7 @@ export default function Layout() {
       e.preventDefault()
       const idx = getNavIndex(location.pathname)
       const next = navItems[(idx + 1) % navItems.length]
-      navigate(next.to)
+      startTransition(() => navigate(next.to))
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -65,15 +74,15 @@ export default function Layout() {
         </div>
         <nav className="nav">
           {navItems.map((item) => (
-            <NavLink
+            <button
               key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
+              type="button"
+              className={`nav-link ${isNavActive(location.pathname, item.to) ? 'active' : ''}`}
+              onClick={() => startTransition(() => navigate(item.to))}
             >
               <span className="nav-icon">{item.icon}</span>
               <span className="nav-label">{item.label}</span>
-            </NavLink>
+            </button>
           ))}
           <span className="nav-shortcut-hint" aria-hidden="true">
             Alt+Q
@@ -81,7 +90,7 @@ export default function Layout() {
         </nav>
       </header>
       <main className="main main--fit">
-        <Outlet />
+        <KeepAliveOutlet />
       </main>
       <ReminderAlertsNotifier />
       <CloudStatusNotifier />

@@ -4,6 +4,7 @@ import { formatDate, formatMoney } from './format'
 import { decorateLoan, loanRemainingAmount, loanSettlementEvents } from './loanLedger'
 import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, type PurchaseHistoryItem } from './purchaseHistory'
 import { getSaleCustomerName } from './saleCustomerName'
+import { memoByDataRef } from './memoByDataRef'
 
 export type HistoryItemType = 'sale' | 'expense' | 'purchase' | 'deposit' | 'transfer' | 'loan'
 
@@ -2005,7 +2006,7 @@ function buildLoanReceiptTimeline(loan: Loan): HistoryReceiptEvent[] {
   return events
 }
 
-export function buildHistoryItems(data: AppData): HistoryItem[] {
+function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
   const sales = sanitizeSplitParentChildChequeOverlap(data.sales)
   const childrenByParent = buildChildrenMap(sales)
   const consumedChildIds = new Set<string>()
@@ -2260,6 +2261,8 @@ export function buildHistoryItems(data: AppData): HistoryItem[] {
   }
   return items
 }
+
+export const buildHistoryItems = memoByDataRef(buildHistoryItemsUncached)
 
 /** Timestamp for sorting — last update / collection when available. */
 export function historyItemSortTime(item: HistoryItem): number {
