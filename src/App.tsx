@@ -4,10 +4,6 @@ import { CashProvider } from './context/CashContext'
 import Layout from './components/Layout'
 import HashRouteFix from './components/HashRouteFix'
 import AppBootScreen from './components/AppBootScreen'
-import Home from './pages/Home'
-import Counter from './pages/Counter'
-import Expenses from './pages/Expenses'
-import History from './pages/History'
 
 const PurchaseExpense = lazy(() => import('./pages/PurchaseExpense'))
 const Loan = lazy(() => import('./pages/Loan'))
@@ -43,10 +39,10 @@ export default function App() {
         <Routes>
           <Route element={<HashRouteFix />}>
             <Route element={<Layout />}>
-              <Route index element={<Home />} />
-              <Route path="counter" element={<Counter />} />
-              <Route path="expenses" element={<Expenses />} />
-              <Route path="history" element={<History />} />
+              <Route index />
+              <Route path="counter" />
+              <Route path="expenses" />
+              <Route path="history" />
               <Route
                 path="purchase"
                 element={

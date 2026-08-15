@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState, useCallback, type MouseEvent } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useCallback, type MouseEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useCash } from '../context/CashContext'
+import { useCashActions } from '../context/CashContext'
 import PurchaseHistoryPanel from '../components/PurchaseHistoryPanel'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { usePageEscape } from '../hooks/usePageEscape'
-import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
-import { formatDate, formatMoney } from '../utils/format'
-import { buildPurchaseCreditItems } from '../utils/purchaseHistory'
+import { useResetOnTabEnter } from '../hooks/useIsActiveRoute'
+import { useCashSnapshot } from '../hooks/useCashSnapshot'
+import { useCashDerivedSnapshot } from '../hooks/useCashDerivedSnapshot'
+import { formatMoney, formatTimestamp } from '../utils/format'
 import { counterBillPath, resolveHistoryItemBillId } from '../utils/counterBillRoute'
 import { readBillEditMode } from '../utils/billEditMode'
 import {
@@ -17,7 +18,6 @@ import {
 } from '../storage/database'
 import { saleCollectedAmount } from '../utils/salePayment'
 import {
-  buildHistoryItems,
   getHistoryPaymentLabel,
   getHistoryPaymentSortKey,
   getHistoryItemListPaymentParts,
@@ -127,23 +127,24 @@ function editKey(item: HistoryItem): string {
   return `${item.type}:${item.id}`
 }
 
-export default function History() {
+function History({ active }: { active: boolean }) {
+  const { data } = useCashSnapshot(active)
+  const derived = useCashDerivedSnapshot(active)
   const {
-    data,
     updateHistoryName,
     cancelSaleCredit,
     cancelSaleCreditAsUnpaid,
-  } = useCash()
+  } = useCashActions()
   const navigate = useNavigate()
   const goBack = useAppPageBack('/', { route: '/history' })
-  const routeActive = useIsActiveRoute('/history')
+  const routeActive = active
   const location = useLocation()
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [paymentFilter, setPaymentFilter] = useState<HistoryPaymentFilter>('all')
   const [sort, setSort] = useState<HistorySort>('date-desc')
   const [dateFilter, setDateFilter] = useState<DateFilter>('all')
   const [selectedDate, setSelectedDate] = useState('')
-  const { value: search, setValue: setSearch, deferredValue: deferredSearch } = useDeferredSearch()
+  const { value: search, setValue: setSearch, deferredValue: deferredSearch, reset: resetSearch } = useDeferredSearch()
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [receiptItem, setReceiptItem] = useState<HistoryItem | null>(null)
@@ -152,6 +153,7 @@ export default function History() {
   const [billEditMode, setBillEditMode] = useState(() => readBillEditMode())
   const [showPurchaseHistory, setShowPurchaseHistory] = useState(false)
   const [purchaseOnlyMode, setPurchaseOnlyMode] = useState(false)
+  const [purchasePanelSession, setPurchasePanelSession] = useState(0)
   const editInputRef = useRef<HTMLInputElement>(null)
   const purchaseCreditBarRef = useRef<HTMLDivElement>(null)
 
@@ -208,10 +210,29 @@ export default function History() {
     goBack()
   }, [goBack, receiptItem, purchaseCreditListOpen, editingKey])
 
+  const resetHistoryUi = useCallback(() => {
+    resetSearch()
+    setFilter('all')
+    setPaymentFilter('all')
+    setSort('date-desc')
+    setDateFilter('all')
+    setSelectedDate('')
+    setEditingKey(null)
+    setEditValue('')
+    setReceiptItem(null)
+    setPurchaseCreditListOpen(false)
+    setHighlightedPurchaseCreditIndex(-1)
+    setShowPurchaseHistory(false)
+    setPurchaseOnlyMode(false)
+    setPurchasePanelSession((session) => session + 1)
+  }, [resetSearch])
+
+  useResetOnTabEnter(active, resetHistoryUi)
+
   usePageEscape(handlePageBack, routeActive && !purchaseOnlyMode)
 
-  const allItems = useMemo(() => buildHistoryItems(data), [data])
-  const purchaseCreditItems = useMemo(() => buildPurchaseCreditItems(data), [data])
+  const allItems = derived.historyItems
+  const purchaseCreditItems = derived.purchaseCreditItems
   const purchaseCreditTotal = useMemo(
     () => purchaseCreditItems.reduce((sum, item) => sum + item.amount, 0),
     [purchaseCreditItems],
@@ -627,6 +648,7 @@ export default function History() {
     return (
       <div className="history-page history-page--purchase-only">
         <PurchaseHistoryPanel
+          key={purchasePanelSession}
           open
           variant="embedded"
           data={data}
@@ -852,7 +874,7 @@ export default function History() {
                           <span className="history-purchase-credit-item-desc">{credit.description}</span>
                         ) : null}
                         <span className="history-purchase-credit-item-date">
-                          Updated · {formatDate(credit.date)}
+                          Updated · {formatTimestamp(credit.date)}
                         </span>
                       </button>
                       <button
@@ -968,7 +990,7 @@ export default function History() {
               !(receiptItem.receiptTimeline && receiptItem.receiptTimeline.length > 0) ? (
                 <div className="history-receipt-row">
                   <span>Bill created</span>
-                  <strong>{formatDate(receiptItem.billCreatedAt)}</strong>
+                  <strong>{formatTimestamp(receiptItem.billCreatedAt)}</strong>
                 </div>
               ) : null}
               {receiptItem.isSplitGroup &&
@@ -1025,7 +1047,7 @@ export default function History() {
                                 ? 'Bank collected'
                                 : 'Collected'}
                         </span>
-                        <strong>{formatDate(collection.at)}</strong>
+                        <strong>{formatTimestamp(collection.at)}</strong>
                       </div>
                     ))
                 : null}
@@ -1038,7 +1060,7 @@ export default function History() {
                         : 'Fully paid'
                       : 'Fully collected'}
                   </span>
-                  <strong>{formatDate(receiptItem.completedAt)}</strong>
+                  <strong>{formatTimestamp(receiptItem.completedAt)}</strong>
                 </div>
               ) : null}
               {receiptItem.type === 'purchase' && (receiptItem.paidAmount ?? 0) > 0 ? (
@@ -1081,7 +1103,7 @@ export default function History() {
                         {event.detail ? (
                           <span className="history-receipt-timeline-detail">{event.detail}</span>
                         ) : null}
-                        <span className="history-receipt-timeline-date">{formatDate(event.date)}</span>
+                        <span className="history-receipt-timeline-date">{formatTimestamp(event.date)}</span>
                       </div>
                     </li>
                   ))}
@@ -1208,3 +1230,5 @@ export default function History() {
     </div>
   )
 }
+
+export default memo(History)

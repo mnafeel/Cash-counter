@@ -1,14 +1,14 @@
-import { startTransition, useEffect } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
-import KeepAliveOutlet from './KeepAliveOutlet'
-import { useCashBooting } from '../context/CashContext'
+import { startTransition, useEffect, useState } from 'react'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import MainTabs from './MainTabs'
+import TabPanel from './TabPanel'
 import { useDeviceSize } from '../hooks/useDeviceSize'
 import { useHomePinLock } from '../hooks/useHomePinLock'
-import AppBootScreen from './AppBootScreen'
 import ReminderAlertsNotifier from './ReminderAlertsNotifier'
 import CloudStatusNotifier from './CloudStatusNotifier'
 import { initReminderNotificationSound } from '../utils/reminderNotificationSound'
 import { normalizeRoutePath } from '../utils/hashRoute'
+import { getMainTabKey, isMainTabPath, type MainTabKey } from '../utils/mainTab'
 import './Layout.css'
 
 const navItems = [
@@ -34,13 +34,27 @@ function isNavActive(pathname: string, to: string): boolean {
 export default function Layout() {
   useDeviceSize()
   useHomePinLock()
-  const dataBooting = useCashBooting()
   const navigate = useNavigate()
   const location = useLocation()
+  const mainTab = getMainTabKey(location.pathname)
+  const showMainTabs = isMainTabPath(location.pathname)
+  const [visibleTab, setVisibleTab] = useState<MainTabKey | null>(mainTab)
+
+  useEffect(() => {
+    if (mainTab) setVisibleTab(mainTab)
+  }, [mainTab])
+
+  const displayTab = visibleTab ?? mainTab ?? '/'
 
   useEffect(() => {
     initReminderNotificationSound()
   }, [])
+
+  function navigateMainTab(to: string) {
+    const tab = getMainTabKey(to)
+    if (tab) setVisibleTab(tab)
+    startTransition(() => navigate(to))
+  }
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -50,20 +64,22 @@ export default function Layout() {
       e.preventDefault()
       const idx = getNavIndex(location.pathname)
       const next = navItems[(idx + 1) % navItems.length]
-      startTransition(() => navigate(next.to))
+      navigateMainTab(next.to)
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [location.pathname, navigate])
+  }, [location.pathname])
+
+  const navActivePath =
+    showMainTabs && visibleTab
+      ? visibleTab === '/'
+        ? '/'
+        : visibleTab
+      : location.pathname
 
   return (
     <div className="layout layout--fit">
-      {dataBooting ? (
-        <div className="layout-boot-overlay">
-          <AppBootScreen />
-        </div>
-      ) : null}
       <header className="header header--compact">
         <div className="header-top">
           <img
@@ -77,8 +93,8 @@ export default function Layout() {
             <button
               key={item.to}
               type="button"
-              className={`nav-link ${isNavActive(location.pathname, item.to) ? 'active' : ''}`}
-              onClick={() => startTransition(() => navigate(item.to))}
+              className={`nav-link ${isNavActive(navActivePath, item.to) ? 'active' : ''}`}
+              onClick={() => navigateMainTab(item.to)}
             >
               <span className="nav-icon">{item.icon}</span>
               <span className="nav-label">{item.label}</span>
@@ -90,7 +106,10 @@ export default function Layout() {
         </nav>
       </header>
       <main className="main main--fit">
-        <KeepAliveOutlet />
+        {showMainTabs ? <MainTabs activeTab={displayTab} /> : null}
+        <TabPanel hidden={showMainTabs}>
+          <Outlet />
+        </TabPanel>
       </main>
       <ReminderAlertsNotifier />
       <CloudStatusNotifier />

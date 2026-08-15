@@ -1,31 +1,31 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useCash } from '../context/CashContext'
 import type { AppData } from '../types'
 import AmountDisplay from '../components/AmountDisplay'
 import BigAmount from '../components/BigAmount'
 import NumberKeyboard from '../components/NumberKeyboard'
 import { formatMoney, parseAmount, formatDate } from '../utils/format'
 import { applyNumpadAction, applyPinAction, normalizePin, type NumpadAction } from '../utils/numpad'
+import { useCashActions } from '../context/CashContext'
+import { useCashSnapshot } from '../hooks/useCashSnapshot'
+import { useCashDerivedSnapshot } from '../hooks/useCashDerivedSnapshot'
+import { useResetOnTabEnter } from '../hooks/useIsActiveRoute'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import type { ExpensePayType, TransferDirection } from '../types'
 import {
-  buildHistoryItems,
   getHistoryTypeLabel,
   matchesHistorySearch,
   type HistoryFilter,
   type HistoryItemType,
 } from '../utils/historyItems'
 import {
-  buildBankActivityItems,
   bankClosingLabel,
   bankOpeningLabel,
   summarizeBankActivityForPeriod,
   type BankDateFilter,
 } from '../utils/bankActivity'
 import {
-  buildCashActivityItems,
   cashClosingLabel,
   cashOpeningLabel,
   summarizeCashActivityForPeriod,
@@ -50,7 +50,6 @@ import {
   summarizeNormalExpenses,
 } from '../utils/normalExpenseHistory'
 import {
-  buildPurchaseHistoryItems,
   filterPurchaseHistoryItems,
   getTopPurchaseShop,
   summarizePurchases,
@@ -111,11 +110,23 @@ function homeDaySelectedDate(filter: HomeDayFilter, selectedDate: string): strin
   return filter === 'date' ? selectedDate || toInputDate() : toInputDate()
 }
 
-export default function Home() {
+function Home({ active }: { active: boolean }) {
   const navigate = useNavigate()
-  const { balance, bankBalance, data, recordExpense, recordTransfer, removeSale, removeExpense, removeLoan, homeUnlocked, unlockHome, setCustomerReminder, updateReminderAlertSettings, renameCustomerProfile } =
-    useCash()
-  const dashData = homeUnlocked ? data : LOCKED_DASHBOARD_DATA
+  const { data, balance, bankBalance, homeUnlocked } = useCashSnapshot(active)
+  const derived = useCashDerivedSnapshot(active)
+  const {
+    recordExpense,
+    recordTransfer,
+    removeSale,
+    removeExpense,
+    removeLoan,
+    unlockHome,
+    setCustomerReminder,
+    updateReminderAlertSettings,
+    renameCustomerProfile,
+  } = useCashActions()
+  const workData =
+    !homeUnlocked || !active ? LOCKED_DASHBOARD_DATA : data
   const [pinStr, setPinStr] = useState('')
   const [pinError, setPinError] = useState(false)
   const [addTarget, setAddTarget] = useState<ExpensePayType | null>(null)
@@ -130,6 +141,7 @@ export default function Home() {
     value: deleteRecordSearch,
     setValue: setDeleteRecordSearch,
     deferredValue: deferredDeleteRecordSearch,
+    reset: resetDeleteRecordSearch,
   } = useDeferredSearch()
   const [deleteRecordFilter, setDeleteRecordFilter] = useState<HistoryFilter>('all')
   const [showCashHistory, setShowCashHistory] = useState(false)
@@ -137,6 +149,7 @@ export default function Home() {
     value: cashHistorySearch,
     setValue: setCashHistorySearch,
     deferredValue: deferredCashHistorySearch,
+    reset: resetCashHistorySearch,
   } = useDeferredSearch()
   const [cashDateFilter, setCashDateFilter] = useState<CashDateFilter>('today')
   const [cashSelectedDate, setCashSelectedDate] = useState('')
@@ -145,6 +158,7 @@ export default function Home() {
     value: bankHistorySearch,
     setValue: setBankHistorySearch,
     deferredValue: deferredBankHistorySearch,
+    reset: resetBankHistorySearch,
   } = useDeferredSearch()
   const [bankDateFilter, setBankDateFilter] = useState<BankDateFilter>('today')
   const [bankSelectedDate, setBankSelectedDate] = useState('')
@@ -165,6 +179,33 @@ export default function Home() {
   const [homeSelectedDate, setHomeSelectedDate] = useState('')
   const [homeExpenseChannel, setHomeExpenseChannel] = useState<ExpensePayChannelFilter>('all')
   const noteInputRef = useRef<HTMLInputElement>(null)
+
+  const resetHomeUi = useCallback(() => {
+    resetDeleteRecordSearch()
+    setDeleteRecordFilter('all')
+    setShowDeleteRecords(false)
+    resetCashHistorySearch()
+    setCashDateFilter('today')
+    setCashSelectedDate('')
+    setShowCashHistory(false)
+    resetBankHistorySearch()
+    setBankDateFilter('today')
+    setBankSelectedDate('')
+    setShowBankHistory(false)
+    setShowReports(false)
+    setShowCustomers(false)
+    setShowCredits(false)
+    setShowCheques(false)
+    setCustomerInitialName(undefined)
+    setCreditInitialName(undefined)
+    setChequeInitialName(undefined)
+  }, [
+    resetDeleteRecordSearch,
+    resetCashHistorySearch,
+    resetBankHistorySearch,
+  ])
+
+  useResetOnTabEnter(active, resetHomeUi)
 
   function openPurchaseHistory() {
     navigate('/history', { state: { showPurchaseHistory: true } })
@@ -242,33 +283,32 @@ export default function Home() {
   )
 
   const salesSummary = useMemo(
-    () => salesSummaryForPreset(dashData, homeDayPreset, homeDayDate),
-    [dashData, homeDayPreset, homeDayDate],
+    () => salesSummaryForPreset(workData, homeDayPreset, homeDayDate),
+    [workData, homeDayPreset, homeDayDate],
   )
   const periodDailyTotals = useMemo(
-    () => buildDailyTotalsForPreset(dashData, homeDayPreset, homeDayDate),
-    [dashData, homeDayPreset, homeDayDate],
+    () => buildDailyTotalsForPreset(workData, homeDayPreset, homeDayDate),
+    [workData, homeDayPreset, homeDayDate],
   )
   const periodExpenseItems = useMemo(() => {
-    const items = buildNormalExpenseHistoryItems(dashData)
+    const items = buildNormalExpenseHistoryItems(workData)
     return filterNormalExpenseHistoryItems(items, homeDayPreset, homeDayDate)
-  }, [dashData, homeDayPreset, homeDayDate])
+  }, [workData, homeDayPreset, homeDayDate])
   const periodExpenseSummary = useMemo(
     () => summarizeNormalExpenses(periodExpenseItems),
     [periodExpenseItems],
   )
   const periodPurchaseItems = useMemo(() => {
-    const items = buildPurchaseHistoryItems(dashData)
-    return filterPurchaseHistoryItems(items, homeDayPreset, homeDayDate)
-  }, [dashData, homeDayPreset, homeDayDate])
+    return filterPurchaseHistoryItems(derived.purchaseHistoryItems, homeDayPreset, homeDayDate)
+  }, [derived.purchaseHistoryItems, homeDayPreset, homeDayDate])
   const periodPurchaseSummary = useMemo(
     () => summarizePurchases(periodPurchaseItems),
     [periodPurchaseItems],
   )
   const periodLoanOutflowItems = useMemo(() => {
-    const items = buildLoanOutflowHistoryItems(dashData)
+    const items = buildLoanOutflowHistoryItems(workData)
     return filterLoanOutflowHistoryItems(items, homeDayPreset, homeDayDate)
-  }, [dashData, homeDayPreset, homeDayDate])
+  }, [workData, homeDayPreset, homeDayDate])
   const periodLoanOutflowSummary = useMemo(
     () => summarizeLoanOutflows(periodLoanOutflowItems),
     [periodLoanOutflowItems],
@@ -276,12 +316,12 @@ export default function Home() {
   const periodExpenseChannels = useMemo(
     () =>
       summarizePeriodExpenseChannels(
-        dashData,
+        workData,
         periodExpenseItems,
         periodPurchaseItems,
         periodLoanOutflowItems,
       ),
-    [dashData, periodExpenseItems, periodPurchaseItems, periodLoanOutflowItems],
+    [workData, periodExpenseItems, periodPurchaseItems, periodLoanOutflowItems],
   )
   const periodExpenseCombinedTotal =
     periodExpenseSummary.total +
@@ -297,13 +337,13 @@ export default function Home() {
     () => getTopPurchaseShop(periodPurchaseItems),
     [periodPurchaseItems],
   )
-  const creditOverview = useMemo(() => buildCreditOverview(dashData), [dashData])
-  const chequeOverview = useMemo(() => buildChequeOverview(dashData), [dashData])
-  const dueReminders = useMemo(() => countActiveBillReminders(dashData), [dashData])
-  const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(dashData), [dashData])
-  const activeChequeAlerts = useMemo(() => buildActiveChequeReminders(dashData), [dashData])
+  const creditOverview = useMemo(() => buildCreditOverview(workData), [workData])
+  const chequeOverview = useMemo(() => buildChequeOverview(workData), [workData])
+  const dueReminders = useMemo(() => countActiveBillReminders(workData), [workData])
+  const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(workData), [workData])
+  const activeChequeAlerts = useMemo(() => buildActiveChequeReminders(workData), [workData])
 
-  const allCashActivityItems = useMemo(() => buildCashActivityItems(dashData), [dashData])
+  const allCashActivityItems = derived.cashActivityItems
   const cashPeriod = useMemo(
     () => summarizeCashActivityForPeriod(allCashActivityItems, balance, cashDateFilter, cashSelectedDate),
     [allCashActivityItems, balance, cashDateFilter, cashSelectedDate],
@@ -322,7 +362,7 @@ export default function Home() {
     })
   }, [cashActivityItems, deferredCashHistorySearch])
 
-  const allBankActivityItems = useMemo(() => buildBankActivityItems(dashData), [dashData])
+  const allBankActivityItems = derived.bankActivityItems
   const bankPeriod = useMemo(
     () => summarizeBankActivityForPeriod(allBankActivityItems, bankBalance, bankDateFilter, bankSelectedDate),
     [allBankActivityItems, bankBalance, bankDateFilter, bankSelectedDate],
@@ -353,9 +393,10 @@ export default function Home() {
 
   const deleteRecordBaseItems = useMemo(() => {
     if (!showDeleteRecords) return []
-    return buildHistoryItems(dashData)
-      .filter((item) => deleteRecordFilter === 'all' || item.type === deleteRecordFilter)
-  }, [dashData, showDeleteRecords, deleteRecordFilter])
+    return derived.historyItems.filter(
+      (item) => deleteRecordFilter === 'all' || item.type === deleteRecordFilter,
+    )
+  }, [derived.historyItems, showDeleteRecords, deleteRecordFilter])
 
   const recordsForDelete = useMemo(() => {
     return deleteRecordBaseItems
@@ -1363,3 +1404,5 @@ export default function Home() {
     </div>
   )
 }
+
+export default memo(Home)

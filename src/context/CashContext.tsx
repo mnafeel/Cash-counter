@@ -87,6 +87,15 @@ import {
   type TallyDateScope,
 } from '../tally/localSource'
 import { applyTheme } from '../utils/theme'
+import { createCashDataStore, type CashDataStore } from '../utils/cashDataStore'
+import { createCashDerivedStore, type CashDerivedStore } from '../utils/cashDerivedStore'
+import { buildBankActivityItems } from '../utils/bankActivity'
+import { buildCashActivityItems } from '../utils/cashActivity'
+import { buildHistoryItems } from '../utils/historyItems'
+import { buildPurchaseCreditItems, buildPurchaseHistoryItems } from '../utils/purchaseHistory'
+
+export const CashDataStoreContext = createContext<CashDataStore | null>(null)
+export const CashDerivedStoreContext = createContext<CashDerivedStore | null>(null)
 
 interface CashContextValue {
   data: AppData
@@ -358,6 +367,19 @@ export function useCashLock() {
 
 const CashContext = createContext<CashContextValue | null>(null)
 const CashBootContext = createContext(false)
+
+export type CashActionsValue = Omit<
+  CashContextValue,
+  'data' | 'dataBooting' | 'balance' | 'bankBalance' | 'pendingBills' | 'homeUnlocked'
+>
+
+const CashActionsContext = createContext<CashActionsValue | null>(null)
+
+export function useCashActions(): CashActionsValue {
+  const ctx = useContext(CashActionsContext)
+  if (!ctx) throw new Error('useCashActions must be used within CashProvider')
+  return ctx
+}
 
 export function useCashBooting(): boolean {
   return useContext(CashBootContext)
@@ -1170,7 +1192,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setHomeUnlocked(false)
   }, [])
 
-  const value = useMemo(
+  const dataStore = useMemo(() => createCashDataStore(), [])
+  const derivedStore = useMemo(() => createCashDerivedStore(), [])
+
+  const dataSnapshot = useMemo(
     () => ({
       data,
       dataBooting,
@@ -1178,6 +1203,31 @@ export function CashProvider({ children }: { children: ReactNode }) {
       bankBalance,
       pendingBills,
       homeUnlocked,
+    }),
+    [data, dataBooting, balance, bankBalance, pendingBills, homeUnlocked],
+  )
+
+  useEffect(() => {
+    dataStore.setSnapshot(dataSnapshot)
+  }, [dataStore, dataSnapshot])
+
+  const derivedSnapshot = useMemo(
+    () => ({
+      historyItems: buildHistoryItems(data),
+      cashActivityItems: buildCashActivityItems(data),
+      bankActivityItems: buildBankActivityItems(data),
+      purchaseHistoryItems: buildPurchaseHistoryItems(data),
+      purchaseCreditItems: buildPurchaseCreditItems(data),
+    }),
+    [data],
+  )
+
+  useEffect(() => {
+    derivedStore.setDerived(derivedSnapshot)
+  }, [derivedStore, derivedSnapshot])
+
+  const actionsValue = useMemo(
+    (): CashActionsValue => ({
       unlockHome,
       lockHome,
       recordSale,
@@ -1236,12 +1286,6 @@ export function CashProvider({ children }: { children: ReactNode }) {
       setLoanReminder: setLoanReminderHandler,
     }),
     [
-      data,
-      dataBooting,
-      balance,
-      bankBalance,
-      pendingBills,
-      homeUnlocked,
       unlockHome,
       lockHome,
       recordSale,
@@ -1298,14 +1342,28 @@ export function CashProvider({ children }: { children: ReactNode }) {
     ],
   )
 
+  const value = useMemo(
+    (): CashContextValue => ({
+      ...dataSnapshot,
+      ...actionsValue,
+    }),
+    [dataSnapshot, actionsValue],
+  )
+
   const lockActions = useMemo(() => ({ lockHome, unlockHome }), [lockHome, unlockHome])
 
   return (
-    <CashBootContext.Provider value={dataBooting}>
-      <CashLockContext.Provider value={lockActions}>
-        <CashContext.Provider value={value}>{children}</CashContext.Provider>
-      </CashLockContext.Provider>
-    </CashBootContext.Provider>
+    <CashDataStoreContext.Provider value={dataStore}>
+      <CashDerivedStoreContext.Provider value={derivedStore}>
+        <CashBootContext.Provider value={dataBooting}>
+          <CashLockContext.Provider value={lockActions}>
+            <CashActionsContext.Provider value={actionsValue}>
+              <CashContext.Provider value={value}>{children}</CashContext.Provider>
+            </CashActionsContext.Provider>
+          </CashLockContext.Provider>
+        </CashBootContext.Provider>
+      </CashDerivedStoreContext.Provider>
+    </CashDataStoreContext.Provider>
   )
 }
 

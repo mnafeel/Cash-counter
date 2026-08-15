@@ -135,7 +135,7 @@ export default function PurchaseHistoryPanel({
     () =>
       [...dateFilteredItems]
         .filter((item) => purchaseItemMatchesPayChannel(data, item, payChannel))
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
     [dateFilteredItems, data, payChannel],
   )
   const selectedSupplier = useMemo((): PurchaseSupplierGroup | null => {
@@ -169,7 +169,9 @@ export default function PurchaseHistoryPanel({
       count: shopItems.length,
       creditTotal: 0,
       creditCount: 0,
-      items: shopItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+      items: shopItems.sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      ),
     }
   }, [selectedSupplierKey, allItems])
 
@@ -226,7 +228,7 @@ export default function PurchaseHistoryPanel({
     if (!selectedSupplierKey) return []
     const list = [...supplierHistoryItems]
     list.sort((a, b) => {
-      const diff = new Date(a.date).getTime() - new Date(b.date).getTime()
+      const diff = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
       return supplierSort === 'newest' ? -diff : diff
     })
     return list

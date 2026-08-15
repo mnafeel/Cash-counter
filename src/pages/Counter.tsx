@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useCash } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips, { type PayType } from '../components/PayTypeChips'
@@ -10,7 +9,8 @@ import CounterCustomerNameField, {
 } from '../components/CounterCustomerNameField'
 import RoundTypeChips from '../components/RoundTypeChips'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
-import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
+import { useCashActions } from '../context/CashContext'
+import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import type { Sale } from '../types'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import { isReminderDue } from '../utils/billReminders'
@@ -171,9 +171,22 @@ function resolveLoadedPendingBill(
 
 type SavedAction = 'collect' | 'pending' | null
 
-export default function Counter() {
-  const routeActive = useIsActiveRoute('/counter')
-  const { recordSale, updatePendingSale, collectPendingSale, collectCreditPayment, collectChequePayment, editPaidSalePayment, pendingBills, data, setBillReminder, updateReminderAlertSettings } = useCash()
+function Counter({ active }: { active: boolean }) {
+  const routeActive = active
+  const { data, pendingBills } = useCashSnapshot(active)
+  const {
+    recordSale,
+    updatePendingSale,
+    collectPendingSale,
+    collectCreditPayment,
+    collectChequePayment,
+    editPaidSalePayment,
+    setBillReminder,
+    updateReminderAlertSettings,
+  } = useCashActions()
+  const tabData = data
+  const tabSales = data.sales
+  const tabPendingBills = pendingBills
   const [searchParams, setSearchParams] = useSearchParams()
   const [billStr, setBillStr] = useState('')
   const [giveStr, setGiveStr] = useState('')
@@ -220,18 +233,18 @@ export default function Counter() {
     return customerNameFieldRef.current?.getValue().trim() ?? ''
   }
 
-  const customerSummaries = useMemo(() => buildCustomerSummaries(data), [data])
+  const customerSummaries = useMemo(() => buildCustomerSummaries(tabData), [tabData])
 
   const customerNameSuggestions = useMemo(() => {
     const seen = new Map<string, string>()
-    for (let i = data.sales.length - 1; i >= 0; i--) {
-      const raw = data.sales[i]?.customerName?.trim()
+    for (let i = tabSales.length - 1; i >= 0; i--) {
+      const raw = tabSales[i]?.customerName?.trim()
       if (!raw) continue
       const key = raw.toLowerCase()
       if (!seen.has(key)) seen.set(key, raw)
     }
     return Array.from(seen.values())
-  }, [data.sales])
+  }, [tabSales])
 
   const customerPendingByName = useMemo(() => {
     const map = new Map<string, number>()
@@ -245,25 +258,25 @@ export default function Counter() {
 
   const customerChequePendingByName = useMemo(() => {
     const map = new Map<string, number>()
-    for (const summary of buildChequeCustomerSummaries(data)) {
+    for (const summary of buildChequeCustomerSummaries(tabData)) {
       if (summary.totalChequePending > 0) {
         map.set(summary.name.trim().toLowerCase(), summary.totalChequePending)
       }
     }
     return map
-  }, [data])
+  }, [tabData])
 
   const chequePendingBills = useMemo(
-    () => pendingBills.filter(isChequePendingBill),
-    [pendingBills],
+    () => tabPendingBills.filter(isChequePendingBill),
+    [tabPendingBills],
   )
 
   const collectingCreditBill = useMemo(
     () =>
       collectingCreditId
-        ? data.sales.find((sale) => sale.id === collectingCreditId)
+        ? tabSales.find((sale) => sale.id === collectingCreditId)
         : undefined,
-    [collectingCreditId, data.sales],
+    [collectingCreditId, tabSales],
   )
   const creditCollectCustomerName = collectingCreditBill
     ? (getSaleCustomerName(collectingCreditBill, data.sales)?.trim() ||
@@ -272,8 +285,8 @@ export default function Counter() {
     : ''
 
   const creditPendingBills = useMemo(
-    () => pendingBills.filter(isCreditPendingBill),
-    [pendingBills],
+    () => tabPendingBills.filter(isCreditPendingBill),
+    [tabPendingBills],
   )
 
   const chequePendingTotal = useMemo(
@@ -288,17 +301,17 @@ export default function Counter() {
 
   const billPendingBills = useMemo(
     () =>
-      pendingBills.filter(
+      tabPendingBills.filter(
         (bill) => !isChequePendingBill(bill) && !isCreditPendingBill(bill),
       ),
-    [pendingBills],
+    [tabPendingBills],
   )
 
   const balanceOnlyMode = balanceDueAmount != null && balanceDueAmount > 0
 
   const loadedPendingBill = useMemo(
-    () => resolveLoadedPendingBill(data.sales, loadedPendingId),
-    [data.sales, loadedPendingId],
+    () => resolveLoadedPendingBill(tabSales, loadedPendingId),
+    [tabSales, loadedPendingId],
   )
 
   const effectiveCollectingChequeId = useMemo((): string | null => {
@@ -461,9 +474,9 @@ export default function Counter() {
   const loadedChequeChildOfSplit = useMemo(() => {
     if (!loadedPendingBill || !isChequePendingBill(loadedPendingBill)) return false
     if (!loadedPendingBill.parentSplitId) return false
-    const parent = data.sales.find((sale) => sale.id === loadedPendingBill.parentSplitId)
+    const parent = tabSales.find((sale) => sale.id === loadedPendingBill.parentSplitId)
     return Boolean(parent)
-  }, [loadedPendingBill, data.sales])
+  }, [loadedPendingBill, tabSales])
 
   const isLoadedChequeSplitCollect =
     payType === 'split' &&
@@ -476,12 +489,12 @@ export default function Counter() {
 
   const splitParentSale = useMemo(
     () =>
-      getSplitParentSale(data.sales, {
+      getSplitParentSale(tabSales, {
         collectingCreditId,
         collectingChequeId,
         loadedPendingId,
       }),
-    [data.sales, collectingCreditId, collectingChequeId, loadedPendingId],
+    [tabSales, collectingCreditId, collectingChequeId, loadedPendingId],
   )
 
   const splitParentPriorBreakdown = useMemo(
@@ -4101,3 +4114,5 @@ export default function Counter() {
     </div>
   )
 }
+
+export default memo(Counter)

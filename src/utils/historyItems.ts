@@ -1,6 +1,6 @@
 import type { AppData, Expense, Loan, Sale } from '../types'
 import { expenseBillTag, isPurchaseExpense } from './expenseBillLabels'
-import { formatDate, formatMoney } from './format'
+import { formatDate, formatMoney, formatTimestamp } from './format'
 import { decorateLoan, loanRemainingAmount, loanSettlementEvents } from './loanLedger'
 import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, type PurchaseHistoryItem } from './purchaseHistory'
 import { getSaleCustomerName } from './saleCustomerName'
@@ -1444,7 +1444,7 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
 }
 
 function purchaseWasUpdated(item: PurchaseHistoryItem): boolean {
-  return item.date !== item.createdAt
+  return item.updatedAt !== item.createdAt
 }
 
 function formatPurchasePaySummary(item: PurchaseHistoryItem): string | undefined {
@@ -1462,7 +1462,7 @@ function formatPurchaseHistorySub(item: PurchaseHistoryItem): string {
   if (item.hasOpenCredit && item.openCreditAmount) {
     sub += ` · Credit ${formatMoney(item.openCreditAmount)}`
   }
-  if (purchaseWasUpdated(item)) sub += ` · Updated ${formatDate(item.date)}`
+  if (purchaseWasUpdated(item)) sub += ` · Updated ${formatTimestamp(item.updatedAt)}`
   return sub
 }
 
@@ -1485,8 +1485,8 @@ function buildPurchaseReceiptLines(item: PurchaseHistoryItem): HistoryReceiptLin
       status: 'paid',
       detail: item.payDetail,
       createdAt: item.createdAt,
-      paidAt: purchaseWasUpdated(item) ? item.date : item.createdAt,
-      date: purchaseWasUpdated(item) ? item.date : item.createdAt,
+      paidAt: purchaseWasUpdated(item) ? item.updatedAt : item.createdAt,
+      date: purchaseWasUpdated(item) ? item.updatedAt : item.createdAt,
     })
   }
 
@@ -1517,7 +1517,7 @@ function buildPurchaseTimeline(item: PurchaseHistoryItem): HistoryReceiptEvent[]
   if (item.paidAmount > 0) {
     events.push({
       label: purchaseWasUpdated(item) ? 'Credit payment' : 'Paid at purchase',
-      date: purchaseWasUpdated(item) ? item.date : item.createdAt,
+      date: purchaseWasUpdated(item) ? item.updatedAt : item.createdAt,
       amount: item.paidAmount,
       type: 'collected',
     })
@@ -1845,9 +1845,9 @@ export function historyItemActivityLabel(item: HistoryItem): string {
     }
   }
   if (item.billCreatedAt && item.date !== item.billCreatedAt) {
-    return `Updated ${formatDate(item.date)}`
+    return `Updated ${formatTimestamp(item.completedAt ?? item.date)}`
   }
-  return formatDate(item.date)
+  return formatTimestamp(item.date)
 }
 
 /** Date line on History list rows — bill created + each collection date when split across days. */
@@ -1888,13 +1888,16 @@ export function historyItemListDateLabel(
   }
 
   if (item.billCreatedAt && (item.type === 'sale' || item.type === 'purchase')) {
-    const created = formatDate(item.billCreatedAt)
-    if (item.date !== item.billCreatedAt) {
-      return `Created ${created} · Updated ${formatDate(item.date)}`
+    const created = formatTimestamp(item.billCreatedAt)
+    const activity = item.completedAt ?? item.date
+    if (activity !== item.billCreatedAt) {
+      const paidLabel =
+        item.type === 'purchase' && (item.paidAmount ?? 0) > 0 ? 'Paid' : 'Updated'
+      return `Created ${created} · ${paidLabel} ${formatTimestamp(activity)}`
     }
     return `Created ${created}`
   }
-  return formatDate(item.date)
+  return formatTimestamp(item.date)
 }
 
 function buildExpenseReceiptLines(expense: Expense): HistoryReceiptLine[] | undefined {
@@ -2130,7 +2133,7 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
       name: item.shopName,
       date: item.date,
       billCreatedAt: item.createdAt,
-      completedAt: item.paidAmount > 0 ? item.date : item.createdAt,
+      completedAt: item.paidAmount > 0 ? item.updatedAt : item.createdAt,
       originalBillAmount: item.amount,
       receiptLines: buildPurchaseListReceiptLines(item, expense, paired),
       receiptTimeline: buildPurchaseTimeline(item),

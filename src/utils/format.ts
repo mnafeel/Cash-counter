@@ -19,6 +19,17 @@ export function formatDate(iso: string): string {
   }).format(new Date(iso))
 }
 
+/** Full date + time with seconds for history and audit lines. */
+export function formatTimestamp(iso: string): string {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  }).format(date)
+}
+
 export function formatTime(iso: string): string {
   if (!iso) return '—'
   const date = new Date(iso)

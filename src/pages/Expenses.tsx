@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useCash } from '../context/CashContext'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCashActions } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
@@ -18,7 +18,8 @@ import {
 } from '../utils/normalExpenseHistory'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
-import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
+import { useResetOnTabEnter } from '../hooks/useIsActiveRoute'
+import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import {
   currentSalaryMonth,
   findStaffByName,
@@ -47,10 +48,11 @@ function formatSplitPart(amount: number): string {
   return Number.isInteger(amount) ? String(amount) : String(amount)
 }
 
-export default function Expenses() {
-  const routeActive = useIsActiveRoute('/expenses')
+function Expenses({ active }: { active: boolean }) {
+  const routeActive = active
   const goBack = useAppPageBack('/', { route: '/expenses' })
-  const { recordExpense, data } = useCash()
+  const { recordExpense } = useCashActions()
+  const { data } = useCashSnapshot(active)
   const [amountStr, setAmountStr] = useState('')
   const [cashSplitStr, setCashSplitStr] = useState('')
   const [bankSplitStr, setBankSplitStr] = useState('')
@@ -77,7 +79,7 @@ export default function Expenses() {
 
   const splitMode = payType === 'split'
 
-  const recentExpenseOptions = useMemo(() => buildExpenseNamePickerOptions(data, 12), [data.expenses, data.staff])
+  const recentExpenseOptions = useMemo(() => buildExpenseNamePickerOptions(data, 12), [data])
 
   const visibleNameSuggestions = useMemo((): ExpenseNamePickerOption[] => {
     const query = name.trim()
@@ -172,6 +174,24 @@ export default function Expenses() {
     setLinkToSalary(true)
     setStaffSalaryMonth(suggestDefaultSalaryMonth())
   }
+
+  const resetExpenseForm = useCallback(() => {
+    setAmountStr('')
+    setCashSplitStr('')
+    setBankSplitStr('')
+    setName('')
+    setPayType('cash')
+    setActiveField('name')
+    resetStaffFields()
+    setSaved(false)
+    setNameDropdownOpen(false)
+    setHighlightedNameIndex(-1)
+    setAmountDropdownOpen(false)
+    setHighlightedAmountIndex(-1)
+    setShowExpenseHistory(false)
+  }, [])
+
+  useResetOnTabEnter(active, resetExpenseForm)
 
   function applyNameSuggestion(option: ExpenseNamePickerOption) {
     setName(option.name)
@@ -398,16 +418,7 @@ export default function Expenses() {
   }, [saved, isValid, routeActive])
 
   function handleClear() {
-    setAmountStr('')
-    setCashSplitStr('')
-    setBankSplitStr('')
-    setName('')
-    setPayType('cash')
-    setActiveField('name')
-    resetStaffFields()
-    setSaved(false)
-    setAmountDropdownOpen(false)
-    setHighlightedAmountIndex(-1)
+    resetExpenseForm()
   }
 
   function handlePayTypeChange(type: ExpensePayType) {
@@ -754,3 +765,5 @@ export default function Expenses() {
     </div>
   )
 }
+
+export default memo(Expenses)

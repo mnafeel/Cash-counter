@@ -30,6 +30,8 @@ export interface PurchaseHistoryItem {
   payDetail: string
   date: string
   createdAt: string
+  /** Last payment / update ISO time — used for sorting and “Updated” labels. */
+  updatedAt: string
   hasOpenCredit?: boolean
   openCreditAmount?: number
   openCreditExpenseId?: string
@@ -311,6 +313,19 @@ function latestPurchaseBillDate(...expenses: Expense[]): string {
     const next = purchaseExpenseBillDate(expense)
     return new Date(next).getTime() > new Date(latest).getTime() ? next : latest
   }, purchaseExpenseBillDate(expenses[0]))
+}
+
+function latestPurchaseActivityTime(...expenses: Expense[]): string {
+  return expenses.reduce((latest, expense) => {
+    const next = purchaseExpenseActivityTime(expense)
+    return new Date(next).getTime() > new Date(latest).getTime() ? next : latest
+  }, purchaseExpenseActivityTime(expenses[0]))
+}
+
+function sortPurchaseHistoryItems(items: PurchaseHistoryItem[]): PurchaseHistoryItem[] {
+  return [...items].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  )
 }
 
 export function isPurchaseCreditExpense(expense: Expense): boolean {
@@ -720,6 +735,7 @@ export function buildPurchaseHistoryItems(data: AppData): PurchaseHistoryItem[] 
         payDetail: `No 1: ${purchasePayDetail(no1)} · No 2: ${purchasePayDetail(no2)}`,
         date: latestPurchaseBillDate(no1, no2),
         createdAt: no1.createdAt,
+        updatedAt: latestPurchaseActivityTime(no1, no2),
         hasOpenCredit: no1Credit.open || no2Credit.open,
         openCreditAmount: openCreditAmount > 0 ? openCreditAmount : undefined,
         openCreditExpenseId: no1Credit.open ? no1.id : no2Credit.open ? no2.id : undefined,
@@ -747,13 +763,14 @@ export function buildPurchaseHistoryItems(data: AppData): PurchaseHistoryItem[] 
       payDetail: purchasePayDetail(expense),
       date: purchaseExpenseBillDate(expense),
       createdAt: expense.createdAt,
+      updatedAt: purchaseExpenseActivityTime(expense),
       hasOpenCredit: credit.open,
       openCreditAmount: credit.open ? credit.amount : undefined,
       openCreditExpenseId: credit.open ? credit.expenseId : undefined,
     })
   }
 
-  return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  return sortPurchaseHistoryItems(items)
 }
 
 export function summarizePurchases(
