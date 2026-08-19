@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useState } from 'react'
+import { startTransition, useEffect, useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import MainTabs from './MainTabs'
 import TabPanel from './TabPanel'
@@ -6,9 +6,11 @@ import { useDeviceSize } from '../hooks/useDeviceSize'
 import { useHomePinLock } from '../hooks/useHomePinLock'
 import ReminderAlertsNotifier from './ReminderAlertsNotifier'
 import CloudStatusNotifier from './CloudStatusNotifier'
+import OpenTimingNotifier from './OpenTimingNotifier'
 import { initReminderNotificationSound } from '../utils/reminderNotificationSound'
 import { normalizeRoutePath } from '../utils/hashRoute'
 import { getMainTabKey, isMainTabPath, type MainTabKey } from '../utils/mainTab'
+import { openTimingLabelForPath, startOpenTiming, finishOpenTiming } from '../utils/openTiming'
 import './Layout.css'
 
 const navItems = [
@@ -16,7 +18,7 @@ const navItems = [
   { to: '/counter', label: 'Counter', icon: '💵' },
   { to: '/expenses', label: 'Expenses', icon: '📤' },
   { to: '/history', label: 'History', icon: '📋' },
-]
+] as const
 
 function getNavIndex(pathname: string): number {
   const path = normalizeRoutePath(pathname)
@@ -48,13 +50,25 @@ export default function Layout() {
 
   useEffect(() => {
     initReminderNotificationSound()
+    startOpenTiming('App')
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => finishOpenTiming('App'))
+    })
   }, [])
 
   function navigateMainTab(to: string) {
     const tab = getMainTabKey(to)
+    const item = navItems.find((entry) => entry.to === to)
+    if (item) startOpenTiming(item.label)
     if (tab) setVisibleTab(tab)
     startTransition(() => navigate(to))
   }
+
+  useEffect(() => {
+    if (mainTab) return
+    const label = openTimingLabelForPath(location.pathname)
+    if (label) startOpenTiming(label)
+  }, [location.pathname, mainTab])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -77,6 +91,12 @@ export default function Layout() {
         ? '/'
         : visibleTab
       : location.pathname
+
+  const activeNavLabel = useMemo(() => {
+    if (!showMainTabs) return openTimingLabelForPath(location.pathname)
+    const item = navItems.find((entry) => isNavActive(navActivePath, entry.to))
+    return item?.label ?? null
+  }, [showMainTabs, navActivePath, location.pathname])
 
   return (
     <div className="layout layout--fit">
@@ -113,6 +133,10 @@ export default function Layout() {
       </main>
       <ReminderAlertsNotifier />
       <CloudStatusNotifier />
+      <OpenTimingNotifier
+        navLabels={navItems.map((item) => item.label)}
+        activeNavLabel={activeNavLabel}
+      />
     </div>
   )
 }

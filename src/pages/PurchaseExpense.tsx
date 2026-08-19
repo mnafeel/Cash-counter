@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useCash } from '../context/CashContext'
+import { useOpenTiming } from '../hooks/useOpenTiming'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
@@ -398,6 +399,9 @@ export default function PurchaseExpense() {
   const activeItemSuggestionRef = useRef<HTMLButtonElement>(null)
   const nameSuggestionsListRef = useRef<HTMLUListElement>(null)
   const itemSuggestionsListRef = useRef<HTMLUListElement>(null)
+
+  useOpenTiming('Purchases', true, false)
+  useOpenTiming('Purchase History', showPurchaseHistory)
 
   const editingBill: BillSlot = billMode === 'no2' ? 2 : 1
   const bill = editingBill === 1 ? bill1 : bill2

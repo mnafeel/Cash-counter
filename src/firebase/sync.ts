@@ -108,6 +108,16 @@ export async function refreshCloudRemoteSummary(): Promise<CloudRemoteSummary | 
     cloudRemoteSummaryListener?.(null)
     return null
   }
+
+  // Main billing device is local-first — avoid re-downloading the full cloud doc on every tab return.
+  if (isMainBillingDevice()) {
+    const local = loadData()
+    const backupAt = getLocalLastBackupTime() ?? getLocalDataUpdatedAt() ?? new Date().toISOString()
+    const summary = buildCloudRemoteSummary(local, backupAt)
+    cloudRemoteSummaryListener?.(summary)
+    return summary
+  }
+
   const remote = await fetchRemoteAppData()
   if (!remote) {
     cloudRemoteSummaryListener?.(null)
@@ -416,6 +426,11 @@ function applyRemoteSnapshot(data: AppData, backupAt: string): void {
 
 function startCloudListener(): void {
   cloudSnapshotUnsub?.()
+  cloudSnapshotUnsub = null
+
+  // Main billing device is local-first; skip live listener unless auto-pull is enabled.
+  if (isMainBillingDevice() && !isAutoPullFromCloudEnabled()) return
+
   cloudSnapshotUnsub = subscribeToCloudData(
     (payload) => {
       emitCloudRemoteSummaryFromPayload(payload.data, payload.backupAt, payload.totals)

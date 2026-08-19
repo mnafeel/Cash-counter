@@ -700,7 +700,7 @@ export function purchaseExpensePaymentModes(expense: Expense): Array<
   return [expense.payType]
 }
 
-export function buildPurchaseHistoryItems(data: AppData): PurchaseHistoryItem[] {
+function buildPurchaseHistoryItemsUncached(data: AppData): PurchaseHistoryItem[] {
   const purchases = data.expenses.filter((expense) => isPurchaseExpense(expense))
   const byId = new Map(purchases.map((expense) => [expense.id, expense]))
   const consumed = new Set<string>()
@@ -772,6 +772,8 @@ export function buildPurchaseHistoryItems(data: AppData): PurchaseHistoryItem[] 
 
   return sortPurchaseHistoryItems(items)
 }
+
+export const buildPurchaseHistoryItems = memoByDataRef(buildPurchaseHistoryItemsUncached)
 
 export function summarizePurchases(
   items: PurchaseHistoryItem[],

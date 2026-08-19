@@ -7,6 +7,7 @@ import { useAppPageBack } from '../hooks/useAppPageBack'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { useResetOnTabEnter } from '../hooks/useIsActiveRoute'
+import { useOpenTiming } from '../hooks/useOpenTiming'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import { useCashDerivedSnapshot } from '../hooks/useCashDerivedSnapshot'
 import { formatMoney, formatTimestamp } from '../utils/format'
@@ -142,7 +143,7 @@ function History({ active }: { active: boolean }) {
   const [filter, setFilter] = useState<HistoryFilter>('all')
   const [paymentFilter, setPaymentFilter] = useState<HistoryPaymentFilter>('all')
   const [sort, setSort] = useState<HistorySort>('date-desc')
-  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
+  const [dateFilter, setDateFilter] = useState<DateFilter>('today')
   const [selectedDate, setSelectedDate] = useState('')
   const { value: search, setValue: setSearch, deferredValue: deferredSearch, reset: resetSearch } = useDeferredSearch()
   const [editingKey, setEditingKey] = useState<string | null>(null)
@@ -156,6 +157,9 @@ function History({ active }: { active: boolean }) {
   const [purchasePanelSession, setPurchasePanelSession] = useState(0)
   const editInputRef = useRef<HTMLInputElement>(null)
   const purchaseCreditBarRef = useRef<HTMLDivElement>(null)
+
+  useOpenTiming('History', active, false)
+  useOpenTiming('Purchase History', showPurchaseHistory)
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -215,7 +219,7 @@ function History({ active }: { active: boolean }) {
     setFilter('all')
     setPaymentFilter('all')
     setSort('date-desc')
-    setDateFilter('all')
+    setDateFilter('today')
     setSelectedDate('')
     setEditingKey(null)
     setEditValue('')

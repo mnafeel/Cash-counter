@@ -1,5 +1,6 @@
 import type { AppData, Sale } from '../types'
 import { formatDate, formatMoney } from './format'
+import { memoByDataRef } from './memoByDataRef'
 import {
   saleBillGroupId,
   saleCreditPendingAmount,
@@ -457,7 +458,7 @@ export function filterCustomersWithCredit(summaries: CustomerSummary[]): Custome
     .sort((a, b) => b.totalCreditPending - a.totalCreditPending || a.name.localeCompare(b.name))
 }
 
-export function buildCreditOverview(data: AppData): CreditOverview {
+function buildCreditOverviewUncached(data: AppData): CreditOverview {
   const customers = filterCustomersWithCredit(buildCustomerSummaries(data)).map((summary) => ({
     name: summary.name,
     pendingAmount: summary.totalCreditPending,
@@ -473,6 +474,8 @@ export function buildCreditOverview(data: AppData): CreditOverview {
     customers,
   }
 }
+
+export const buildCreditOverview = memoByDataRef(buildCreditOverviewUncached)
 
 export function getCustomerSummary(
   summaries: CustomerSummary[],

@@ -88,7 +88,7 @@ import {
 } from '../tally/localSource'
 import { applyTheme } from '../utils/theme'
 import { createCashDataStore, type CashDataStore } from '../utils/cashDataStore'
-import { createCashDerivedStore, type CashDerivedStore } from '../utils/cashDerivedStore'
+import { createCashDerivedStore, type CashDerivedSnapshot, type CashDerivedStore } from '../utils/cashDerivedStore'
 import { buildBankActivityItems } from '../utils/bankActivity'
 import { buildCashActivityItems } from '../utils/cashActivity'
 import { buildHistoryItems } from '../utils/historyItems'
@@ -1211,20 +1211,33 @@ export function CashProvider({ children }: { children: ReactNode }) {
     dataStore.setSnapshot(dataSnapshot)
   }, [dataStore, dataSnapshot])
 
-  const derivedSnapshot = useMemo(
-    () => ({
+  const heavyDerivedDataset =
+    data.sales.length > 200 || data.expenses.length > 300
+
+  useEffect(() => {
+    const buildDerived = (): CashDerivedSnapshot => ({
       historyItems: buildHistoryItems(data),
       cashActivityItems: buildCashActivityItems(data),
       bankActivityItems: buildBankActivityItems(data),
       purchaseHistoryItems: buildPurchaseHistoryItems(data),
       purchaseCreditItems: buildPurchaseCreditItems(data),
-    }),
-    [data],
-  )
+    })
 
-  useEffect(() => {
-    derivedStore.setDerived(derivedSnapshot)
-  }, [derivedStore, derivedSnapshot])
+    const apply = () => derivedStore.setDerived(buildDerived())
+
+    if (!heavyDerivedDataset) {
+      apply()
+      return
+    }
+
+    // Large datasets: rebuild during idle time so tab switches and billing stay responsive.
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(apply, { timeout: 1200 })
+      return () => cancelIdleCallback(id)
+    }
+    const id = window.setTimeout(apply, 16)
+    return () => window.clearTimeout(id)
+  }, [data, derivedStore, heavyDerivedDataset])
 
   const actionsValue = useMemo(
     (): CashActionsValue => ({

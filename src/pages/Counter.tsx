@@ -11,6 +11,7 @@ import RoundTypeChips from '../components/RoundTypeChips'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useCashActions } from '../context/CashContext'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
+import { useOpenTiming } from '../hooks/useOpenTiming'
 import type { Sale } from '../types'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import { isReminderDue } from '../utils/billReminders'
@@ -172,6 +173,7 @@ function resolveLoadedPendingBill(
 type SavedAction = 'collect' | 'pending' | null
 
 function Counter({ active }: { active: boolean }) {
+  useOpenTiming('Counter', active, false)
   const routeActive = active
   const { data, pendingBills } = useCashSnapshot(active)
   const {
@@ -994,12 +996,13 @@ function Counter({ active }: { active: boolean }) {
     const total = totalOverride ?? splitTotal
 
     if (isLoadedChequeSplitCollect) {
-      setCashSplitStr(nextCashStr)
       if (nextCashStr === '') {
+        setCashSplitStr('')
         pinSiblingCreditPending()
         return
       }
-      const cash = parseAmount(nextCashStr)
+      const cash = Math.min(parseAmount(nextCashStr), total)
+      setCashSplitStr(formatSplitPart(cash))
       let bank = parseAmount(bankSplitStr)
       let cheque = chequeSplitAmount
       const room = Math.max(0, total - cash)
@@ -1020,20 +1023,15 @@ function Counter({ active }: { active: boolean }) {
     }
 
     if (collectingCreditId) {
-      setCashSplitStr(nextCashStr)
       if (nextCashStr === '') {
+        setCashSplitStr('')
         const bank = parseAmount(bankSplitStr)
         const cheque = chequeSplitAmount
         setCreditSplitStr(formatSplitPart(Math.max(0, total - bank - cheque)))
         return
       }
-      const cash = parseAmount(nextCashStr)
-      if (cash > 0) {
-        setGiveStr((prev) => {
-          const prevGive = parseAmount(prev)
-          return prevGive >= cash ? prev : nextCashStr
-        })
-      }
+      const cash = Math.min(parseAmount(nextCashStr), total)
+      setCashSplitStr(formatSplitPart(cash))
       let bank = parseAmount(bankSplitStr)
       let cheque = chequeSplitAmount
       const room = Math.max(0, total - cash)
@@ -1051,14 +1049,15 @@ function Counter({ active }: { active: boolean }) {
     }
 
     if (collectingChequeId && chequeCollectCreditMode) {
-      setCashSplitStr(nextCashStr)
       if (nextCashStr === '') {
+        setCashSplitStr('')
         const bank = parseAmount(bankSplitStr)
         const cheque = chequeSplitAmount
         setCreditSplitStr(formatSplitPart(Math.max(0, total - bank - cheque)))
         return
       }
-      const cash = parseAmount(nextCashStr)
+      const cash = Math.min(parseAmount(nextCashStr), total)
+      setCashSplitStr(formatSplitPart(cash))
       let bank = parseAmount(bankSplitStr)
       let cheque = chequeSplitAmount
       const room = Math.max(0, total - cash)
@@ -1075,24 +1074,20 @@ function Counter({ active }: { active: boolean }) {
       return
     }
 
-    setCashSplitStr(nextCashStr)
     const fixed = chequeInSplitTotal + creditSplitAmount
     const room = Math.max(0, total - fixed)
     if (room <= 0) {
+      setCashSplitStr('')
       setBankSplitStr('')
       return
     }
     if (nextCashStr === '') {
+      setCashSplitStr('')
       setBankSplitStr('')
       return
     }
-    const cash = parseAmount(nextCashStr)
-    if (cash > 0) {
-      setGiveStr((prev) => {
-        const prevGive = parseAmount(prev)
-        return prevGive >= cash ? prev : nextCashStr
-      })
-    }
+    const cash = Math.min(parseAmount(nextCashStr), room)
+    setCashSplitStr(formatSplitPart(cash))
     let bank = parseAmount(bankSplitStr)
     if (bank > 0) {
       bank = Math.min(bank, Math.max(0, room - cash))
@@ -1107,12 +1102,13 @@ function Counter({ active }: { active: boolean }) {
     const total = totalOverride ?? splitTotal
 
     if (isLoadedChequeSplitCollect) {
-      setBankSplitStr(nextBankStr)
       if (nextBankStr === '') {
+        setBankSplitStr('')
         pinSiblingCreditPending()
         return
       }
-      const bank = parseAmount(nextBankStr)
+      const bank = Math.min(parseAmount(nextBankStr), total)
+      setBankSplitStr(formatSplitPart(bank))
       let cash = parseAmount(cashSplitStr)
       let cheque = chequeSplitAmount
       const room = Math.max(0, total - bank)
@@ -1133,14 +1129,15 @@ function Counter({ active }: { active: boolean }) {
     }
 
     if (collectingCreditId) {
-      setBankSplitStr(nextBankStr)
       if (nextBankStr === '') {
+        setBankSplitStr('')
         const cash = parseAmount(cashSplitStr)
         const cheque = chequeSplitAmount
         setCreditSplitStr(formatSplitPart(Math.max(0, total - cash - cheque)))
         return
       }
-      const bank = parseAmount(nextBankStr)
+      const bank = Math.min(parseAmount(nextBankStr), total)
+      setBankSplitStr(formatSplitPart(bank))
       let cash = parseAmount(cashSplitStr)
       let cheque = chequeSplitAmount
       const room = Math.max(0, total - bank)
@@ -1158,14 +1155,15 @@ function Counter({ active }: { active: boolean }) {
     }
 
     if (collectingChequeId && chequeCollectCreditMode) {
-      setBankSplitStr(nextBankStr)
       if (nextBankStr === '') {
+        setBankSplitStr('')
         const cash = parseAmount(cashSplitStr)
         const cheque = chequeSplitAmount
         setCreditSplitStr(formatSplitPart(Math.max(0, total - cash - cheque)))
         return
       }
-      const bank = parseAmount(nextBankStr)
+      const bank = Math.min(parseAmount(nextBankStr), total)
+      setBankSplitStr(formatSplitPart(bank))
       let cash = parseAmount(cashSplitStr)
       let cheque = chequeSplitAmount
       const room = Math.max(0, total - bank)
@@ -1182,18 +1180,20 @@ function Counter({ active }: { active: boolean }) {
       return
     }
 
-    setBankSplitStr(nextBankStr)
     const fixed = chequeInSplitTotal + creditSplitAmount
     const room = Math.max(0, total - fixed)
     if (room <= 0) {
+      setBankSplitStr('')
       setCashSplitStr('')
       return
     }
     if (nextBankStr === '') {
+      setBankSplitStr('')
       setCashSplitStr('')
       return
     }
-    const bank = parseAmount(nextBankStr)
+    const bank = Math.min(parseAmount(nextBankStr), room)
+    setBankSplitStr(formatSplitPart(bank))
     let cash = parseAmount(cashSplitStr)
     if (cash > 0) {
       cash = Math.min(cash, Math.max(0, room - bank))
@@ -1280,8 +1280,13 @@ function Counter({ active }: { active: boolean }) {
       return
     }
 
-    setChequeSplitStr(nextChequeStr)
-    const cheque = parseAmount(nextChequeStr)
+    if (nextChequeStr === '') {
+      setChequeSplitStr('')
+      return
+    }
+    const maxCheque = Math.max(0, total - cashSplitAmount - creditSplitAmount)
+    const cheque = Math.min(parseAmount(nextChequeStr), maxCheque)
+    setChequeSplitStr(formatSplitPart(cheque))
     const base = Math.max(0, total - cheque)
     const bank = Math.max(0, base - cashSplitAmount - creditSplitAmount)
     setBankSplitStr(formatSplitPart(bank))
@@ -1323,8 +1328,13 @@ function Counter({ active }: { active: boolean }) {
       return
     }
 
-    setCreditSplitStr(nextCreditStr)
-    const credit = parseAmount(nextCreditStr)
+    if (nextCreditStr === '') {
+      setCreditSplitStr('')
+      return
+    }
+    const maxCredit = Math.max(0, total - chequeInSplitTotal)
+    const credit = Math.min(parseAmount(nextCreditStr), maxCredit)
+    setCreditSplitStr(formatSplitPart(credit))
     const room = Math.max(0, total - credit - chequeInSplitTotal)
     let cash = parseAmount(cashSplitStr)
     let bank = parseAmount(bankSplitStr)
@@ -1355,6 +1365,7 @@ function Counter({ active }: { active: boolean }) {
     setBankSplitStr('')
     setChequeSplitStr('')
     setCreditSplitStr('')
+    setGiveStr('')
     setActiveField('cashSplit')
   }
 
@@ -2311,6 +2322,8 @@ function Counter({ active }: { active: boolean }) {
       createChequePending?: boolean
     },
   ) {
+    if (splitPaidTotal > splitTotal || splitExcess > 0) return undefined
+
     const chequeToBank = options.chequeToBank ?? false
     const createChequePending = options.createChequePending ?? false
     // Cheque pending child owns that leg — parent must not also store it (history/bank 2×).
@@ -3459,7 +3472,7 @@ function Counter({ active }: { active: boolean }) {
             {hideChequeSplitGive ? null : payType === 'split' ? (
               showSplitCashGive ? (
               <AmountDisplay
-                label="Customer Give"
+                label="Amount Tendered"
                 value={giveStr}
                 active={activeField === 'give'}
                 onSelect={() => {
@@ -3471,7 +3484,7 @@ function Counter({ active }: { active: boolean }) {
               />
               ) : (
               <div className="counter-readonly counter-readonly--na">
-                <span className="counter-readonly-label">Customer Give</span>
+                <span className="counter-readonly-label">Amount Tendered</span>
                 <span className="counter-readonly-value">—</span>
               </div>
               )

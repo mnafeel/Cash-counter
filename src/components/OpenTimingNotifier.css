@@ -1,0 +1,57 @@
+.open-timing-toast {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  right: 10px;
+  z-index: 1250;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(12, 18, 28, 0.94);
+  border: 1px solid rgba(120, 180, 255, 0.35);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  color: #e8eef8;
+  pointer-events: none;
+}
+
+.open-timing-toast-label {
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+
+.open-timing-toast-ms {
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #8fd3ff;
+}
+
+.open-timing-nav {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  left: 10px;
+  z-index: 1240;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: min(70vw, 420px);
+  pointer-events: none;
+}
+
+.open-timing-nav-chip {
+  font-size: 0.62rem;
+  line-height: 1.2;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(12, 18, 28, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(232, 238, 248, 0.65);
+  font-variant-numeric: tabular-nums;
+}
+
+.open-timing-nav-chip--active {
+  border-color: rgba(120, 180, 255, 0.45);
+  color: #b8e4ff;
+  background: rgba(18, 32, 52, 0.92);
+}

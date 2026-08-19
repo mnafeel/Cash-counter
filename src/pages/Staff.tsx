@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCash } from '../context/CashContext'
+import { useOpenTiming } from '../hooks/useOpenTiming'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
@@ -39,6 +40,7 @@ import { printStaffSalaryReport } from '../utils/staffSalaryReport'
 import './Staff.css'
 
 export default function Staff() {
+  useOpenTiming('Staff', true, false)
   const goBack = useAppPageBack('/', { route: '/staff' })
   const {
     data,

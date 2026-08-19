@@ -502,6 +502,77 @@ function buildStructuredSaleReceipt(sale: Sale): {
   return { timeline, lines }
 }
 
+function appendSplitParentCollectionEvents(
+  parent: Sale,
+  children: Sale[],
+  drafts: ReceiptEventDraft[],
+): void {
+  if (parent.status === 'pending') return
+
+  const activeEvents = getSalePaymentEvents(parent).filter(
+    (event) => event.amount > 0 && !event.cancelled,
+  )
+
+  if (activeEvents.length > 0) {
+    activeEvents.forEach((event, index) => {
+      const normalized = normalizeCollectedBreakdown({
+        cash: event.cash ?? 0,
+        bank: event.bank ?? 0,
+        cheque: event.cheque ?? 0,
+        total: event.amount,
+      })
+      const prefix =
+        index === 0 ? 'Split allocation' : `${ordinalWord(index)} split payment`
+
+      if (normalized.cash > 0) {
+        createReceiptDraft(drafts, RECEIPT_SEQ.CASH_RECEIVED, {
+          label: `${prefix} · Cash`,
+          date: event.at,
+          amount: normalized.cash,
+          type: 'collected',
+          detail: formatDate(event.at),
+        })
+      }
+      if (normalized.bank > 0 || normalized.cheque > 0) {
+        createReceiptDraft(drafts, RECEIPT_SEQ.BANK_RECEIVED, {
+          label: `${prefix} · Bank`,
+          date: event.at,
+          amount: normalized.bank + normalized.cheque,
+          type: 'collected',
+          detail: formatDate(event.at),
+        })
+      }
+    })
+    return
+  }
+
+  const parentCollected = parentCollectedExcludingChequeChildren(parent, children)
+  if (!parentCollected) return
+
+  if (parentCollected.cash > 0) {
+    createReceiptDraft(drafts, RECEIPT_SEQ.CASH_RECEIVED, {
+      label: 'Split allocation · Cash',
+      date: saleChannelCollectionAt(parent, 'cash') ?? saleDisplayCollectionAt(parent, 'cash'),
+      amount: parentCollected.cash,
+      type: 'collected',
+      detail: formatDate(
+        saleChannelCollectionAt(parent, 'cash') ?? saleDisplayCollectionAt(parent, 'cash'),
+      ),
+    })
+  }
+  if (parentCollected.bank > 0) {
+    createReceiptDraft(drafts, RECEIPT_SEQ.BANK_RECEIVED, {
+      label: 'Split allocation · Bank',
+      date: saleChannelCollectionAt(parent, 'bank') ?? saleDisplayCollectionAt(parent, 'bank'),
+      amount: parentCollected.bank,
+      type: 'collected',
+      detail: formatDate(
+        saleChannelCollectionAt(parent, 'bank') ?? saleDisplayCollectionAt(parent, 'bank'),
+      ),
+    })
+  }
+}
+
 function buildSplitStructuredReceipt(
   parent: Sale,
   children: Sale[],
@@ -520,31 +591,7 @@ function buildSplitStructuredReceipt(
     detail: formatDate(parent.createdAt),
   })
 
-  const parentCollected = parentCollectedExcludingChequeChildren(parent, children)
-  if (parent.status !== 'pending' && parentCollected) {
-    if (parentCollected.cash > 0) {
-      createReceiptDraft(drafts, RECEIPT_SEQ.CASH_RECEIVED, {
-        label: 'Cash received',
-        date: saleChannelCollectionAt(parent, 'cash') ?? saleDisplayCollectionAt(parent, 'cash'),
-        amount: parentCollected.cash,
-        type: 'collected',
-        detail: formatDate(
-          saleChannelCollectionAt(parent, 'cash') ?? saleDisplayCollectionAt(parent, 'cash'),
-        ),
-      })
-    }
-    if (parentCollected.bank > 0) {
-      createReceiptDraft(drafts, RECEIPT_SEQ.BANK_RECEIVED, {
-        label: 'Bank received',
-        date: saleChannelCollectionAt(parent, 'bank') ?? saleDisplayCollectionAt(parent, 'bank'),
-        amount: parentCollected.bank,
-        type: 'collected',
-        detail: formatDate(
-          saleChannelCollectionAt(parent, 'bank') ?? saleDisplayCollectionAt(parent, 'bank'),
-        ),
-      })
-    }
-  }
+  appendSplitParentCollectionEvents(parent, children, drafts)
 
   const sortedChildren = [...children].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),

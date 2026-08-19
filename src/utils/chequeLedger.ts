@@ -1,5 +1,6 @@
 import type { AppData, Sale } from '../types'
 import { formatDate } from './format'
+import { memoByDataRef } from './memoByDataRef'
 import {
   saleBillGroupId,
   saleChequePendingAmount,
@@ -282,7 +283,7 @@ export function searchChequeCustomerSummaries(
   return summaries.filter((summary) => summary.name.toLowerCase().includes(q))
 }
 
-export function buildChequeOverview(data: AppData): ChequeOverview {
+function buildChequeOverviewUncached(data: AppData): ChequeOverview {
   const customers = filterCustomersWithCheque(buildChequeCustomerSummaries(data)).map((summary) => ({
     name: summary.name,
     pendingAmount: summary.totalChequePending,
@@ -298,6 +299,8 @@ export function buildChequeOverview(data: AppData): ChequeOverview {
     customers,
   }
 }
+
+export const buildChequeOverview = memoByDataRef(buildChequeOverviewUncached)
 
 export function getChequeCustomerSummary(
   summaries: ChequeCustomerSummary[],

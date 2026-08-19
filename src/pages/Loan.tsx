@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, useCallback } from 'react'
 import { useCash } from '../context/CashContext'
+import { useOpenTiming } from '../hooks/useOpenTiming'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import AmountDisplay from '../components/AmountDisplay'
 import BillReminderModal from '../components/BillReminderModal'
@@ -26,6 +27,7 @@ type FormMode = 'give' | 'take' | null
 type FormField = 'name' | 'amount'
 
 export default function Loan() {
+  useOpenTiming('Loan', true, false)
   const routeActive = useIsActiveRoute('/loan')
   const goBack = useAppPageBack('/', { route: '/loan' })
   const {

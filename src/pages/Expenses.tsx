@@ -19,6 +19,7 @@ import {
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useResetOnTabEnter } from '../hooks/useIsActiveRoute'
+import { useOpenTiming } from '../hooks/useOpenTiming'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import {
   currentSalaryMonth,
@@ -76,6 +77,9 @@ function Expenses({ active }: { active: boolean }) {
   const amountSuggestionsListRef = useRef<HTMLUListElement>(null)
   const nameInputPointerRef = useRef(false)
   const staffPanelRef = useRef<HTMLDivElement>(null)
+
+  useOpenTiming('Expenses', active, false)
+  useOpenTiming('Expense History', showExpenseHistory)
 
   const splitMode = payType === 'split'
 

@@ -23,6 +23,11 @@ function prefetchLazyRoutes() {
   void import('./pages/Settings')
 }
 
+/** Main tabs render in Layout/MainTabs; routes only match the URL. */
+function MainTabRoute() {
+  return null
+}
+
 export default function App() {
   useEffect(() => {
     if (typeof window.requestIdleCallback === 'function') {
@@ -39,10 +44,10 @@ export default function App() {
         <Routes>
           <Route element={<HashRouteFix />}>
             <Route element={<Layout />}>
-              <Route index />
-              <Route path="counter" />
-              <Route path="expenses" />
-              <Route path="history" />
+              <Route index element={<MainTabRoute />} />
+              <Route path="counter" element={<MainTabRoute />} />
+              <Route path="expenses" element={<MainTabRoute />} />
+              <Route path="history" element={<MainTabRoute />} />
               <Route
                 path="purchase"
                 element={

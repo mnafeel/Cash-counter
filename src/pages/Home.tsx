@@ -10,6 +10,7 @@ import { useCashActions } from '../context/CashContext'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import { useCashDerivedSnapshot } from '../hooks/useCashDerivedSnapshot'
 import { useResetOnTabEnter } from '../hooks/useIsActiveRoute'
+import { useOpenTiming } from '../hooks/useOpenTiming'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import type { ExpensePayType, TransferDirection } from '../types'
@@ -125,8 +126,8 @@ function Home({ active }: { active: boolean }) {
     updateReminderAlertSettings,
     renameCustomerProfile,
   } = useCashActions()
-  const workData =
-    !homeUnlocked || !active ? LOCKED_DASHBOARD_DATA : data
+  // Keep real data while tab is hidden (when unlocked) so summaries stay cached on return.
+  const workData = !homeUnlocked ? LOCKED_DASHBOARD_DATA : data
   const [pinStr, setPinStr] = useState('')
   const [pinError, setPinError] = useState(false)
   const [addTarget, setAddTarget] = useState<ExpensePayType | null>(null)
@@ -179,6 +180,15 @@ function Home({ active }: { active: boolean }) {
   const [homeSelectedDate, setHomeSelectedDate] = useState('')
   const [homeExpenseChannel, setHomeExpenseChannel] = useState<ExpensePayChannelFilter>('all')
   const noteInputRef = useRef<HTMLInputElement>(null)
+
+  useOpenTiming('Home', active, false)
+  useOpenTiming('Reports', showReports)
+  useOpenTiming('Customers', showCustomers)
+  useOpenTiming('Credit Dashboard', showCredits)
+  useOpenTiming('Cheque Dashboard', showCheques)
+  useOpenTiming('Cash History', showCashHistory)
+  useOpenTiming('Bank History', showBankHistory)
+  useOpenTiming('Delete Records', showDeleteRecords)
 
   const resetHomeUi = useCallback(() => {
     resetDeleteRecordSearch()
@@ -806,10 +816,17 @@ function Home({ active }: { active: boolean }) {
                 : ''}
             </span>
           </button>
-          <button
-            type="button"
+          <div
+            role="button"
+            tabIndex={0}
             className="stat-card stat-card--action"
             onClick={() => openHomeDayReports('expense')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                openHomeDayReports('expense')
+              }
+            }}
           >
             <span className="stat-label">Expenses</span>
             <span className="stat-value stat-value--orange">
@@ -857,7 +874,7 @@ function Home({ active }: { active: boolean }) {
               + Loan {formatMoney(periodLoanOutflowSummary.total)} ·{' '}
               {periodLoanOutflowSummary.count} items
             </span>
-          </button>
+          </div>
           <button
             type="button"
             className="stat-card stat-card--action"

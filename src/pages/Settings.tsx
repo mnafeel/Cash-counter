@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { User } from 'firebase/auth'
 import { useCash } from '../context/CashContext'
+import { useOpenTiming } from '../hooks/useOpenTiming'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import { isFirebaseConfigured } from '../firebase/config'
@@ -192,6 +193,7 @@ const DAILY_REPORT_DOWNLOAD_GROUPS: {
 ]
 
 export default function Settings() {
+  useOpenTiming('Settings', true, false)
   const goBack = useAppPageBack('/', { route: '/settings' })
   const {
     data,
@@ -2425,7 +2427,8 @@ export default function Settings() {
                   </p>
                 ) : !autoPull ? (
                   <p className="settings-backup-meta">
-                    Main device: auto load off keeps local cash stable until you tap Load from
+                    Main device: data loads from local storage for speed. Cloud is backed up
+                    automatically; auto load off keeps local cash stable until you tap Load from
                     cloud.
                   </p>
                 ) : (
