@@ -6,6 +6,7 @@ import { downloadExpenseAndNo1PurchaseSpreadsheet, filterNo1PurchaseItems } from
 import { formatDate, formatMoney, formatTime } from '../utils/format'
 import {
   buildExpenseTimelineEntriesFromData,
+  buildTransferExpenseTimelineEntries,
   expenseTimelineKindLabel,
   filterExpenseTimelineByPayChannel,
   summarizeExpenseTimeline,
@@ -93,8 +94,37 @@ export default function ExpenseHistoryPanel({
           if (String(entry.amount).includes(q)) return true
           return false
         })
-    return filterExpenseTimelineByPayChannel(searched, payChannel)
-  }, [timeline, deferredSearch, payChannel])
+    const channelFiltered = filterExpenseTimelineByPayChannel(searched, payChannel)
+    if (payChannel !== 'cash' && payChannel !== 'bank') return channelFiltered
+
+    // Cash→Bank / Bank→Cash appear as expenses only on Cash / Bank filters — not on All.
+    const transfers = buildTransferExpenseTimelineEntries(
+      data,
+      payChannel,
+      'range',
+      rangeFrom,
+      rangeTo,
+      sort,
+    )
+    const transferSearched = !q
+      ? transfers
+      : transfers.filter((entry) => {
+          if (entry.title.toLowerCase().includes(q)) return true
+          if (entry.detail.toLowerCase().includes(q)) return true
+          if (entry.payLabel.toLowerCase().includes(q)) return true
+          if (String(entry.amount).includes(q)) return true
+          return false
+        })
+    if (transferSearched.length === 0) return channelFiltered
+
+    const merged = [...channelFiltered, ...transferSearched]
+    merged.sort((a, b) =>
+      sort === 'time-desc'
+        ? b.sortTime - a.sortTime || b.amount - a.amount
+        : a.sortTime - b.sortTime || a.amount - b.amount,
+    )
+    return merged
+  }, [timeline, deferredSearch, payChannel, data, rangeFrom, rangeTo, sort])
   const summary = useMemo(() => summarizeExpenseTimeline(filteredTimeline), [filteredTimeline])
   const periodLabel = expensePeriodLabel(rangeFrom, rangeTo)
 

@@ -1,5 +1,6 @@
 import { NO1_BILL_LABEL, NO1_EXPENSE_LABEL } from './expenseBillLabels'
-import { formatDate, formatTime } from './format'
+import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
+import { formatDate, formatMoney, formatTime } from './format'
 import type { AppData, Expense } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import { purchasePaidComponents } from './purchaseHistory'
@@ -213,6 +214,9 @@ export function summarizePeriodExpenseChannels(
   normalItems: NormalExpenseHistoryItem[],
   purchaseItems: PurchaseHistoryItem[],
   loanItems: LoanOutflowHistoryItem[],
+  dateFilter: CashDateFilter = 'all',
+  selectedDate = '',
+  rangeTo = '',
 ): PeriodExpenseChannelSummary {
   const expenseById = new Map(
     data.expenses
@@ -246,7 +250,68 @@ export function summarizePeriodExpenseChannels(
     count += 1
   }
 
+  // Cash→Bank / Bank→Cash: count as channel outflows for Cash/Bank filters only (not All).
+  for (const expense of data.expenses ?? []) {
+    if (expense.kind !== 'transfer') continue
+    if (!matchesCashDateFilter(expense.createdAt, dateFilter, selectedDate, rangeTo)) continue
+    if (expense.transferDirection === 'cash-to-bank') {
+      cash += expense.amount
+      count += 1
+    } else if (expense.transferDirection === 'bank-to-cash') {
+      bank += expense.amount
+      count += 1
+    }
+  }
+
   return { cash, bank, total: cash + bank, count }
+}
+
+/** Cash→Bank as cash expense; Bank→Cash as bank expense. Not used when filter is All. */
+export function buildTransferExpenseTimelineEntries(
+  data: AppData,
+  channel: 'cash' | 'bank',
+  dateFilter: CashDateFilter = 'all',
+  selectedDate = '',
+  rangeTo = '',
+  sort: ExpenseTimelineSort = 'time-desc',
+): ExpenseTimelineEntry[] {
+  const entries: ExpenseTimelineEntry[] = []
+
+  for (const expense of data.expenses ?? []) {
+    if (expense.kind !== 'transfer') continue
+    if (!matchesCashDateFilter(expense.createdAt, dateFilter, selectedDate, rangeTo)) continue
+
+    const toBank = expense.transferDirection === 'cash-to-bank'
+    const toCash = expense.transferDirection === 'bank-to-cash'
+    if (channel === 'cash' && !toBank) continue
+    if (channel === 'bank' && !toCash) continue
+
+    const amount = expense.amount
+    if (!(amount > 0)) continue
+
+    entries.push({
+      kind: 'expense',
+      id: `transfer-expense-${expense.id}`,
+      date: expense.createdAt,
+      sortTime: new Date(expense.createdAt).getTime(),
+      title: expense.name?.trim() || (toBank ? 'Cash to Bank' : 'Bank to Cash'),
+      detail: toBank ? '💵 → 🏦 Cash to Bank' : '🏦 → 💵 Bank to Cash',
+      amount,
+      payLabel: toBank ? 'Cash' : 'Bank',
+      payDetail: toBank
+        ? `💵 Cash out · transfer to bank ${formatMoney(amount)}`
+        : `🏦 Bank out · transfer to cash ${formatMoney(amount)}`,
+      cashAmount: toBank ? amount : 0,
+      bankAmount: toCash ? amount : 0,
+    })
+  }
+
+  entries.sort((a, b) =>
+    sort === 'time-desc'
+      ? b.sortTime - a.sortTime || b.amount - a.amount
+      : a.sortTime - b.sortTime || a.amount - b.amount,
+  )
+  return entries
 }
 
 export function expenseTimelineEntryChannel(entry: ExpenseTimelineEntry): 'cash' | 'bank' | 'none' {

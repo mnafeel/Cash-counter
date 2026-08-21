@@ -7,6 +7,10 @@ import { usePageEscape } from '../hooks/usePageEscape'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { downloadPurchaseExpenseItemsSpreadsheet } from '../utils/expenseRangeExport'
 import { formatDate, formatMoney } from '../utils/format'
+import {
+  printPurchaseHistoryReport,
+  type PurchaseReportMode,
+} from '../utils/purchaseHistoryReport'
 import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
 import {
   buildPurchaseCreditItems,
@@ -36,6 +40,7 @@ const DATE_OPTIONS: { id: PurchaseDateFilter | 'range'; label: string }[] = [
   { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
   { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
   { id: 'range', label: 'Range' },
 ]
 
@@ -279,14 +284,44 @@ export default function PurchaseHistoryPanel({
     return 'All'
   }
 
+  function periodExportItems(): PurchaseHistoryItem[] {
+    if (!selectedSupplierKey) {
+      return dateFilteredItems.filter((item) => purchaseItemMatchesPayChannel(data, item, payChannel))
+    }
+    return dateFilteredItems
+      .filter((item) => item.shopName.trim().toLowerCase() === selectedSupplierKey)
+      .filter((item) => purchaseItemMatchesPayChannel(data, item, payChannel))
+  }
+
   function handleDownloadSpreadsheet() {
-    const exportItems = selectedSupplier ? sortedSupplierItems : dateFilteredItems
+    const exportItems = periodExportItems()
     const label = purchasePeriodLabel()
     const filenameLabel = selectedSupplier
       ? `${selectedSupplier.shopName}-${label}`.replace(/\s+/g, '-').toLowerCase()
       : label.replace(/\s+/g, '-').toLowerCase()
     downloadPurchaseExpenseItemsSpreadsheet(exportItems, label, `cash-counter-purchases-${filenameLabel}`)
     setExportStatus(`Excel file downloaded · ${exportItems.length} purchases`)
+  }
+
+  function handleDownloadPdf(mode: PurchaseReportMode) {
+    const exportItems = periodExportItems()
+    const label = purchasePeriodLabel()
+    printPurchaseHistoryReport({
+      scopeLabel: selectedSupplier
+        ? `Supplier: ${selectedSupplier.shopName}`
+        : 'All suppliers',
+      periodLabel: label,
+      mode,
+      items: exportItems,
+      data,
+      supplierName: selectedSupplier?.shopName,
+    })
+    const modeLabel = mode === 'credit' ? 'credit/dues PDF' : 'full history PDF'
+    setExportStatus(
+      `${modeLabel} ready · ${exportItems.length} bills · ${label}${
+        selectedSupplier ? ` · ${selectedSupplier.shopName}` : ''
+      }`,
+    )
   }
 
   function handleGoHome() {
@@ -876,6 +911,20 @@ export default function PurchaseHistoryPanel({
           <div className="purchase-hist-export-bar">
             <button type="button" className="purchase-hist-export-btn" onClick={handleDownloadSpreadsheet}>
               Download Excel
+            </button>
+            <button
+              type="button"
+              className="purchase-hist-export-btn purchase-hist-export-btn--pdf"
+              onClick={() => handleDownloadPdf('credit')}
+            >
+              PDF · Credit dues
+            </button>
+            <button
+              type="button"
+              className="purchase-hist-export-btn purchase-hist-export-btn--pdf"
+              onClick={() => handleDownloadPdf('full')}
+            >
+              PDF · Full history
             </button>
             {exportStatus ? <span className="purchase-hist-export-status">{exportStatus}</span> : null}
           </div>

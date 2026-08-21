@@ -349,6 +349,66 @@
   scrollbar-color: var(--border) var(--bg);
 }
 
+.loan-page-person-summaries {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.loan-page-person-summary {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.loan-page-person-summary-name {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.loan-page-person-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.loan-page-person-summary-card {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.loan-page-person-summary-card span {
+  font-size: 0.48rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cream-dim);
+}
+
+.loan-page-person-summary-card strong {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--cream);
+  line-height: 1.15;
+}
+
+.loan-page-person-summary-card small,
+.loan-page-person-summary-meta {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+}
+
 .loan-page-empty {
   margin: 20px 0;
   text-align: center;

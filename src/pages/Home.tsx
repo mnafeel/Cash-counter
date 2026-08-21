@@ -218,7 +218,10 @@ function Home({ active }: { active: boolean }) {
   useResetOnTabEnter(active, resetHomeUi)
 
   function openPurchaseHistory() {
-    navigate('/history', { state: { showPurchaseHistory: true } })
+    navigate(
+      { pathname: '/history', search: '?purchases=1' },
+      { state: { showPurchaseHistory: true } },
+    )
   }
 
   function openReports(
@@ -330,8 +333,10 @@ function Home({ active }: { active: boolean }) {
         periodExpenseItems,
         periodPurchaseItems,
         periodLoanOutflowItems,
+        homeDayPreset,
+        homeDayDate,
       ),
-    [workData, periodExpenseItems, periodPurchaseItems, periodLoanOutflowItems],
+    [workData, periodExpenseItems, periodPurchaseItems, periodLoanOutflowItems, homeDayPreset, homeDayDate],
   )
   const periodExpenseCombinedTotal =
     periodExpenseSummary.total +

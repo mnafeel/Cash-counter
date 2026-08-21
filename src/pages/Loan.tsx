@@ -11,6 +11,7 @@ import {
   buildLoanList,
   buildLoanOverview,
   searchLoans,
+  summarizeLoanPeopleForSearch,
   type LoanListItem,
 } from '../utils/loanLedger'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
@@ -60,6 +61,10 @@ export default function Loan() {
   const overview = useMemo(() => buildLoanOverview(data), [data])
   const loanList = useMemo(() => buildLoanList(data, tab), [data, tab])
   const list = useMemo(() => searchLoans(loanList, deferredQuery), [loanList, deferredQuery])
+  const personSearchSummaries = useMemo(
+    () => summarizeLoanPeopleForSearch(data, deferredQuery),
+    [data, deferredQuery],
+  )
   const amount = parseAmount(amountStr)
   const formOpen = formMode !== null
   const reminderLoan = useMemo(
@@ -402,8 +407,42 @@ export default function Loan() {
             </div>
 
             <div className="loan-page-list">
+              {personSearchSummaries.length > 0 ? (
+                <div className="loan-page-person-summaries" aria-label="Person loan totals">
+                  {personSearchSummaries.map((person) => (
+                    <div key={person.personName} className="loan-page-person-summary">
+                      <strong className="loan-page-person-summary-name">{person.personName}</strong>
+                      <div className="loan-page-person-summary-grid">
+                        <div className="loan-page-person-summary-card">
+                          <span>To receive</span>
+                          <strong>{formatMoney(person.toCollect)}</strong>
+                          <small>{person.toCollect > 0 ? 'They owe you' : 'Nothing open'}</small>
+                        </div>
+                        <div className="loan-page-person-summary-card">
+                          <span>To pay</span>
+                          <strong>{formatMoney(person.toPay)}</strong>
+                          <small>{person.toPay > 0 ? 'You owe them' : 'Nothing open'}</small>
+                        </div>
+                      </div>
+                      <small className="loan-page-person-summary-meta">
+                        {person.openCount} open · {person.settledCount} settled
+                      </small>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {list.length === 0 ? (
-                <p className="loan-page-empty">{tab === 'pending' ? 'No pending loans.' : 'No settled loans.'}</p>
+                <p className="loan-page-empty">
+                  {deferredQuery.trim()
+                    ? personSearchSummaries.length > 0
+                      ? tab === 'pending'
+                        ? 'No open loans in this tab for this person.'
+                        : 'No settled loans in this tab for this person.'
+                      : 'No matching loans.'
+                    : tab === 'pending'
+                      ? 'No pending loans.'
+                      : 'No settled loans.'}
+                </p>
               ) : (
                 <ul>
                   {list.map((loan) => (
@@ -495,10 +534,19 @@ function LoanRow({
             </small>
           </div>
           <span className="loan-page-row-amount">
-            {formatMoney(loan.remainingAmount)}
-            {loan.remainingAmount < loan.amount ? (
-              <small> / {formatMoney(loan.amount)}</small>
-            ) : null}
+            {loan.remainingAmount <= 0 ? (
+              <>
+                {formatMoney(loan.paidAmount ?? loan.amount)} / {formatMoney(loan.amount)}
+                <small> (Closed)</small>
+              </>
+            ) : (
+              <>
+                {formatMoney(loan.remainingAmount)}
+                {loan.remainingAmount < loan.amount ? (
+                  <small> / {formatMoney(loan.amount)}</small>
+                ) : null}
+              </>
+            )}
           </span>
         </div>
       </button>
@@ -514,7 +562,11 @@ function LoanRow({
           </div>
           <div className="loan-page-row-detail-row">
             <span>Amount</span>
-            <strong>{formatMoney(loan.amount)}</strong>
+            <strong>
+              {loan.remainingAmount <= 0
+                ? `${formatMoney(loan.paidAmount ?? loan.amount)} / ${formatMoney(loan.amount)} (Closed)`
+                : formatMoney(loan.amount)}
+            </strong>
           </div>
           <div className="loan-page-row-detail-row">
             <span>Paid from</span>

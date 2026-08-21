@@ -1252,6 +1252,11 @@
   cursor: pointer;
 }
 
+.purchase-hist-export-btn--pdf {
+  background: var(--brown-mid, #5c4033);
+  border-color: var(--border);
+}
+
 .purchase-hist-export-status {
   font-size: 0.58rem;
   color: var(--cream-dim);

@@ -226,10 +226,18 @@ function History({ active }: { active: boolean }) {
     setReceiptItem(null)
     setPurchaseCreditListOpen(false)
     setHighlightedPurchaseCreditIndex(-1)
-    setShowPurchaseHistory(false)
-    setPurchaseOnlyMode(false)
+
+    // Keep purchase-history mode when opened from Home (query/state) — do not wipe it on tab enter.
+    const params = new URLSearchParams(location.search)
+    const fromQuery = params.get('purchases') === '1'
+    const fromState = Boolean(
+      (location.state as { showPurchaseHistory?: boolean } | null)?.showPurchaseHistory,
+    )
+    const purchaseMode = fromQuery || fromState
+    setShowPurchaseHistory(purchaseMode)
+    setPurchaseOnlyMode(purchaseMode)
     setPurchasePanelSession((session) => session + 1)
-  }, [resetSearch])
+  }, [resetSearch, location.search, location.state])
 
   useResetOnTabEnter(active, resetHistoryUi)
 

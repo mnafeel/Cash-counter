@@ -85,6 +85,7 @@ function paySourceLabel(source: LoanPaySource): string {
 
 export function decorateLoan(loan: Loan): LoanListItem {
   const remaining = loanRemainingAmount(loan)
+  const paid = loanPaidAmount(loan)
   const events = loanSettlementEvents(loan)
   const lastSettlement = events.length > 0 ? events[events.length - 1] : undefined
   return {
@@ -95,6 +96,7 @@ export function decorateLoan(loan: Loan): LoanListItem {
     statusLabel: loanStatusLabel(loan.status, remaining),
     paySourceLabel: paySourceLabel(loan.paySource),
     remainingAmount: remaining,
+    paidAmount: paid,
   }
 }
 
@@ -118,6 +120,56 @@ export function searchLoans(loans: LoanListItem[], query: string): LoanListItem[
     if (String(loan.remainingAmount).includes(q)) return true
     return false
   })
+}
+
+/** Person-level totals for search — to collect / to return across all matching loans. */
+export interface LoanPersonSearchSummary {
+  personName: string
+  /** Open lend balance — money to receive from them */
+  toCollect: number
+  /** Open borrow balance — money to pay them */
+  toPay: number
+  openCount: number
+  settledCount: number
+}
+
+export function summarizeLoanPeopleForSearch(
+  data: AppData,
+  query: string,
+): LoanPersonSearchSummary[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return []
+
+  const byPerson = new Map<string, LoanPersonSearchSummary>()
+
+  for (const loan of data.loans ?? []) {
+    const name = loan.personName.trim()
+    if (!name.toLowerCase().includes(q)) continue
+
+    const key = name.toLowerCase()
+    let entry = byPerson.get(key)
+    if (!entry) {
+      entry = {
+        personName: name,
+        toCollect: 0,
+        toPay: 0,
+        openCount: 0,
+        settledCount: 0,
+      }
+      byPerson.set(key, entry)
+    }
+
+    const remaining = loanRemainingAmount(loan)
+    if (remaining <= 0) {
+      entry.settledCount += 1
+      continue
+    }
+    entry.openCount += 1
+    if (loan.kind === 'lend') entry.toCollect += remaining
+    else entry.toPay += remaining
+  }
+
+  return [...byPerson.values()].sort((a, b) => a.personName.localeCompare(b.personName))
 }
 
 export function loanCashToDrawer(loan: Loan): number {
