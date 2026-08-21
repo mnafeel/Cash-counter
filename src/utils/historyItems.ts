@@ -930,14 +930,23 @@ function paymentModesFromReceiptLines(
   const modes = new Set<HistoryPaymentMode>(['split'])
   for (const line of lines) {
     if (line.label === 'Total collected') continue
-    if (line.label === 'Cash' || line.label === 'Cash received' || line.label.includes('cash received')) {
+    const lower = line.label.toLowerCase()
+    if (
+      line.label === 'Cash' ||
+      line.label === 'Cash received' ||
+      lower.includes('cash received') ||
+      lower.includes('split allocation · cash') ||
+      lower.includes('split payment · cash')
+    ) {
       modes.add('cash')
     }
     if (
       line.label === 'Bank' ||
       line.label === 'Bank received' ||
-      line.label.includes('bank received') ||
-      line.label.includes('cheque approved')
+      lower.includes('bank received') ||
+      lower.includes('split allocation · bank') ||
+      lower.includes('split payment · bank') ||
+      lower.includes('cheque approved')
     ) {
       modes.add('bank')
     }
@@ -1189,13 +1198,26 @@ function formatSplitPaymentBreakdown(lines: HistoryReceiptLine[]): string {
   for (const line of lines) {
     if (line.status !== 'paid') continue
     if (line.label === 'Total collected') continue
-    if (line.label === 'Cash' || line.label === 'Cash received' || line.label.includes('cash received')) {
+    const lower = line.label.toLowerCase()
+    if (
+      line.label === 'Cash' ||
+      line.label === 'Cash received' ||
+      lower.includes('cash received') ||
+      lower.includes('split allocation · cash') ||
+      lower.includes('split payment · cash')
+    ) {
       parts.push(`💵 ${formatMoney(line.amount)}`)
-    } else if (line.label === 'Bank' || line.label === 'Bank received' || line.label.includes('bank received')) {
+    } else if (
+      line.label === 'Bank' ||
+      line.label === 'Bank received' ||
+      lower.includes('bank received') ||
+      lower.includes('split allocation · bank') ||
+      lower.includes('split payment · bank')
+    ) {
       parts.push(`🏦 ${formatMoney(line.amount)}`)
-    } else if (line.label === 'Cheque' || line.label.includes('cheque approved')) {
+    } else if (line.label === 'Cheque' || lower.includes('cheque approved')) {
       parts.push(`🏦 ${formatMoney(line.amount)}`)
-    } else if (line.label === 'Credit' || line.label.includes('credit payment')) {
+    } else if (line.label === 'Credit' || lower.includes('credit payment')) {
       parts.push(`💳 ${formatMoney(line.amount)}`)
     }
   }
@@ -1618,13 +1640,21 @@ function receiptLinePaymentMode(
   status?: HistoryReceiptLine['status'],
 ): HistoryListPaymentPart['mode'] | null {
   const lower = label.toLowerCase()
-  if (label === 'Cash' || lower.includes('cash received') || lower.includes('credit payment · cash')) {
+  if (
+    label === 'Cash' ||
+    lower.includes('cash received') ||
+    lower.includes('credit payment · cash') ||
+    lower.includes('split allocation · cash') ||
+    lower.includes('split payment · cash')
+  ) {
     return 'cash'
   }
   if (
     label === 'Bank' ||
     lower.includes('bank received') ||
     lower.includes('credit payment · bank') ||
+    lower.includes('split allocation · bank') ||
+    lower.includes('split payment · bank') ||
     lower.includes('cheque approved')
   ) {
     return status === 'pending' && lower.includes('cheque pending') ? 'cheque' : 'bank'
@@ -1728,23 +1758,34 @@ export function historyItemListPaymentTypeText(
   selectedDate = '',
   paymentFilter: HistoryPaymentFilter = 'all',
 ): string | undefined {
-  // Cash / Bank filter: show both sides of a split, selected channel first.
-  if (paymentFilter === 'cash' || paymentFilter === 'bank') {
-    const cashAmount = historyItemChannelAmount(item, 'cash', dateFilter, selectedDate)
-    const bankAmount = historyItemChannelAmount(item, 'bank', dateFilter, selectedDate)
+  const cashAmount = historyItemChannelAmount(item, 'cash', dateFilter, selectedDate)
+  const bankAmount = historyItemChannelAmount(item, 'bank', dateFilter, selectedDate)
+
+  // Cash / Bank / All: show channel amounts separately (never collapse a split into one Bank total).
+  if (paymentFilter === 'all' || paymentFilter === 'cash' || paymentFilter === 'bank') {
     const parts: string[] = []
-    if (paymentFilter === 'cash') {
-      if (cashAmount > 0) parts.push(`💵 ${formatMoney(cashAmount)}`)
+    if (paymentFilter === 'bank') {
       if (bankAmount > 0) parts.push(`🏦 ${formatMoney(bankAmount)}`)
+      if (cashAmount > 0) parts.push(`💵 ${formatMoney(cashAmount)}`)
     } else {
-      if (bankAmount > 0) parts.push(`🏦 ${formatMoney(bankAmount)}`)
       if (cashAmount > 0) parts.push(`💵 ${formatMoney(cashAmount)}`)
+      if (bankAmount > 0) parts.push(`🏦 ${formatMoney(bankAmount)}`)
     }
+
+    for (const part of getHistoryItemListPaymentParts(item, dateFilter, selectedDate)) {
+      if (part.status !== 'pending') continue
+      if (part.mode === 'cheque') {
+        parts.push(`🧾 ${formatMoney(part.amount)} · Cheque pending`)
+      } else if (part.mode === 'credit') {
+        parts.push(`💳 ${formatMoney(part.amount)} · Credit pending`)
+      }
+    }
+
     if (parts.length > 0) return parts.join(' · ')
-    return undefined
+    if (paymentFilter === 'cash' || paymentFilter === 'bank') return undefined
   }
 
-  // Multi-day cheque/credit collections: show each approval with its date.
+  // Multi-day cheque/credit collections: show each approval with cash/bank and date.
   if (
     item.type === 'sale' &&
     item.paymentCollections &&
@@ -1759,26 +1800,32 @@ export function historyItemListPaymentTypeText(
           )
 
     if (collections.length > 1 || (dateFilter !== 'all' && collections.length === 1)) {
-      const dated = collections.map((collection, index) => {
+      const dated = collections.flatMap((collection, index) => {
         const normalized = normalizeCollectedBreakdown({
           cash: collection.cash,
           bank: collection.bank,
           cheque: collection.cheque,
           total: collection.amount,
         })
-        const icon =
-          normalized.cash > 0 && normalized.bank <= 0
-            ? '💵'
-            : normalized.bank + normalized.cheque > 0
-              ? '🏦'
-              : '🧾'
         const ordinal =
           collections.length > 1
             ? `${index === 0 ? '1st' : index === 1 ? '2nd' : index === 2 ? '3rd' : `${index + 1}th`} `
             : ''
         const when =
           dateFilter === 'all' ? ` · ${formatCollectionDayLabel(collection.at)}` : ''
-        return `${ordinal}${icon} ${formatMoney(normalized.total)}${when}`
+        const bits: string[] = []
+        if (normalized.cash > 0) {
+          bits.push(`${ordinal}💵 ${formatMoney(normalized.cash)}${when}`)
+        }
+        if (normalized.bank + normalized.cheque > 0) {
+          bits.push(
+            `${ordinal}🏦 ${formatMoney(normalized.bank + normalized.cheque)}${when}`,
+          )
+        }
+        if (bits.length === 0 && normalized.total > 0) {
+          bits.push(`${ordinal}🧾 ${formatMoney(normalized.total)}${when}`)
+        }
+        return bits
       })
       if (dated.length > 0) return dated.join(' · ')
     }
@@ -1817,10 +1864,7 @@ export function historyItemListPaymentTypeText(
       if (modes.length > 1) return modes.map(getHistoryPaymentLabel).join(' + ')
     }
     if (item.paymentMode) return getHistoryPaymentLabel(item.paymentMode)
-    return undefined
   }
-
-  if (item.paymentMode) return getHistoryPaymentLabel(item.paymentMode)
   return undefined
 }
 

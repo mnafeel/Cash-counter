@@ -1655,7 +1655,7 @@ function Counter({ active }: { active: boolean }) {
   useRouteNumpadKeyboard(
     '/counter',
     stableNumpadPress,
-    !isSaving && !pendingSectionFocus,
+    !pendingSectionFocus,
   )
 
   function cancelCreditExitTimer() {
@@ -1665,8 +1665,7 @@ function Counter({ active }: { active: boolean }) {
     }
   }
 
-  function resetForm() {
-    cancelCreditExitTimer()
+  function clearBillAmounts() {
     setBillStr('')
     setGiveStr('')
     setPaidStr('')
@@ -1677,6 +1676,14 @@ function Counter({ active }: { active: boolean }) {
     setRoundOffAmount(null)
     setRoundOtherActive(false)
     setRoundCustomStr('')
+  }
+
+  function resetForm() {
+    cancelCreditExitTimer()
+    clearBillAmounts()
+    clearPendingSection()
+    setNameSectionFocus(false)
+    customerNameFieldRef.current?.blur()
     setPaymentStep(false)
     setPayType('cash')
     customerNameFieldRef.current?.setValue('')
@@ -1697,6 +1704,41 @@ function Counter({ active }: { active: boolean }) {
     setOriginalBillHint(null)
     setChequeListOpen(false)
     setCreditListOpen(false)
+  }
+
+  /** Clear the form immediately; keep a short button flash without locking typing. */
+  function flashSaved(action: SavedAction, fullReset = true) {
+    cancelCreditExitTimer()
+    if (fullReset) {
+      clearBillAmounts()
+      clearPendingSection()
+      setNameSectionFocus(false)
+      customerNameFieldRef.current?.blur()
+      setPaymentStep(false)
+      setPayType('cash')
+      customerNameFieldRef.current?.setValue('')
+      setActiveField('bill')
+      setLoadedPendingId(null)
+      setCollectingCreditId(null)
+      setCollectingChequeId(null)
+      setCreditCollectDue(0)
+      setChequeCollectDue(0)
+      setChequeCollectCreditMode(false)
+      setSplitChequeApprovedAmount(0)
+      setSplitSiblingChequePending(0)
+      setSplitSiblingCreditPending(0)
+      clearSplitCreditPaidBreakdown()
+      setSiblingChequePendingId(null)
+      setBalanceDueAmount(null)
+      setOriginalBillHint(null)
+      setChequeListOpen(false)
+      setCreditListOpen(false)
+    }
+    setSavedAction(action)
+    creditExitTimerRef.current = window.setTimeout(() => {
+      creditExitTimerRef.current = null
+      setSavedAction(null)
+    }, 220)
   }
 
   function buildPendingPayload() {
@@ -2418,8 +2460,7 @@ function Counter({ active }: { active: boolean }) {
         return
       }
       updateCreditPendingBill(activeCreditCollectId, name)
-      setSavedAction('pending')
-      setTimeout(resetForm, 900)
+      flashSaved('pending')
       return
     }
 
@@ -2442,8 +2483,7 @@ function Counter({ active }: { active: boolean }) {
           status: 'pending',
         })
       }
-      setSavedAction('pending')
-      setTimeout(resetForm, 900)
+      flashSaved('pending')
       return
     }
 
@@ -2452,8 +2492,7 @@ function Counter({ active }: { active: boolean }) {
     } else {
       recordSplitPendingBills(name, { credit: true, cheque: false })
     }
-    setSavedAction('pending')
-    setTimeout(resetForm, 900)
+    flashSaved('pending')
   }
 
   function handleSplitChequePending() {
@@ -2492,15 +2531,13 @@ function Counter({ active }: { active: boolean }) {
           status: 'pending',
         })
       }
-      setSavedAction('pending')
-      setTimeout(resetForm, 900)
+      flashSaved('pending')
       return
     }
 
     if (isLoadedChequePending && loadedPendingId) {
       updateChequePendingBill(loadedPendingId, name)
-      setSavedAction('pending')
-      setTimeout(resetForm, 900)
+      flashSaved('pending')
       return
     }
 
@@ -2509,8 +2546,7 @@ function Counter({ active }: { active: boolean }) {
     } else {
       recordSplitPendingBills(name, { credit: false, cheque: true })
     }
-    setSavedAction('pending')
-    setTimeout(resetForm, 900)
+    flashSaved('pending')
   }
 
   function handleSplitCreditChequePending() {
@@ -2521,8 +2557,7 @@ function Counter({ active }: { active: boolean }) {
     } else {
       recordSplitPendingBills(name, { credit: true, cheque: true })
     }
-    setSavedAction('pending')
-    setTimeout(resetForm, 900)
+    flashSaved('pending')
   }
 
   function handleApproveSiblingCheque() {
@@ -2546,8 +2581,7 @@ function Counter({ active }: { active: boolean }) {
     setSiblingChequePendingId(null)
     setChequeSplitStr('')
     setActiveField('cashSplit')
-    setSavedAction('collect')
-    setTimeout(() => setSavedAction(null), 900)
+    flashSaved('collect', false)
   }
 
   function handleSplitChequeApprove() {
@@ -2577,8 +2611,7 @@ function Counter({ active }: { active: boolean }) {
         bankAmount: Math.min(approvedCheque, due),
         customerName: name,
       })
-      setSavedAction('collect')
-      setTimeout(resetForm, 900)
+      flashSaved('collect')
       return
     }
 
@@ -2595,8 +2628,7 @@ function Counter({ active }: { active: boolean }) {
         bankAmount: Math.min(approvedCheque, due),
         customerName: name,
       })
-      setSavedAction('collect')
-      setTimeout(resetForm, 900)
+      flashSaved('collect')
       return
     }
 
@@ -2614,13 +2646,11 @@ function Counter({ active }: { active: boolean }) {
       setPaidStr('')
       setGiveStr('')
       setLoadedPendingId(null)
-      setSavedAction('collect')
-      setTimeout(() => setSavedAction(null), 900)
+      flashSaved('collect', false)
       return
     }
 
-    setSavedAction('collect')
-    setTimeout(resetForm, 900)
+    flashSaved('collect')
   }
 
   function recordCreditCollection(name?: string, creditId?: string | null): boolean {
@@ -2758,12 +2788,7 @@ function Counter({ active }: { active: boolean }) {
   }
 
   function finishCreditCollection() {
-    setSavedAction('collect')
-    cancelCreditExitTimer()
-    creditExitTimerRef.current = window.setTimeout(() => {
-      creditExitTimerRef.current = null
-      resetForm()
-    }, 700)
+    flashSaved('collect')
   }
 
   useEffect(() => () => cancelCreditExitTimer(), [])
@@ -2789,8 +2814,7 @@ function Counter({ active }: { active: boolean }) {
         return
       }
       updateCreditPendingBill(activeCreditCollectId, name)
-      setSavedAction('pending')
-      setTimeout(resetForm, 900)
+      flashSaved('pending')
       return
     }
 
@@ -2812,8 +2836,7 @@ function Counter({ active }: { active: boolean }) {
       } else {
         updateChequePendingBill(collectingChequeId, name)
       }
-      setSavedAction('pending')
-      setTimeout(resetForm, 900)
+      flashSaved('pending')
       return
     }
 
@@ -2823,8 +2846,7 @@ function Counter({ active }: { active: boolean }) {
 
     if (loadedBill?.status === 'pending' && loadedBill.payType === 'cheque') {
       updateChequePendingBill(loadedPendingId!, name)
-      setSavedAction('pending')
-      setTimeout(resetForm, 900)
+      flashSaved('pending')
       return
     }
 
@@ -2834,8 +2856,7 @@ function Counter({ active }: { active: boolean }) {
         return
       }
       updateCreditPendingBill(loadedBill.id, name)
-      setSavedAction('pending')
-      setTimeout(resetForm, 900)
+      flashSaved('pending')
       return
     }
 
@@ -2871,8 +2892,7 @@ function Counter({ active }: { active: boolean }) {
       })
     }
 
-    setSavedAction('pending')
-    setTimeout(resetForm, 900)
+    flashSaved('pending')
   }
 
   function savePaidBillEdit(
@@ -2925,8 +2945,7 @@ function Counter({ active }: { active: boolean }) {
 
     if (collectingChequeId) {
       if (recordChequeCollection(name, collectingChequeId)) {
-        setSavedAction('collect')
-        setTimeout(resetForm, 900)
+        flashSaved('collect')
       }
       return
     }
@@ -2936,8 +2955,7 @@ function Counter({ active }: { active: boolean }) {
         createCreditPending: splitHasCredit,
         createChequePending: splitHasChequePending,
       })
-      setSavedAction('collect')
-      setTimeout(resetForm, 900)
+      flashSaved('collect')
       return
     }
 
@@ -2988,8 +3006,7 @@ function Counter({ active }: { active: boolean }) {
     } else {
       recordSale(salePayload)
     }
-    setSavedAction('collect')
-    setTimeout(resetForm, 900)
+    flashSaved('collect')
   }
 
   const saveLabel =
@@ -3350,7 +3367,7 @@ function Counter({ active }: { active: boolean }) {
   }, [creditListOpen, highlightedCreditIndex])
 
   useEffect(() => {
-    if (!routeActive || isSaving) return
+    if (!routeActive) return
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
