@@ -36,6 +36,8 @@ import {
   applyPurchaseCreditPayment,
   cancelApprovedCheque,
   cancelApprovedChequeEntry,
+  cancelCreditCollectionEntry,
+  updateCreditCollectionEntryDate,
   cancelPurchaseCredit,
   cancelSaleCredit,
   cancelSaleCheque,
@@ -214,7 +216,14 @@ interface CashContextValue {
   applyStaffSalaryAdvance: (input: { staffId: string; fromMonth: string }) => string | null
   updateExpenseStaffSalaryMonth: (expenseId: string, staffSalaryMonth: string) => void
   cancelApprovedCheque: (id: string, eventIndex?: number | null) => boolean
+  cancelCreditCollection: (id: string, eventIndex?: number | null) => boolean
   updateApprovedChequeDate: (
+    id: string,
+    eventIndex: number | null,
+    atIso: string,
+    options?: { applyToAll?: boolean },
+  ) => boolean
+  updateCreditCollectionDate: (
     id: string,
     eventIndex: number | null,
     atIso: string,
@@ -859,6 +868,37 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const cancelCreditCollectionHandler = useCallback(
+    (id: string, eventIndex?: number | null): boolean => {
+      let ok = false
+      setData((prev) => {
+        const next = cancelCreditCollectionEntry(prev, id, eventIndex ?? null)
+        ok = next !== prev
+        return next
+      })
+      return ok
+    },
+    [],
+  )
+
+  const updateCreditCollectionDateHandler = useCallback(
+    (
+      id: string,
+      eventIndex: number | null,
+      atIso: string,
+      options?: { applyToAll?: boolean },
+    ): boolean => {
+      let ok = false
+      setData((prev) => {
+        const next = updateCreditCollectionEntryDate(prev, id, eventIndex, atIso, options)
+        ok = next !== prev
+        return next
+      })
+      return ok
+    },
+    [],
+  )
+
   const cancelPurchaseCreditBalance = useCallback((id: string) => {
     setData((prev) => cancelPurchaseCredit(prev, id))
   }, [])
@@ -1267,6 +1307,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       addSupplierItem,
       cancelApprovedCheque: cancelApprovedChequeSale,
       updateApprovedChequeDate: updateApprovedChequeDateHandler,
+      cancelCreditCollection: cancelCreditCollectionHandler,
+      updateCreditCollectionDate: updateCreditCollectionDateHandler,
       cancelPurchaseCredit: cancelPurchaseCreditBalance,
       cancelSaleCredit: cancelSaleCreditBalance,
       cancelSaleCheque: cancelSaleChequeBalance,
@@ -1325,6 +1367,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       addSupplierItem,
       cancelApprovedChequeSale,
       updateApprovedChequeDateHandler,
+      cancelCreditCollectionHandler,
+      updateCreditCollectionDateHandler,
       cancelPurchaseCreditBalance,
       cancelSaleCreditBalance,
       cancelSaleChequeBalance,

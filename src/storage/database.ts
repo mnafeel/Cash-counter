@@ -2085,6 +2085,10 @@ export function listApprovedChequeEntries(data: AppData): ApprovedChequeEntry[] 
     const openBalance = sale.status === 'pending' ? sale.billAmount : 0
     const name = sale.customerName
 
+    // Credit-origin bills with cheque collections are listed under credit
+    // collections so cancel returns the slice to credit, not pending cheque.
+    if (sale.pendingPayType === 'credit' || (sale.status === 'pending' && sale.payType === 'credit')) continue
+
     if (chequeEvents.length > 0 && (isChequeOrigin || sale.payType === 'split')) {
       const listable =
         sale.payType === 'split'
@@ -2188,6 +2192,262 @@ export function listPaidCreditSales(data: AppData): Sale[] {
         new Date(b.updatedAt ?? b.createdAt).getTime() -
         new Date(a.updatedAt ?? a.createdAt).getTime(),
     )
+}
+
+function collectionOrdinalLabel(index: number): string {
+  return index === 0 ? '1st' : index === 1 ? '2nd' : index === 2 ? '3rd' : `${index + 1}th`
+}
+
+function collectionEventKind(event: SalePaymentEvent): 'cash' | 'bank' | 'cheque' | 'split' {
+  const cash = (event.cash ?? 0) > 0
+  const cheque = (event.cheque ?? 0) > 0
+  const extraBank = Math.max(0, (event.bank ?? 0) - (event.cheque ?? 0)) > 0
+  const modes = [cash, extraBank, cheque].filter(Boolean).length
+  if (cheque && !cash && !extraBank) return 'cheque'
+  if (cash && !extraBank && !cheque) return 'cash'
+  if (extraBank && !cash && !cheque) return 'bank'
+  if (modes > 1) return 'split'
+  if (cheque) return 'cheque'
+  if (cash) return 'cash'
+  return 'bank'
+}
+
+function collectionPartLabel(kind: 'cash' | 'bank' | 'cheque' | 'split', index: number): string {
+  const ordinal = collectionOrdinalLabel(index)
+  if (kind === 'cheque') return `${ordinal} cheque`
+  if (kind === 'cash') return `${ordinal} cash`
+  if (kind === 'bank') return `${ordinal} bank`
+  return `${ordinal} payment`
+}
+
+export interface CreditCollectionEntry {
+  id: string
+  saleId: string
+  eventIndex: number | null
+  amount: number
+  at: string
+  customerName?: string
+  openBalance: number
+  billTotal: number
+  label: string
+  partLabel: string
+  kind: 'cash' | 'bank' | 'cheque' | 'split'
+}
+
+function isCreditCollectionSale(sale: Sale): boolean {
+  return (
+    sale.pendingPayType === 'credit' ||
+    isPendingCreditSale(sale) ||
+    isPaidCreditOriginSale(sale)
+  )
+}
+
+/** One row per credit collection slice (1st cash / 2nd cheque / …) for Settings. */
+export function listCreditCollectionEntries(data: AppData): CreditCollectionEntry[] {
+  const entries: CreditCollectionEntry[] = []
+
+  for (const sale of data.sales) {
+    if (!isCreditCollectionSale(sale)) continue
+
+    const billTotal =
+      sale.originalBillAmount ??
+      (sale.status === 'pending'
+        ? sale.billAmount + saleCollectedAmount(sale)
+        : sale.billAmount)
+    const openBalance = sale.status === 'pending' ? sale.billAmount : 0
+    const name = sale.customerName
+    const events = sale.paymentEvents ?? []
+    const active = events
+      .map((event, index) => ({ event, index }))
+      .filter(({ event }) => !event.cancelled && event.amount > 0)
+
+    if (active.length > 0) {
+      active.forEach(({ event, index }, part) => {
+        const kind = collectionEventKind(event)
+        const sliceAmount =
+          kind === 'cheque' && (event.cheque ?? 0) > 0 ? event.cheque! : event.amount
+        entries.push({
+          id: `${sale.id}:${index}`,
+          saleId: sale.id,
+          eventIndex: index,
+          amount: sliceAmount,
+          at: event.at,
+          customerName: name,
+          openBalance,
+          billTotal,
+          label: sale.status === 'pending' ? 'Credit · collected' : 'Credit · paid',
+          partLabel: collectionPartLabel(kind, part),
+          kind,
+        })
+      })
+      continue
+    }
+
+    const collected = saleCollectedAmount(sale)
+    if (collected <= 0) continue
+    const kind: CreditCollectionEntry['kind'] =
+      (sale.chequeAmount ?? 0) > 0 && sale.chequeApproved
+        ? 'cheque'
+        : (sale.cashAmount ?? 0) > 0 && (sale.bankAmount ?? 0) <= 0
+          ? 'cash'
+          : (sale.bankAmount ?? 0) > 0 && (sale.cashAmount ?? 0) <= 0
+            ? 'bank'
+            : 'split'
+    entries.push({
+      id: sale.id,
+      saleId: sale.id,
+      eventIndex: null,
+      amount: collected,
+      at: sale.updatedAt ?? sale.createdAt,
+      customerName: name,
+      openBalance,
+      billTotal,
+      label: sale.status === 'pending' ? 'Credit · collected' : 'Credit · paid',
+      partLabel: collectionPartLabel(kind, 0),
+      kind,
+    })
+  }
+
+  return entries.sort((a, b) => {
+    const nameCmp = (a.customerName || '').localeCompare(b.customerName || '', undefined, {
+      sensitivity: 'base',
+    })
+    if (nameCmp !== 0) return nameCmp
+    return new Date(a.at).getTime() - new Date(b.at).getTime()
+  })
+}
+
+export function cancelCreditCollectionEntry(
+  data: AppData,
+  saleId: string,
+  eventIndex: number | null,
+): AppData {
+  const sale = data.sales.find((s) => s.id === saleId)
+  if (!sale || !isCreditCollectionSale(sale)) return data
+
+  if (eventIndex != null) {
+    return cancelApprovedChequeEntry(data, saleId, eventIndex)
+  }
+
+  const events = sale.paymentEvents ?? []
+  const active = events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => !event.cancelled && event.amount > 0)
+  if (active.length > 0) {
+    return cancelApprovedChequeEntry(data, saleId, active[active.length - 1].index)
+  }
+
+  const collected = saleCollectedAmount(sale)
+  if (collected <= 0) return data
+  const now = new Date().toISOString()
+  const billTotal =
+    sale.originalBillAmount ??
+    (sale.status === 'pending' ? sale.billAmount + collected : sale.billAmount)
+  const patched: Sale = {
+    ...sale,
+    status: 'pending',
+    billAmount: billTotal,
+    originalBillAmount: billTotal,
+    paidAmount: 0,
+    cashAmount: undefined,
+    bankAmount: undefined,
+    chequeAmount: undefined,
+    chequeApproved: undefined,
+    creditAmount: billTotal,
+    payType: 'credit',
+    pendingPayType: 'credit',
+    paymentEvents: (sale.paymentEvents ?? []).map((event) =>
+      event.cancelled ? event : { ...event, cancelled: true, cancelledAt: now },
+    ),
+    updatedAt: now,
+  }
+  let next: AppData = {
+    ...data,
+    sales: data.sales.map((s) => (s.id === saleId ? patched : s)),
+  }
+  if (patched.parentSplitId) {
+    next = syncParentSplitCreditAmount(next, patched, patched.billAmount)
+  }
+  clearSalePaymentCaches()
+  saveData(next)
+  return next
+}
+
+export function updateCreditCollectionEntryDate(
+  data: AppData,
+  saleId: string,
+  eventIndex: number | null,
+  atIso: string,
+  options?: { applyToAll?: boolean },
+): AppData {
+  const sale = data.sales.find((s) => s.id === saleId)
+  if (!sale || !isCreditCollectionSale(sale)) return data
+  if (Number.isNaN(new Date(atIso).getTime())) return data
+
+  const localDay = isoToDateInputValue(atIso)
+  const [y, mo, d] = localDay.split('-').map(Number)
+  if (!y || !mo || !d) return data
+  const at = new Date(y, mo - 1, d, 12, 0, 0, 0).toISOString()
+  const now = new Date().toISOString()
+  const applyToAll = options?.applyToAll === true
+  const events = [...(sale.paymentEvents ?? [])]
+
+  const isActive = (event: SalePaymentEvent) => !event.cancelled && event.amount > 0
+
+  let patched: Sale
+  if (applyToAll) {
+    let changed = false
+    const nextEvents =
+      events.length > 0
+        ? events.map((event) => {
+            if (!isActive(event)) return event
+            if (isoToDateInputValue(event.at) === localDay) return event
+            changed = true
+            return { ...event, at }
+          })
+        : events
+    if (!changed) {
+      if (events.length > 0) return data
+      const collected = saleCollectedAmount(sale)
+      if (collected <= 0) return data
+      patched = {
+        ...sale,
+        paymentEvents: [
+          normalizePaymentEvent({
+            at,
+            amount: collected,
+            cash: sale.cashAmount,
+            bank: sale.bankAmount,
+            cheque: sale.chequeApproved ? sale.chequeAmount : undefined,
+          }),
+        ],
+        updatedAt: now,
+      }
+    } else {
+      patched = { ...sale, paymentEvents: nextEvents, updatedAt: now }
+    }
+  } else if (eventIndex != null && events[eventIndex]) {
+    const target = events[eventIndex]
+    if (!isActive(target)) return data
+    if (isoToDateInputValue(target.at) === localDay) return data
+    patched = {
+      ...sale,
+      paymentEvents: events.map((event, index) =>
+        index === eventIndex ? { ...event, at } : event,
+      ),
+      updatedAt: now,
+    }
+  } else {
+    return updateApprovedChequeEntryDate(data, saleId, eventIndex, atIso, options)
+  }
+
+  clearSalePaymentCaches()
+  const next = {
+    ...data,
+    sales: data.sales.map((s) => (s.id === saleId ? patched : s)),
+  }
+  saveData(next)
+  return next
 }
 
 export function listPendingChequeSales(data: AppData): Sale[] {
@@ -2443,23 +2703,31 @@ export function cancelApprovedChequeEntry(
         ? sale.billAmount + priorBefore.total
         : sale.billAmount)
 
+    const keepAsCredit = sale.pendingPayType === 'credit' || sale.payType === 'credit'
     let patched: Sale = {
       ...sale,
       paymentEvents: events,
       originalBillAmount,
       updatedAt: now,
-      // Cancelling an approved cheque always returns that slice as cheque balance
-      // (not credit), so it can be re-approved later.
-      payType: 'cheque',
-      pendingPayType: 'cheque',
-      creditAmount: undefined,
+      // Credit-origin collections return to open credit. Cheque-origin slices
+      // reopen as pending cheque so they can be re-approved later.
+      payType: keepAsCredit ? 'credit' : 'cheque',
+      pendingPayType: keepAsCredit ? 'credit' : 'cheque',
     }
     patched = syncSaleFieldsFromActiveEvents(patched)
 
-    const next = {
+    let next: AppData = {
       ...data,
       sales: data.sales.map((s) => (s.id === saleId ? patched : s)),
     }
+    if (keepAsCredit && patched.parentSplitId) {
+      next = syncParentSplitCreditAmount(
+        next,
+        patched,
+        patched.status === 'pending' ? patched.billAmount : 0,
+      )
+    }
+    clearSalePaymentCaches()
     saveData(next)
     return next
   }

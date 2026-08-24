@@ -35,7 +35,7 @@ import {
   type CloudRemoteSummary,
 } from '../firebase/sync'
 import type { AppData } from '../types'
-import { getApprovedChequeAmount, getCurrentBalance, getBankBalance, isLocalDataEmpty, listApprovedChequeEntries, listPaidCreditSales, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
+import { getApprovedChequeAmount, getCurrentBalance, getBankBalance, isLocalDataEmpty, listApprovedChequeEntries, listCreditCollectionEntries, listPaidCreditSales, listPendingChequeSales, listPendingCreditSales, loadData, saleBillCreatePayType, type BillCreatePayType } from '../storage/database'
 import { clearAllLocalBackupSnapshots } from '../storage/localBackup'
 import {
   dateInputValueToIso,
@@ -213,6 +213,8 @@ export default function Settings() {
     syncTallyBills,
     cancelApprovedCheque,
     updateApprovedChequeDate,
+    cancelCreditCollection,
+    updateCreditCollectionDate,
     cancelSaleCredit,
     cancelSaleCheque,
     cancelSaleChequeAsUnpaid,
@@ -258,6 +260,8 @@ export default function Settings() {
   const [pineLabsBusy, setPineLabsBusy] = useState(false)
   const [chequeCancelStatus, setChequeCancelStatus] = useState('')
   const [chequeDateDrafts, setChequeDateDrafts] = useState<Record<string, string>>({})
+  const [creditDateDrafts, setCreditDateDrafts] = useState<Record<string, string>>({})
+  const [creditCollectionStatus, setCreditCollectionStatus] = useState('')
   const [pendingChequeCancelStatus, setPendingChequeCancelStatus] = useState('')
   const [creditCancelStatus, setCreditCancelStatus] = useState('')
   const [historyReportStatus, setHistoryReportStatus] = useState('')
@@ -355,6 +359,22 @@ export default function Settings() {
     return groups
   }, [approvedCheques])
   const pendingCreditSales = useMemo(() => listPendingCreditSales(data), [data.sales])
+  const creditCollectionEntries = useMemo(() => listCreditCollectionEntries(data), [data])
+  const creditCollectionsByCustomer = useMemo(() => {
+    const groups: Array<{ name: string; entries: typeof creditCollectionEntries }> = []
+    const indexByName = new Map<string, number>()
+    for (const entry of creditCollectionEntries) {
+      const name = entry.customerName?.trim() || '—'
+      const existing = indexByName.get(name.toLowerCase())
+      if (existing == null) {
+        indexByName.set(name.toLowerCase(), groups.length)
+        groups.push({ name, entries: [entry] })
+      } else {
+        groups[existing].entries.push(entry)
+      }
+    }
+    return groups
+  }, [creditCollectionEntries])
   const paidCreditSales = useMemo(() => listPaidCreditSales(data), [data.sales])
   const pendingChequeSales = useMemo(() => listPendingChequeSales(data), [data.sales])
   const reminderAlertSettings = useMemo(() => getReminderAlertSettings(data), [data])
@@ -800,6 +820,56 @@ export default function Settings() {
       return next
     })
     setTimeout(() => setChequeCancelStatus(''), 5000)
+  }
+
+  function handleCancelCreditCollection(saleId: string, eventIndex: number | null) {
+    const ok = cancelCreditCollection(saleId, eventIndex)
+    setCreditCollectionStatus(
+      ok
+        ? 'Collection cancelled — amount returned to credit. Collect again from Credit.'
+        : 'Could not cancel this collection. Refresh and try again.',
+    )
+    setTimeout(() => setCreditCollectionStatus(''), 4000)
+  }
+
+  function handleUpdateCreditCollectionDate(
+    entry: {
+      id: string
+      saleId: string
+      eventIndex: number | null
+      at: string
+    },
+    applyToAll = false,
+  ) {
+    const dateValue = creditDateDrafts[entry.id] ?? isoToDateInputValue(entry.at)
+    const atIso = dateInputValueToIso(dateValue, entry.at)
+    if (!dateValue || !atIso) {
+      setCreditCollectionStatus('Pick a valid collection date.')
+      setTimeout(() => setCreditCollectionStatus(''), 4000)
+      return
+    }
+    const ok = updateCreditCollectionDate(entry.saleId, entry.eventIndex, atIso, {
+      applyToAll,
+    })
+    setCreditCollectionStatus(
+      ok
+        ? applyToAll
+          ? 'All collection dates on this bill updated — sales & History use the new day.'
+          : 'Collection date updated — this amount now counts in that day’s sales & History.'
+        : 'Date unchanged. Pick a different day and try again.',
+    )
+    setCreditDateDrafts((prev) => {
+      const next = { ...prev }
+      if (applyToAll) {
+        for (const key of Object.keys(next)) {
+          if (key.startsWith(`${entry.saleId}:`) || key === entry.saleId) delete next[key]
+        }
+      } else {
+        delete next[entry.id]
+      }
+      return next
+    })
+    setTimeout(() => setCreditCollectionStatus(''), 5000)
   }
 
   function handleCancelSaleCredit(id: string, relatedSaleIds?: string[]) {
@@ -1756,7 +1826,8 @@ export default function Settings() {
                 <p>
                   <strong>Cancel</strong> clears open credit and keeps partial payments as collected.
                   <strong> Cancel all · unpaid</strong> removes the whole bill (like nothing was paid)
-                  — collected amounts leave cash/bank.
+                  — collected amounts leave cash/bank. To cancel 1st / 2nd cash, bank, or cheque
+                  collections, use <strong>Credit collections</strong> below.
                 </p>
               </div>
               {pendingCreditSales.length === 0 ? (
@@ -1830,6 +1901,112 @@ export default function Settings() {
               )}
               {creditCancelStatus ? (
                 <p className="settings-cheque-cancel-status">{creditCancelStatus}</p>
+              ) : null}
+            </section>
+
+            <section className="settings-cheque-cancel settings-credit-collections">
+              <div className="settings-cheque-cancel-head">
+                <h3>Credit collections</h3>
+                <p>
+                  Each cash, bank, or cheque taken against a credit bill is its own slice (1st / 2nd /
+                  3rd). Change the sales date so History and that day’s totals move with it.{' '}
+                  <strong>Cancel → credit</strong> returns only that slice to open credit so you can
+                  collect it again.
+                </p>
+              </div>
+              {creditCollectionEntries.length === 0 ? (
+                <p className="settings-cheque-cancel-empty">No credit collections yet.</p>
+              ) : (
+                <div className="settings-cheque-cancel-groups">
+                  {creditCollectionsByCustomer.map((group) => (
+                    <div key={group.name} className="settings-cheque-cancel-group">
+                      <h4 className="settings-cheque-cancel-group-title">{group.name}</h4>
+                      <ul className="settings-cheque-cancel-list">
+                        {group.entries.map((entry, entryIndex) => {
+                          const dateDraft =
+                            creditDateDrafts[entry.id] ?? isoToDateInputValue(entry.at)
+                          const isFirstOfBill =
+                            group.entries.findIndex((e) => e.saleId === entry.saleId) ===
+                            entryIndex
+                          return (
+                            <li
+                              key={entry.id}
+                              className="settings-cheque-cancel-item settings-cheque-cancel-item--stack"
+                            >
+                              <div className="settings-cheque-cancel-meta">
+                                <span className="settings-cheque-cancel-amount">
+                                  {entry.partLabel} · {formatMoney(entry.amount)}
+                                </span>
+                                {entry.openBalance > 0 ? (
+                                  <span className="settings-cheque-cancel-sub">
+                                    Bill {formatMoney(entry.billTotal)} − Collected{' '}
+                                    {formatMoney(
+                                      Math.max(0, entry.billTotal - entry.openBalance),
+                                    )}{' '}
+                                    = Open credit {formatMoney(entry.openBalance)}
+                                  </span>
+                                ) : (
+                                  <span className="settings-cheque-cancel-sub">
+                                    Bill {formatMoney(entry.billTotal)} · Fully collected
+                                  </span>
+                                )}
+                                <span className="settings-cheque-cancel-sub">
+                                  {entry.label} · {formatDate(entry.at)}
+                                </span>
+                              </div>
+                              <div className="settings-cheque-cancel-actions">
+                                <label className="settings-cheque-date-field">
+                                  <span>Sales date</span>
+                                  <input
+                                    type="date"
+                                    value={dateDraft}
+                                    onChange={(e) =>
+                                      setCreditDateDrafts((prev) => ({
+                                        ...prev,
+                                        [entry.id]: e.target.value,
+                                      }))
+                                    }
+                                    aria-label={`Sales date for ${entry.partLabel} · ${group.name}`}
+                                  />
+                                </label>
+                                <div className="settings-cheque-cancel-btns">
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary settings-cheque-cancel-btn"
+                                    onClick={() => handleUpdateCreditCollectionDate(entry, false)}
+                                  >
+                                    Save date
+                                  </button>
+                                  {isFirstOfBill ? (
+                                    <button
+                                      type="button"
+                                      className="btn btn-secondary settings-cheque-cancel-btn"
+                                      onClick={() => handleUpdateCreditCollectionDate(entry, true)}
+                                    >
+                                      Update all dates
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary settings-cheque-cancel-btn settings-cheque-cancel-btn--danger"
+                                    onClick={() =>
+                                      handleCancelCreditCollection(entry.saleId, entry.eventIndex)
+                                    }
+                                  >
+                                    Cancel → credit
+                                  </button>
+                                </div>
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {creditCollectionStatus ? (
+                <p className="settings-cheque-cancel-status">{creditCollectionStatus}</p>
               ) : null}
             </section>
 
