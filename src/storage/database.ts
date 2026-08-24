@@ -2138,9 +2138,7 @@ export function listApprovedChequeEntries(data: AppData): ApprovedChequeEntry[] 
       billTotal,
       label:
         sale.status === 'pending'
-          ? sale.payType === 'credit' || sale.pendingPayType === 'credit'
-            ? 'Credit · cheque → bank'
-            : 'Cheque → bank · open'
+          ? 'Cheque → bank · open'
           : sale.payType === 'split'
             ? 'Split · cheque → bank'
             : 'Cheque → bank',
