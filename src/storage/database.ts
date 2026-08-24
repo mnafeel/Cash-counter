@@ -40,10 +40,12 @@ import { loanBankToBalance, loanCashToDrawer, loanRemainingAmount } from '../uti
 import { getStaffMonthSummary, isStaffLinkableExpense, salaryMonthFromDate, type SalaryMonthKey } from '../utils/staffLedger'
 import { validateStaffLeaveInput, resolveStaffSalaryDays, normalizeStaffLeaveTypeValue, isSundayDate, isRedundantStaffLeaveRecord } from '../utils/staffAttendance'
 import { isoToDateInputValue } from '../utils/format'
+import { sealTodayDrawerOpenings } from '../utils/dayDrawerOpenings'
 
 const defaultData: AppData = {
   openingBalance: 0,
   openingBankBalance: 0,
+  dayBalances: {},
   homePin: '0000',
   theme: 'premium',
   suppliers: [],
@@ -53,6 +55,24 @@ const defaultData: AppData = {
   staff: [],
   staffLeaves: [],
   staffSalaryAdvances: [],
+}
+
+function normalizeDayBalances(raw: unknown): AppData['dayBalances'] {
+  if (!raw || typeof raw !== 'object') return {}
+  const out: NonNullable<AppData['dayBalances']> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !value || typeof value !== 'object') continue
+    const row = value as { cashOpening?: unknown; bankOpening?: unknown; sealedAt?: unknown }
+    const cashOpening = Number(row.cashOpening)
+    const bankOpening = Number(row.bankOpening)
+    if (!Number.isFinite(cashOpening) || !Number.isFinite(bankOpening)) continue
+    out[key] = {
+      cashOpening,
+      bankOpening,
+      sealedAt: typeof row.sealedAt === 'string' ? row.sealedAt : new Date().toISOString(),
+    }
+  }
+  return out
 }
 
 function normalizeItemList(raw: unknown): string[] {
@@ -391,7 +411,28 @@ export function mergeCloudAppData(local: AppData, remote: AppData): AppData {
       ...(normalizedRemote.customerReminders ?? {}),
       ...(normalizedLocal.customerReminders ?? {}),
     },
+    dayBalances: mergeDayBalances(normalizedLocal.dayBalances, normalizedRemote.dayBalances),
   })
+}
+
+function mergeDayBalances(
+  local?: AppData['dayBalances'],
+  remote?: AppData['dayBalances'],
+): AppData['dayBalances'] {
+  const out: NonNullable<AppData['dayBalances']> = { ...(remote ?? {}) }
+  for (const [key, row] of Object.entries(local ?? {})) {
+    const other = out[key]
+    if (!other) {
+      out[key] = row
+      continue
+    }
+    const localTime = new Date(row.sealedAt).getTime()
+    const remoteTime = new Date(other.sealedAt).getTime()
+    if (Number.isFinite(localTime) && (!Number.isFinite(remoteTime) || localTime < remoteTime)) {
+      out[key] = row
+    }
+  }
+  return out
 }
 
 function cloudDataPreservedLocalRecords(local: AppData, remote: AppData, merged: AppData): boolean {
@@ -433,6 +474,7 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
   return {
     openingBalance: parsed.openingBalance ?? 0,
     openingBankBalance: parsed.openingBankBalance ?? 0,
+    dayBalances: normalizeDayBalances(parsed.dayBalances),
     homePin: normalizePin(parsed.homePin, '0000'),
     theme: normalizeTheme(parsed.theme),
     suppliers: normalizeSuppliers(parsed.suppliers),
@@ -566,12 +608,24 @@ export function isLocalDataOwnedByUser(uid: string): boolean {
 export function loadData(): AppData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { ...defaultData }
+    if (!raw) {
+      const empty = { ...defaultData }
+      return sealAndPersistDayOpenings(empty)
+    }
     const parsed = JSON.parse(raw) as AppData
-    return normalizeData(parsed)
+    return sealAndPersistDayOpenings(normalizeData(parsed))
   } catch {
-    return { ...defaultData }
+    return sealAndPersistDayOpenings({ ...defaultData })
   }
+}
+
+function sealAndPersistDayOpenings(data: AppData): AppData {
+  const live = computeDrawerBalances(data)
+  const sealed = sealTodayDrawerOpenings(data, live.cash, live.bank)
+  if (sealed !== data) {
+    saveLocalData(sealed)
+  }
+  return sealed
 }
 
 let pendingSaveData: AppData | null = null
@@ -3883,10 +3937,10 @@ export function renameSupplier(data: AppData, shopKey: string, newName: string):
     if (!isPurchaseExpense(expense)) return expense
     const shop = stripExpenseBillSuffix(expense.name)
     if (shop.trim().toLowerCase() !== fromKey) return expense
+    // Rename only — do not bump updatedAt or old payments appear under Today.
     return {
       ...expense,
       name: renameExpenseShopName(expense.name, canonicalTo),
-      updatedAt: new Date().toISOString(),
     }
   })
 

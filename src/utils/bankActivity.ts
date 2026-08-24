@@ -5,11 +5,13 @@ import {
   getSalePaymentEvents,
   saleCollectionTimestamp,
   sanitizeSplitParentChildChequeOverlap,
+  isActivePaymentEvent,
 } from './salePayment'
 import { saleBankCollected, saleChequeToBankCollected } from './salesReport'
 import {
   cashClosingLabel,
   cashOpeningLabel,
+  getCashPeriodStartMs,
   type CashActivityItem,
   type CashDateFilter,
   matchesCashDateFilter,
@@ -18,6 +20,12 @@ import { memoByDataRef } from './memoByDataRef'
 
 export type { CashDateFilter as BankDateFilter, CashActivityItem as BankActivityItem }
 export { matchesCashDateFilter as matchesBankDateFilter }
+
+function isOnOrAfterPeriodStart(iso: string, startMs: number | null): boolean {
+  if (startMs == null) return true
+  const t = new Date(iso).getTime()
+  return Number.isFinite(t) && t >= startMs
+}
 
 function saleActivityDate(sale: Sale): string {
   if (sale.status === 'pending') {
@@ -32,6 +40,7 @@ function pushSaleItems(items: CashActivityItem[], sale: Sale) {
   const events = getSalePaymentEvents(sale)
   if (events.length > 0) {
     events.forEach((event, index) => {
+      if (!isActivePaymentEvent(event)) return
       const bank = (event.bank ?? 0) + (event.cheque ?? 0)
       if (bank > 0) {
         items.push({
@@ -216,45 +225,73 @@ export function summarizeBankActivity(items: CashActivityItem[]) {
   return { bankIn, bankOut, net: bankIn - bankOut, count: items.length }
 }
 
-/** Balance at 12 AM (start of day) before that period's bank activity. */
+/**
+ * Balance at the start of the selected period (e.g. that day’s 12 AM).
+ * Always: live bank − net of activity from period start onward.
+ * So for Today: Opening + today’s In − today’s Out = Bank Balance.
+ */
 export function getBankOpeningBalance(
   data: AppData,
   currentBalance: number,
   dateFilter: CashDateFilter,
   selectedDate = '',
   prebuiltItems?: CashActivityItem[],
+  rangeTo?: string,
 ): number {
-  const items = (prebuiltItems ?? buildBankActivityItems(data)).filter((item) =>
-    matchesCashDateFilter(item.date, dateFilter, selectedDate),
-  )
-  return currentBalance - summarizeBankActivity(items).net
+  const allItems = prebuiltItems ?? buildBankActivityItems(data)
+  const startMs = getCashPeriodStartMs(dateFilter, selectedDate, rangeTo)
+  if (startMs == null) {
+    return currentBalance - summarizeBankActivity(allItems).net
+  }
+  const fromStart = allItems.filter((item) => isOnOrAfterPeriodStart(item.date, startMs))
+  return currentBalance - summarizeBankActivity(fromStart).net
 }
 
 export function summarizeBankActivityForPeriod(
   allItems: CashActivityItem[],
+  data: AppData,
   currentBalance: number,
   dateFilter: CashDateFilter,
   selectedDate = '',
+  rangeTo?: string,
 ) {
-  const items = allItems.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate))
+  const items = allItems.filter((item) =>
+    matchesCashDateFilter(item.date, dateFilter, selectedDate, rangeTo),
+  )
   const summary = summarizeBankActivity(items)
-  const opening = currentBalance - summary.net
+  const opening = getBankOpeningBalance(
+    data,
+    currentBalance,
+    dateFilter,
+    selectedDate,
+    allItems,
+    rangeTo,
+  )
   return { items, summary, opening, closing: opening + summary.net }
 }
 
 export { cashOpeningLabel as bankOpeningLabel, cashClosingLabel as bankClosingLabel }
 
-/** End-of-day balance after that period's bank activity (night 12 AM closing). */
+/** End-of-period balance after that period's bank activity (e.g. night 12 AM closing). */
 export function getBankClosingBalance(
   data: AppData,
   currentBalance: number,
   dateFilter: CashDateFilter,
   selectedDate = '',
   prebuiltItems?: CashActivityItem[],
+  rangeTo?: string,
 ): number {
-  const items = (prebuiltItems ?? buildBankActivityItems(data)).filter((item) =>
-    matchesCashDateFilter(item.date, dateFilter, selectedDate),
+  const allItems = prebuiltItems ?? buildBankActivityItems(data)
+  const opening = getBankOpeningBalance(
+    data,
+    currentBalance,
+    dateFilter,
+    selectedDate,
+    allItems,
+    rangeTo,
   )
-  const opening = currentBalance - summarizeBankActivity(items).net
-  return opening + summarizeBankActivity(items).net
+  const periodItems = allItems.filter((item) =>
+    matchesCashDateFilter(item.date, dateFilter, selectedDate, rangeTo),
+  )
+  return opening + summarizeBankActivity(periodItems).net
 }

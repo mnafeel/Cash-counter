@@ -683,6 +683,15 @@ export function matchesHistoryDateFilter(
     return false
   }
 
+  // Purchases: match bill/payment day, not rename-bumped updatedAt on completedAt.
+  if (item.type === 'purchase') {
+    return isoMatchesHistoryDateFilter(
+      item.billCreatedAt ?? item.date,
+      dateFilter,
+      selectedDate,
+    )
+  }
+
   const dateToMatch = item.completedAt ?? item.billCreatedAt ?? item.date
   return isoMatchesHistoryDateFilter(dateToMatch, dateFilter, selectedDate)
 }
@@ -2224,7 +2233,8 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
       name: item.shopName,
       date: item.date,
       billCreatedAt: item.createdAt,
-      completedAt: item.paidAmount > 0 ? item.updatedAt : item.createdAt,
+      // Payment day = when the purchase was recorded — not supplier rename / updatedAt.
+      completedAt: item.createdAt,
       originalBillAmount: item.amount,
       receiptLines: buildPurchaseListReceiptLines(item, expense, paired),
       receiptTimeline: buildPurchaseTimeline(item),

@@ -58,6 +58,7 @@ import {
   importTallyBills,
   loadData,
   replaceData,
+  saveData,
   scheduleSalePaymentEventsMigration,
   setHomePin,
   setOpeningBalance,
@@ -93,6 +94,7 @@ import { createCashDataStore, type CashDataStore } from '../utils/cashDataStore'
 import { createCashDerivedStore, type CashDerivedSnapshot, type CashDerivedStore } from '../utils/cashDerivedStore'
 import { buildBankActivityItems } from '../utils/bankActivity'
 import { buildCashActivityItems } from '../utils/cashActivity'
+import { sealTodayDrawerOpenings } from '../utils/dayDrawerOpenings'
 import { buildHistoryItems } from '../utils/historyItems'
 import { buildPurchaseCreditItems, buildPurchaseHistoryItems } from '../utils/purchaseHistory'
 
@@ -415,6 +417,11 @@ function applyTallyImport(data: AppData, bills: Awaited<ReturnType<typeof fetchT
   return { next, imported }
 }
 
+function withTodayDrawerOpenings(data: AppData): AppData {
+  const live = computeDrawerBalances(data)
+  return sealTodayDrawerOpenings(data, live.cash, live.bank)
+}
+
 export function CashProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => loadData())
   const [dataBooting, setDataBooting] = useState(false)
@@ -432,16 +439,40 @@ export function CashProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    const sealDayOpenings = () => {
+      setData((prev) => {
+        const live = computeDrawerBalances(prev)
+        const next = sealTodayDrawerOpenings(prev, live.cash, live.bank)
+        if (next === prev) return prev
+        saveData(next)
+        return next
+      })
+    }
+    sealDayOpenings()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') sealDayOpenings()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', sealDayOpenings)
+    const timer = window.setInterval(sealDayOpenings, 60_000)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', sealDayOpenings)
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  useEffect(() => {
     setCloudRemoteListener((remoteData) => {
       const heavy = remoteData.sales.length > 250 || remoteData.expenses.length > 400
       if (!heavy) {
         setDataBooting(false)
-        setData(remoteData)
+        setData(withTodayDrawerOpenings(remoteData))
         return
       }
       setDataBooting(true)
       const apply = () => {
-        setData(remoteData)
+        setData(withTodayDrawerOpenings(remoteData))
         requestAnimationFrame(() => setDataBooting(false))
       }
       if (typeof requestIdleCallback === 'function') {

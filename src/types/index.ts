@@ -192,6 +192,11 @@ export interface StaffLeave {
 export interface AppData {
   openingBalance: number
   openingBankBalance?: number
+  /**
+   * Sealed cash/bank in the drawer at local 12 AM for each calendar day.
+   * Key = YYYY-MM-DD. Once written, Opening (12 AM) for that day stays fixed.
+   */
+  dayBalances?: Record<string, DayDrawerOpening>
   homePin?: string
   theme?: AppTheme
   /** Saved purchase suppliers and their item descriptions. */
@@ -206,6 +211,13 @@ export interface AppData {
   staffLeaves?: StaffLeave[]
   /** Overpaid salary moved from one month to count as paid in the next. */
   staffSalaryAdvances?: StaffSalaryAdvance[]
+}
+
+/** Cash/bank that was in the drawer at the start of a local calendar day. */
+export interface DayDrawerOpening {
+  cashOpening: number
+  bankOpening: number
+  sealedAt: string
 }
 
 /** Carry-forward when a month is overpaid — counts as paid in `toMonth`. */

@@ -360,8 +360,15 @@ function Home({ active }: { active: boolean }) {
 
   const allCashActivityItems = derived.cashActivityItems
   const cashPeriod = useMemo(
-    () => summarizeCashActivityForPeriod(allCashActivityItems, balance, cashDateFilter, cashSelectedDate),
-    [allCashActivityItems, balance, cashDateFilter, cashSelectedDate],
+    () =>
+      summarizeCashActivityForPeriod(
+        allCashActivityItems,
+        data,
+        balance,
+        cashDateFilter,
+        cashSelectedDate,
+      ),
+    [allCashActivityItems, data, balance, cashDateFilter, cashSelectedDate],
   )
   const cashActivityItems = cashPeriod.items
   const cashActivitySummary = cashPeriod.summary
@@ -379,8 +386,15 @@ function Home({ active }: { active: boolean }) {
 
   const allBankActivityItems = derived.bankActivityItems
   const bankPeriod = useMemo(
-    () => summarizeBankActivityForPeriod(allBankActivityItems, bankBalance, bankDateFilter, bankSelectedDate),
-    [allBankActivityItems, bankBalance, bankDateFilter, bankSelectedDate],
+    () =>
+      summarizeBankActivityForPeriod(
+        allBankActivityItems,
+        data,
+        bankBalance,
+        bankDateFilter,
+        bankSelectedDate,
+      ),
+    [allBankActivityItems, data, bankBalance, bankDateFilter, bankSelectedDate],
   )
   const bankActivityItems = bankPeriod.items
   const bankActivitySummary = bankPeriod.summary

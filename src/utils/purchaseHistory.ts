@@ -294,9 +294,19 @@ export function purchasePaidAmount(expense: Expense): number {
   return expense.amount
 }
 
-/** Last activity time — credit payments bump updatedAt. */
+/**
+ * When cash/bank left for a purchase (and for sorting / credit lists).
+ * Full cash/bank/cheque buys use createdAt — never rename-bumped updatedAt,
+ * which otherwise dumps old supplier payments into Today after a name change.
+ * Open credit/split still uses updatedAt (credit collections bump it).
+ */
 export function purchaseExpenseActivityTime(expense: Expense): string {
-  return expense.updatedAt ?? expense.createdAt
+  if (expense.payType === 'cash' || expense.payType === 'bank' || expense.payType === 'cheque') {
+    return expense.createdAt
+  }
+  const creditLeft = purchaseCreditAmount(expense)
+  if (creditLeft > 0) return expense.updatedAt ?? expense.createdAt
+  return expense.createdAt
 }
 
 /** Bill date for history display and sorting — falls back to created date. */

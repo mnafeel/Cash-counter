@@ -1,9 +1,9 @@
 import type { AppData, Expense, Loan, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import { loanSettlementEvents } from './loanLedger'
-import { purchasePaidComponents } from './purchaseHistory'
-import { getSalePaymentEvents, saleCollectionTimestamp, sanitizeSplitParentChildChequeOverlap, isChequeOriginSale } from './salePayment'
-import { saleCashCollected, saleBankCollected, saleChequeToBankCollected } from './salesReport'
+import { purchaseExpenseActivityTime, purchasePaidComponents } from './purchaseHistory'
+import { getSalePaymentEvents, saleCollectionTimestamp, sanitizeSplitParentChildChequeOverlap, isChequeOriginSale, isActivePaymentEvent } from './salePayment'
+import { saleCashCollected, saleBankCollected, saleChequeToBankCollected, toInputDate } from './salesReport'
 import { memoByDataRef } from './memoByDataRef'
 
 export type CashDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'date' | 'range'
@@ -75,6 +75,72 @@ export function matchesCashDateFilter(
   return true
 }
 
+/**
+ * Local-midnight start of the selected period.
+ * `null` means “beginning of time” (All / unset date).
+ * Opening for a period = live balance − net of all activity on/after this instant.
+ */
+export function getCashPeriodStartMs(
+  dateFilter: CashDateFilter,
+  selectedDate = '',
+  rangeTo?: string,
+): number | null {
+  const now = new Date()
+
+  if (dateFilter === 'all') return null
+
+  if (dateFilter === 'today') {
+    const start = new Date(now)
+    start.setHours(0, 0, 0, 0)
+    return start.getTime()
+  }
+
+  if (dateFilter === 'yesterday') {
+    const start = new Date(now)
+    start.setDate(now.getDate() - 1)
+    start.setHours(0, 0, 0, 0)
+    return start.getTime()
+  }
+
+  if (dateFilter === 'week') {
+    const start = new Date(now)
+    start.setDate(now.getDate() - 6)
+    start.setHours(0, 0, 0, 0)
+    return start.getTime()
+  }
+
+  if (dateFilter === 'month') {
+    return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime()
+  }
+
+  if (dateFilter === 'date') {
+    if (!selectedDate) return null
+    const [y, m, day] = selectedDate.split('-').map(Number)
+    if (!y || !m || !day) return null
+    return new Date(y, m - 1, day, 0, 0, 0, 0).getTime()
+  }
+
+  if (dateFilter === 'range' && selectedDate) {
+    const from =
+      rangeTo && rangeTo.length > 0
+        ? selectedDate <= rangeTo
+          ? selectedDate
+          : rangeTo
+        : selectedDate
+    const [y, m, day] = from.split('-').map(Number)
+    if (!y || !m || !day) return null
+    return new Date(y, m - 1, day, 0, 0, 0, 0).getTime()
+  }
+
+  return null
+}
+
+function isOnOrAfterPeriodStart(iso: string, startMs: number | null): boolean {
+  if (startMs == null) return true
+  const t = new Date(iso).getTime()
+  return Number.isFinite(t) && t >= startMs
+}
+
 function saleActivityDate(sale: Sale): string {
   if (sale.status === 'pending') {
     const collected =
@@ -89,6 +155,7 @@ function pushSaleItems(items: CashActivityItem[], sale: Sale) {
   const events = getSalePaymentEvents(sale)
   if (events.length > 0) {
     events.forEach((event, index) => {
+      if (!isActivePaymentEvent(event)) return
       const cash = event.cash ?? 0
       if (cash <= 0) return
       // Cheque→bank settlements must never appear as cash drawer credits.
@@ -171,7 +238,7 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
       label: expenseOutLabel(expense),
       amount: cash,
       direction: 'out',
-      date: expense.updatedAt ?? expense.createdAt,
+      date: purchaseExpenseActivityTime(expense),
       name: expense.name,
     })
     return
@@ -179,6 +246,7 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
 
   if (expense.payType === 'bank') return
   if (expense.payType === 'credit') return
+  if (expense.payType === 'cheque') return
 
   if (expense.payType === 'split') {
     const cash = expense.cashAmount ?? 0
@@ -293,18 +361,37 @@ export function summarizeCashActivity(items: CashActivityItem[]) {
   return { cashIn, cashOut, net: cashIn - cashOut, count: items.length }
 }
 
-/** Balance at 12 AM (start of day) before that period's cash activity. */
+/** Local YYYY-MM-DD for the start of a cash/bank period filter. */
+export function cashPeriodDateKey(
+  dateFilter: CashDateFilter,
+  selectedDate = '',
+  rangeTo?: string,
+): string | null {
+  const startMs = getCashPeriodStartMs(dateFilter, selectedDate, rangeTo)
+  if (startMs == null) return null
+  return toInputDate(new Date(startMs))
+}
+
+/**
+ * Balance at the start of the selected period (e.g. that day’s 12 AM).
+ * Always: live drawer − net of activity from period start onward.
+ * So for Today: Opening + today’s In − today’s Out = Cash in Drawer.
+ */
 export function getCashOpeningBalance(
   data: AppData,
   currentBalance: number,
   dateFilter: CashDateFilter,
   selectedDate = '',
   prebuiltItems?: CashActivityItem[],
+  rangeTo?: string,
 ): number {
-  const items = (prebuiltItems ?? buildCashActivityItems(data)).filter((item) =>
-    matchesCashDateFilter(item.date, dateFilter, selectedDate),
-  )
-  return currentBalance - summarizeCashActivity(items).net
+  const allItems = prebuiltItems ?? buildCashActivityItems(data)
+  const startMs = getCashPeriodStartMs(dateFilter, selectedDate, rangeTo)
+  if (startMs == null) {
+    return currentBalance - summarizeCashActivity(allItems).net
+  }
+  const fromStart = allItems.filter((item) => isOnOrAfterPeriodStart(item.date, startMs))
+  return currentBalance - summarizeCashActivity(fromStart).net
 }
 
 export function cashOpeningLabel(dateFilter: CashDateFilter): string {
@@ -323,29 +410,49 @@ export function cashClosingLabel(dateFilter: CashDateFilter): string {
   return 'Closing'
 }
 
-/** End-of-day balance after that period's cash activity (night 12 AM closing). */
+/** End-of-period balance after that period's cash activity (e.g. night 12 AM closing). */
 export function getCashClosingBalance(
   data: AppData,
   currentBalance: number,
   dateFilter: CashDateFilter,
   selectedDate = '',
   prebuiltItems?: CashActivityItem[],
+  rangeTo?: string,
 ): number {
-  const items = (prebuiltItems ?? buildCashActivityItems(data)).filter((item) =>
-    matchesCashDateFilter(item.date, dateFilter, selectedDate),
+  const allItems = prebuiltItems ?? buildCashActivityItems(data)
+  const opening = getCashOpeningBalance(
+    data,
+    currentBalance,
+    dateFilter,
+    selectedDate,
+    allItems,
+    rangeTo,
   )
-  const opening = currentBalance - summarizeCashActivity(items).net
-  return opening + summarizeCashActivity(items).net
+  const periodItems = allItems.filter((item) =>
+    matchesCashDateFilter(item.date, dateFilter, selectedDate, rangeTo),
+  )
+  return opening + summarizeCashActivity(periodItems).net
 }
 
 export function summarizeCashActivityForPeriod(
   allItems: CashActivityItem[],
+  data: AppData,
   currentBalance: number,
   dateFilter: CashDateFilter,
   selectedDate = '',
+  rangeTo?: string,
 ) {
-  const items = allItems.filter((item) => matchesCashDateFilter(item.date, dateFilter, selectedDate))
+  const items = allItems.filter((item) =>
+    matchesCashDateFilter(item.date, dateFilter, selectedDate, rangeTo),
+  )
   const summary = summarizeCashActivity(items)
-  const opening = currentBalance - summary.net
+  const opening = getCashOpeningBalance(
+    data,
+    currentBalance,
+    dateFilter,
+    selectedDate,
+    allItems,
+    rangeTo,
+  )
   return { items, summary, opening, closing: opening + summary.net }
 }
