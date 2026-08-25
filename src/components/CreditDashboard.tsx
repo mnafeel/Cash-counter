@@ -13,6 +13,7 @@ import {
 import { getCustomerReminderAt } from '../utils/customerReminders'
 import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/billReminders'
 import CustomerReminderControl from './CustomerReminderControl'
+import BillReminderControl from './BillReminderControl'
 import DetailDateFilter, { type DetailDateFilterMode } from './DetailDateFilter'
 import { filterByDetailDate } from '../utils/detailDateFilter'
 import { toInputDate } from '../utils/salesReport'
@@ -34,6 +35,7 @@ interface CreditDashboardProps {
     reminderAt: string | null,
     reminderNote?: string | null,
   ) => void
+  onSetBillReminder: (saleId: string, reminderAt: string | null, reminderNote?: string | null) => void
   onSaveAlertSettings?: (settings: ReminderAlertSettings) => void
 }
 
@@ -44,6 +46,7 @@ export default function CreditDashboard({
   initialCustomer,
   initialFilter = 'credit',
   onSetCustomerReminder,
+  onSetBillReminder,
   onSaveAlertSettings,
 }: CreditDashboardProps) {
   const { value: query, setValue: setQuery, deferredValue: deferredQuery } = useDeferredSearch()
@@ -203,6 +206,7 @@ export default function CreditDashboard({
                 summary={filteredSelected}
                 data={data}
                 onSetCustomerReminder={onSetCustomerReminder}
+                onSetBillReminder={onSetBillReminder}
                 onSaveAlertSettings={onSaveAlertSettings}
               />
             </div>
@@ -275,11 +279,13 @@ function CreditCustomerDetail({
   summary,
   data,
   onSetCustomerReminder,
+  onSetBillReminder,
   onSaveAlertSettings,
 }: {
   summary: CustomerSummary
   data: AppData
   onSetCustomerReminder: CreditDashboardProps['onSetCustomerReminder']
+  onSetBillReminder: CreditDashboardProps['onSetBillReminder']
   onSaveAlertSettings?: CreditDashboardProps['onSaveAlertSettings']
 }) {
   const creditReminderAt = getCustomerReminderAt(data, summary.name, 'credit')
@@ -340,8 +346,10 @@ function CreditCustomerDetail({
               Open credit · {formatMoney(summary.totalCreditPending)}
               {creditReminderAt ? ` · 🔔 ${formatDate(creditReminderAt)}` : ''}
             </h3>
-            {summary.creditBills.map((purchase) => (
-              <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit">
+            {summary.creditBills.map((purchase) => {
+              const sale = data.sales.find((entry) => entry.id === purchase.id)
+              return (
+              <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit customer-purchase-item--stack">
                 <div className="customer-purchase-head">
                   <strong>Bill {purchase.billDateLabel}</strong>
                   <span>{formatMoney(purchase.creditPending)}</span>
@@ -352,8 +360,21 @@ function CreditCustomerDetail({
                     {purchase.paymentHistory}
                   </div>
                 ) : null}
+                <BillReminderControl
+                  saleId={purchase.id}
+                  reminderAt={sale?.reminderAt}
+                  reminderNote={sale?.reminderNote}
+                  billKind="credit"
+                  billLabel={`${summary.name} · ${purchase.billDateLabel}`}
+                  data={data}
+                  onSet={onSetBillReminder}
+                  onSaveAlertSettings={onSaveAlertSettings}
+                  perBill
+                  compact
+                />
               </div>
-            ))}
+              )
+            })}
           </>
         ) : (
           <p className="customer-empty customer-empty--inline">No open credit for this customer.</p>

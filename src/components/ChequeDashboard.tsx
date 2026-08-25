@@ -13,6 +13,7 @@ import {
 import { getCustomerReminderAt } from '../utils/customerReminders'
 import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/billReminders'
 import CustomerReminderControl from './CustomerReminderControl'
+import BillReminderControl from './BillReminderControl'
 import DetailDateFilter, { type DetailDateFilterMode } from './DetailDateFilter'
 import { filterByDetailDate } from '../utils/detailDateFilter'
 import { toInputDate } from '../utils/salesReport'
@@ -33,6 +34,7 @@ interface ChequeDashboardProps {
     kind: 'credit' | 'cheque',
     reminderAt: string | null,
   ) => void
+  onSetBillReminder: (saleId: string, reminderAt: string | null, reminderNote?: string | null) => void
   onSaveAlertSettings?: (settings: ReminderAlertSettings) => void
 }
 
@@ -43,6 +45,7 @@ export default function ChequeDashboard({
   initialCustomer,
   initialFilter = 'cheque',
   onSetCustomerReminder,
+  onSetBillReminder,
   onSaveAlertSettings,
 }: ChequeDashboardProps) {
   const { value: query, setValue: setQuery, deferredValue: deferredQuery } = useDeferredSearch()
@@ -202,6 +205,7 @@ export default function ChequeDashboard({
                 summary={filteredSelected}
                 data={data}
                 onSetCustomerReminder={onSetCustomerReminder}
+                onSetBillReminder={onSetBillReminder}
                 onSaveAlertSettings={onSaveAlertSettings}
               />
             </div>
@@ -274,11 +278,13 @@ function ChequeCustomerDetail({
   summary,
   data,
   onSetCustomerReminder,
+  onSetBillReminder,
   onSaveAlertSettings,
 }: {
   summary: ChequeCustomerSummary
   data: AppData
   onSetCustomerReminder: ChequeDashboardProps['onSetCustomerReminder']
+  onSetBillReminder: ChequeDashboardProps['onSetBillReminder']
   onSaveAlertSettings?: ChequeDashboardProps['onSaveAlertSettings']
 }) {
   const chequeReminderAt = getCustomerReminderAt(data, summary.name, 'cheque')
@@ -339,8 +345,10 @@ function ChequeCustomerDetail({
               Open cheque · {formatMoney(summary.totalChequePending)}
               {chequeReminderAt ? ` · 🔔 ${formatDate(chequeReminderAt)}` : ''}
             </h3>
-            {summary.chequeBills.map((purchase) => (
-              <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit">
+            {summary.chequeBills.map((purchase) => {
+              const sale = data.sales.find((entry) => entry.id === purchase.id)
+              return (
+              <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit customer-purchase-item--stack">
                 <div className="customer-purchase-head">
                   <strong>Bill {purchase.billDateLabel}</strong>
                   <span>{formatMoney(purchase.chequePending)}</span>
@@ -351,8 +359,21 @@ function ChequeCustomerDetail({
                   {purchase.paymentHistory}
                 </div>
               ) : null}
+                <BillReminderControl
+                  saleId={purchase.id}
+                  reminderAt={sale?.reminderAt}
+                  reminderNote={sale?.reminderNote}
+                  billKind="cheque"
+                  billLabel={`${summary.name} · ${purchase.billDateLabel}`}
+                  data={data}
+                  onSet={onSetBillReminder}
+                  onSaveAlertSettings={onSaveAlertSettings}
+                  perBill
+                  compact
+                />
               </div>
-            ))}
+              )
+            })}
           </>
         ) : (
           <p className="customer-empty customer-empty--inline">No open cheque for this customer.</p>

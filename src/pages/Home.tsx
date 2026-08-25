@@ -123,6 +123,7 @@ function Home({ active }: { active: boolean }) {
     removeLoan,
     unlockHome,
     setCustomerReminder,
+    setBillReminder,
     updateReminderAlertSettings,
     renameCustomerProfile,
   } = useCashActions()
@@ -1419,6 +1420,7 @@ function Home({ active }: { active: boolean }) {
           initialFilter={creditFilter}
           initialCustomer={creditInitialName}
           onSetCustomerReminder={setCustomerReminder}
+          onSetBillReminder={setBillReminder}
           onSaveAlertSettings={updateReminderAlertSettings}
         />
       ) : null}
@@ -1434,6 +1436,7 @@ function Home({ active }: { active: boolean }) {
           initialFilter={chequeFilter}
           initialCustomer={chequeInitialName}
           onSetCustomerReminder={setCustomerReminder}
+          onSetBillReminder={setBillReminder}
           onSaveAlertSettings={updateReminderAlertSettings}
         />
       ) : null}

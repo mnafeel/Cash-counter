@@ -104,10 +104,6 @@ import {
 } from '../pinelabs/config'
 import { pineLabsEnvironmentLabel, testPineLabsConnection } from '../pinelabs/pinelabsApi'
 import BillReminderControl from '../components/BillReminderControl'
-import BillReminderAlertsSettings from '../components/BillReminderAlertsSettings'
-import { UNNAMED_CREDIT_CUSTOMER } from '../utils/customerLedger'
-import { getReminderAlertSettings, getSaleReminderKind } from '../utils/billReminders'
-import { getEffectiveSaleReminderAt, getEffectiveSaleReminderNote } from '../utils/customerReminders'
 import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
@@ -220,10 +216,11 @@ export default function Settings() {
     cancelSaleChequeAsUnpaid,
     cancelSaleCreditAsUnpaid,
     setBillReminder,
-    setCustomerReminder,
     updateReminderAlertSettings,
     updateSaleBill,
-    pendingBills,
+    restoreTrashRecord,
+    purgeTrashRecord,
+    emptyTrash,
   } = useCash()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -283,6 +280,12 @@ export default function Settings() {
     setValue: setBillEditSearch,
     deferredValue: deferredBillEditSearch,
   } = useDeferredSearch()
+  const {
+    value: creditAdminSearch,
+    setValue: setCreditAdminSearch,
+    deferredValue: deferredCreditAdminSearch,
+  } = useDeferredSearch()
+  const [trashStatus, setTrashStatus] = useState('')
   const [billEditFilter, setBillEditFilter] = useState<BillEditFilter>('all')
   const [billEditOpen, setBillEditOpen] = useState(false)
   const [billEditMode, setBillEditMode] = useState(() => readBillEditMode())
@@ -377,8 +380,65 @@ export default function Settings() {
   }, [creditCollectionEntries])
   const paidCreditSales = useMemo(() => listPaidCreditSales(data), [data.sales])
   const pendingChequeSales = useMemo(() => listPendingChequeSales(data), [data.sales])
-  const reminderAlertSettings = useMemo(() => getReminderAlertSettings(data), [data])
-  const [alertSettingsStatus, setAlertSettingsStatus] = useState('')
+
+  const creditSearch = deferredCreditAdminSearch.trim().toLowerCase()
+  const filteredApprovedChequesByCustomer = useMemo(() => {
+    if (!creditSearch) return approvedChequesByCustomer
+    return approvedChequesByCustomer
+      .map((group) => ({
+        ...group,
+        entries: group.entries.filter((entry) =>
+          (entry.customerName ?? '').toLowerCase().includes(creditSearch),
+        ),
+      }))
+      .filter((group) => group.entries.length > 0)
+  }, [approvedChequesByCustomer, creditSearch])
+  const filteredPendingCreditSales = useMemo(() => {
+    if (!creditSearch) return pendingCreditSales
+    return pendingCreditSales.filter((sale) =>
+      getSaleCustomerName(sale, data.sales).toLowerCase().includes(creditSearch),
+    )
+  }, [pendingCreditSales, creditSearch, data.sales])
+  const filteredCreditCollectionEntries = useMemo(() => {
+    if (!creditSearch) return creditCollectionEntries
+    return creditCollectionEntries.filter((entry) =>
+      (entry.customerName ?? '').toLowerCase().includes(creditSearch),
+    )
+  }, [creditCollectionEntries, creditSearch])
+  const filteredCreditCollectionsByCustomer = useMemo(() => {
+    const groups: Array<{ name: string; entries: typeof creditCollectionEntries }> = []
+    const indexByName = new Map<string, number>()
+    for (const entry of filteredCreditCollectionEntries) {
+      const name = entry.customerName?.trim() || '—'
+      const existing = indexByName.get(name.toLowerCase())
+      if (existing == null) {
+        indexByName.set(name.toLowerCase(), groups.length)
+        groups.push({ name, entries: [entry] })
+      } else {
+        groups[existing].entries.push(entry)
+      }
+    }
+    return groups
+  }, [filteredCreditCollectionEntries])
+  const filteredPaidCreditSales = useMemo(() => {
+    if (!creditSearch) return paidCreditSales
+    return paidCreditSales.filter((sale) =>
+      getSaleCustomerName(sale, data.sales).toLowerCase().includes(creditSearch),
+    )
+  }, [paidCreditSales, creditSearch, data.sales])
+  const filteredPendingChequeSales = useMemo(() => {
+    if (!creditSearch) return pendingChequeSales
+    return pendingChequeSales.filter((sale) =>
+      getSaleCustomerName(sale, data.sales).toLowerCase().includes(creditSearch),
+    )
+  }, [pendingChequeSales, creditSearch, data.sales])
+  const trashItems = useMemo(
+    () =>
+      [...(data.trash ?? [])].sort(
+        (a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime(),
+      ),
+    [data.trash],
+  )
   const historyRecordCount =
     data.sales.length + data.expenses.length + (data.loans?.length ?? 0)
   const dailyReportCounts = useMemo(
@@ -1401,47 +1461,41 @@ export default function Settings() {
             </div>
 
             <section className="settings-history-report settings-daily-report">
-              <div className="settings-daily-report-layout">
-                <div className="settings-daily-report-main">
-                  <div className="settings-history-report-head">
-                    <h3>Daily reports</h3>
-                    <p>
-                      Pick a date. Full statement PDF: cash list, then bank, then expense — all in
-                      time order. Summary PDF shows totals and credit sales.
-                    </p>
-                  </div>
-                  <div className="settings-daily-report-dates">
-                    <button
-                      type="button"
-                      className={`settings-daily-report-date-chip ${dailyReportDate === todayInputDate ? 'settings-daily-report-date-chip--active' : ''}`}
-                      onClick={() => setDailyReportDate(todayInputDate)}
-                    >
-                      Today
-                    </button>
-                    <button
-                      type="button"
-                      className={`settings-daily-report-date-chip ${dailyReportDate === yesterdayInputDate ? 'settings-daily-report-date-chip--active' : ''}`}
-                      onClick={() => setDailyReportDate(yesterdayInputDate)}
-                    >
-                      Yesterday
-                    </button>
-                    <input
-                      type="date"
-                      className="settings-daily-report-date-input"
-                      value={dailyReportDate}
-                      onChange={(e) => setDailyReportDate(e.target.value)}
-                      aria-label="Pick date for daily report"
-                    />
-                  </div>
-                  {dailyReportStatus ? (
-                    <p className="settings-history-report-status">{dailyReportStatus}</p>
-                  ) : null}
+              <div className="settings-daily-report-compact-head">
+                <h3>Daily reports</h3>
+                <div className="settings-daily-report-dates">
+                  <button
+                    type="button"
+                    className={`settings-daily-report-date-chip ${dailyReportDate === todayInputDate ? 'settings-daily-report-date-chip--active' : ''}`}
+                    onClick={() => setDailyReportDate(todayInputDate)}
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    className={`settings-daily-report-date-chip ${dailyReportDate === yesterdayInputDate ? 'settings-daily-report-date-chip--active' : ''}`}
+                    onClick={() => setDailyReportDate(yesterdayInputDate)}
+                  >
+                    Yesterday
+                  </button>
+                  <input
+                    type="date"
+                    className="settings-daily-report-date-input"
+                    value={dailyReportDate}
+                    onChange={(e) => setDailyReportDate(e.target.value)}
+                    aria-label="Pick date for daily report"
+                  />
                 </div>
-                <div className="settings-daily-report-downloads">
-                  <div className="settings-daily-report-group settings-daily-report-group--full">
-                    <span className="settings-daily-report-group-label">
-                      Full Statement ({dailyReportTotalCount})
-                    </span>
+              </div>
+              {dailyReportStatus ? (
+                <p className="settings-history-report-status">{dailyReportStatus}</p>
+              ) : null}
+              <div className="settings-daily-report-grid">
+                <div className="settings-daily-report-tile settings-daily-report-tile--full">
+                  <span className="settings-daily-report-tile-label">
+                    Full ({dailyReportTotalCount})
+                  </span>
+                  <div className="settings-daily-report-tile-btns">
                     <button
                       type="button"
                       className="btn btn-primary settings-history-report-btn"
@@ -1457,11 +1511,13 @@ export default function Settings() {
                       Sheet
                     </button>
                   </div>
-                  {DAILY_REPORT_DOWNLOAD_GROUPS.map((group) => (
-                    <div key={group.kind} className="settings-daily-report-group">
-                      <span className="settings-daily-report-group-label">
-                        {group.label} ({dailyReportCounts[group.countKey]})
-                      </span>
+                </div>
+                {DAILY_REPORT_DOWNLOAD_GROUPS.map((group) => (
+                  <div key={group.kind} className="settings-daily-report-tile">
+                    <span className="settings-daily-report-tile-label">
+                      {group.label} ({dailyReportCounts[group.countKey]})
+                    </span>
+                    <div className="settings-daily-report-tile-btns">
                       <button
                         type="button"
                         className="btn btn-secondary settings-history-report-btn"
@@ -1477,9 +1533,11 @@ export default function Settings() {
                         Sheet
                       </button>
                     </div>
-                  ))}
-                  <div className="settings-daily-report-group settings-daily-report-group--summary">
-                    <span className="settings-daily-report-group-label">Summary</span>
+                  </div>
+                ))}
+                <div className="settings-daily-report-tile settings-daily-report-tile--summary">
+                  <span className="settings-daily-report-tile-label">Summary</span>
+                  <div className="settings-daily-report-tile-btns">
                     <button
                       type="button"
                       className="btn btn-primary settings-history-report-btn"
@@ -1756,68 +1814,19 @@ export default function Settings() {
               ) : null}
             </section>
 
-            <section className="settings-cheque-cancel settings-bill-reminders">
+            <section className="settings-cheque-cancel settings-credit-cancel">
               <div className="settings-cheque-cancel-head">
-                <h3>Bill reminders &amp; alerts</h3>
-                <p>
-                  Set reminder date &amp; time for credit and cheque bills. Alerts start before the due
-                  date based on the options below.
-                </p>
+                <h3>Credit & cheque admin</h3>
+                <p>Search customers below, then manage pending credit, collections, cheques, and reminders.</p>
               </div>
-              <BillReminderAlertsSettings
-                settings={reminderAlertSettings}
-                onSave={(settings) => {
-                  updateReminderAlertSettings(settings)
-                  setAlertSettingsStatus('Alert options saved.')
-                }}
+              <input
+                type="search"
+                className="settings-credit-admin-search"
+                value={creditAdminSearch}
+                onChange={(e) => setCreditAdminSearch(e.target.value)}
+                placeholder="Search customer name…"
+                autoComplete="off"
               />
-              {alertSettingsStatus ? (
-                <p className="settings-cheque-cancel-status">{alertSettingsStatus}</p>
-              ) : null}
-              {pendingBills.length === 0 ? (
-                <p className="settings-cheque-cancel-empty">No pending bills.</p>
-              ) : (
-                <ul className="settings-cheque-cancel-list">
-                  {pendingBills
-                    .filter((sale) => {
-                      const reminderKind = getSaleReminderKind(sale)
-                      return reminderKind !== 'credit' && reminderKind !== 'cheque'
-                    })
-                    .map((sale) => {
-                    const billName = getSaleCustomerName(sale, data.sales) || UNNAMED_CREDIT_CUSTOMER
-                    const kind =
-                      sale.payType === 'credit' || sale.pendingPayType === 'credit'
-                        ? 'Credit'
-                        : sale.payType === 'cheque' || sale.pendingPayType === 'cheque'
-                          ? 'Cheque'
-                          : sale.source === 'tally'
-                            ? 'Tally'
-                            : 'Pending'
-                    return (
-                      <li key={sale.id} className="settings-cheque-cancel-item settings-cheque-cancel-item--stack">
-                        <div className="settings-cheque-cancel-meta">
-                          <strong>{billName}</strong>
-                          <span>
-                            {kind} · {formatMoney(sale.billAmount)}
-                          </span>
-                        </div>
-                        <BillReminderControl
-                          saleId={sale.id}
-                          reminderAt={sale.reminderAt}
-                          reminderNote={sale.reminderNote}
-                          billKind={getSaleReminderKind(sale)}
-                          billLabel={billName}
-                          data={data}
-                          onSet={setBillReminder}
-                          onSetCustomer={setCustomerReminder}
-                          onSaveAlertSettings={updateReminderAlertSettings}
-                          compact
-                        />
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
             </section>
 
             <section className="settings-cheque-cancel settings-credit-cancel">
@@ -1830,11 +1839,11 @@ export default function Settings() {
                   collections, use <strong>Credit collections</strong> below.
                 </p>
               </div>
-              {pendingCreditSales.length === 0 ? (
+              {filteredPendingCreditSales.length === 0 ? (
                 <p className="settings-cheque-cancel-empty">No open credit bills.</p>
               ) : (
                 <ul className="settings-cheque-cancel-list">
-                  {pendingCreditSales.map((sale) => {
+                  {filteredPendingCreditSales.map((sale) => {
                     const collected = saleCollectedAmount(sale)
                     const chequeInBank = getApprovedChequeAmount(sale)
                     const paidExCheque = Math.max(0, collected - chequeInBank)
@@ -1844,8 +1853,6 @@ export default function Settings() {
                       ? [sale.parentSplitId, sale.id]
                       : [sale.id]
                     const billName = getSaleCustomerName(sale, data.sales)
-                    const creditReminderAt = getEffectiveSaleReminderAt(data, sale)
-                    const creditReminderNote = getEffectiveSaleReminderNote(data, sale)
                     return (
                       <li key={sale.id} className="settings-cheque-cancel-item settings-cheque-cancel-item--stack">
                         <div className="settings-cheque-cancel-meta">
@@ -1867,15 +1874,19 @@ export default function Settings() {
                           <span className="settings-cheque-cancel-sub">
                             {formatDate(when)}
                           </span>
-                          {creditReminderAt ? (
-                            <span className="settings-cheque-cancel-sub">
-                              🔔 Reminder {formatDate(creditReminderAt)}
-                            </span>
-                          ) : null}
-                          {creditReminderNote ? (
-                            <span className="settings-cheque-cancel-sub">📝 {creditReminderNote}</span>
-                          ) : null}
                         </div>
+                        <BillReminderControl
+                          saleId={sale.id}
+                          reminderAt={sale.reminderAt}
+                          reminderNote={sale.reminderNote}
+                          billKind="credit"
+                          billLabel={billName || 'Credit bill'}
+                          data={data}
+                          onSet={setBillReminder}
+                          onSaveAlertSettings={updateReminderAlertSettings}
+                          perBill
+                          compact
+                        />
                         <div className="settings-cheque-cancel-btns">
                           <button
                             type="button"
@@ -1914,11 +1925,11 @@ export default function Settings() {
                   collect it again.
                 </p>
               </div>
-              {creditCollectionEntries.length === 0 ? (
+              {filteredCreditCollectionEntries.length === 0 ? (
                 <p className="settings-cheque-cancel-empty">No credit collections yet.</p>
               ) : (
                 <div className="settings-cheque-cancel-groups">
-                  {creditCollectionsByCustomer.map((group) => (
+                  {filteredCreditCollectionsByCustomer.map((group) => (
                     <div key={group.name} className="settings-cheque-cancel-group">
                       <h4 className="settings-cheque-cancel-group-title">{group.name}</h4>
                       <ul className="settings-cheque-cancel-list">
@@ -2018,11 +2029,11 @@ export default function Settings() {
                   whole bill as if nothing was paid — collections leave cash/bank.
                 </p>
               </div>
-              {paidCreditSales.length === 0 ? (
+              {filteredPaidCreditSales.length === 0 ? (
                 <p className="settings-cheque-cancel-empty">No paid credit bills.</p>
               ) : (
                 <ul className="settings-cheque-cancel-list">
-                  {paidCreditSales.map((sale) => {
+                  {filteredPaidCreditSales.map((sale) => {
                     const collected = saleCollectedAmount(sale)
                     const total = sale.originalBillAmount ?? sale.billAmount
                     const when = sale.updatedAt ?? sale.createdAt
@@ -2064,11 +2075,11 @@ export default function Settings() {
                   (like nothing was paid) — approved amounts leave bank.
                 </p>
               </div>
-              {pendingChequeSales.length === 0 ? (
+              {filteredPendingChequeSales.length === 0 ? (
                 <p className="settings-cheque-cancel-empty">No open cheque bills.</p>
               ) : (
                 <ul className="settings-cheque-cancel-list">
-                  {pendingChequeSales.map((sale) => {
+                  {filteredPendingChequeSales.map((sale) => {
                     const collected = saleCollectedAmount(sale)
                     const chequeInBank = getApprovedChequeAmount(sale)
                     const paidExCheque = Math.max(0, collected - chequeInBank)
@@ -2078,8 +2089,6 @@ export default function Settings() {
                       ? [sale.parentSplitId, sale.id]
                       : [sale.id]
                     const billName = getSaleCustomerName(sale, data.sales)
-                    const chequeReminderAt = getEffectiveSaleReminderAt(data, sale)
-                    const chequeReminderNote = getEffectiveSaleReminderNote(data, sale)
                     return (
                       <li key={sale.id} className="settings-cheque-cancel-item settings-cheque-cancel-item--stack">
                         <div className="settings-cheque-cancel-meta">
@@ -2101,15 +2110,19 @@ export default function Settings() {
                           <span className="settings-cheque-cancel-sub">
                             {formatDate(when)}
                           </span>
-                          {chequeReminderAt ? (
-                            <span className="settings-cheque-cancel-sub">
-                              🔔 Reminder {formatDate(chequeReminderAt)}
-                            </span>
-                          ) : null}
-                          {chequeReminderNote ? (
-                            <span className="settings-cheque-cancel-sub">📝 {chequeReminderNote}</span>
-                          ) : null}
                         </div>
+                        <BillReminderControl
+                          saleId={sale.id}
+                          reminderAt={sale.reminderAt}
+                          reminderNote={sale.reminderNote}
+                          billKind="cheque"
+                          billLabel={billName || 'Cheque bill'}
+                          data={data}
+                          onSet={setBillReminder}
+                          onSaveAlertSettings={updateReminderAlertSettings}
+                          perBill
+                          compact
+                        />
                         <div className="settings-cheque-cancel-btns">
                           {collected > 0 ? (
                             <button
@@ -2153,9 +2166,11 @@ export default function Settings() {
               </div>
               {approvedCheques.length === 0 ? (
                 <p className="settings-cheque-cancel-empty">No approved cheques.</p>
+              ) : filteredApprovedChequesByCustomer.length === 0 ? (
+                <p className="settings-cheque-cancel-empty">No approved cheques match your search.</p>
               ) : (
                 <div className="settings-cheque-cancel-groups">
-                  {approvedChequesByCustomer.map((group) => (
+                  {filteredApprovedChequesByCustomer.map((group) => (
                     <div key={group.name} className="settings-cheque-cancel-group">
                       <h4 className="settings-cheque-cancel-group-title">{group.name}</h4>
                       <ul className="settings-cheque-cancel-list">
@@ -2259,6 +2274,75 @@ export default function Settings() {
               {chequeCancelStatus ? (
                 <p className="settings-cheque-cancel-status">{chequeCancelStatus}</p>
               ) : null}
+            </section>
+
+            <section className="settings-cheque-cancel settings-trash-bin">
+              <div className="settings-cheque-cancel-head">
+                <h3>Recycle bin</h3>
+                <p>
+                  Deleted bills, expenses, and loans are kept here. Restore if deleted by mistake, or
+                  delete forever.
+                </p>
+              </div>
+              {trashItems.length === 0 ? (
+                <p className="settings-cheque-cancel-empty">Recycle bin is empty.</p>
+              ) : (
+                <>
+                  <div className="settings-trash-actions">
+                    <button
+                      type="button"
+                      className="btn btn-secondary settings-cheque-cancel-btn settings-cheque-cancel-btn--danger"
+                      onClick={() => {
+                        if (!window.confirm(`Empty recycle bin (${trashItems.length} items)?`)) return
+                        emptyTrash()
+                        setTrashStatus('Recycle bin emptied.')
+                      }}
+                    >
+                      Empty bin
+                    </button>
+                  </div>
+                  <ul className="settings-cheque-cancel-list">
+                    {trashItems.map((row) => (
+                      <li key={`${row.kind}-${row.id}`} className="settings-cheque-cancel-item settings-cheque-cancel-item--stack">
+                        <div className="settings-cheque-cancel-meta">
+                          <strong>{row.label}</strong>
+                          <span className="settings-cheque-cancel-amount">
+                            {row.kind === 'sale' ? 'Bill' : row.kind === 'expense' ? 'Expense' : 'Loan'}{' '}
+                            · {formatMoney(row.amount)}
+                          </span>
+                          <span className="settings-cheque-cancel-sub">
+                            Deleted {formatDate(row.deletedAt)}
+                          </span>
+                        </div>
+                        <div className="settings-cheque-cancel-btns">
+                          <button
+                            type="button"
+                            className="btn btn-secondary settings-cheque-cancel-btn"
+                            onClick={() => {
+                              restoreTrashRecord(row.kind, row.id)
+                              setTrashStatus(`Restored ${row.label}.`)
+                            }}
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-secondary settings-cheque-cancel-btn settings-cheque-cancel-btn--danger"
+                            onClick={() => {
+                              if (!window.confirm(`Delete ${row.label} forever?`)) return
+                              purgeTrashRecord(row.kind, row.id)
+                              setTrashStatus(`Removed ${row.label} from recycle bin.`)
+                            }}
+                          >
+                            Delete forever
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+              {trashStatus ? <p className="settings-cheque-cancel-status">{trashStatus}</p> : null}
             </section>
             </div>
 

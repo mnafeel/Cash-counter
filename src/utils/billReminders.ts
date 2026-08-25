@@ -125,6 +125,13 @@ export function getReminderAlertSettings(data: AppData): ReminderAlertSettings {
     ),
     notificationSoundEnabled:
       data.reminderAlerts?.notificationSoundEnabled ?? DEFAULT_REMINDER_ALERTS.notificationSoundEnabled,
+    notificationSoundMode:
+      data.reminderAlerts?.notificationSoundMode ?? DEFAULT_REMINDER_ALERTS.notificationSoundMode,
+    notificationSoundRepeatSeconds: Math.max(
+      5,
+      data.reminderAlerts?.notificationSoundRepeatSeconds ??
+        DEFAULT_REMINDER_ALERTS.notificationSoundRepeatSeconds,
+    ),
   }
 }
 

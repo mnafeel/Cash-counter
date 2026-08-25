@@ -18,6 +18,7 @@ import type {
   SaleStatus,
   StaffLeaveType,
   TransferDirection,
+  TrashKind,
 } from '../types'
 import type { SalaryMonthKey } from '../utils/staffLedger'
 import {
@@ -34,6 +35,7 @@ import {
   addTransfer,
   applyPartialBalanceSaleCollection,
   applyPurchaseCreditPayment,
+  applyBulkPurchaseCreditPayments,
   cancelApprovedCheque,
   cancelApprovedChequeEntry,
   cancelCreditCollectionEntry,
@@ -50,6 +52,7 @@ import {
   deleteStaffMember,
   deleteStaffLeave,
   deleteSale,
+  emptyTrash,
   editPaidSalePayment,
   type BillCreatePayType,
   type PaidSalePaymentEdit,
@@ -57,7 +60,8 @@ import {
   getPendingBills,
   importTallyBills,
   loadData,
-  replaceData,
+  purgeTrashRecord,
+  restoreTrashRecord,
   saveData,
   scheduleSalePaymentEventsMigration,
   setHomePin,
@@ -255,6 +259,22 @@ interface CashContextValue {
       chequeApproved?: boolean
     },
   ) => void
+  applyBulkPurchaseCreditPayments: (
+    payments: Array<{
+      id: string
+      payment: {
+        payType: ExpensePayType
+        payAmount: number
+        cashAmount?: number
+        bankAmount?: number
+        chequeAmount?: number
+        chequeApproved?: boolean
+      }
+    }>,
+  ) => void
+  restoreTrashRecord: (kind: TrashKind, id: string) => void
+  purgeTrashRecord: (kind: TrashKind, id: string) => void
+  emptyTrash: () => void
   collectChequePayment: (
     id: string,
     payment: {
@@ -1076,6 +1096,37 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const applyBulkPurchaseCreditPaymentsHandler = useCallback(
+    (
+      payments: Array<{
+        id: string
+        payment: {
+          payType: ExpensePayType
+          payAmount: number
+          cashAmount?: number
+          bankAmount?: number
+          chequeAmount?: number
+          chequeApproved?: boolean
+        }
+      }>,
+    ) => {
+      setData((prev) => applyBulkPurchaseCreditPayments(prev, payments))
+    },
+    [],
+  )
+
+  const restoreTrashRecordHandler = useCallback((kind: TrashKind, id: string) => {
+    setData((prev) => restoreTrashRecord(prev, kind, id))
+  }, [])
+
+  const purgeTrashRecordHandler = useCallback((kind: TrashKind, id: string) => {
+    setData((prev) => purgeTrashRecord(prev, kind, id))
+  }, [])
+
+  const emptyTrashHandler = useCallback(() => {
+    setData((prev) => emptyTrash(prev))
+  }, [])
+
   const collectBalancePaymentHandler = useCallback(
     (
       id: string,
@@ -1349,6 +1400,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       setCustomerReminder: setCustomerReminderHandler,
       updateReminderAlertSettings: updateReminderAlertSettingsHandler,
       applyPurchaseCreditPayment: applyPurchaseCreditPaymentHandler,
+      applyBulkPurchaseCreditPayments: applyBulkPurchaseCreditPaymentsHandler,
+      restoreTrashRecord: restoreTrashRecordHandler,
+      purgeTrashRecord: purgeTrashRecordHandler,
+      emptyTrash: emptyTrashHandler,
       collectCreditPayment: collectBalancePaymentHandler,
       collectChequePayment: collectBalancePaymentHandler,
       updateHistoryName,
@@ -1409,6 +1464,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
       setCustomerReminderHandler,
       updateReminderAlertSettingsHandler,
       applyPurchaseCreditPaymentHandler,
+      applyBulkPurchaseCreditPaymentsHandler,
+      restoreTrashRecordHandler,
+      purgeTrashRecordHandler,
+      emptyTrashHandler,
       collectBalancePaymentHandler,
       updateHistoryName,
       renameCustomerProfileHandler,

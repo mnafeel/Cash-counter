@@ -1,8 +1,9 @@
 import type { AppData } from '../types'
 import { NO1_BILL_LABEL, NO2_BILL_LABEL } from './expenseBillLabels'
-import { formatDate, formatMoney, formatReportDate, formatReportTime } from './format'
+import { formatDate, formatMoney, formatReportDate, formatReportTime, formatTimestamp } from './format'
 import { printHtmlReport } from './printHtmlReport'
 import {
+  purchaseSupplierBillDateDiffers,
   summarizeSupplierPurchaseFile,
   type PurchaseHistoryItem,
 } from './purchaseHistory'
@@ -126,6 +127,14 @@ function groupBySupplier(items: PurchaseHistoryItem[]): { name: string; items: P
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
+function purchaseReportDateCell(item: PurchaseHistoryItem): string {
+  const paid = formatTimestamp(item.date)
+  if (!purchaseSupplierBillDateDiffers(item.billDate, item.date)) {
+    return escapeHtml(paid)
+  }
+  return `${escapeHtml(paid)}<div class="muted">Bill date ${escapeHtml(formatReportDate(item.billDate!))}</div>`
+}
+
 function buildRowsHtml(
   items: PurchaseHistoryItem[],
   mode: PurchaseReportMode,
@@ -144,7 +153,7 @@ function buildRowsHtml(
             : `Paid ${formatMoney(item.paidAmount)}`
       return `<tr>
         <td class="num">${index + 1}</td>
-        <td>${escapeHtml(formatDate(item.date))}</td>
+        <td>${purchaseReportDateCell(item)}</td>
         ${includeSupplier ? `<td>${escapeHtml(item.shopName)}</td>` : ''}
         <td>${escapeHtml(title)}${
           item.billNo ? `<div class="muted">Bill ${escapeHtml(item.billNo)}</div>` : ''
@@ -207,7 +216,7 @@ export function buildPurchaseHistoryReportHtml(options: PurchaseReportOptions): 
                     : `Paid ${formatMoney(item.paidAmount)}`
               return `<tr>
                 <td class="num">${runningIndex}</td>
-                <td>${escapeHtml(formatDate(item.date))}</td>
+                <td>${purchaseReportDateCell(item)}</td>
                 <td>${escapeHtml(title)}${
                   item.billNo ? `<div class="muted">Bill ${escapeHtml(item.billNo)}</div>` : ''
                 }<div class="muted">${escapeHtml(item.billLabel)} · ${escapeHtml(item.payLabel)}</div></td>

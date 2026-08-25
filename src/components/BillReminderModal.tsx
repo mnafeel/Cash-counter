@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReminderAlertSettings } from '../types'
-import { DEFAULT_REMINDER_ALERTS, NOTIFICATION_SHOW_SECOND_OPTIONS } from '../types'
+import { DEFAULT_REMINDER_ALERTS, NOTIFICATION_SHOW_SECOND_OPTIONS, NOTIFICATION_SOUND_REPEAT_OPTIONS } from '../types'
 import {
   dateTimeInputValuesToIso,
   formatDate,
@@ -15,7 +15,7 @@ import {
   getSuggestedReminderDateTime,
   type BillReminderKind,
 } from '../utils/billReminders'
-import { testReminderNotificationSound, type ReminderSoundStyle } from '../utils/reminderNotificationSound'
+import { testReminderNotificationSound, stopReminderNotificationSound, type ReminderSoundStyle } from '../utils/reminderNotificationSound'
 import './BillReminderAlertsSettings.css'
 import './BillReminderModal.css'
 
@@ -64,6 +64,11 @@ export default function BillReminderModal({
   const [alertIntervalDays, setAlertIntervalDays] = useState(alertSettings.alertIntervalDays)
   const [notificationShowSeconds, setNotificationShowSeconds] = useState(alertSettings.notificationShowSeconds)
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(alertSettings.notificationSoundEnabled)
+  const [notificationSoundMode, setNotificationSoundMode] = useState(alertSettings.notificationSoundMode)
+  const [notificationSoundRepeatSeconds, setNotificationSoundRepeatSeconds] = useState(
+    alertSettings.notificationSoundRepeatSeconds,
+  )
+  const [soundTesting, setSoundTesting] = useState(false)
   const [loanUrgent, setLoanUrgent] = useState(reminderUrgent ?? false)
 
   const suggestedDefault = useMemo(
@@ -90,8 +95,16 @@ export default function BillReminderModal({
     setAlertIntervalDays(alertSettings.alertIntervalDays)
     setNotificationShowSeconds(alertSettings.notificationShowSeconds)
     setNotificationSoundEnabled(alertSettings.notificationSoundEnabled)
+    setNotificationSoundMode(alertSettings.notificationSoundMode)
+    setNotificationSoundRepeatSeconds(alertSettings.notificationSoundRepeatSeconds)
+    setSoundTesting(false)
     setLoanUrgent(reminderUrgent ?? false)
   }, [open, reminderAt, reminderNote, reminderUrgent, alertSettings, billKind])
+
+  useEffect(() => {
+    if (!open) stopReminderNotificationSound()
+    return () => stopReminderNotificationSound()
+  }, [open])
 
   const draftSettings = useMemo(
     (): ReminderAlertSettings => ({
@@ -101,8 +114,19 @@ export default function BillReminderModal({
       alertIntervalDays,
       notificationShowSeconds,
       notificationSoundEnabled,
+      notificationSoundMode,
+      notificationSoundRepeatSeconds,
     }),
-    [creditDaysBefore, chequeDaysBefore, loanDaysBefore, alertIntervalDays, notificationShowSeconds, notificationSoundEnabled],
+    [
+      creditDaysBefore,
+      chequeDaysBefore,
+      loanDaysBefore,
+      alertIntervalDays,
+      notificationShowSeconds,
+      notificationSoundEnabled,
+      notificationSoundMode,
+      notificationSoundRepeatSeconds,
+    ],
   )
 
   const preview = useMemo(() => {
@@ -346,15 +370,86 @@ export default function BillReminderModal({
                 >
                   Off
                 </button>
-                <button
-                  type="button"
-                  className="bill-alert-settings-chip bill-alert-settings-chip--test"
-                  onClick={() => void testReminderNotificationSound(previewSoundStyle)}
-                >
-                  Test sound
-                </button>
               </div>
             </div>
+            {notificationSoundEnabled ? (
+              <>
+                <div className="bill-alert-settings-row">
+                  <span className="bill-alert-settings-label">Sound mode</span>
+                  <div className="bill-alert-settings-chips">
+                    <button
+                      type="button"
+                      className={`bill-alert-settings-chip ${notificationSoundMode === 'once' ? 'bill-alert-settings-chip--active' : ''}`}
+                      onClick={() => setNotificationSoundMode('once')}
+                    >
+                      Once
+                    </button>
+                    <button
+                      type="button"
+                      className={`bill-alert-settings-chip ${notificationSoundMode === 'interval' ? 'bill-alert-settings-chip--active' : ''}`}
+                      onClick={() => setNotificationSoundMode('interval')}
+                    >
+                      Interval
+                    </button>
+                    <button
+                      type="button"
+                      className={`bill-alert-settings-chip ${notificationSoundMode === 'continuous' ? 'bill-alert-settings-chip--active' : ''}`}
+                      onClick={() => setNotificationSoundMode('continuous')}
+                    >
+                      Continuous
+                    </button>
+                  </div>
+                </div>
+                {notificationSoundMode === 'interval' ? (
+                  <div className="bill-alert-settings-row">
+                    <span className="bill-alert-settings-label">Repeat every</span>
+                    <div className="bill-alert-settings-chips">
+                      {NOTIFICATION_SOUND_REPEAT_OPTIONS.map((seconds) => (
+                        <button
+                          key={`sound-repeat-${seconds}`}
+                          type="button"
+                          className={`bill-alert-settings-chip ${notificationSoundRepeatSeconds === seconds ? 'bill-alert-settings-chip--active' : ''}`}
+                          onClick={() => setNotificationSoundRepeatSeconds(seconds)}
+                        >
+                          {seconds < 60 ? `${seconds}s` : `${seconds / 60}m`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div className="bill-alert-settings-row">
+                  <span className="bill-alert-settings-label">Preview</span>
+                  <div className="bill-alert-settings-chips">
+                    <button
+                      type="button"
+                      className="bill-alert-settings-chip bill-alert-settings-chip--test"
+                      onClick={() => {
+                        setSoundTesting(true)
+                        void testReminderNotificationSound(
+                          previewSoundStyle,
+                          notificationSoundMode,
+                          notificationSoundRepeatSeconds,
+                        )
+                      }}
+                    >
+                      Test sound
+                    </button>
+                    {soundTesting ? (
+                      <button
+                        type="button"
+                        className="bill-alert-settings-chip bill-alert-settings-chip--stop"
+                        onClick={() => {
+                          stopReminderNotificationSound()
+                          setSoundTesting(false)
+                        }}
+                      >
+                        Stop
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </>
+            ) : null}
             {billKind === 'loan' && loanUrgent ? (
               <p className="bill-reminder-modal-suggested">
                 Urgent uses a longer, stronger alert tone when this loan reminder is active.

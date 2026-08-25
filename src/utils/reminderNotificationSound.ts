@@ -1,9 +1,34 @@
+import type { NotificationSoundMode } from '../types'
+
 export type ReminderSoundStyle = 'normal' | 'urgent'
 
 let audioContext: AudioContext | null = null
 let htmlAudioByStyle = new Map<ReminderSoundStyle, HTMLAudioElement>()
 let listenersAttached = false
 let audioUnlocked = false
+
+type SoundSession = {
+  mode: NotificationSoundMode
+  stopRequested: boolean
+  timerId: ReturnType<typeof setTimeout> | null
+  intervalId: ReturnType<typeof setInterval> | null
+}
+
+let activeSession: SoundSession | null = null
+let soundPlayingListeners = new Set<() => void>()
+
+function notifySoundPlayingChanged() {
+  for (const listener of soundPlayingListeners) listener()
+}
+
+export function subscribeReminderSoundPlaying(listener: () => void): () => void {
+  soundPlayingListeners.add(listener)
+  return () => soundPlayingListeners.delete(listener)
+}
+
+export function isReminderSoundPlaying(): boolean {
+  return activeSession != null && !activeSession.stopRequested
+}
 
 function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null
@@ -95,6 +120,10 @@ function buildWavDataUri(style: ReminderSoundStyle): string {
         ]
   const totalDuration = style === 'urgent' ? 1.15 : 0.45
   return encodeWav(synthesizeToneBuffer(tones, totalDuration), 44100)
+}
+
+function soundDurationMs(style: ReminderSoundStyle): number {
+  return style === 'urgent' ? 1200 : 550
 }
 
 function getHtmlAudio(style: ReminderSoundStyle): HTMLAudioElement {
@@ -211,8 +240,93 @@ export async function playReminderNotificationSound(style: ReminderSoundStyle = 
   await playViaHtmlAudio(style)
 }
 
-/** Play from a button tap — always unlocks audio first. */
-export async function testReminderNotificationSound(style: ReminderSoundStyle = 'normal'): Promise<void> {
+export function stopReminderNotificationSound() {
+  if (!activeSession) return
+  activeSession.stopRequested = true
+  if (activeSession.timerId != null) clearTimeout(activeSession.timerId)
+  if (activeSession.intervalId != null) clearInterval(activeSession.intervalId)
+  activeSession = null
+  notifySoundPlayingChanged()
+}
+
+async function startReminderSoundSession(
+  style: ReminderSoundStyle,
+  mode: NotificationSoundMode,
+  repeatSeconds: number,
+): Promise<void> {
+  stopReminderNotificationSound()
+
+  if (mode === 'once') {
+    await playReminderNotificationSound(style)
+    return
+  }
+
+  const session: SoundSession = {
+    mode,
+    stopRequested: false,
+    timerId: null,
+    intervalId: null,
+  }
+  activeSession = session
+  notifySoundPlayingChanged()
+
+  const playOnce = async () => {
+    if (session.stopRequested) return
+    await playReminderNotificationSound(style)
+  }
+
+  await playOnce()
+
+  if (session.stopRequested) {
+    activeSession = null
+    notifySoundPlayingChanged()
+    return
+  }
+
+  if (mode === 'continuous') {
+    const gapMs = soundDurationMs(style) + 200
+    const scheduleNext = () => {
+      if (session.stopRequested) {
+        activeSession = null
+        notifySoundPlayingChanged()
+        return
+      }
+      session.timerId = setTimeout(async () => {
+        await playOnce()
+        scheduleNext()
+      }, gapMs)
+    }
+    scheduleNext()
+    return
+  }
+
+  if (mode === 'interval') {
+    session.intervalId = setInterval(() => {
+      if (session.stopRequested) {
+        stopReminderNotificationSound()
+        return
+      }
+      void playOnce()
+    }, Math.max(5, repeatSeconds) * 1000)
+  }
+}
+
+/** Play from a button tap — always unlocks audio first. Supports once, interval, or continuous. */
+export async function testReminderNotificationSound(
+  style: ReminderSoundStyle = 'normal',
+  mode: NotificationSoundMode = 'once',
+  repeatSeconds = 30,
+): Promise<void> {
   await unlockAudioContext()
-  await playReminderNotificationSound(style)
+  await startReminderSoundSession(style, mode, repeatSeconds)
+}
+
+/** Start alert sound session based on saved settings (used by ReminderAlertsNotifier). */
+export async function startAlertReminderSound(
+  style: ReminderSoundStyle,
+  mode: NotificationSoundMode,
+  repeatSeconds: number,
+): Promise<void> {
+  await unlockAudioContext()
+  await startReminderSoundSession(style, mode, repeatSeconds)
 }

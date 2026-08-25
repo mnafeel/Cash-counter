@@ -6,7 +6,7 @@ import { findExistingSupplierName } from '../storage/database'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { downloadPurchaseExpenseItemsSpreadsheet } from '../utils/expenseRangeExport'
-import { formatDate, formatMoney } from '../utils/format'
+import { formatDate, formatMoney, formatReportDate, formatTimestamp } from '../utils/format'
 import {
   printPurchaseHistoryReport,
   type PurchaseReportMode,
@@ -21,9 +21,12 @@ import {
   listPurchaseHistoryMonthOptions,
   matchesPurchaseHistorySearch,
   purchaseItemMatchesPayChannel,
+  purchaseSupplierBillDateDiffers,
   PURCHASE_CASH_LABEL,
   sortPurchaseSupplierGroups,
+  sortPurchaseHistoryByMode,
   summarizeSupplierPurchaseFile,
+  type PurchaseBillSort,
   type PurchaseDateFilter,
   type PurchaseHistoryItem,
   type PurchaseSupplierGroup,
@@ -86,11 +89,19 @@ export default function PurchaseHistoryPanel({
   const [supplierNameDraft, setSupplierNameDraft] = useState('')
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null)
   const [showCreditPage, setShowCreditPage] = useState(false)
-  const [supplierSort, setSupplierSort] = useState<'newest' | 'oldest'>('oldest')
-  const [supplierGroupOrder, setSupplierGroupOrder] = useState<'name' | 'spend'>('name')
+  const [supplierSort, setSupplierSort] = useState<PurchaseBillSort>('newest')
+  const [supplierGroupOrder, setSupplierGroupOrder] = useState<'name' | 'spend'>('spend')
+  const [rootView, setRootView] = useState<'suppliers' | 'payments'>('suppliers')
   const [payChannel, setPayChannel] = useState<'all' | 'cash' | 'bank'>('all')
   const [exportStatus, setExportStatus] = useState('')
   const creditPanelRef = useRef<PurchaseCreditPanelHandle>(null)
+
+  useEffect(() => {
+    if (!open) return
+    setDateFilter('all')
+    setSelectedDate('')
+    setSelectedMonth('')
+  }, [open])
 
   const allItems = useMemo(() => buildPurchaseHistoryItems(data), [data])
   const monthOptions = useMemo(() => listPurchaseHistoryMonthOptions(allItems), [allItems])
@@ -116,26 +127,26 @@ export default function PurchaseHistoryPanel({
     () => summarizeSupplierPurchaseFile(data, allItems),
     [data, allItems],
   )
-  const baseSupplierGroups = useMemo(
-    () => sortPurchaseSupplierGroups(groupPurchasesBySupplier(allItems), supplierGroupOrder),
-    [allItems, supplierGroupOrder],
+  const periodSupplierGroups = useMemo(
+    () => sortPurchaseSupplierGroups(groupPurchasesBySupplier(dateFilteredItems), supplierGroupOrder),
+    [dateFilteredItems, supplierGroupOrder],
   )
-  const allSupplierGroupSummaries = useMemo(() => {
+  const periodSupplierGroupSummaries = useMemo(() => {
     const map = new Map<string, SupplierPurchaseFileSummary>()
-    for (const group of baseSupplierGroups) {
+    for (const group of periodSupplierGroups) {
       map.set(group.shopKey, summarizeSupplierPurchaseFile(data, group.items))
     }
     return map
-  }, [baseSupplierGroups, data])
+  }, [periodSupplierGroups, data])
   const allSupplierGroups = useMemo(() => {
-    if (!deferredSearch.trim() || selectedSupplierKey) return baseSupplierGroups
+    if (!deferredSearch.trim() || selectedSupplierKey) return periodSupplierGroups
     const q = deferredSearch.toLowerCase().trim()
-    return baseSupplierGroups.filter(
+    return periodSupplierGroups.filter(
       (group) =>
         group.shopName.toLowerCase().includes(q) ||
         group.items.some((item) => matchesPurchaseHistorySearch(item, deferredSearch)),
     )
-  }, [baseSupplierGroups, deferredSearch, selectedSupplierKey])
+  }, [periodSupplierGroups, deferredSearch, selectedSupplierKey])
   const paymentHistoryItems = useMemo(
     () =>
       [...dateFilteredItems]
@@ -216,27 +227,32 @@ export default function PurchaseHistoryPanel({
     return allItems.filter((item) => item.shopName.trim().toLowerCase() === selectedSupplierKey)
   }, [allItems, selectedSupplierKey])
 
+  const supplierPeriodItems = useMemo(() => {
+    if (!selectedSupplierKey) return []
+    return dateFilteredItems.filter((item) => item.shopName.trim().toLowerCase() === selectedSupplierKey)
+  }, [dateFilteredItems, selectedSupplierKey])
+
   const supplierHistoryItems = useMemo(() => {
     if (!selectedSupplierKey) return []
     const items = !deferredSearch.trim()
-      ? supplierAllItems
-      : supplierAllItems.filter((item) => matchesPurchaseHistorySearch(item, deferredSearch))
+      ? supplierPeriodItems
+      : supplierPeriodItems.filter((item) => matchesPurchaseHistorySearch(item, deferredSearch))
     return items.filter((item) => purchaseItemMatchesPayChannel(data, item, payChannel))
-  }, [selectedSupplierKey, supplierAllItems, deferredSearch, data, payChannel])
+  }, [selectedSupplierKey, supplierPeriodItems, deferredSearch, data, payChannel])
 
   const supplierAllFileSummary = useMemo(() => {
     if (!selectedSupplierKey || supplierAllItems.length === 0) return null
     return summarizeSupplierPurchaseFile(data, supplierAllItems)
   }, [data, selectedSupplierKey, supplierAllItems])
 
+  const supplierPeriodSummary = useMemo(() => {
+    if (!selectedSupplierKey) return null
+    return summarizeSupplierPurchaseFile(data, supplierPeriodItems)
+  }, [data, selectedSupplierKey, supplierPeriodItems])
+
   const sortedSupplierItems = useMemo(() => {
     if (!selectedSupplierKey) return []
-    const list = [...supplierHistoryItems]
-    list.sort((a, b) => {
-      const diff = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-      return supplierSort === 'newest' ? -diff : diff
-    })
-    return list
+    return sortPurchaseHistoryByMode(supplierHistoryItems, supplierSort)
   }, [selectedSupplierKey, supplierHistoryItems, supplierSort])
 
   const handleClose = useCallback(() => {
@@ -531,7 +547,7 @@ export default function PurchaseHistoryPanel({
                 <span className="purchase-hist-item-amount">-{formatMoney(group.total)}</span>
               </div>
               {(() => {
-                const groupSummary = allSupplierGroupSummaries.get(group.shopKey)
+                const groupSummary = periodSupplierGroupSummaries.get(group.shopKey)
                 if (!groupSummary) return null
                 return (
                   <div className="purchase-hist-supplier-pay-strip">
@@ -593,7 +609,12 @@ export default function PurchaseHistoryPanel({
             </div>
             <div className="purchase-hist-item-quick">
               {item.billNo ? <span className="purchase-hist-item-chip">Bill {item.billNo}</span> : null}
-              <span className="purchase-hist-item-chip">{formatDate(item.date)}</span>
+              <span className="purchase-hist-item-chip">{formatTimestamp(item.date)}</span>
+              {purchaseSupplierBillDateDiffers(item.billDate, item.date) ? (
+                <span className="purchase-hist-item-chip purchase-hist-item-chip--billdate">
+                  Bill date {formatReportDate(item.billDate!)}
+                </span>
+              ) : null}
               {item.no1Amount > 0 ? (
                 <span className="purchase-hist-item-chip purchase-hist-item-chip--no1">
                   {NO1_BILL_LABEL} {formatMoney(item.no1Amount)}
@@ -650,9 +671,15 @@ export default function PurchaseHistoryPanel({
                 </div>
               ) : null}
               <div className="purchase-hist-item-detail-row">
-                <span>Date</span>
-                <strong>{formatDate(item.date)}</strong>
+                <span>Paid</span>
+                <strong>{formatTimestamp(item.date)}</strong>
               </div>
+              {purchaseSupplierBillDateDiffers(item.billDate, item.date) ? (
+                <div className="purchase-hist-item-detail-row">
+                  <span>Supplier bill date</span>
+                  <strong>{formatReportDate(item.billDate!)}</strong>
+                </div>
+              ) : null}
               <div className="purchase-hist-item-detail-row">
                 <span>{NO1_BILL_LABEL} bill</span>
                 <strong>{formatMoney(item.no1Amount)}</strong>
@@ -786,7 +813,7 @@ export default function PurchaseHistoryPanel({
             )}
             {selectedSupplier ? (
               <p className="purchase-hist-supplier-sub">
-                {supplierAllFileSummary?.billCount ?? 0} bills · all time · by bill date
+                {supplierPeriodSummary?.billCount ?? 0} bills · {purchasePeriodLabel().toLowerCase()} · by payment date
               </p>
             ) : null}
           </div>
@@ -942,51 +969,53 @@ export default function PurchaseHistoryPanel({
           <>
             {supplierAllFileSummary ? renderSupplierBalanceDue(supplierAllFileSummary) : null}
 
-            {supplierAllFileSummary
-              ? renderPeriodReport(supplierAllFileSummary, 'All time')
-              : renderPeriodReport(
-                  {
-                    billCount: 0,
-                    pendingBillCount: 0,
-                    paidBillCount: 0,
-                    creditOpenBillCount: 0,
-                    creditOpenTotal: 0,
-                    billTotal: 0,
-                    no1BillTotal: 0,
-                    no2BillTotal: 0,
-                    paidTotal: 0,
-                    pendingTotal: 0,
-                    paidNo1Total: 0,
-                    paidNo2Total: 0,
-                    cashTotal: 0,
-                    bankTotal: 0,
-                    no1CashTotal: 0,
-                    no1BankTotal: 0,
-                    no2CashTotal: 0,
-                    no2BankTotal: 0,
-                    no2ChequeTotal: 0,
-                    chequeTotal: 0,
-                  },
-                  purchasePeriodLabel(),
-                )}
+            {renderPeriodReport(
+              supplierPeriodSummary ?? {
+                billCount: 0,
+                pendingBillCount: 0,
+                paidBillCount: 0,
+                creditOpenBillCount: 0,
+                creditOpenTotal: 0,
+                billTotal: 0,
+                no1BillTotal: 0,
+                no2BillTotal: 0,
+                paidTotal: 0,
+                pendingTotal: 0,
+                paidNo1Total: 0,
+                paidNo2Total: 0,
+                cashTotal: 0,
+                bankTotal: 0,
+                no1CashTotal: 0,
+                no1BankTotal: 0,
+                no2CashTotal: 0,
+                no2BankTotal: 0,
+                no2ChequeTotal: 0,
+                chequeTotal: 0,
+              },
+              purchasePeriodLabel(),
+            )}
 
             <div className="purchase-hist-supplier-tools">
               <div className="purchase-hist-supplier-sort">
                 <span>Sort</span>
-                <button
-                  type="button"
-                  className={`purchase-hist-date-chip ${supplierSort === 'newest' ? 'purchase-hist-date-chip--active' : ''}`}
-                  onClick={() => setSupplierSort('newest')}
-                >
-                  Newest
-                </button>
-                <button
-                  type="button"
-                  className={`purchase-hist-date-chip ${supplierSort === 'oldest' ? 'purchase-hist-date-chip--active' : ''}`}
-                  onClick={() => setSupplierSort('oldest')}
-                >
-                  Oldest
-                </button>
+                {(
+                  [
+                    ['newest', 'Newest'],
+                    ['oldest', 'Oldest'],
+                    ['no1', NO1_BILL_LABEL],
+                    ['no2', NO2_BILL_LABEL],
+                    ['billNo', 'Bill No'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`purchase-hist-date-chip ${supplierSort === id ? 'purchase-hist-date-chip--active' : ''}`}
+                    onClick={() => setSupplierSort(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
               </div>
               <p className="purchase-hist-supplier-hint">Tap a bill to see details</p>
             </div>
@@ -1010,9 +1039,32 @@ export default function PurchaseHistoryPanel({
         ) : null}
 
         {!selectedSupplier ? (
+          <div className="purchase-hist-root-tabs">
+            <button
+              type="button"
+              className={`purchase-hist-date-chip ${rootView === 'suppliers' ? 'purchase-hist-date-chip--active' : ''}`}
+              onClick={() => setRootView('suppliers')}
+            >
+              Suppliers ({allSupplierGroups.length})
+            </button>
+            <button
+              type="button"
+              className={`purchase-hist-date-chip ${rootView === 'payments' ? 'purchase-hist-date-chip--active' : ''}`}
+              onClick={() => setRootView('payments')}
+            >
+              Payments ({paymentHistoryItems.length})
+            </button>
+          </div>
+        ) : null}
+
+        {!selectedSupplier && rootView === 'suppliers' ? (
           allSupplierGroups.length === 0 ? (
             search.trim() ? (
               <p className="purchase-hist-empty">No suppliers match your search.</p>
+            ) : dateFilter !== 'all' ? (
+              <p className="purchase-hist-empty">
+                No purchases in {purchasePeriodLabel().toLowerCase()}.
+              </p>
             ) : null
           ) : (
             <section className="purchase-hist-suppliers-section" aria-label="Suppliers">
@@ -1037,37 +1089,49 @@ export default function PurchaseHistoryPanel({
                   By spend
                 </button>
               </div>
-              <p className="purchase-hist-suppliers-hint">Tap a supplier to open bills · oldest first inside each dealer</p>
+              <p className="purchase-hist-suppliers-hint">Tap a supplier to open bills · use Sort inside for No 1 / No 2</p>
               {renderSupplierGroupsList()}
             </section>
           )
-        ) : sortedSupplierItems.length === 0 ? (
-          <p className="purchase-hist-empty">
-            {search.trim() ? 'No purchases match your search.' : 'No purchases for this supplier.'}
-          </p>
-        ) : (
-          <ul className="purchase-hist-list">{sortedSupplierItems.map(renderPurchaseItem)}</ul>
-        )}
+        ) : null}
 
-        {!selectedSupplier && paymentHistoryItems.length > 0 ? (
-          <section className="purchase-hist-payments" aria-label="Payment history">
-            <h4 className="purchase-hist-payments-title">Payment history</h4>
-            <ul className="purchase-hist-list purchase-hist-list--payments">
-              {paymentHistoryItems.map((item) => (
-                <li key={`pay-${item.id}`} className="purchase-hist-payment-row">
-                  <div className="purchase-hist-payment-main">
-                    <span className="purchase-hist-payment-shop">{item.shopName}</span>
-                    <span className="purchase-hist-payment-amount">-{formatMoney(item.paidAmount)}</span>
-                  </div>
-                  <span className="purchase-hist-payment-meta">
-                    {formatDate(item.date)} · {NO1_BILL_LABEL} {formatMoney(item.paidNo1Amount)} ·{' '}
-                    {NO2_BILL_LABEL} {formatMoney(item.paidNo2Amount)} · {item.payLabel}
-                  </span>
-                  <span className="purchase-hist-payment-detail">{item.payDetail}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
+        {selectedSupplier ? (
+          sortedSupplierItems.length === 0 ? (
+            <p className="purchase-hist-empty">
+              {search.trim()
+                ? 'No purchases match your search.'
+                : dateFilter === 'all'
+                  ? 'No purchases for this supplier.'
+                  : `No purchases for this supplier in ${purchasePeriodLabel().toLowerCase()}.`}
+            </p>
+          ) : (
+            <ul className="purchase-hist-list">{sortedSupplierItems.map(renderPurchaseItem)}</ul>
+          )
+        ) : null}
+
+        {!selectedSupplier && rootView === 'payments' ? (
+          paymentHistoryItems.length === 0 ? (
+            <p className="purchase-hist-empty">No payments for this period.</p>
+          ) : (
+            <section className="purchase-hist-payments" aria-label="Payment history">
+              <h4 className="purchase-hist-payments-title">Payment history · {purchasePeriodLabel()}</h4>
+              <ul className="purchase-hist-list purchase-hist-list--payments">
+                {paymentHistoryItems.map((item) => (
+                  <li key={`pay-${item.id}`} className="purchase-hist-payment-row">
+                    <div className="purchase-hist-payment-main">
+                      <span className="purchase-hist-payment-shop">{item.shopName}</span>
+                      <span className="purchase-hist-payment-amount">-{formatMoney(item.paidAmount)}</span>
+                    </div>
+                    <span className="purchase-hist-payment-meta">
+                      {formatTimestamp(item.date)} · {NO1_BILL_LABEL} {formatMoney(item.paidNo1Amount)} ·{' '}
+                      {NO2_BILL_LABEL} {formatMoney(item.paidNo2Amount)} · {item.payLabel}
+                    </span>
+                    <span className="purchase-hist-payment-detail">{item.payDetail}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
         ) : null}
 
         </div>

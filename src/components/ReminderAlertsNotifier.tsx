@@ -9,7 +9,14 @@ import {
   type BillReminderItem,
 } from '../utils/billReminders'
 import { buildActiveLoanReminders, type LoanReminderItem } from '../utils/loanReminders'
-import { playReminderNotificationSound, type ReminderSoundStyle } from '../utils/reminderNotificationSound'
+import {
+  isReminderSoundPlaying,
+  playReminderNotificationSound,
+  startAlertReminderSound,
+  stopReminderNotificationSound,
+  subscribeReminderSoundPlaying,
+  type ReminderSoundStyle,
+} from '../utils/reminderNotificationSound'
 import './ReminderAlertsNotifier.css'
 
 const MAX_VISIBLE = 3
@@ -111,7 +118,14 @@ export default function ReminderAlertsNotifier() {
   const [collapsed, setCollapsed] = useState(false)
   const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(readDismissedKeys)
   const [shownAtByKey, setShownAtByKey] = useState<Record<string, number>>({})
+  const [soundPlaying, setSoundPlaying] = useState(false)
   const prevAlertStateRef = useRef<Record<string, { visible: boolean; due: boolean }>>({})
+  const soundSessionKeyRef = useRef('')
+
+  useEffect(() => {
+    setSoundPlaying(isReminderSoundPlaying())
+    return subscribeReminderSoundPlaying(() => setSoundPlaying(isReminderSoundPlaying()))
+  }, [])
 
   const activeAlerts = useMemo(() => {
     const bills = buildActiveBillReminders(data, now).map((item) =>
@@ -152,7 +166,10 @@ export default function ReminderAlertsNotifier() {
   }, [visibleAlertKeys, visibleActiveAlerts])
 
   useEffect(() => {
-    if (!alertSettings.notificationSoundEnabled || visibleActiveAlerts.length === 0) return
+    if (!alertSettings.notificationSoundEnabled || visibleActiveAlerts.length === 0) {
+      stopReminderNotificationSound()
+      return
+    }
 
     let shouldPlay = false
     const nextState: Record<string, { visible: boolean; due: boolean }> = {}
@@ -167,11 +184,31 @@ export default function ReminderAlertsNotifier() {
     }
 
     prevAlertStateRef.current = nextState
-    if (shouldPlay) {
+
+    const sessionKey = visibleActiveAlerts.map((item) => item.dismissKey).sort().join('|')
+    const mode = alertSettings.notificationSoundMode
+
+    if (shouldPlay || (mode !== 'once' && soundSessionKeyRef.current !== sessionKey)) {
+      soundSessionKeyRef.current = sessionKey
       const useUrgent = visibleActiveAlerts.some((item) => item.soundStyle === 'urgent' || item.isOverdue)
-      void playReminderNotificationSound(useUrgent ? 'urgent' : 'normal')
+      const style = useUrgent ? 'urgent' : 'normal'
+      if (mode === 'once') {
+        void playReminderNotificationSound(style)
+      } else {
+        void startAlertReminderSound(style, mode, alertSettings.notificationSoundRepeatSeconds)
+      }
     }
-  }, [visibleActiveAlerts, alertSettings.notificationSoundEnabled])
+
+    if (mode === 'once') {
+      return () => stopReminderNotificationSound()
+    }
+    return undefined
+  }, [
+    visibleActiveAlerts,
+    alertSettings.notificationSoundEnabled,
+    alertSettings.notificationSoundMode,
+    alertSettings.notificationSoundRepeatSeconds,
+  ])
 
   useEffect(() => {
     if (showSeconds <= 0 || visibleActiveAlerts.length === 0) return
@@ -271,6 +308,17 @@ export default function ReminderAlertsNotifier() {
           >
             ✕
           </button>
+          {soundPlaying ? (
+            <button
+              type="button"
+              className="reminder-alerts-notifier-stop-sound"
+              onClick={() => stopReminderNotificationSound()}
+              aria-label="Stop reminder sound"
+              title="Stop sound"
+            >
+              🔇 Stop
+            </button>
+          ) : null}
         </div>
 
         {!collapsed ? (

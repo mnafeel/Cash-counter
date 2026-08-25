@@ -108,7 +108,16 @@ export interface ReminderAlertSettings {
   notificationShowSeconds: number
   /** Play a short notification sound when alerts appear. */
   notificationSoundEnabled: boolean
+  /** once = single ping; interval = repeat every N seconds; continuous = ring until stopped. */
+  notificationSoundMode: 'once' | 'interval' | 'continuous'
+  /** Seconds between sounds when notificationSoundMode is interval. */
+  notificationSoundRepeatSeconds: number
 }
+
+export type NotificationSoundMode = ReminderAlertSettings['notificationSoundMode']
+
+/** Interval options (seconds) for repeating reminder sounds. */
+export const NOTIFICATION_SOUND_REPEAT_OPTIONS = [15, 30, 60, 120, 300] as const
 
 /** Per-customer follow-up reminder (applies to all open credit/cheque bills). */
 export interface CustomerReminderEntry {
@@ -127,6 +136,8 @@ export const DEFAULT_REMINDER_ALERTS: ReminderAlertSettings = {
   alertIntervalDays: 1,
   notificationShowSeconds: 0,
   notificationSoundEnabled: true,
+  notificationSoundMode: 'once',
+  notificationSoundRepeatSeconds: 30,
 }
 
 /** Top notification auto-hide duration options (0 = manual close). */
@@ -211,6 +222,21 @@ export interface AppData {
   staffLeaves?: StaffLeave[]
   /** Overpaid salary moved from one month to count as paid in the next. */
   staffSalaryAdvances?: StaffSalaryAdvance[]
+  /** Recently deleted records — restore from Settings. */
+  trash?: TrashedRecord[]
+}
+
+export type TrashKind = 'sale' | 'expense' | 'loan'
+
+export interface TrashedRecord {
+  id: string
+  kind: TrashKind
+  deletedAt: string
+  label: string
+  amount: number
+  snapshot: Sale | Expense | Loan
+  /** Split groups — restore/delete together. */
+  relatedSaleIds?: string[]
 }
 
 /** Cash/bank that was in the drawer at the start of a local calendar day. */

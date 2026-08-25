@@ -1,4 +1,4 @@
-import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap } from '../types'
+import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
 import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
 import { buildCustomerSummaries } from '../utils/customerLedger'
 import { collectSplitNameTargets, getSaleCustomerName } from '../utils/saleCustomerName'
@@ -412,6 +412,7 @@ export function mergeCloudAppData(local: AppData, remote: AppData): AppData {
       ...(normalizedLocal.customerReminders ?? {}),
     },
     dayBalances: mergeDayBalances(normalizedLocal.dayBalances, normalizedRemote.dayBalances),
+    trash: mergeTrash(normalizedLocal.trash, normalizedRemote.trash),
   })
 }
 
@@ -489,6 +490,12 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
       ),
       notificationSoundEnabled:
         alerts?.notificationSoundEnabled ?? DEFAULT_REMINDER_ALERTS.notificationSoundEnabled,
+      notificationSoundMode:
+        alerts?.notificationSoundMode ?? DEFAULT_REMINDER_ALERTS.notificationSoundMode,
+      notificationSoundRepeatSeconds: Math.max(
+        5,
+        alerts?.notificationSoundRepeatSeconds ?? DEFAULT_REMINDER_ALERTS.notificationSoundRepeatSeconds,
+      ),
     },
     customerReminders: normalizeCustomerReminders(parsed.customerReminders),
     sales: sanitizeSplitParentChildChequeOverlap(parsed.sales ?? []).map((sale) =>
@@ -501,7 +508,55 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
       .map((leave) => normalizeStaffLeave(leave))
       .filter((leave) => !isRedundantStaffLeaveRecord(leave.date, leave.type)),
     staffSalaryAdvances: (parsed.staffSalaryAdvances ?? []).map((row) => normalizeStaffSalaryAdvance(row)),
+    trash: normalizeTrash(parsed.trash),
   }
+}
+
+const TRASH_CAP = 200
+
+function normalizeTrash(raw: unknown): TrashedRecord[] {
+  if (!Array.isArray(raw)) return []
+  const out: TrashedRecord[] = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const entry = row as Partial<TrashedRecord>
+    if (!entry.id || !entry.kind || !entry.snapshot || !entry.deletedAt) continue
+    if (entry.kind !== 'sale' && entry.kind !== 'expense' && entry.kind !== 'loan') continue
+    out.push({
+      id: entry.id,
+      kind: entry.kind,
+      deletedAt: entry.deletedAt,
+      label: typeof entry.label === 'string' ? entry.label : entry.id,
+      amount: Number(entry.amount) || 0,
+      snapshot: entry.snapshot as Sale | Expense | Loan,
+      relatedSaleIds: Array.isArray(entry.relatedSaleIds)
+        ? entry.relatedSaleIds.filter((id): id is string => typeof id === 'string')
+        : undefined,
+    })
+  }
+  return out.slice(-TRASH_CAP)
+}
+
+function mergeTrash(local?: TrashedRecord[], remote?: TrashedRecord[]): TrashedRecord[] {
+  const map = new Map<string, TrashedRecord>()
+  for (const row of remote ?? []) map.set(`${row.kind}:${row.id}`, row)
+  for (const row of local ?? []) {
+    const key = `${row.kind}:${row.id}`
+    const other = map.get(key)
+    if (!other || new Date(row.deletedAt).getTime() >= new Date(other.deletedAt).getTime()) {
+      map.set(key, row)
+    }
+  }
+  return [...map.values()]
+    .sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime())
+    .slice(0, TRASH_CAP)
+}
+
+function pushTrash(data: AppData, entry: TrashedRecord): AppData {
+  const without = (data.trash ?? []).filter(
+    (row) => !(row.kind === entry.kind && row.id === entry.id),
+  )
+  return { ...data, trash: [...without, entry].slice(-TRASH_CAP) }
 }
 
 function normalizeStaffSalaryAdvance(raw: Partial<StaffSalaryAdvance>): StaffSalaryAdvance {
@@ -1424,6 +1479,79 @@ export function setOpeningBalance(data: AppData, amount: number): AppData {
   return next
 }
 
+export function restoreTrashRecord(data: AppData, kind: TrashKind, id: string): AppData {
+  const entry = (data.trash ?? []).find((row) => row.kind === kind && row.id === id)
+  if (!entry) return data
+
+  if (kind === 'expense') {
+    const expense = entry.snapshot as Expense
+    if (data.expenses.some((row) => row.id === expense.id)) return data
+    const next = {
+      ...data,
+      expenses: [expense, ...data.expenses],
+      trash: (data.trash ?? []).filter((row) => !(row.kind === kind && row.id === id)),
+    }
+    saveData(next, { cloudImmediate: true })
+    return next
+  }
+
+  if (kind === 'loan') {
+    const loan = entry.snapshot as Loan
+    if ((data.loans ?? []).some((row) => row.id === loan.id)) return data
+    const next = {
+      ...data,
+      loans: [loan, ...(data.loans ?? [])],
+      trash: (data.trash ?? []).filter((row) => !(row.kind === kind && row.id === id)),
+    }
+    saveData(next, { cloudImmediate: true })
+    return next
+  }
+
+  const sale = entry.snapshot as Sale
+  const ids = entry.relatedSaleIds?.length ? entry.relatedSaleIds : [sale.id]
+  const trashPool = data.trash ?? []
+  const restoreRows = ids
+    .map(
+      (saleId) =>
+        trashPool.find((row) => row.kind === 'sale' && row.id === saleId)?.snapshot as
+          | Sale
+          | undefined,
+    )
+    .filter((row): row is Sale => !!row)
+  const rows = restoreRows.length > 0 ? restoreRows : [sale]
+  const existing = new Set(data.sales.map((row) => row.id))
+  const fresh = rows.filter((row) => !existing.has(row.id))
+  if (fresh.length === 0) return data
+  const next = {
+    ...data,
+    sales: [...fresh, ...data.sales],
+    trash: trashPool.filter((row) => !(row.kind === 'sale' && ids.includes(row.id))),
+  }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function purgeTrashRecord(data: AppData, kind: TrashKind, id: string): AppData {
+  const entry = (data.trash ?? []).find((row) => row.kind === kind && row.id === id)
+  if (!entry) return data
+  let trash = (data.trash ?? []).filter((row) => !(row.kind === kind && row.id === id))
+  if (kind === 'sale' && entry.relatedSaleIds?.length) {
+    trash = trash.filter(
+      (row) => !(row.kind === 'sale' && entry.relatedSaleIds!.includes(row.id)),
+    )
+  }
+  const next = { ...data, trash }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function emptyTrash(data: AppData): AppData {
+  if (!(data.trash ?? []).length) return data
+  const next = { ...data, trash: [] }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
 export function deleteSale(
   data: AppData,
   id: string,
@@ -1459,20 +1587,59 @@ export function deleteSale(
 
   if (idsToRemove.size === 0) return data
 
-  const next = { ...data, sales: data.sales.filter((s) => !idsToRemove.has(s.id)) }
+  let trashed = data
+  for (const saleId of idsToRemove) {
+    const sale = data.sales.find((s) => s.id === saleId)
+    if (!sale) continue
+    trashed = pushTrash(trashed, {
+      id: sale.id,
+      kind: 'sale',
+      deletedAt: new Date().toISOString(),
+      label: getSaleCustomerName(sale, data.sales) || 'Bill',
+      amount: sale.originalBillAmount ?? sale.billAmount,
+      snapshot: sale,
+      relatedSaleIds: relatedSaleIds?.length ? relatedSaleIds : undefined,
+    })
+  }
+
+  const next = { ...trashed, sales: data.sales.filter((s) => !idsToRemove.has(s.id)) }
   saveData(next, { cloudImmediate: true })
   return next
 }
 
 export function deleteExpense(data: AppData, id: string): AppData {
-  const next = { ...data, expenses: data.expenses.filter((e) => e.id !== id) }
+  const expense = data.expenses.find((e) => e.id === id)
+  if (!expense) return data
+  const trashed = pushTrash(data, {
+    id: expense.id,
+    kind: 'expense',
+    deletedAt: new Date().toISOString(),
+    label: isPurchaseExpense(expense)
+      ? stripExpenseBillSuffix(expense.name)
+      : expense.name.trim() || 'Expense',
+    amount: expense.amount,
+    snapshot: expense,
+  })
+  const next = { ...trashed, expenses: data.expenses.filter((e) => e.id !== id) }
   saveData(next, { cloudImmediate: true })
   return next
 }
 
 export function deleteLoan(data: AppData, id: string): AppData {
-  if (!(data.loans ?? []).some((loan) => loan.id === id)) return data
-  const next = { ...data, loans: (data.loans ?? []).filter((loan) => loan.id !== id) }
+  const loan = (data.loans ?? []).find((entry) => entry.id === id)
+  if (!loan) return data
+  const trashed = pushTrash(data, {
+    id: loan.id,
+    kind: 'loan',
+    deletedAt: new Date().toISOString(),
+    label: loan.personName.trim() || 'Loan',
+    amount: loan.amount,
+    snapshot: loan,
+  })
+  const next = {
+    ...trashed,
+    loans: (data.loans ?? []).filter((entry) => entry.id !== id),
+  }
   saveData(next, { cloudImmediate: true })
   return next
 }
@@ -2056,6 +2223,8 @@ export function setReminderAlertSettings(
       alertIntervalDays: Math.max(1, settings.alertIntervalDays),
       notificationShowSeconds: Math.max(0, settings.notificationShowSeconds),
       notificationSoundEnabled: settings.notificationSoundEnabled,
+      notificationSoundMode: settings.notificationSoundMode,
+      notificationSoundRepeatSeconds: Math.max(5, settings.notificationSoundRepeatSeconds),
     },
   }
   saveData(next)
@@ -3347,6 +3516,18 @@ export function applyPurchaseCreditPayment(
   if (supplierName && item) next = addSupplierItem(next, supplierName, item)
 
   saveData(next)
+  return next
+}
+
+/** Pay down multiple supplier credit bills in one action. */
+export function applyBulkPurchaseCreditPayments(
+  data: AppData,
+  payments: Array<{ id: string; payment: CreditPaymentInput }>,
+): AppData {
+  let next = data
+  for (const row of payments) {
+    next = applyPurchaseCreditPayment(next, row.id, row.payment)
+  }
   return next
 }
 

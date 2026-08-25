@@ -42,6 +42,15 @@
   border-color: var(--cream-dim);
 }
 
+.bill-alert-settings-chip--test {
+  border-color: var(--cream-dim);
+}
+
+.bill-alert-settings-chip--stop {
+  border-color: #8b3a3a;
+  color: #ffb4b4;
+}
+
 .bill-alert-settings-actions {
   display: flex;
   gap: 6px;

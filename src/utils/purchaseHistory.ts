@@ -28,7 +28,10 @@ export interface PurchaseHistoryItem {
   billLabel: string
   payLabel: string
   payDetail: string
+  /** When money was recorded / paid in the app — used for Today / Week filters. */
   date: string
+  /** Supplier bill date from the form — display only, not used for period filters. */
+  billDate?: string
   createdAt: string
   /** Last payment / update ISO time — used for sorting and “Updated” labels. */
   updatedAt: string
@@ -294,6 +297,26 @@ export function purchasePaidAmount(expense: Expense): number {
   return expense.amount
 }
 
+/** Supplier bill date from the purchase form (YYYY-MM-DD). */
+export function purchaseExpenseSupplierBillDate(expense: Expense): string | undefined {
+  const billDate = expense.billDate?.trim()
+  return billDate || undefined
+}
+
+export function purchaseHistoryDayKey(iso: string): string {
+  if (!iso) return ''
+  return iso.includes('T') ? iso.slice(0, 10) : iso.slice(0, 10)
+}
+
+/** True when supplier bill date differs from the day we recorded / paid in the app. */
+export function purchaseSupplierBillDateDiffers(
+  supplierBillDate: string | undefined,
+  paidAt: string,
+): boolean {
+  if (!supplierBillDate) return false
+  return purchaseHistoryDayKey(supplierBillDate) !== purchaseHistoryDayKey(paidAt)
+}
+
 /**
  * When cash/bank left for a purchase (and for sorting / credit lists).
  * Full cash/bank/cheque buys use createdAt — never rename-bumped updatedAt,
@@ -333,9 +356,76 @@ function latestPurchaseActivityTime(...expenses: Expense[]): string {
 }
 
 function sortPurchaseHistoryItems(items: PurchaseHistoryItem[]): PurchaseHistoryItem[] {
-  return [...items].sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  )
+  return sortPurchaseHistoryByMode(items, 'newest')
+}
+
+export type PurchaseBillSort = 'newest' | 'oldest' | 'no1' | 'no2' | 'billNo'
+
+function billNoSortKey(billNo?: string): number {
+  if (!billNo?.trim()) return Number.MAX_SAFE_INTEGER
+  const digits = billNo.replace(/\D/g, '')
+  const n = digits ? parseInt(digits, 10) : NaN
+  return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER
+}
+
+export function sortPurchaseHistoryByMode(
+  items: PurchaseHistoryItem[],
+  mode: PurchaseBillSort,
+): PurchaseHistoryItem[] {
+  const list = [...items]
+  list.sort((a, b) => {
+    if (mode === 'no1') {
+      const rank = (item: PurchaseHistoryItem) =>
+        item.billType === 'gst' || item.billType === 'both' ? 0 : 1
+      const diff = rank(a) - rank(b)
+      if (diff !== 0) return diff
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    }
+    if (mode === 'no2') {
+      const rank = (item: PurchaseHistoryItem) =>
+        item.billType === 'no-gst' || item.billType === 'both' ? 0 : 1
+      const diff = rank(a) - rank(b)
+      if (diff !== 0) return diff
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    }
+    if (mode === 'billNo') {
+      const diff = billNoSortKey(a.billNo) - billNoSortKey(b.billNo)
+      if (diff !== 0) return diff
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    }
+    const diff = new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
+    return mode === 'newest' ? -diff : diff
+  })
+  return list
+}
+
+export type PurchaseCreditBillSort = 'newest' | 'oldest' | 'no1' | 'no2' | 'billNo'
+
+export function sortPurchaseCreditItems(
+  items: PurchaseCreditItem[],
+  mode: PurchaseCreditBillSort,
+): PurchaseCreditItem[] {
+  const list = [...items]
+  list.sort((a, b) => {
+    if (mode === 'no1') {
+      const diff = (a.billNumber === 1 ? 0 : 1) - (b.billNumber === 1 ? 0 : 1)
+      if (diff !== 0) return diff
+      return new Date(b.date).getTime() - new Date(a.date).getTime()
+    }
+    if (mode === 'no2') {
+      const diff = (a.billNumber === 2 ? 0 : 1) - (b.billNumber === 2 ? 0 : 1)
+      if (diff !== 0) return diff
+      return new Date(b.date).getTime() - new Date(a.date).getTime()
+    }
+    if (mode === 'billNo') {
+      const diff = billNoSortKey(a.billNo) - billNoSortKey(b.billNo)
+      if (diff !== 0) return diff
+      return new Date(b.date).getTime() - new Date(a.date).getTime()
+    }
+    const diff = new Date(a.date).getTime() - new Date(b.date).getTime()
+    return mode === 'newest' ? -diff : diff
+  })
+  return list
 }
 
 export function isPurchaseCreditExpense(expense: Expense): boolean {
@@ -456,6 +546,71 @@ export function buildCreditPaymentUpdate(
     chequeAmount: totalCheque || undefined,
     chequeApproved: totalCheque > 0 ? chequeApproved : expense.chequeApproved,
   }
+}
+
+export interface BulkCreditPaySelection {
+  id: string
+  amount: number
+}
+
+/** Build per-bill credit payments for bulk pay (full clear on each selected bill). */
+export function buildBulkCreditPaymentPlan(
+  selections: BulkCreditPaySelection[],
+  mode: 'cash' | 'bank' | 'cheque' | 'split',
+  split?: { cash: number; bank: number; cheque: number; chequeApproved?: boolean },
+): Array<{ id: string; payment: CreditPaymentInput }> {
+  const ordered = [...selections].filter((row) => row.amount > 0)
+  if (ordered.length === 0) return []
+
+  if (mode === 'cash' || mode === 'bank' || mode === 'cheque') {
+    return ordered.map((row) => ({
+      id: row.id,
+      payment: {
+        payType: mode,
+        payAmount: row.amount,
+        chequeApproved: mode === 'cheque' ? true : undefined,
+      },
+    }))
+  }
+
+  let cashLeft = Math.max(0, split?.cash ?? 0)
+  let bankLeft = Math.max(0, split?.bank ?? 0)
+  let chequeLeft = split?.chequeApproved === false ? 0 : Math.max(0, split?.cheque ?? 0)
+  const chequeApproved = split?.chequeApproved ?? true
+  const out: Array<{ id: string; payment: CreditPaymentInput }> = []
+
+  for (const row of ordered) {
+    let due = row.amount
+    const fromCash = Math.min(due, cashLeft)
+    cashLeft -= fromCash
+    due -= fromCash
+    const fromBank = Math.min(due, bankLeft)
+    bankLeft -= fromBank
+    due -= fromBank
+    const fromCheque = Math.min(due, chequeLeft)
+    chequeLeft -= fromCheque
+    due -= fromCheque
+    const paid = fromCash + fromBank + fromCheque
+    if (paid <= 0) continue
+
+    const modes = [fromCash > 0, fromBank > 0, fromCheque > 0].filter(Boolean).length
+    const payType =
+      modes > 1 ? 'split' : fromCash > 0 ? 'cash' : fromBank > 0 ? 'bank' : 'cheque'
+
+    out.push({
+      id: row.id,
+      payment: {
+        payType,
+        payAmount: paid,
+        cashAmount: fromCash || undefined,
+        bankAmount: fromBank || undefined,
+        chequeAmount: fromCheque || undefined,
+        chequeApproved: fromCheque > 0 ? chequeApproved : undefined,
+      },
+    })
+  }
+
+  return out
 }
 
 function purchaseCreditInfo(expense: Expense): { open: boolean; amount: number; expenseId: string } {
@@ -743,7 +898,9 @@ function buildPurchaseHistoryItemsUncached(data: AppData): PurchaseHistoryItem[]
         billLabel: `${purchaseBillLabel(1)} + ${purchaseBillLabel(2)}`,
         payLabel: 'Both bills',
         payDetail: `No 1: ${purchasePayDetail(no1)} · No 2: ${purchasePayDetail(no2)}`,
-        date: latestPurchaseBillDate(no1, no2),
+        date: latestPurchaseActivityTime(no1, no2),
+        billDate:
+          purchaseExpenseSupplierBillDate(no1) ?? purchaseExpenseSupplierBillDate(no2),
         createdAt: no1.createdAt,
         updatedAt: latestPurchaseActivityTime(no1, no2),
         hasOpenCredit: no1Credit.open || no2Credit.open,
@@ -771,7 +928,8 @@ function buildPurchaseHistoryItemsUncached(data: AppData): PurchaseHistoryItem[]
       billLabel: gst ? purchaseBillLabel(1) : purchaseBillLabel(2),
       payLabel: purchasePayLabel(expense),
       payDetail: purchasePayDetail(expense),
-      date: purchaseExpenseBillDate(expense),
+      date: purchaseExpenseActivityTime(expense),
+      billDate: purchaseExpenseSupplierBillDate(expense),
       createdAt: expense.createdAt,
       updatedAt: purchaseExpenseActivityTime(expense),
       hasOpenCredit: credit.open,
@@ -915,6 +1073,7 @@ export function matchesPurchaseHistorySearch(item: PurchaseHistoryItem, query: s
     formatMoney(item.no1Amount),
     formatMoney(item.no2Amount),
     formatDate(item.date),
+    item.billDate,
   ]
     .filter(Boolean)
     .join(' ')

@@ -950,6 +950,43 @@
   opacity: 0.8;
 }
 
+.counter-pending-search {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 41;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 16px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+
+.counter-cheque-bar:has(.counter-pending-search) .counter-cheque-list,
+.counter-credit-bar:has(.counter-pending-search) .counter-credit-list {
+  bottom: calc(100% + 40px);
+}
+
+.counter-pending-search-empty {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 40;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
 .counter-cheque-list,
 .counter-credit-list {
   position: absolute;

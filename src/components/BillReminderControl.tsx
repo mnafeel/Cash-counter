@@ -26,6 +26,8 @@ interface BillReminderControlProps {
   ) => void
   onSaveAlertSettings?: (settings: ReminderAlertSettings) => void
   compact?: boolean
+  /** When true, always save on this bill — never route to customer-level reminder. */
+  perBill?: boolean
 }
 
 export default function BillReminderControl({
@@ -39,6 +41,7 @@ export default function BillReminderControl({
   onSetCustomer,
   onSaveAlertSettings,
   compact = false,
+  perBill = false,
 }: BillReminderControlProps) {
   const [modalOpen, setModalOpen] = useState(false)
   const alertSettings = getReminderAlertSettings(data)
@@ -46,14 +49,16 @@ export default function BillReminderControl({
   const sale = useMemo(() => data.sales.find((entry) => entry.id === saleId), [data.sales, saleId])
 
   const reminderAt = useMemo(() => {
+    if (perBill) return sale?.reminderAt ?? reminderAtProp
     if (sale) return getEffectiveSaleReminderAt(data, sale) ?? reminderAtProp
     return reminderAtProp
-  }, [data, sale, reminderAtProp])
+  }, [data, sale, reminderAtProp, perBill])
 
   const reminderNote = useMemo(() => {
+    if (perBill) return sale?.reminderNote?.trim() || reminderNoteProp
     if (sale) return getEffectiveSaleReminderNote(data, sale) ?? reminderNoteProp
     return reminderNoteProp
-  }, [data, sale, reminderNoteProp])
+  }, [data, sale, reminderNoteProp, perBill])
 
   const kindLabel =
     billKind === 'credit' ? 'Credit reminder' : billKind === 'cheque' ? 'Cheque reminder' : 'Reminder'
@@ -64,6 +69,7 @@ export default function BillReminderControl({
 
   function saveReminder(reminderAtValue: string | null, note?: string | null) {
     if (
+      !perBill &&
       sale &&
       (billKind === 'credit' || billKind === 'cheque') &&
       onSetCustomer

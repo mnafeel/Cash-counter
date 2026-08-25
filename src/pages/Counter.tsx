@@ -23,6 +23,7 @@ import { buildCustomerSummaries } from '../utils/customerLedger'
 import { buildChequeCustomerSummaries } from '../utils/chequeLedger'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { getBillRoundOptions, effectiveCollectTarget } from '../utils/roundSuggestions'
 import './Counter.css'
@@ -210,6 +211,16 @@ function Counter({ active }: { active: boolean }) {
   const [highlightedChequeIndex, setHighlightedChequeIndex] = useState(-1)
   const [creditListOpen, setCreditListOpen] = useState(false)
   const [highlightedCreditIndex, setHighlightedCreditIndex] = useState(-1)
+  const {
+    value: chequeListSearch,
+    setValue: setChequeListSearch,
+    deferredValue: deferredChequeListSearch,
+  } = useDeferredSearch()
+  const {
+    value: creditListSearch,
+    setValue: setCreditListSearch,
+    deferredValue: deferredCreditListSearch,
+  } = useDeferredSearch()
   const [collectingCreditId, setCollectingCreditId] = useState<string | null>(null)
   const [collectingChequeId, setCollectingChequeId] = useState<string | null>(null)
   const [creditCollectDue, setCreditCollectDue] = useState(0)
@@ -290,6 +301,42 @@ function Counter({ active }: { active: boolean }) {
     () => tabPendingBills.filter(isCreditPendingBill),
     [tabPendingBills],
   )
+
+  const filteredChequePendingBills = useMemo(() => {
+    const query = deferredChequeListSearch.trim().toLowerCase()
+    if (!query) return chequePendingBills
+    return chequePendingBills.filter((bill) => {
+      const name = getSaleCustomerName(bill, data.sales)?.toLowerCase() ?? ''
+      return name.includes(query) || String(bill.billAmount).includes(query)
+    })
+  }, [chequePendingBills, deferredChequeListSearch, data.sales])
+
+  const filteredCreditPendingBills = useMemo(() => {
+    const query = deferredCreditListSearch.trim().toLowerCase()
+    if (!query) return creditPendingBills
+    return creditPendingBills.filter((bill) => {
+      const name = getSaleCustomerName(bill, data.sales)?.toLowerCase() ?? ''
+      return name.includes(query) || String(bill.billAmount).includes(query)
+    })
+  }, [creditPendingBills, deferredCreditListSearch, data.sales])
+
+  useEffect(() => {
+    if (!chequeListOpen) setChequeListSearch('')
+  }, [chequeListOpen, setChequeListSearch])
+
+  useEffect(() => {
+    if (!creditListOpen) setCreditListSearch('')
+  }, [creditListOpen, setCreditListSearch])
+
+  useEffect(() => {
+    if (!chequeListOpen) return
+    setHighlightedChequeIndex(filteredChequePendingBills.length > 0 ? 0 : -1)
+  }, [deferredChequeListSearch, chequeListOpen, filteredChequePendingBills.length])
+
+  useEffect(() => {
+    if (!creditListOpen) return
+    setHighlightedCreditIndex(filteredCreditPendingBills.length > 0 ? 0 : -1)
+  }, [deferredCreditListSearch, creditListOpen, filteredCreditPendingBills.length])
 
   const chequePendingTotal = useMemo(
     () => chequePendingBills.reduce((sum, bill) => sum + bill.billAmount, 0),
@@ -3170,8 +3217,8 @@ function Counter({ active }: { active: boolean }) {
   cyclePayTypeRef.current = cyclePayType
   openChequeRef.current = openChequeTab
   openCreditRef.current = openCreditTab
-  chequePendingBillsRef.current = chequePendingBills
-  creditPendingBillsRef.current = creditPendingBills
+  chequePendingBillsRef.current = filteredChequePendingBills
+  creditPendingBillsRef.current = filteredCreditPendingBills
   highlightedChequeIndexRef.current = highlightedChequeIndex
   highlightedCreditIndexRef.current = highlightedCreditIndex
   pendingBillsRef.current = billPendingBills
@@ -3868,8 +3915,20 @@ function Counter({ active }: { active: boolean }) {
               </span>
             </button>
             {chequeListOpen && chequePendingBills.length > 0 && (
+              <>
+                {chequePendingBills.length > 4 ? (
+                  <input
+                    type="search"
+                    className="counter-pending-search"
+                    value={chequeListSearch}
+                    onChange={(e) => setChequeListSearch(e.target.value)}
+                    placeholder="Search cheque bills…"
+                    autoComplete="off"
+                    aria-label="Search cheque bills"
+                  />
+                ) : null}
               <ul ref={chequeListRef} className="counter-cheque-list" role="listbox">
-                {chequePendingBills.map((bill, index) => {
+                {filteredChequePendingBills.map((bill, index) => {
                   const billName = getSaleCustomerName(bill, data.sales)
                   const billReminderAt = getEffectiveSaleReminderAt(data, bill)
                   const billReminderNote = getEffectiveSaleReminderNote(data, bill)
@@ -3908,6 +3967,10 @@ function Counter({ active }: { active: boolean }) {
                   )
                 })}
               </ul>
+              {filteredChequePendingBills.length === 0 ? (
+                <p className="counter-pending-search-empty">No bills match your search.</p>
+              ) : null}
+              </>
             )}
           </div>
 
@@ -3926,8 +3989,20 @@ function Counter({ active }: { active: boolean }) {
               </span>
             </button>
             {creditListOpen && creditPendingBills.length > 0 && (
+              <>
+                {creditPendingBills.length > 4 ? (
+                  <input
+                    type="search"
+                    className="counter-pending-search"
+                    value={creditListSearch}
+                    onChange={(e) => setCreditListSearch(e.target.value)}
+                    placeholder="Search credit bills…"
+                    autoComplete="off"
+                    aria-label="Search credit bills"
+                  />
+                ) : null}
               <ul ref={creditListRef} className="counter-credit-list" role="listbox">
-                {creditPendingBills.map((bill, index) => {
+                {filteredCreditPendingBills.map((bill, index) => {
                   const billName = getSaleCustomerName(bill, data.sales)
                   const billReminderAt = getEffectiveSaleReminderAt(data, bill)
                   const billReminderNote = getEffectiveSaleReminderNote(data, bill)
@@ -3966,6 +4041,10 @@ function Counter({ active }: { active: boolean }) {
                   )
                 })}
               </ul>
+              {filteredCreditPendingBills.length === 0 ? (
+                <p className="counter-pending-search-empty">No bills match your search.</p>
+              ) : null}
+              </>
             )}
           </div>
 

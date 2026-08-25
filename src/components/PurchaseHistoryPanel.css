@@ -2181,6 +2181,154 @@ html[data-screen='phone'] .purchase-hist-item-actions {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.purchase-hist-root-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.purchase-hist-credits-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.purchase-hist-select-check {
+  display: flex;
+  align-items: center;
+  padding: 0 0.35rem 0 0.75rem;
+}
+
+.purchase-hist-select-check input {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.purchase-hist-credit-item--selected {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 12px;
+}
+
+.purchase-hist-credit-supplier-inline {
+  font-weight: 700;
+}
+
+.purchase-credit-pay-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.purchase-credit-pay-modal {
+  width: min(100%, 420px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1rem;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.purchase-credit-pay-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.purchase-credit-pay-head h4 {
+  margin: 0;
+}
+
+.purchase-credit-pay-close {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.purchase-credit-pay-meta {
+  margin: 0 0 0.75rem;
+  color: var(--text-muted);
+}
+
+.purchase-credit-pay-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.75rem;
+}
+
+.purchase-credit-pay-split {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.purchase-credit-pay-split label {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.purchase-credit-pay-split input {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.purchase-credit-pay-cheque-approved {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.purchase-credit-pay-hint,
+.purchase-credit-pay-error {
+  margin: 0 0 0.75rem;
+  font-size: 0.92rem;
+}
+
+.purchase-credit-pay-error {
+  color: var(--danger, #ef4444);
+}
+
+.purchase-credit-pay-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.purchase-credit-pay-submit {
+  border: none;
+  border-radius: 10px;
+  padding: 0.55rem 0.85rem;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.purchase-credit-pay-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.purchase-credit-pay-submit--inline {
+  margin-left: auto;
+}
+
 @media (orientation: landscape) and (max-height: 520px) {
   .purchase-hist-summary-top {
     grid-template-columns: repeat(3, minmax(0, 1fr));
