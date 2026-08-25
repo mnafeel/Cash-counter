@@ -61,6 +61,7 @@ import {
   importTallyBills,
   loadData,
   purgeTrashRecord,
+  replaceData,
   restoreTrashRecord,
   saveData,
   scheduleSalePaymentEventsMigration,

@@ -363,21 +363,6 @@ export default function Settings() {
   }, [approvedCheques])
   const pendingCreditSales = useMemo(() => listPendingCreditSales(data), [data.sales])
   const creditCollectionEntries = useMemo(() => listCreditCollectionEntries(data), [data])
-  const creditCollectionsByCustomer = useMemo(() => {
-    const groups: Array<{ name: string; entries: typeof creditCollectionEntries }> = []
-    const indexByName = new Map<string, number>()
-    for (const entry of creditCollectionEntries) {
-      const name = entry.customerName?.trim() || '—'
-      const existing = indexByName.get(name.toLowerCase())
-      if (existing == null) {
-        indexByName.set(name.toLowerCase(), groups.length)
-        groups.push({ name, entries: [entry] })
-      } else {
-        groups[existing].entries.push(entry)
-      }
-    }
-    return groups
-  }, [creditCollectionEntries])
   const paidCreditSales = useMemo(() => listPaidCreditSales(data), [data.sales])
   const pendingChequeSales = useMemo(() => listPendingChequeSales(data), [data.sales])
 
@@ -396,7 +381,7 @@ export default function Settings() {
   const filteredPendingCreditSales = useMemo(() => {
     if (!creditSearch) return pendingCreditSales
     return pendingCreditSales.filter((sale) =>
-      getSaleCustomerName(sale, data.sales).toLowerCase().includes(creditSearch),
+      (getSaleCustomerName(sale, data.sales) ?? '').toLowerCase().includes(creditSearch),
     )
   }, [pendingCreditSales, creditSearch, data.sales])
   const filteredCreditCollectionEntries = useMemo(() => {
@@ -415,7 +400,7 @@ export default function Settings() {
         indexByName.set(name.toLowerCase(), groups.length)
         groups.push({ name, entries: [entry] })
       } else {
-        groups[existing].entries.push(entry)
+        groups[existing]?.entries.push(entry)
       }
     }
     return groups
@@ -423,13 +408,13 @@ export default function Settings() {
   const filteredPaidCreditSales = useMemo(() => {
     if (!creditSearch) return paidCreditSales
     return paidCreditSales.filter((sale) =>
-      getSaleCustomerName(sale, data.sales).toLowerCase().includes(creditSearch),
+      (getSaleCustomerName(sale, data.sales) ?? '').toLowerCase().includes(creditSearch),
     )
   }, [paidCreditSales, creditSearch, data.sales])
   const filteredPendingChequeSales = useMemo(() => {
     if (!creditSearch) return pendingChequeSales
     return pendingChequeSales.filter((sale) =>
-      getSaleCustomerName(sale, data.sales).toLowerCase().includes(creditSearch),
+      (getSaleCustomerName(sale, data.sales) ?? '').toLowerCase().includes(creditSearch),
     )
   }, [pendingChequeSales, creditSearch, data.sales])
   const trashItems = useMemo(

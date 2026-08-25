@@ -341,13 +341,6 @@ export function purchaseExpenseBillDate(expense: Expense): string {
   return created
 }
 
-function latestPurchaseBillDate(...expenses: Expense[]): string {
-  return expenses.reduce((latest, expense) => {
-    const next = purchaseExpenseBillDate(expense)
-    return new Date(next).getTime() > new Date(latest).getTime() ? next : latest
-  }, purchaseExpenseBillDate(expenses[0]))
-}
-
 function latestPurchaseActivityTime(...expenses: Expense[]): string {
   return expenses.reduce((latest, expense) => {
     const next = purchaseExpenseActivityTime(expense)

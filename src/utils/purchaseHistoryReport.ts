@@ -1,6 +1,6 @@
 import type { AppData } from '../types'
 import { NO1_BILL_LABEL, NO2_BILL_LABEL } from './expenseBillLabels'
-import { formatDate, formatMoney, formatReportDate, formatReportTime, formatTimestamp } from './format'
+import { formatMoney, formatReportDate, formatReportTime, formatTimestamp } from './format'
 import { printHtmlReport } from './printHtmlReport'
 import {
   purchaseSupplierBillDateDiffers,

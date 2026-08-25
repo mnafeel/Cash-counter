@@ -23,6 +23,10 @@ export default function BillReminderAlertsSettings({
   const [alertIntervalDays, setAlertIntervalDays] = useState(settings.alertIntervalDays)
   const [notificationShowSeconds, setNotificationShowSeconds] = useState(settings.notificationShowSeconds)
   const [notificationSoundEnabled, setNotificationSoundEnabled] = useState(settings.notificationSoundEnabled)
+  const [notificationSoundMode, setNotificationSoundMode] = useState(settings.notificationSoundMode)
+  const [notificationSoundRepeatSeconds, setNotificationSoundRepeatSeconds] = useState(
+    settings.notificationSoundRepeatSeconds,
+  )
 
   useEffect(() => {
     setCreditDaysBefore(settings.creditDaysBefore)
@@ -31,6 +35,8 @@ export default function BillReminderAlertsSettings({
     setAlertIntervalDays(settings.alertIntervalDays)
     setNotificationShowSeconds(settings.notificationShowSeconds)
     setNotificationSoundEnabled(settings.notificationSoundEnabled)
+    setNotificationSoundMode(settings.notificationSoundMode)
+    setNotificationSoundRepeatSeconds(settings.notificationSoundRepeatSeconds)
   }, [settings])
 
   function handleSave() {
@@ -41,6 +47,8 @@ export default function BillReminderAlertsSettings({
       alertIntervalDays,
       notificationShowSeconds,
       notificationSoundEnabled,
+      notificationSoundMode,
+      notificationSoundRepeatSeconds,
     })
   }
 
@@ -51,6 +59,8 @@ export default function BillReminderAlertsSettings({
     setAlertIntervalDays(DEFAULT_REMINDER_ALERTS.alertIntervalDays)
     setNotificationShowSeconds(DEFAULT_REMINDER_ALERTS.notificationShowSeconds)
     setNotificationSoundEnabled(DEFAULT_REMINDER_ALERTS.notificationSoundEnabled)
+    setNotificationSoundMode(DEFAULT_REMINDER_ALERTS.notificationSoundMode)
+    setNotificationSoundRepeatSeconds(DEFAULT_REMINDER_ALERTS.notificationSoundRepeatSeconds)
     onSave(DEFAULT_REMINDER_ALERTS)
   }
 
