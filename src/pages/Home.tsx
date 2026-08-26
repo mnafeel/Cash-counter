@@ -1013,9 +1013,13 @@ function Home({ active }: { active: boolean }) {
           <Link to="/history" className="home-tool-btn home-tool-btn--link">
             🕘 History
           </Link>
-          <Link to="/expenses" className="home-tool-btn home-tool-btn--link">
-            📤 Expenses
-          </Link>
+          <button
+            type="button"
+            className="home-tool-btn"
+            onClick={() => openReports('month', 'expense')}
+          >
+            📤 Expense Report
+          </button>
           <Link to="/settings" className="home-tool-btn home-tool-btn--link">
             ⚙️ Settings
           </Link>

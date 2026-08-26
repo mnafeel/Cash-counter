@@ -27,9 +27,15 @@ function isShortScreen(screen: ScreenSize, height: number): boolean {
 function getAppDimensions() {
   const vv = window.visualViewport
   const touch = isTouchDevice()
+  if (touch && vv) {
+    return {
+      width: Math.round(vv.width),
+      height: Math.round(vv.height),
+    }
+  }
   return {
     width: Math.round(window.innerWidth),
-    height: Math.round(touch && vv ? vv.height : window.innerHeight),
+    height: Math.round(window.innerHeight),
   }
 }
 
@@ -122,6 +128,7 @@ export function applyDeviceSize() {
 export function useDeviceSize() {
   useEffect(() => {
     let orientTimer: ReturnType<typeof setTimeout> | undefined
+    let focusScrollTimer: ReturnType<typeof setTimeout> | undefined
 
     const update = () => {
       if (deviceSizeTimer) clearTimeout(deviceSizeTimer)
@@ -131,6 +138,18 @@ export function useDeviceSize() {
       }, 80)
     }
 
+    const onFocusIn = (event: FocusEvent) => {
+      const target = event.target
+      if (!(target instanceof HTMLElement)) return
+      const tag = target.tagName
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') return
+      clearTimeout(focusScrollTimer)
+      focusScrollTimer = setTimeout(() => {
+        applyDeviceSize()
+        target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' })
+      }, 280)
+    }
+
     applyDeviceSize()
     window.addEventListener('resize', update)
     window.addEventListener('orientationchange', () => {
@@ -138,13 +157,18 @@ export function useDeviceSize() {
       orientTimer = setTimeout(update, 150)
     })
     window.visualViewport?.addEventListener('resize', update)
+    window.visualViewport?.addEventListener('scroll', update)
+    document.addEventListener('focusin', onFocusIn)
 
     return () => {
       if (deviceSizeTimer) clearTimeout(deviceSizeTimer)
       clearTimeout(orientTimer)
+      clearTimeout(focusScrollTimer)
       window.removeEventListener('resize', update)
       window.removeEventListener('orientationchange', update)
       window.visualViewport?.removeEventListener('resize', update)
+      window.visualViewport?.removeEventListener('scroll', update)
+      document.removeEventListener('focusin', onFocusIn)
     }
   }, [])
 }

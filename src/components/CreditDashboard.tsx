@@ -17,6 +17,7 @@ import BillReminderControl from './BillReminderControl'
 import DetailDateFilter, { type DetailDateFilterMode } from './DetailDateFilter'
 import { filterByDetailDate } from '../utils/detailDateFilter'
 import { toInputDate } from '../utils/salesReport'
+import { printCreditDuesReport } from '../utils/duesReport'
 import './CustomerDashboard.css'
 import Portal from './Portal'
 import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
@@ -136,6 +137,14 @@ export default function CreditDashboard({
                 {creditOverview.customerCount} customers · {creditOverview.openBillCount} unpaid bills
                 · Set date &amp; time reminder on each customer below
               </small>
+              <button
+                type="button"
+                className="customer-dues-pdf-btn"
+                disabled={creditOverview.openBillCount === 0}
+                onClick={() => printCreditDuesReport(data)}
+              >
+                PDF / Print all dues
+              </button>
             </div>
 
             <div className="customer-filter-bar">
@@ -298,6 +307,15 @@ function CreditCustomerDetail({
           {summary.purchaseCount} purchases in period · {summary.creditTimes} credit bills · Last visit{' '}
           {summary.lastPurchaseLabel}
         </p>
+        {summary.totalCreditPending > 0 ? (
+          <button
+            type="button"
+            className="customer-dues-pdf-btn customer-dues-pdf-btn--inline"
+            onClick={() => printCreditDuesReport(data, summary.name)}
+          >
+            PDF / Print this party
+          </button>
+        ) : null}
       </div>
 
       <div className="customer-summary-grid">

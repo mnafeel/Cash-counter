@@ -17,6 +17,7 @@ import BillReminderControl from './BillReminderControl'
 import DetailDateFilter, { type DetailDateFilterMode } from './DetailDateFilter'
 import { filterByDetailDate } from '../utils/detailDateFilter'
 import { toInputDate } from '../utils/salesReport'
+import { printChequeDuesReport } from '../utils/duesReport'
 import './CustomerDashboard.css'
 import Portal from './Portal'
 import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
@@ -135,6 +136,14 @@ export default function ChequeDashboard({
             {chequeOverview.customerCount} customers · {chequeOverview.openBillCount} unpaid bills
             · Set date &amp; time reminder on each customer below
           </small>
+          <button
+            type="button"
+            className="customer-dues-pdf-btn"
+            disabled={chequeOverview.openBillCount === 0}
+            onClick={() => printChequeDuesReport(data)}
+          >
+            PDF / Print all dues
+          </button>
         </div>
 
             <div className="customer-filter-bar">
@@ -297,6 +306,15 @@ function ChequeCustomerDetail({
           {summary.purchaseCount} purchases in period · {summary.chequeTimes} cheque bills · Last visit{' '}
           {summary.lastPurchaseLabel}
         </p>
+        {summary.totalChequePending > 0 ? (
+          <button
+            type="button"
+            className="customer-dues-pdf-btn customer-dues-pdf-btn--inline"
+            onClick={() => printChequeDuesReport(data, summary.name)}
+          >
+            PDF / Print this party
+          </button>
+        ) : null}
       </div>
 
       <div className="customer-summary-grid">

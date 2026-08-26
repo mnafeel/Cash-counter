@@ -21,6 +21,8 @@ export interface NormalExpenseHistoryItem {
   payLabel: string
   payDetail: string
   date: string
+  cashAmount: number
+  bankAmount: number
 }
 
 export interface NormalExpenseSummary {
@@ -87,14 +89,30 @@ function normalPayDetail(expense: Expense): string {
 export function buildNormalExpenseHistoryItems(data: AppData): NormalExpenseHistoryItem[] {
   return data.expenses
     .filter((expense) => (!expense.kind || expense.kind === 'expense') && !isPurchaseExpense(expense))
-    .map((expense) => ({
-      id: expense.id,
-      amount: expense.amount,
-      name: expense.name,
-      payLabel: normalPayLabel(expense),
-      payDetail: normalPayDetail(expense),
-      date: expense.createdAt,
-    }))
+    .map((expense) => {
+      const cashAmount =
+        expense.payType === 'split'
+          ? expense.cashAmount ?? 0
+          : expense.payType === 'bank'
+            ? 0
+            : expense.amount
+      const bankAmount =
+        expense.payType === 'split'
+          ? expense.bankAmount ?? 0
+          : expense.payType === 'bank'
+            ? expense.amount
+            : 0
+      return {
+        id: expense.id,
+        amount: expense.amount,
+        name: expense.name,
+        payLabel: normalPayLabel(expense),
+        payDetail: normalPayDetail(expense),
+        date: expense.createdAt,
+        cashAmount,
+        bankAmount,
+      }
+    })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
 
@@ -250,6 +268,85 @@ export function summarizeNormalExpenses(items: NormalExpenseHistoryItem[]): Norm
     },
     { total: 0, count: 0 },
   )
+}
+
+export interface ExpenseNameGroup {
+  nameKey: string
+  name: string
+  total: number
+  count: number
+  cashTotal: number
+  bankTotal: number
+  items: NormalExpenseHistoryItem[]
+}
+
+export interface ExpenseNameAnalysis {
+  name: string
+  total: number
+  count: number
+  average: number
+  largest: NormalExpenseHistoryItem | null
+  cashTotal: number
+  bankTotal: number
+  shareOfPeriod: number
+  /** Highest amounts first — useful to see what drove the spend. */
+  topByAmount: NormalExpenseHistoryItem[]
+}
+
+function expenseCashBankParts(item: NormalExpenseHistoryItem): { cash: number; bank: number } {
+  return { cash: item.cashAmount, bank: item.bankAmount }
+}
+
+export function groupNormalExpensesByName(items: NormalExpenseHistoryItem[]): ExpenseNameGroup[] {
+  const map = new Map<string, ExpenseNameGroup>()
+
+  for (const item of items) {
+    const displayName = item.name.trim() || 'Unnamed'
+    const nameKey = displayName.toLowerCase()
+    const parts = expenseCashBankParts(item)
+    const group = map.get(nameKey) ?? {
+      nameKey,
+      name: displayName,
+      total: 0,
+      count: 0,
+      cashTotal: 0,
+      bankTotal: 0,
+      items: [],
+    }
+    group.total += item.amount
+    group.count += 1
+    group.cashTotal += parts.cash
+    group.bankTotal += parts.bank
+    group.items.push(item)
+    map.set(nameKey, group)
+  }
+
+  return Array.from(map.values())
+    .map((group) => ({
+      ...group,
+      items: [...group.items].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+      ),
+    }))
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+}
+
+export function analyzeExpenseNameGroup(
+  group: ExpenseNameGroup,
+  periodTotal: number,
+): ExpenseNameAnalysis {
+  const topByAmount = [...group.items].sort((a, b) => b.amount - a.amount)
+  return {
+    name: group.name,
+    total: group.total,
+    count: group.count,
+    average: group.count > 0 ? group.total / group.count : 0,
+    largest: topByAmount[0] ?? null,
+    cashTotal: group.cashTotal,
+    bankTotal: group.bankTotal,
+    shareOfPeriod: periodTotal > 0 ? (group.total / periodTotal) * 100 : 0,
+    topByAmount: topByAmount.slice(0, 5),
+  }
 }
 
 export function filterNormalExpenseHistoryItems(

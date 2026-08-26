@@ -349,15 +349,19 @@ html[data-screen='phone'] {
   font-size: 15px;
 }
 
+/* Keep form controls at 16px so iOS does not zoom on focus. */
 html[data-screen='phone'] input,
 html[data-screen='phone'] select,
-html[data-screen='phone'] textarea {
-  font-size: 16px;
+html[data-screen='phone'] textarea,
+html[data-touch='true'] input,
+html[data-touch='true'] select,
+html[data-touch='true'] textarea {
+  font-size: 16px !important;
 }
 
 html[data-screen='phone'] .settings-daily-report-date-input,
 html[data-screen='phone'] .settings-expense-export-date input {
-  font-size: 16px;
+  font-size: 16px !important;
 }
 
 html[data-screen='tablet'] {

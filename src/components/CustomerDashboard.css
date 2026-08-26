@@ -4,6 +4,8 @@
   z-index: 500;
   display: flex;
   background: var(--bg, var(--brown));
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
   padding: max(6px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right))
     max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
 }
@@ -102,6 +104,34 @@
   color: #7ec8e3;
 }
 
+.customer-dues-pdf-btn {
+  align-self: flex-start;
+  margin-top: 6px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.customer-dues-pdf-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.customer-dues-pdf-btn--inline {
+  margin-top: 8px;
+}
+
+.customer-dues-pdf-btn:not(:disabled):hover {
+  border-color: var(--cream-dim);
+  background: var(--surface-2);
+}
+
 .customer-list-btn--credit {
   border-color: rgba(245, 197, 66, 0.45);
 }
@@ -146,7 +176,7 @@
   border: 1px solid var(--border);
   background: var(--brown-dark);
   color: var(--cream);
-  font-size: 0.72rem;
+  font-size: 16px;
   box-sizing: border-box;
 }
 

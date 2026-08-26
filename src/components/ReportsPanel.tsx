@@ -22,8 +22,10 @@ import {
   type ReportDatePreset,
 } from '../utils/reportsHub'
 import {
+  analyzeExpenseNameGroup,
   buildNormalExpenseHistoryItems,
   filterNormalExpenseHistoryItems,
+  groupNormalExpensesByName,
 } from '../utils/normalExpenseHistory'
 import {
   buildPurchaseHistoryItems,
@@ -37,6 +39,8 @@ import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
 import type { CreditReportItem, ChequeReportItem } from '../utils/reportsHub'
 import type { NormalExpenseHistoryItem } from '../utils/normalExpenseHistory'
 import { buildCreditOverview } from '../utils/customerLedger'
+import { buildChequeOverview } from '../utils/chequeLedger'
+import { printChequeDuesReport, printCreditDuesReport } from '../utils/duesReport'
 import {
   buildLoanOutflowHistoryItems,
   buildLoanReportItems,
@@ -72,7 +76,7 @@ const SECTION_TABS: { id: ReportSection; label: string }[] = [
   { id: 'sales', label: '💰 Sales' },
   { id: 'credit', label: '💳 Credit' },
   { id: 'purchase', label: '🛒 Purchase' },
-  { id: 'expense', label: '📤 Expense' },
+  { id: 'expense', label: '📤 Expense Report' },
   { id: 'cheque', label: '🧾 Cheque' },
   { id: 'loan', label: '🤝 Loan' },
 ]
@@ -189,6 +193,8 @@ export default function ReportsPanel({
   const [loanSort, setLoanSort] = useState<LoanSort>('date-desc')
   const [expandedSalesPanel, setExpandedSalesPanel] = useState<SalesExpandPanel | null>('collected')
   const [selectedPurchaseSupplierKey, setSelectedPurchaseSupplierKey] = useState<string | null>(null)
+  const [selectedExpenseNameKey, setSelectedExpenseNameKey] = useState<string | null>(null)
+  const [expenseNameSearch, setExpenseNameSearch] = useState('')
   const [expandedReportKey, setExpandedReportKey] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
 
@@ -309,6 +315,23 @@ export default function ReportsPanel({
     return filterNormalExpenseHistoryItems(items, datePreset, selectedDate, rangeTo)
   }, [data, datePreset, selectedDate, rangeTo])
   const expenseTotals = useMemo(() => summarizeNormalExpenses(expenseItems), [expenseItems])
+  const expenseNameGroups = useMemo(
+    () => groupNormalExpensesByName(expenseItems),
+    [expenseItems],
+  )
+  const filteredExpenseNameGroups = useMemo(() => {
+    const q = expenseNameSearch.trim().toLowerCase()
+    if (!q) return expenseNameGroups
+    return expenseNameGroups.filter((group) => group.name.toLowerCase().includes(q))
+  }, [expenseNameGroups, expenseNameSearch])
+  const selectedExpenseNameGroup = useMemo(() => {
+    if (!selectedExpenseNameKey) return null
+    return expenseNameGroups.find((group) => group.nameKey === selectedExpenseNameKey) ?? null
+  }, [selectedExpenseNameKey, expenseNameGroups])
+  const selectedExpenseAnalysis = useMemo(() => {
+    if (!selectedExpenseNameGroup) return null
+    return analyzeExpenseNameGroup(selectedExpenseNameGroup, expenseTotals.total)
+  }, [selectedExpenseNameGroup, expenseTotals.total])
   const loanOutflowItems = useMemo(() => {
     const items = buildLoanOutflowHistoryItems(data)
     return filterLoanOutflowHistoryItems(items, datePreset, selectedDate, rangeTo)
@@ -364,6 +387,7 @@ export default function ReportsPanel({
   const loanTotals = useMemo(() => summarizeLoanReportItems(loanItems), [loanItems])
 
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
+  const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
   const alertSettings = useMemo(() => getReminderAlertSettings(data), [data])
   const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(data), [data])
   const activeChequeAlerts = useMemo(() => buildActiveChequeReminders(data), [data])
@@ -387,6 +411,12 @@ export default function ReportsPanel({
     activeSection === 'cheque' && scheduledChequeReminders.length > 0
 
   const handleReportsBack = useCallback(() => {
+    if (selectedExpenseNameKey) {
+      setSelectedExpenseNameKey(null)
+      setExpandedReportKey(null)
+      bodyRef.current?.scrollTo({ top: 0 })
+      return
+    }
     if (selectedPurchaseSupplierKey) {
       setSelectedPurchaseSupplierKey(null)
       setExpandedReportKey(null)
@@ -394,13 +424,15 @@ export default function ReportsPanel({
       return
     }
     onClose()
-  }, [selectedPurchaseSupplierKey, onClose])
+  }, [selectedExpenseNameKey, selectedPurchaseSupplierKey, onClose])
 
   usePageEscape(handleReportsBack, open)
 
   function selectSection(section: ReportSection) {
     setActiveSection(section)
     setSelectedPurchaseSupplierKey(null)
+    setSelectedExpenseNameKey(null)
+    setExpenseNameSearch('')
     setExpandedReportKey(null)
     bodyRef.current?.scrollTo({ top: 0 })
   }
@@ -438,7 +470,13 @@ export default function ReportsPanel({
           left={
             <PageBackButton
               onClick={handleReportsBack}
-              ariaLabel={selectedPurchaseSupplierKey ? 'Back to suppliers' : 'Back'}
+              ariaLabel={
+                selectedExpenseNameKey
+                  ? 'Back to expense names'
+                  : selectedPurchaseSupplierKey
+                    ? 'Back to suppliers'
+                    : 'Back'
+              }
             />
           }
           right={<PageCloseButton onClick={onClose} ariaLabel="Close reports" />}
@@ -447,7 +485,9 @@ export default function ReportsPanel({
           <header className="reports-head page-head--corners">
             <div className="reports-head-text">
               <h1 className="reports-title">
-                {selectedPurchaseSupplier
+                {selectedExpenseNameGroup
+                  ? selectedExpenseNameGroup.name
+                  : selectedPurchaseSupplier
                   ? selectedPurchaseSupplier.shopName
                   : focusSection
                     ? SECTION_TABS.find((tab) => tab.id === visibleSection)?.label ?? 'Report'
@@ -860,38 +900,145 @@ export default function ReportsPanel({
             <>
               {activeSection === 'all' ? (
                 <div className="reports-section-head">
-                  <h2>📤 Expense</h2>
+                  <h2>📤 Expense Report</h2>
                   <strong>{formatMoney(combinedExpenseTotal)}</strong>
                 </div>
               ) : null}
             <section className="reports-section">
-              <p className="reports-list-meta">
-                Normal {formatMoney(expenseTotals.total)} · Purchase {formatMoney(purchaseTotals.total)} ·
-                Loan {formatMoney(loanOutflowTotals.total)} · tap for details
-              </p>
-              {expenseItems.length === 0 && loanOutflowItems.length === 0 ? (
-                <p className="reports-empty">No expenses for this period.</p>
+              {activeSection === 'all' || !selectedExpenseNameGroup ? (
+                <>
+                  <p className="reports-list-meta">
+                    {expenseNameGroups.length} name{expenseNameGroups.length === 1 ? '' : 's'} ·{' '}
+                    {expenseItems.length} expense{expenseItems.length === 1 ? '' : 's'} · Normal{' '}
+                    {formatMoney(expenseTotals.total)}
+                    {loanOutflowTotals.total > 0
+                      ? ` · Loan ${formatMoney(loanOutflowTotals.total)}`
+                      : ''}
+                    {purchaseTotals.total > 0 && activeSection === 'all'
+                      ? ` · Purchase ${formatMoney(purchaseTotals.total)}`
+                      : ''}
+                  </p>
+                  {activeSection === 'expense' && expenseNameGroups.length > 4 ? (
+                    <input
+                      type="search"
+                      className="reports-inline-search"
+                      value={expenseNameSearch}
+                      onChange={(e) => setExpenseNameSearch(e.target.value)}
+                      placeholder="Search expense name…"
+                      autoComplete="off"
+                      aria-label="Search expense names"
+                    />
+                  ) : null}
+                  {filteredExpenseNameGroups.length === 0 && loanOutflowItems.length === 0 ? (
+                    <p className="reports-empty">No expenses for this period.</p>
+                  ) : (
+                    <ul className="reports-list">
+                      {filteredExpenseNameGroups.map((group) => (
+                        <li key={group.nameKey} className="reports-item reports-item--tap">
+                          <button
+                            type="button"
+                            className="reports-supplier-btn"
+                            onClick={() => {
+                              if (activeSection === 'all') {
+                                setActiveSection('expense')
+                              }
+                              setSelectedExpenseNameKey(group.nameKey)
+                              setExpandedReportKey(null)
+                              bodyRef.current?.scrollTo({ top: 0 })
+                            }}
+                          >
+                            <div className="reports-item-head">
+                              <span className="reports-item-title">{group.name}</span>
+                              <span className="reports-item-amount">{formatMoney(group.total)}</span>
+                            </div>
+                            <div className="reports-item-meta">
+                              {group.count} expense{group.count === 1 ? '' : 's'} · 💵{' '}
+                              {formatMoney(group.cashTotal)} · 🏦 {formatMoney(group.bankTotal)}
+                              {expenseTotals.total > 0
+                                ? ` · ${((group.total / expenseTotals.total) * 100).toFixed(0)}%`
+                                : ''}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                      {loanOutflowItems.map((row, index) => (
+                        <LoanOutflowReportRow
+                          key={row.id}
+                          row={row}
+                          index={index + 1}
+                          expanded={expandedReportKey === `loan-out:${row.id}`}
+                          onToggle={() => toggleReportExpand(`loan-out:${row.id}`)}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                </>
               ) : (
-                <ul className="reports-list">
-                  {expenseItems.map((row, index) => (
-                    <ExpenseReportRow
-                      key={row.id}
-                      row={row}
-                      index={index + 1}
-                      expanded={expandedReportKey === `expense:${row.id}`}
-                      onToggle={() => toggleReportExpand(`expense:${row.id}`)}
-                    />
-                  ))}
-                  {loanOutflowItems.map((row, index) => (
-                    <LoanOutflowReportRow
-                      key={row.id}
-                      row={row}
-                      index={index + 1}
-                      expanded={expandedReportKey === `loan-out:${row.id}`}
-                      onToggle={() => toggleReportExpand(`loan-out:${row.id}`)}
-                    />
-                  ))}
-                </ul>
+                <>
+                  {selectedExpenseAnalysis ? (
+                    <div className="reports-expense-analysis" aria-label="Expense name analysis">
+                      <div className="reports-supplier-summary">
+                        <span>
+                          {selectedExpenseAnalysis.count} expense
+                          {selectedExpenseAnalysis.count === 1 ? '' : 's'} in {periodLabel}
+                        </span>
+                        <strong>{formatMoney(selectedExpenseAnalysis.total)}</strong>
+                      </div>
+                      <div className="reports-expense-analysis-grid">
+                        <div className="reports-expense-analysis-card">
+                          <span>Average</span>
+                          <strong>{formatMoney(selectedExpenseAnalysis.average)}</strong>
+                        </div>
+                        <div className="reports-expense-analysis-card">
+                          <span>Share of expenses</span>
+                          <strong>{selectedExpenseAnalysis.shareOfPeriod.toFixed(0)}%</strong>
+                        </div>
+                        <div className="reports-expense-analysis-card">
+                          <span>Cash</span>
+                          <strong>{formatMoney(selectedExpenseAnalysis.cashTotal)}</strong>
+                        </div>
+                        <div className="reports-expense-analysis-card">
+                          <span>Bank</span>
+                          <strong>{formatMoney(selectedExpenseAnalysis.bankTotal)}</strong>
+                        </div>
+                      </div>
+                      {selectedExpenseAnalysis.largest ? (
+                        <p className="reports-expense-analysis-note">
+                          Largest: {formatMoney(selectedExpenseAnalysis.largest.amount)} ·{' '}
+                          {formatDate(selectedExpenseAnalysis.largest.date)} ·{' '}
+                          {selectedExpenseAnalysis.largest.payLabel}
+                        </p>
+                      ) : null}
+                      {selectedExpenseAnalysis.topByAmount.length > 1 ? (
+                        <div className="reports-expense-top">
+                          <span className="reports-expense-top-title">Top amounts</span>
+                          <ul className="reports-expense-top-list">
+                            {selectedExpenseAnalysis.topByAmount.map((row, index) => (
+                              <li key={row.id}>
+                                <span>
+                                  #{index + 1} · {formatDate(row.date)} · {row.payLabel}
+                                </span>
+                                <strong>{formatMoney(row.amount)}</strong>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+                  <p className="reports-list-meta">All entries · newest first · tap for details</p>
+                  <ul className="reports-list">
+                    {selectedExpenseNameGroup.items.map((row, index) => (
+                      <ExpenseReportRow
+                        key={row.id}
+                        row={row}
+                        index={index + 1}
+                        expanded={expandedReportKey === `expense:${row.id}`}
+                        onToggle={() => toggleReportExpand(`expense:${row.id}`)}
+                      />
+                    ))}
+                  </ul>
+                </>
               )}
             </section>
             </>
@@ -953,7 +1100,18 @@ export default function ReportsPanel({
                   <h2>💳 Credit</h2>
                   <strong>{formatMoney(creditTotals.pendingTotal)}</strong>
                 </div>
-              ) : null}
+              ) : (
+                <div className="reports-dues-actions">
+                  <button
+                    type="button"
+                    className="reports-dues-pdf-btn"
+                    disabled={creditOverview.openBillCount === 0}
+                    onClick={() => printCreditDuesReport(data)}
+                  >
+                    PDF / Print all credit dues ({formatMoney(creditOverview.totalPending)})
+                  </button>
+                </div>
+              )}
               <section className="reports-section">
                 <p className="reports-list-meta">
                   {creditItems.length} credit record{creditItems.length === 1 ? '' : 's'} · tap for details
@@ -1002,7 +1160,18 @@ export default function ReportsPanel({
                   <h2>🧾 Cheque</h2>
                   <strong>{formatMoney(chequeTotals.pendingTotal)}</strong>
                 </div>
-              ) : null}
+              ) : (
+                <div className="reports-dues-actions">
+                  <button
+                    type="button"
+                    className="reports-dues-pdf-btn"
+                    disabled={chequeOverview.openBillCount === 0}
+                    onClick={() => printChequeDuesReport(data)}
+                  >
+                    PDF / Print all cheque dues ({formatMoney(chequeOverview.totalPending)})
+                  </button>
+                </div>
+              )}
               <section className="reports-section">
                 <p className="reports-list-meta">
                   {chequeItems.length} cheque{chequeItems.length === 1 ? '' : 's'} · tap for full breakdown
@@ -1579,12 +1748,12 @@ function ExpenseReportRow({
       <button type="button" className="reports-item-btn" onClick={onToggle}>
         <div className="reports-item-head">
           <span className="reports-item-title">
-            Expense #{index} · {row.name}
+            {formatDate(row.date)} · {row.payLabel}
           </span>
           <span className="reports-item-amount">{formatMoney(row.amount)}</span>
         </div>
         <div className="reports-item-meta">
-          {formatDate(row.date)} · {row.payLabel}
+          #{index} · {row.name} · {row.payDetail}
         </div>
       </button>
       {expanded ? (
