@@ -431,6 +431,38 @@
   gap: 6px;
 }
 
+.customer-purchase-item--returnable {
+  position: relative;
+  padding-top: 28px;
+}
+
+.customer-purchase-return-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  color: #e8b07a;
+  font-size: 0.52rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.customer-purchase-return-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.customer-purchase-meta--return {
+  color: #e8b07a !important;
+  font-weight: 700;
+}
+
 .customer-purchase-head {
   display: flex;
   justify-content: space-between;

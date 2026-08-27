@@ -12,6 +12,17 @@ export interface SalePaymentEvent {
   cancelledAt?: string
 }
 
+/** Item returned against a sales / credit bill — reduces amount due. */
+export interface SaleReturnEntry {
+  id: string
+  itemName: string
+  quantity: number
+  rate: number
+  /** quantity × rate */
+  amount: number
+  createdAt: string
+}
+
 export interface Sale {
   id: string
   billAmount: number
@@ -31,6 +42,8 @@ export interface Sale {
   pendingPayType?: PayType
   status?: SaleStatus
   customerName?: string
+  /** Sales / credit item returns deducted from the bill. */
+  returns?: SaleReturnEntry[]
   /** Origin when imported from Tally Prime (deduped by sourceId). */
   source?: 'tally'
   sourceId?: string

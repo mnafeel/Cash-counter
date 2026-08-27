@@ -1,0 +1,227 @@
+.sale-return-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 420;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 8px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.sale-return-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(20, 10, 6, 0.72);
+  cursor: pointer;
+}
+
+.sale-return-panel {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  max-height: min(92vh, 640px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--brown);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: auto;
+}
+
+.sale-return-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sale-return-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--cream);
+}
+
+.sale-return-head p {
+  margin: 4px 0 0;
+  font-size: 0.58rem;
+  color: var(--cream-dim);
+}
+
+.sale-return-close {
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  border-radius: var(--radius-sm);
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+}
+
+.sale-return-summary,
+.sale-return-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.sale-return-summary--four {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 420px) {
+  .sale-return-summary--four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.sale-return-summary > div,
+.sale-return-preview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--brown-dark);
+}
+
+.sale-return-summary-credit,
+.sale-return-preview-credit {
+  border-color: #c49258 !important;
+}
+
+.sale-return-summary span,
+.sale-return-preview span {
+  font-size: 0.48rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sale-return-summary strong,
+.sale-return-preview strong {
+  font-size: 0.72rem;
+  color: #e8b07a;
+}
+
+.sale-return-payments,
+.sale-return-existing {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 110px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.sale-return-payments li,
+.sale-return-existing li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(242, 220, 192, 0.08);
+  font-size: 0.58rem;
+}
+
+.sale-return-payments li:last-child,
+.sale-return-existing li:last-child {
+  border-bottom: none;
+}
+
+.sale-return-payments span,
+.sale-return-existing span {
+  color: var(--cream-dim);
+  text-transform: capitalize;
+}
+
+.sale-return-payments strong,
+.sale-return-existing strong {
+  color: #e8b07a;
+}
+
+.sale-return-payments-total {
+  background: rgba(0, 0, 0, 0.18);
+  font-weight: 700;
+}
+
+.sale-return-paid-note {
+  margin: 0;
+  font-size: 0.55rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+}
+
+.sale-return-preview {
+  grid-template-columns: 1fr 1.2fr;
+}
+
+.sale-return-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.sale-return-field span {
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sale-return-field input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 42px;
+  padding: 8px 10px;
+  font-size: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+}
+
+.sale-return-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.sale-return-error {
+  margin: 0;
+  font-size: 0.58rem;
+  color: #f0a0a0;
+}
+
+.sale-return-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 8px;
+}
+
+.sale-return-btn {
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sale-return-btn--ghost {
+  background: var(--brown-dark);
+  color: var(--cream);
+}
+
+.sale-return-btn--primary {
+  background: linear-gradient(180deg, #e8b07a, #8a5a22);
+  color: #1a1008;
+  border-color: #c49258;
+}

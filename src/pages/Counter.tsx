@@ -8,11 +8,12 @@ import CounterCustomerNameField, {
   type CounterCustomerNameFieldHandle,
 } from '../components/CounterCustomerNameField'
 import RoundTypeChips from '../components/RoundTypeChips'
+import SaleReturnModal from '../components/SaleReturnModal'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useCashActions } from '../context/CashContext'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import { useOpenTiming } from '../hooks/useOpenTiming'
-import type { Sale } from '../types'
+import type { Sale, SaleReturnEntry } from '../types'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import { isReminderDue } from '../utils/billReminders'
 import {
@@ -23,6 +24,15 @@ import { buildCustomerSummaries } from '../utils/customerLedger'
 import { buildChequeCustomerSummaries } from '../utils/chequeLedger'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
+import {
+  buildSaleReturnEntry,
+  saleBalanceAfterReturns,
+  saleBillGroupPaidTotal,
+  saleBillPaymentLines,
+  saleCreditBalanceDue,
+  saleGrossBillAmount,
+  saleReturnTotal,
+} from '../utils/saleReturns'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { getBillRoundOptions, effectiveCollectTarget } from '../utils/roundSuggestions'
@@ -178,15 +188,37 @@ function Counter({ active }: { active: boolean }) {
   const routeActive = active
   const { data, pendingBills } = useCashSnapshot(active)
   const {
-    recordSale,
-    updatePendingSale,
+    recordSale: recordSaleAction,
+    updatePendingSale: updatePendingSaleAction,
     collectPendingSale,
     collectCreditPayment,
     collectChequePayment,
     editPaidSalePayment,
     setBillReminder,
     updateReminderAlertSettings,
+    applySaleReturn,
   } = useCashActions()
+
+  function recordSale(
+    sale: Parameters<typeof recordSaleAction>[0],
+  ) {
+    recordSaleAction({
+      ...sale,
+      ...(deductDraftReturns ? { originalBillAmount: typedBillAmount } : {}),
+      ...(draftReturns.length > 0 && !loadedPendingId ? { returns: draftReturns } : {}),
+    })
+  }
+
+  function updatePendingSale(
+    id: string,
+    sale: Parameters<typeof updatePendingSaleAction>[1],
+  ) {
+    updatePendingSaleAction(id, {
+      ...sale,
+      ...(deductDraftReturns ? { originalBillAmount: typedBillAmount } : {}),
+      ...(draftReturns.length > 0 && !loadedPendingId ? { returns: draftReturns } : {}),
+    })
+  }
   const tabData = data
   const tabSales = data.sales
   const tabPendingBills = pendingBills
@@ -198,6 +230,8 @@ function Counter({ active }: { active: boolean }) {
   const [bankSplitStr, setBankSplitStr] = useState('')
   const [chequeSplitStr, setChequeSplitStr] = useState('')
   const [creditSplitStr, setCreditSplitStr] = useState('')
+  const [draftReturns, setDraftReturns] = useState<SaleReturnEntry[]>([])
+  const [showReturnModal, setShowReturnModal] = useState(false)
   const [roundOffAmount, setRoundOffAmount] = useState<number | null>(null)
   const [roundOtherActive, setRoundOtherActive] = useState(false)
   const [roundCustomStr, setRoundCustomStr] = useState('')
@@ -416,7 +450,17 @@ function Counter({ active }: { active: boolean }) {
 
   const collectingBalanceBillId = collectingCreditId ?? effectiveCollectingChequeId
 
-  const billAmount = parseAmount(billStr)
+  const typedBillAmount = parseAmount(billStr)
+  const draftReturnTotal = useMemo(
+    () => draftReturns.reduce((sum, row) => sum + Math.max(0, row.amount), 0),
+    [draftReturns],
+  )
+  /** New bill: bill field is gross; deduct draft returns for pay/credit due. */
+  const deductDraftReturns =
+    !loadedPendingId && !balanceOnlyMode && draftReturnTotal > 0
+  const billAmount = deductDraftReturns
+    ? Math.max(0, typedBillAmount - draftReturnTotal)
+    : typedBillAmount
   const giveAmount = parseAmount(giveStr)
   const paidAmount = parseAmount(paidStr)
   const cashSplitAmount = parseAmount(cashSplitStr)
@@ -427,6 +471,55 @@ function Counter({ active }: { active: boolean }) {
     splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : chequeSplitAmount
   const dueAmount = roundOffAmount ?? billAmount
   const billCollectTarget = effectiveCollectTarget(billAmount, roundOffAmount)
+  const returnGrossDisplay = deductDraftReturns
+    ? typedBillAmount
+    : balanceOnlyMode && originalBillHint
+      ? originalBillHint
+      : loadedPendingBill
+        ? saleGrossBillAmount(loadedPendingBill)
+        : collectingCreditBill
+          ? saleGrossBillAmount(collectingCreditBill)
+          : typedBillAmount
+  const returnTotalDisplay = loadedPendingBill
+    ? saleReturnTotal(loadedPendingBill)
+    : collectingCreditBill
+      ? saleReturnTotal(collectingCreditBill)
+      : draftReturnTotal
+  const paidSoFarDisplay = (() => {
+    const bill = collectingCreditBill ?? loadedPendingBill
+    if (!bill) return 0
+    return saleBillGroupPaidTotal(bill, tabSales)
+  })()
+  /** Remaining due after collections + returns (what to collect now). */
+  const balanceToPayDisplay = balanceOnlyMode
+    ? (() => {
+        const bill = collectingCreditBill ?? loadedPendingBill
+        if (bill) {
+          const due = saleCreditBalanceDue(bill, tabSales)
+          if (roundOffAmount != null && roundOffAmount > 0) {
+            return Math.min(roundOffAmount, due)
+          }
+          return due
+        }
+        return collectingCreditId || effectiveCollectingCreditId
+          ? creditCollectDue > 0
+            ? creditCollectDue
+            : balanceDueAmount ?? billAmount
+          : collectingChequeId || effectiveCollectingChequeId
+            ? chequeCollectDue > 0
+              ? chequeCollectDue
+              : balanceDueAmount ?? billAmount
+            : balanceDueAmount ?? billAmount
+      })()
+    : Math.max(0, dueAmount)
+  const showBalanceBreakdown =
+    returnTotalDisplay > 0 ||
+    (balanceOnlyMode &&
+      (paidSoFarDisplay > 0 ||
+        returnTotalDisplay > 0 ||
+        (returnGrossDisplay > 0 && returnGrossDisplay !== balanceToPayDisplay)))
+  const canOpenReturn =
+    typedBillAmount > 0 || balanceOnlyMode || (loadedPendingBill?.billAmount ?? 0) > 0
 
   const creditCollectLayout = Boolean(collectingCreditId || effectiveCollectingCreditId)
   const chequeCollectLayout = Boolean(effectiveCollectingChequeId)
@@ -1749,6 +1842,8 @@ function Counter({ active }: { active: boolean }) {
     setSiblingChequePendingId(null)
     setBalanceDueAmount(null)
     setOriginalBillHint(null)
+    setDraftReturns([])
+    setShowReturnModal(false)
     setChequeListOpen(false)
     setCreditListOpen(false)
   }
@@ -1778,6 +1873,8 @@ function Counter({ active }: { active: boolean }) {
       setSiblingChequePendingId(null)
       setBalanceDueAmount(null)
       setOriginalBillHint(null)
+      setDraftReturns([])
+      setShowReturnModal(false)
       setChequeListOpen(false)
       setCreditListOpen(false)
     }
@@ -1793,9 +1890,10 @@ function Counter({ active }: { active: boolean }) {
     const due = payType === 'split' ? splitTotal : dueAmount
     const base = {
       billAmount: due,
-      originalBillAmount: billAmount,
+      originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
       customerName: name,
       payType,
+      ...(draftReturns.length > 0 && !loadedPendingId ? { returns: draftReturns } : {}),
     }
 
     if (payType === 'split') {
@@ -1865,8 +1963,8 @@ function Counter({ active }: { active: boolean }) {
   }
 
   function loadPendingBill(bill: Sale) {
-    const due = bill.billAmount
-    const original = bill.originalBillAmount ?? bill.billAmount
+    const due = saleCreditBalanceDue(bill, data.sales)
+    const original = saleGrossBillAmount(bill)
     const isCheque = isChequePendingBill(bill)
     const isCredit = isCreditPendingBill(bill)
     const type = getPendingBillPayType(bill)
@@ -1899,6 +1997,7 @@ function Counter({ active }: { active: boolean }) {
     setLoadedPendingId(bill.id)
     setBalanceDueAmount(isBalanceBill ? due : null)
     setOriginalBillHint(isBalanceBill && original !== due ? original : null)
+    setDraftReturns(bill.returns ? [...bill.returns] : [])
     setBillStr(String(isBalanceBill ? due : original))
     setGiveStr('')
     setPaidStr('')
@@ -2280,7 +2379,7 @@ function Counter({ active }: { active: boolean }) {
         if (collected > 0 || bothToPending) {
           collectPendingSale(splitSaleId, {
             billAmount: dueAmount,
-            originalBillAmount: billAmount,
+            originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
             paidAmount: cashSplitAmount,
             changeAmount: 0,
             payType: 'split',
@@ -2294,7 +2393,7 @@ function Counter({ active }: { active: boolean }) {
         } else {
           updatePendingSale(splitSaleId, {
             billAmount: dueAmount,
-            originalBillAmount: billAmount,
+            originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
             customerName: name,
             payType: 'split',
             cashAmount: cashSplitAmount,
@@ -2335,7 +2434,7 @@ function Counter({ active }: { active: boolean }) {
         recordSale({
           id: splitSaleId,
           billAmount: collected,
-          originalBillAmount: billAmount,
+          originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
           paidAmount: cashSplitAmount,
           changeAmount: 0,
           payType: 'split',
@@ -2360,7 +2459,7 @@ function Counter({ active }: { active: boolean }) {
         } else {
           recordSale({
             billAmount: creditSplitAmount,
-            originalBillAmount: billAmount,
+            originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
             paidAmount: 0,
             changeAmount: 0,
             payType: 'credit',
@@ -2373,7 +2472,7 @@ function Counter({ active }: { active: boolean }) {
       } else {
         recordSale({
           billAmount: creditSplitAmount,
-          originalBillAmount: billAmount,
+          originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
           paidAmount: 0,
           changeAmount: 0,
           payType: 'credit',
@@ -2390,7 +2489,7 @@ function Counter({ active }: { active: boolean }) {
       } else {
         recordSale({
           billAmount: chequeSplitAmount,
-          originalBillAmount: billAmount,
+          originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
           paidAmount: 0,
           changeAmount: 0,
           payType: 'cheque',
@@ -2434,7 +2533,7 @@ function Counter({ active }: { active: boolean }) {
 
     const salePayload = {
       billAmount: splitTotal,
-      originalBillAmount: billAmount,
+      originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
       paidAmount: cashSplitAmount,
       changeAmount: splitCashChangeAmount,
       payType: 'split' as const,
@@ -2455,7 +2554,7 @@ function Counter({ active }: { active: boolean }) {
 
     if (isPaidBillEdit && loadedPendingId) {
       savePaidBillEdit(loadedPendingId, name, {
-        originalBillAmount: billAmount,
+        originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
         billAmount: splitTotal,
         paidAmount: cashSplitAmount,
         changeAmount: splitCashChangeAmount,
@@ -2555,7 +2654,7 @@ function Counter({ active }: { active: boolean }) {
       const creditBill = data.sales.find((sale) => sale.id === collectingCreditId)
       collectPendingSale(collectingCreditId, {
         billAmount: splitTotal,
-        originalBillAmount: billAmount,
+        originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
         paidAmount: cashSplitAmount > 0 ? cashSplitAmount : 0,
         changeAmount: 0,
         payType: cashSplitAmount > 0 ? 'split' : 'cheque',
@@ -2568,7 +2667,7 @@ function Counter({ active }: { active: boolean }) {
       } else {
         recordSale({
           billAmount: chequeSplitAmount,
-          originalBillAmount: billAmount,
+          originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
           paidAmount: 0,
           changeAmount: 0,
           payType: 'cheque',
@@ -3014,7 +3113,7 @@ function Counter({ active }: { active: boolean }) {
 
     const salePayload = {
       billAmount: paidAmount,
-      originalBillAmount: billAmount,
+      originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
       paidAmount:
         payType === 'bank' || payType === 'cheque'
           ? paidAmount
@@ -3037,7 +3136,7 @@ function Counter({ active }: { active: boolean }) {
       const collectedTotal = cashAmount + bankAmount + chequeAmount
       const openCredit = Math.max(0, billCollectTarget - collectedTotal)
       savePaidBillEdit(loadedPendingId, name, {
-        originalBillAmount: billAmount,
+        originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
         billAmount: payType === 'cash' ? giveAmount : paidAmount,
         paidAmount: payType === 'bank' || payType === 'cheque' ? paidAmount : giveAmount,
         changeAmount,
@@ -3138,6 +3237,24 @@ function Counter({ active }: { active: boolean }) {
     else setActiveField('bill')
   }
 
+  function handleReturnDone(draft: { itemName: string; quantity: number; rate: number }) {
+    const targetId =
+      collectingCreditId ??
+      effectiveCollectingCreditId ??
+      collectingChequeId ??
+      effectiveCollectingChequeId ??
+      loadedPendingId
+
+    if (targetId) {
+      applySaleReturn(targetId, draft)
+      return
+    }
+
+    const entry = buildSaleReturnEntry(draft)
+    if (!entry) return
+    setDraftReturns((prev) => [...prev, entry])
+  }
+
   function focusNameSection() {
     setNameSectionFocus(true)
     clearPendingSection()
@@ -3193,6 +3310,35 @@ function Counter({ active }: { active: boolean }) {
   focusNameRef.current = focusNameSection
   focusPendingRef.current = focusPendingSection
   focusAmountRef.current = focusAmountSection
+
+  // After a persisted return on an open credit/cheque bill, refresh due fields.
+  useEffect(() => {
+    if (!loadedPendingId || !loadedPendingBill) return
+    const returnCount = loadedPendingBill.returns?.length ?? 0
+    if (returnCount === 0) return
+    setDraftReturns([...(loadedPendingBill.returns ?? [])])
+    if (!isCreditPendingBill(loadedPendingBill) && !isChequePendingBill(loadedPendingBill)) {
+      return
+    }
+    const due = saleCreditBalanceDue(loadedPendingBill, tabSales)
+    const gross = saleGrossBillAmount(loadedPendingBill)
+    setBalanceDueAmount(due)
+    setOriginalBillHint(gross !== due ? gross : null)
+    setBillStr(String(due))
+    if (isCreditPendingBill(loadedPendingBill)) {
+      setCreditCollectDue(due)
+      setCollectingCreditId(loadedPendingBill.id)
+    }
+    if (isChequePendingBill(loadedPendingBill)) {
+      setChequeCollectDue(due)
+      setCollectingChequeId(loadedPendingBill.id)
+    }
+  }, [
+    loadedPendingId,
+    loadedPendingBill,
+    loadedPendingBill?.billAmount,
+    loadedPendingBill?.updatedAt,
+  ])
 
   const saveHandlerRef = useRef(handleSave)
   const savePendingHandlerRef = useRef(handleSavePending)
@@ -3485,9 +3631,38 @@ function Counter({ active }: { active: boolean }) {
 
   return (
     <div className="counter-page">
+      <button
+        type="button"
+        className="counter-return-corner"
+        onClick={() => setShowReturnModal(true)}
+        disabled={!canOpenReturn || savedAction !== null}
+        title="Sale return"
+      >
+        Return
+      </button>
       <div className="counter-body">
         <div className="counter-main">
           <div className="counter-top">
+            {showBalanceBreakdown ? (
+              <div className="counter-return-strip" aria-live="polite">
+                <span>
+                  <em>Original</em>
+                  {formatMoney(returnGrossDisplay)}
+                </span>
+                <span>
+                  <em>Paid</em>
+                  {formatMoney(paidSoFarDisplay)}
+                </span>
+                <span>
+                  <em>Return</em>
+                  {returnTotalDisplay > 0 ? `−${formatMoney(returnTotalDisplay)}` : formatMoney(0)}
+                </span>
+                <strong>
+                  <em>To pay</em>
+                  {formatMoney(balanceToPayDisplay)}
+                </strong>
+              </div>
+            ) : null}
             <div
               className={`counter-amounts ${
                 showFullSplitGrid
@@ -3498,20 +3673,27 @@ function Counter({ active }: { active: boolean }) {
             {balanceOnlyMode ? (
               <div className="counter-readonly counter-readonly--balance">
                 <span className="counter-readonly-label">
-                  {collectingCreditId ? 'To Pay' : collectingChequeId ? 'Cheque due' : 'Balance'}
+                  {collectingCreditId || effectiveCollectingCreditId
+                    ? 'To Pay'
+                    : collectingChequeId || effectiveCollectingChequeId
+                      ? 'Cheque due'
+                      : 'Balance'}
                 </span>
                 <span className="counter-readonly-value">
-                  {formatMoney(
-                    collectingCreditId
-                      ? splitTotal
-                      : collectingChequeId
-                        ? roundOffAmount ?? chequeCollectDueAmount
-                        : balanceDueAmount ?? billAmount,
-                  )}
+                  {formatMoney(balanceToPayDisplay)}
                 </span>
                 {collectingCreditId && creditCollectCustomerName ? (
                   <span className="counter-balance-hint counter-balance-hint--customer">
                     {creditCollectCustomerName}
+                  </span>
+                ) : null}
+                {showBalanceBreakdown ? (
+                  <span className="counter-balance-hint">
+                    {formatMoney(returnGrossDisplay)}
+                    {paidSoFarDisplay > 0 ? ` − paid ${formatMoney(paidSoFarDisplay)}` : ''}
+                    {returnTotalDisplay > 0 ? ` − return ${formatMoney(returnTotalDisplay)}` : ''}
+                    {' = '}
+                    {formatMoney(balanceToPayDisplay)}
                   </span>
                 ) : originalBillHint ? (
                   <span className="counter-balance-hint">
@@ -4220,6 +4402,45 @@ function Counter({ active }: { active: boolean }) {
           shortcutHint="Alt+W"
         />
       </div>
+
+      <SaleReturnModal
+        open={showReturnModal}
+        onClose={() => setShowReturnModal(false)}
+        customerName={
+          getCustomerName() ||
+          (loadedPendingBill
+            ? getSaleCustomerName(loadedPendingBill, data.sales)
+            : undefined)
+        }
+        originalBill={Math.max(returnGrossDisplay, typedBillAmount, 0)}
+        paidSoFar={
+          loadedPendingBill || collectingCreditBill
+            ? saleBillGroupPaidTotal(
+                (collectingCreditBill ?? loadedPendingBill)!,
+                data.sales,
+              )
+            : 0
+        }
+        paymentLines={
+          loadedPendingBill || collectingCreditBill
+            ? saleBillPaymentLines(
+                (collectingCreditBill ?? loadedPendingBill)!,
+                data.sales,
+              )
+            : []
+        }
+        existingReturns={draftReturns}
+        maxReturnable={Math.max(
+          0,
+          loadedPendingBill || collectingCreditBill
+            ? saleCreditBalanceDue(
+                (collectingCreditBill ?? loadedPendingBill)!,
+                data.sales,
+              )
+            : Math.max(0, typedBillAmount - draftReturnTotal),
+        )}
+        onDone={handleReturnDone}
+      />
     </div>
   )
 }

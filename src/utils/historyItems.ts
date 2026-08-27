@@ -5,6 +5,12 @@ import { decorateLoan, loanRemainingAmount, loanSettlementEvents } from './loanL
 import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, type PurchaseHistoryItem } from './purchaseHistory'
 import { getSaleCustomerName } from './saleCustomerName'
 import { memoByDataRef } from './memoByDataRef'
+import {
+  formatSaleReturnLine,
+  saleGrossBillAmount,
+  saleNetBillAmount,
+  saleReturnTotal,
+} from './saleReturns'
 
 export type HistoryItemType = 'sale' | 'expense' | 'purchase' | 'deposit' | 'transfer' | 'loan'
 
@@ -102,6 +108,7 @@ function formatCollectionDayLabel(iso: string): string {
 
 const RECEIPT_SEQ = {
   BILL_CREATED: 0,
+  SALE_RETURN: 5,
   CASH_RECEIVED: 10,
   BANK_RECEIVED: 15,
   CREDIT_BALANCE: 45,
@@ -176,7 +183,8 @@ function appendCreditSaleStructuredEvents(
   drafts: ReceiptEventDraft[],
   opts?: { includeTotal?: boolean; includeBillCreated?: boolean },
 ): void {
-  const totalBill = sale.originalBillAmount ?? sale.billAmount
+  const totalBill = saleGrossBillAmount(sale)
+  const returnTotal = saleReturnTotal(sale)
   const allEvents = getSalePaymentEvents(sale).filter((event) => event.amount > 0)
   const activeEvents = allEvents.filter((event) => !event.cancelled)
 
@@ -187,6 +195,25 @@ function appendCreditSaleStructuredEvents(
       amount: totalBill,
       type: 'bill-created',
       detail: formatDate(sale.createdAt),
+    })
+  }
+
+  if (sale.returns?.length) {
+    for (const row of sale.returns) {
+      createReceiptDraft(drafts, RECEIPT_SEQ.SALE_RETURN, {
+        label: `Return · ${formatSaleReturnLine(row)}`,
+        date: row.createdAt,
+        amount: row.amount,
+        type: 'pending',
+        detail: `Bill reduced by ${formatMoney(row.amount)}`,
+      })
+    }
+    createReceiptDraft(drafts, RECEIPT_SEQ.SALE_RETURN, {
+      label: 'Bill after returns',
+      date: sale.updatedAt ?? sale.createdAt,
+      amount: Math.max(0, totalBill - returnTotal),
+      type: 'bill-created',
+      detail: `Reduced by ${formatMoney(returnTotal)}`,
     })
   }
 
@@ -277,7 +304,8 @@ function appendChequeSaleStructuredEvents(
   drafts: ReceiptEventDraft[],
   opts?: { includeTotal?: boolean; includeBillCreated?: boolean },
 ): void {
-  const totalBill = sale.originalBillAmount ?? sale.billAmount
+  const totalBill = saleGrossBillAmount(sale)
+  const returnTotal = saleReturnTotal(sale)
   const allEvents = getSalePaymentEvents(sale).filter((event) => event.amount > 0)
   const activeEvents = allEvents.filter((event) => !event.cancelled)
 
@@ -288,6 +316,25 @@ function appendChequeSaleStructuredEvents(
       amount: totalBill,
       type: 'bill-created',
       detail: formatDate(sale.createdAt),
+    })
+  }
+
+  if (sale.returns?.length) {
+    for (const row of sale.returns) {
+      createReceiptDraft(drafts, RECEIPT_SEQ.SALE_RETURN, {
+        label: `Return · ${formatSaleReturnLine(row)}`,
+        date: row.createdAt,
+        amount: row.amount,
+        type: 'pending',
+        detail: `Bill reduced by ${formatMoney(row.amount)}`,
+      })
+    }
+    createReceiptDraft(drafts, RECEIPT_SEQ.SALE_RETURN, {
+      label: 'Bill after returns',
+      date: sale.updatedAt ?? sale.createdAt,
+      amount: Math.max(0, totalBill - returnTotal),
+      type: 'bill-created',
+      detail: `Reduced by ${formatMoney(returnTotal)}`,
     })
   }
 
@@ -407,7 +454,8 @@ function appendChequeSaleStructuredEvents(
 }
 
 function appendStandardSaleStructuredEvents(sale: Sale, drafts: ReceiptEventDraft[]): void {
-  const totalBill = sale.originalBillAmount ?? sale.billAmount
+  const totalBill = saleGrossBillAmount(sale)
+  const returnTotal = saleReturnTotal(sale)
   const activeEvents = getSalePaymentEvents(sale).filter((event) => event.amount > 0 && !event.cancelled)
 
   createReceiptDraft(drafts, RECEIPT_SEQ.BILL_CREATED, {
@@ -417,6 +465,25 @@ function appendStandardSaleStructuredEvents(sale: Sale, drafts: ReceiptEventDraf
     type: 'bill-created',
     detail: formatDate(sale.createdAt),
   })
+
+  if (sale.returns?.length) {
+    for (const row of sale.returns) {
+      createReceiptDraft(drafts, RECEIPT_SEQ.SALE_RETURN, {
+        label: `Return · ${formatSaleReturnLine(row)}`,
+        date: row.createdAt,
+        amount: row.amount,
+        type: 'pending',
+        detail: `Bill reduced by ${formatMoney(row.amount)}`,
+      })
+    }
+    createReceiptDraft(drafts, RECEIPT_SEQ.SALE_RETURN, {
+      label: 'Bill after returns',
+      date: sale.updatedAt ?? sale.createdAt,
+      amount: Math.max(0, totalBill - returnTotal),
+      type: 'bill-created',
+      detail: `Reduced by ${formatMoney(returnTotal)}`,
+    })
+  }
 
   if (activeEvents.length > 0) {
     activeEvents.forEach((event, index) => {
@@ -1466,11 +1533,9 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
     sub = `${orig}${paidPart}${sale.changeAmount > 0 ? `Change ${formatMoney(sale.changeAmount)} · ` : ''}${paidTime}`.replace(/ · $/, '')
   }
 
-  const totalBill =
-    sale.originalBillAmount ??
-    ((isCreditBill(sale) || isChequeBill(sale)) && sale.status === 'pending'
-      ? sale.billAmount + collected
-      : sale.billAmount)
+  const totalBill = saleGrossBillAmount(sale)
+  const netBill = saleNetBillAmount(sale)
+  const returnTotal = saleReturnTotal(sale)
   const paySummary =
     sale.status !== 'pending' && collected > 0
       ? `Paid ${formatMoney(collected)}`
@@ -1482,11 +1547,16 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
           : `${isChequeBill(sale) ? 'Cheque' : 'Credit'} pending ${formatMoney(sale.billAmount)}`
         : undefined
 
+  const returnSub =
+    returnTotal > 0
+      ? `Return −${formatMoney(returnTotal)} · Net ${formatMoney(netBill)} · `
+      : ''
+
   return {
     type: 'sale',
     id: sale.id,
     amount:
-      isCreditBill(sale) || isChequeBill(sale) ? totalBill : collected || sale.billAmount,
+      isCreditBill(sale) || isChequeBill(sale) ? netBill : collected || netBill,
     originalBillAmount: totalBill,
     collectedAmount: collected > 0 ? collected : undefined,
     collectionBreakdown:
@@ -1497,7 +1567,7 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
             cheque: 0,
           }
         : undefined,
-    sub,
+    sub: `${returnSub}${sub}`.replace(/ · $/, ''),
     name: getSaleCustomerName(sale, sales),
     date: lastCollectionAt ?? sale.createdAt,
     paymentCollections,

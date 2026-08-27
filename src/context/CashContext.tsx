@@ -15,6 +15,7 @@ import type {
   PayType,
   ReminderAlertSettings,
   Sale,
+  SaleReturnEntry,
   SaleStatus,
   StaffLeaveType,
   TransferDirection,
@@ -81,6 +82,7 @@ import {
   updatePendingBill,
   updateSaleBill,
   updateSaleCustomerName,
+  applySaleReturn,
   renameCustomer,
   renameSupplier,
 } from '../storage/database'
@@ -132,6 +134,7 @@ interface CashContextValue {
     pendingPayType?: PayType
     customerName?: string
     status?: SaleStatus
+    returns?: SaleReturnEntry[]
   }) => void
   updatePendingSale: (
     id: string,
@@ -145,6 +148,7 @@ interface CashContextValue {
       chequeAmount?: number
       creditAmount?: number
       pendingPayType?: PayType
+      returns?: SaleReturnEntry[]
     },
   ) => void
   collectPendingSale: (
@@ -162,6 +166,10 @@ interface CashContextValue {
       chequeApproved?: boolean
       customerName?: string
     },
+  ) => void
+  applySaleReturn: (
+    saleId: string,
+    input: { itemName: string; quantity: number; rate: number },
   ) => void
   recordExpense: (expense: {
     amount: number
@@ -590,6 +598,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       pendingPayType?: PayType
       customerName?: string
       status?: SaleStatus
+      returns?: SaleReturnEntry[]
     }) => {
       setData((prev) => addSale(prev, sale))
     },
@@ -609,6 +618,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         chequeAmount?: number
         creditAmount?: number
         pendingPayType?: PayType
+        returns?: SaleReturnEntry[]
       },
     ) => {
       setData((prev) => updatePendingBill(prev, id, sale))
@@ -1280,6 +1290,13 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const applySaleReturnHandler = useCallback(
+    (saleId: string, input: { itemName: string; quantity: number; rate: number }) => {
+      setData((prev) => applySaleReturn(prev, saleId, input))
+    },
+    [],
+  )
+
   const editPaidSalePaymentHandler = useCallback(
     (id: string, payment: PaidSalePaymentEdit, relatedSaleIds?: string[]) => {
       setData((prev) => editPaidSalePayment(prev, id, payment, relatedSaleIds))
@@ -1412,6 +1429,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       renameSupplierProfile: renameSupplierProfileHandler,
       updateExpense: updateExpenseHandler,
       updateSaleBill: updateSaleBillHandler,
+      applySaleReturn: applySaleReturnHandler,
       editPaidSalePayment: editPaidSalePaymentHandler,
       replaceAllData,
       hydrateData,
@@ -1475,6 +1493,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       renameSupplierProfileHandler,
       updateExpenseHandler,
       updateSaleBillHandler,
+      applySaleReturnHandler,
       editPaidSalePaymentHandler,
       replaceAllData,
       hydrateData,

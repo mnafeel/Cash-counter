@@ -1,4 +1,4 @@
-import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
+import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, SaleReturnEntry, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
 import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
 import { buildCustomerSummaries } from '../utils/customerLedger'
 import { collectSplitNameTargets, getSaleCustomerName } from '../utils/saleCustomerName'
@@ -41,6 +41,12 @@ import { getStaffMonthSummary, isStaffLinkableExpense, salaryMonthFromDate, type
 import { validateStaffLeaveInput, resolveStaffSalaryDays, normalizeStaffLeaveTypeValue, isSundayDate, isRedundantStaffLeaveRecord } from '../utils/staffAttendance'
 import { isoToDateInputValue } from '../utils/format'
 import { sealTodayDrawerOpenings } from '../utils/dayDrawerOpenings'
+import {
+  buildSaleReturnEntry,
+  saleBillGroupPaidTotal,
+  saleGrossBillAmount,
+  saleReturnTotal,
+} from '../utils/saleReturns'
 
 const defaultData: AppData = {
   openingBalance: 0,
@@ -2013,6 +2019,7 @@ export function updatePendingBill(
     creditAmount?: number
     pendingPayType?: PayType
     paidAmount?: number
+    returns?: SaleReturnEntry[]
   },
 ): AppData {
   const next = {
@@ -2037,6 +2044,7 @@ export function updatePendingBill(
         customerName: updates.customerName ?? s.customerName,
         payType: updates.payType ?? s.payType,
         pendingPayType: updates.pendingPayType ?? s.pendingPayType,
+        returns: updates.returns !== undefined ? updates.returns : s.returns,
         cashAmount:
           updates.cashAmount !== undefined
             ? updates.cashAmount
@@ -3983,6 +3991,60 @@ export function updateSaleBill(
         patched = { ...patched, updatedAt: saleCollectionTimestamp(patched) }
       }
       return patched
+    }),
+  }
+  saveData(next)
+  return next
+}
+
+/**
+ * Record a sales/credit item return and reduce the remaining balance due.
+ * Keeps originalBillAmount as the pre-return gross so receipts can show the breakdown.
+ */
+export function applySaleReturn(
+  data: AppData,
+  saleId: string,
+  input: { itemName: string; quantity: number; rate: number },
+): AppData {
+  const sale = data.sales.find((s) => s.id === saleId)
+  if (!sale) return data
+
+  const entry = buildSaleReturnEntry(input)
+  if (!entry) return data
+
+  const collected = saleBillGroupPaidTotal(sale, data.sales)
+  const gross = saleGrossBillAmount(sale)
+  const prevReturns = saleReturnTotal(sale)
+  const maxReturnable = Math.max(0, gross - collected - prevReturns)
+  if (maxReturnable <= 0) return data
+
+  const appliedAmount = Math.min(entry.amount, maxReturnable)
+  const applied = { ...entry, amount: appliedAmount }
+
+  const returns = [...(sale.returns ?? []), applied]
+  const returnTotal = prevReturns + appliedAmount
+  const newDue = Math.max(0, Math.round((gross - collected - returnTotal) * 100) / 100)
+  const now = new Date().toISOString()
+
+  const next = {
+    ...data,
+    sales: data.sales.map((s) => {
+      if (s.id !== saleId) return s
+      if (s.status === 'pending') {
+        return {
+          ...s,
+          returns,
+          originalBillAmount: gross,
+          billAmount: newDue,
+          updatedAt: now,
+        }
+      }
+      return {
+        ...s,
+        returns,
+        originalBillAmount: gross,
+        updatedAt: now,
+      }
     }),
   }
   saveData(next)

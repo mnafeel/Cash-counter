@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AppData, ReminderAlertSettings } from '../types'
+import type { AppData, ReminderAlertSettings, Sale } from '../types'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { formatMoney, formatDate } from '../utils/format'
 import {
@@ -14,10 +14,20 @@ import { getCustomerReminderAt } from '../utils/customerReminders'
 import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/billReminders'
 import CustomerReminderControl from './CustomerReminderControl'
 import BillReminderControl from './BillReminderControl'
+import SaleReturnModal from './SaleReturnModal'
 import DetailDateFilter, { type DetailDateFilterMode } from './DetailDateFilter'
 import { filterByDetailDate } from '../utils/detailDateFilter'
 import { toInputDate } from '../utils/salesReport'
 import { printCreditDuesReport } from '../utils/duesReport'
+import {
+  formatSaleReturnLine,
+  saleBalanceAfterReturns,
+  saleBillGroupPaidTotal,
+  saleBillPaymentLines,
+  saleCreditBalanceDue,
+  saleGrossBillAmount,
+  saleReturnTotal,
+} from '../utils/saleReturns'
 import './CustomerDashboard.css'
 import Portal from './Portal'
 import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
@@ -38,6 +48,10 @@ interface CreditDashboardProps {
   ) => void
   onSetBillReminder: (saleId: string, reminderAt: string | null, reminderNote?: string | null) => void
   onSaveAlertSettings?: (settings: ReminderAlertSettings) => void
+  onApplySaleReturn: (
+    saleId: string,
+    input: { itemName: string; quantity: number; rate: number },
+  ) => void
 }
 
 export default function CreditDashboard({
@@ -49,6 +63,7 @@ export default function CreditDashboard({
   onSetCustomerReminder,
   onSetBillReminder,
   onSaveAlertSettings,
+  onApplySaleReturn,
 }: CreditDashboardProps) {
   const { value: query, setValue: setQuery, deferredValue: deferredQuery } = useDeferredSearch()
   const [listFilter, setListFilter] = useState<CreditListFilter>(initialFilter)
@@ -217,6 +232,7 @@ export default function CreditDashboard({
                 onSetCustomerReminder={onSetCustomerReminder}
                 onSetBillReminder={onSetBillReminder}
                 onSaveAlertSettings={onSaveAlertSettings}
+                onApplySaleReturn={onApplySaleReturn}
               />
             </div>
           </>
@@ -290,14 +306,17 @@ function CreditCustomerDetail({
   onSetCustomerReminder,
   onSetBillReminder,
   onSaveAlertSettings,
+  onApplySaleReturn,
 }: {
   summary: CustomerSummary
   data: AppData
   onSetCustomerReminder: CreditDashboardProps['onSetCustomerReminder']
   onSetBillReminder: CreditDashboardProps['onSetBillReminder']
   onSaveAlertSettings?: CreditDashboardProps['onSaveAlertSettings']
+  onApplySaleReturn: CreditDashboardProps['onApplySaleReturn']
 }) {
   const creditReminderAt = getCustomerReminderAt(data, summary.name, 'credit')
+  const [returnSale, setReturnSale] = useState<Sale | null>(null)
 
   return (
     <>
@@ -366,12 +385,42 @@ function CreditCustomerDetail({
             </h3>
             {summary.creditBills.map((purchase) => {
               const sale = data.sales.find((entry) => entry.id === purchase.id)
+              const returnTotal = sale ? saleReturnTotal(sale) : 0
+              const paidSoFar = sale ? saleBillGroupPaidTotal(sale, data.sales) : 0
+              const gross = sale ? saleGrossBillAmount(sale) : purchase.billAmount
+              const toPay = sale
+                ? saleCreditBalanceDue(sale, data.sales)
+                : purchase.creditPending
+              const showBreakdown =
+                returnTotal > 0 || paidSoFar > 0 || gross !== toPay
               return (
-              <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit customer-purchase-item--stack">
+              <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit customer-purchase-item--stack customer-purchase-item--returnable">
+                <button
+                  type="button"
+                  className="customer-purchase-return-btn"
+                  onClick={() => sale && setReturnSale(sale)}
+                  disabled={!sale || saleBalanceAfterReturns(sale, data.sales) <= 0}
+                >
+                  Return
+                </button>
                 <div className="customer-purchase-head">
                   <strong>Bill {purchase.billDateLabel}</strong>
-                  <span>{formatMoney(purchase.creditPending)}</span>
+                  <span>{formatMoney(toPay)}</span>
                 </div>
+                {showBreakdown ? (
+                  <div className="customer-purchase-meta customer-purchase-meta--return">
+                    Original {formatMoney(gross)}
+                    {paidSoFar > 0 ? ` · Paid ${formatMoney(paidSoFar)}` : ''}
+                    {returnTotal > 0 ? ` · Return −${formatMoney(returnTotal)}` : ''}
+                    {' · Credit '}
+                    {formatMoney(toPay)}
+                  </div>
+                ) : null}
+                {sale?.returns?.map((row) => (
+                  <div key={row.id} className="customer-purchase-meta customer-purchase-meta--muted">
+                    ↩ {formatSaleReturnLine(row)} · {formatMoney(row.amount)}
+                  </div>
+                ))}
                 <div className="customer-purchase-meta">{purchase.payDetail}</div>
                 {purchase.paymentHistory ? (
                   <div className="customer-purchase-meta customer-purchase-meta--muted">
@@ -421,6 +470,23 @@ function CreditCustomerDetail({
           ))
         )}
       </div>
+
+      {returnSale ? (
+        <SaleReturnModal
+          open
+          onClose={() => setReturnSale(null)}
+          customerName={summary.name}
+          originalBill={saleGrossBillAmount(returnSale)}
+          paidSoFar={saleBillGroupPaidTotal(returnSale, data.sales)}
+          paymentLines={saleBillPaymentLines(returnSale, data.sales)}
+          existingReturns={returnSale.returns ?? []}
+          maxReturnable={saleCreditBalanceDue(returnSale, data.sales)}
+          onDone={(draft) => {
+            onApplySaleReturn(returnSale.id, draft)
+            setReturnSale(null)
+          }}
+        />
+      ) : null}
     </>
   )
 }

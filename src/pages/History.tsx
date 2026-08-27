@@ -971,6 +971,14 @@ function History({ active }: { active: boolean }) {
                       {formatMoney(receiptItem.originalBillAmount ?? receiptItem.amount)}
                     </strong>
                   </div>
+                  {receiptItem.receiptLines?.some((line) =>
+                    line.label.toLowerCase().includes('return'),
+                  ) ? (
+                    <p className="history-receipt-return-note">
+                      Bill amount reduced by returns — see lines below for original, return, and
+                      balance.
+                    </p>
+                  ) : null}
                   {receiptPaymentParts.length > 0 ? (
                     <div className="history-receipt-split">
                       <div className="history-receipt-split-grid">
