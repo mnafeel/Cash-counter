@@ -143,6 +143,19 @@ export function useDeviceSize() {
       if (!(target instanceof HTMLElement)) return
       const tag = target.tagName
       if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') return
+      // Native date/time pickers break if we scroll/resize while open.
+      if (target instanceof HTMLInputElement) {
+        const type = target.type
+        if (
+          type === 'date' ||
+          type === 'time' ||
+          type === 'datetime-local' ||
+          type === 'month' ||
+          type === 'week'
+        ) {
+          return
+        }
+      }
       clearTimeout(focusScrollTimer)
       focusScrollTimer = setTimeout(() => {
         applyDeviceSize()

@@ -66,6 +66,7 @@ import {
 } from '../utils/expenseTimeline'
 import { buildDailyTotalsForPreset } from '../utils/dailyTotals'
 import ReportsPanel, { type ReportSection } from '../components/ReportsPanel'
+import AnalyzePanel from '../components/AnalyzePanel'
 import CustomerDashboard, { type CustomerListFilter } from '../components/CustomerDashboard'
 import CreditDashboard, { type CreditListFilter } from '../components/CreditDashboard'
 import ChequeDashboard, { type ChequeListFilter } from '../components/ChequeDashboard'
@@ -165,6 +166,7 @@ function Home({ active }: { active: boolean }) {
   const [bankDateFilter, setBankDateFilter] = useState<BankDateFilter>('today')
   const [bankSelectedDate, setBankSelectedDate] = useState('')
   const [showReports, setShowReports] = useState(false)
+  const [showAnalyze, setShowAnalyze] = useState(false)
   const [showCustomers, setShowCustomers] = useState(false)
   const [showCredits, setShowCredits] = useState(false)
   const [showCheques, setShowCheques] = useState(false)
@@ -184,6 +186,7 @@ function Home({ active }: { active: boolean }) {
 
   useOpenTiming('Home', active, false)
   useOpenTiming('Reports', showReports)
+  useOpenTiming('Analyze', showAnalyze)
   useOpenTiming('Customers', showCustomers)
   useOpenTiming('Credit Dashboard', showCredits)
   useOpenTiming('Cheque Dashboard', showCheques)
@@ -204,6 +207,7 @@ function Home({ active }: { active: boolean }) {
     setBankSelectedDate('')
     setShowBankHistory(false)
     setShowReports(false)
+    setShowAnalyze(false)
     setShowCustomers(false)
     setShowCredits(false)
     setShowCheques(false)
@@ -1020,6 +1024,16 @@ function Home({ active }: { active: boolean }) {
           >
             📤 Expense Report
           </button>
+          <button
+            type="button"
+            className="home-tool-btn"
+            onClick={() => {
+              closePanel()
+              setShowAnalyze(true)
+            }}
+          >
+            📊 Analyze
+          </button>
           <Link to="/settings" className="home-tool-btn home-tool-btn--link">
             ⚙️ Settings
           </Link>
@@ -1395,6 +1409,10 @@ function Home({ active }: { active: boolean }) {
           focusSection={Boolean(reportSection)}
           onOpenCustomer={openCustomerFromReports}
         />
+      ) : null}
+
+      {showAnalyze ? (
+        <AnalyzePanel open onClose={() => setShowAnalyze(false)} data={data} />
       ) : null}
 
       {showCustomers ? (
