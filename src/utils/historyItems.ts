@@ -2207,20 +2207,20 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
     saleItems.push(buildSaleHistoryItem(sale, sales))
   }
 
-  const expenseItems = data.expenses
+  const expenseItems: HistoryItem[] = data.expenses
     .filter((e) => !isPurchaseExpense(e))
-    .flatMap((e) => {
+    .flatMap((e): HistoryItem[] => {
     if (e.kind === 'transfer') {
       const toBank = e.transferDirection === 'cash-to-bank'
       return [{
-        type: 'transfer' as const,
+        type: 'transfer',
         id: e.id,
         amount: e.amount,
         sub: toBank ? '💵 → 🏦 Cash to bank' : '🏦 → 💵 Bank to cash',
         name: e.name,
         date: e.updatedAt ?? e.createdAt,
-        paymentMode: (toBank ? 'cash' : 'bank') as HistoryPaymentMode,
-        paymentModes: [toBank ? 'cash' : 'bank'] as HistoryPaymentMode[],
+        paymentMode: toBank ? 'cash' : 'bank',
+        paymentModes: [toBank ? 'cash' : 'bank'],
       }]
     }
     const isAdd = e.kind === 'add'
@@ -2263,7 +2263,7 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
           : '💵 Added to counter'
     const expenseAmount = paidParts ? paidParts.cash + paidParts.bank : e.amount
     return [{
-      type: isAdd ? ('deposit' as const) : ('expense' as const),
+      type: isAdd ? 'deposit' : 'expense',
       id: e.id,
       amount: expenseAmount,
       sub: isAdd ? addSub : expenseSub,
