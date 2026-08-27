@@ -72,39 +72,51 @@ function expenseToPickerOption(data: AppData, expense: Expense): ExpenseNamePick
   }
 }
 
+/** Cash/bank that actually left for a normal expense — credit never counts. */
+export function normalExpensePaidChannels(expense: Expense): { cash: number; bank: number } {
+  if (expense.payType === 'bank') return { cash: 0, bank: expense.amount }
+  if (expense.payType === 'split') {
+    return { cash: expense.cashAmount ?? 0, bank: expense.bankAmount ?? 0 }
+  }
+  if (expense.payType === 'credit') return { cash: 0, bank: 0 }
+  if (expense.payType === 'cheque') {
+    if (!expense.chequeApproved) return { cash: 0, bank: 0 }
+    return { cash: 0, bank: expense.chequeAmount ?? expense.amount }
+  }
+  return { cash: expense.amount, bank: 0 }
+}
+
 function normalPayLabel(expense: Expense): string {
   if (expense.payType === 'split') return 'Split'
   if (expense.payType === 'bank') return 'Bank'
+  if (expense.payType === 'credit') return 'Credit'
+  if (expense.payType === 'cheque') return expense.chequeApproved ? 'Cheque' : 'Cheque pending'
   return 'Cash'
 }
 
 function normalPayDetail(expense: Expense): string {
+  const parts = normalExpensePaidChannels(expense)
   if (expense.payType === 'split') {
-    return `💵 ${formatMoney(expense.cashAmount ?? 0)} + 🏦 ${formatMoney(expense.bankAmount ?? 0)}`
+    return `💵 ${formatMoney(parts.cash)} + 🏦 ${formatMoney(parts.bank)}`
   }
-  if (expense.payType === 'bank') return `🏦 Bank ${formatMoney(expense.amount)}`
-  return `💵 Cash ${formatMoney(expense.amount)}`
+  if (expense.payType === 'bank') return `🏦 Bank ${formatMoney(parts.bank)}`
+  if (expense.payType === 'credit') return '💳 Credit (not a cash/bank expense)'
+  if (expense.payType === 'cheque') {
+    return expense.chequeApproved
+      ? `🧾 Cheque ${formatMoney(parts.bank)}`
+      : '🧾 Cheque pending'
+  }
+  return `💵 Cash ${formatMoney(parts.cash)}`
 }
 
 export function buildNormalExpenseHistoryItems(data: AppData): NormalExpenseHistoryItem[] {
   return data.expenses
     .filter((expense) => (!expense.kind || expense.kind === 'expense') && !isPurchaseExpense(expense))
     .map((expense) => {
-      const cashAmount =
-        expense.payType === 'split'
-          ? expense.cashAmount ?? 0
-          : expense.payType === 'bank'
-            ? 0
-            : expense.amount
-      const bankAmount =
-        expense.payType === 'split'
-          ? expense.bankAmount ?? 0
-          : expense.payType === 'bank'
-            ? expense.amount
-            : 0
+      const { cash: cashAmount, bank: bankAmount } = normalExpensePaidChannels(expense)
       return {
         id: expense.id,
-        amount: expense.amount,
+        amount: cashAmount + bankAmount,
         name: expense.name,
         payLabel: normalPayLabel(expense),
         payDetail: normalPayDetail(expense),
@@ -113,6 +125,8 @@ export function buildNormalExpenseHistoryItems(data: AppData): NormalExpenseHist
         bankAmount,
       }
     })
+    // Credit / pending cheque: no cash or bank left — keep out of expense lists & totals
+    .filter((item) => item.amount > 0)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
 
@@ -347,6 +361,31 @@ export function analyzeExpenseNameGroup(
     shareOfPeriod: periodTotal > 0 ? (group.total / periodTotal) * 100 : 0,
     topByAmount: topByAmount.slice(0, 5),
   }
+}
+
+export function filterNormalExpensesByPayChannel(
+  items: NormalExpenseHistoryItem[],
+  channel: 'all' | 'cash' | 'bank',
+): NormalExpenseHistoryItem[] {
+  if (channel === 'all') return items
+  return items
+    .filter((item) => (channel === 'cash' ? item.cashAmount > 0 : item.bankAmount > 0))
+    .map((item) => {
+      if (channel === 'cash') {
+        return {
+          ...item,
+          amount: item.cashAmount,
+          bankAmount: 0,
+          payLabel: item.payLabel === 'Split' ? 'Cash' : item.payLabel,
+        }
+      }
+      return {
+        ...item,
+        amount: item.bankAmount,
+        cashAmount: 0,
+        payLabel: item.payLabel === 'Split' ? 'Bank' : item.payLabel,
+      }
+    })
 }
 
 export function filterNormalExpenseHistoryItems(

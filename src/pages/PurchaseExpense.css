@@ -886,8 +886,10 @@
 
 .purchase-page .expense-name-input {
   padding: 8px 6px;
-  font-size: clamp(0.64rem, calc(var(--app-height, 800px) * 0.014), 0.76rem);
-  font-weight: 600;
+  font-size: clamp(0.68rem, calc(var(--app-height, 800px) * 0.015), 0.8rem);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
 }
 
 .purchase-page .purchase-field-clear {
@@ -1074,8 +1076,10 @@ html[data-screen='phone'] .purchase-action-btn {
   background: var(--brown-dark);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.88rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
   color: var(--cream);
   outline: none;
 }
@@ -1347,6 +1351,8 @@ html[data-screen='tablet'] .expenses-actions .btn {
 .purchase-field-panel .expense-name-input--date {
   color-scheme: dark;
   min-width: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .purchase-page .expenses-top .amount-display--compact {

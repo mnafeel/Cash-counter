@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppData } from '../types'
 import { usePageEscape } from '../hooks/usePageEscape'
-import { formatDate, formatMoney } from '../utils/format'
-import { formatCollectedSalesBreakdown, toInputDate, isOldCreditChequeClearedRow, type ReportSort, type SaleDateMode, type SalesBillRow } from '../utils/salesReport'
+import { formatDate, formatMoney, formatTime } from '../utils/format'
+import {
+  formatCollectedSalesBreakdown,
+  toInputDate,
+  isOldCreditChequeClearedRow,
+  type ReportSort,
+  type SaleDateMode,
+  type SalesBillRow,
+} from '../utils/salesReport'
 import {
   buildChequeReportItems,
   buildCreditReportItems,
@@ -17,7 +24,6 @@ import {
   salesFilterForPreset,
   summarizeChequeItems,
   summarizeCreditItems,
-  summarizeNormalExpenses,
   summarizePurchases,
   type ReportDatePreset,
 } from '../utils/reportsHub'
@@ -25,8 +31,20 @@ import {
   analyzeExpenseNameGroup,
   buildNormalExpenseHistoryItems,
   filterNormalExpenseHistoryItems,
+  filterNormalExpensesByPayChannel,
   groupNormalExpensesByName,
+  type NormalExpenseHistoryItem,
 } from '../utils/normalExpenseHistory'
+import {
+  buildExpenseTimelineEntriesFromData,
+  buildTransferExpenseTimelineEntries,
+  expenseTimelineKindLabel,
+  filterExpenseTimelineByPayChannel,
+  summarizeExpenseTimeline,
+  type ExpensePayChannelFilter,
+  type ExpenseTimelineEntry,
+  type ExpenseTimelineSort,
+} from '../utils/expenseTimeline'
 import {
   buildPurchaseHistoryItems,
   filterPurchaseHistoryItems,
@@ -37,7 +55,6 @@ import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
 import Portal from './Portal'
 import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
 import type { CreditReportItem, ChequeReportItem } from '../utils/reportsHub'
-import type { NormalExpenseHistoryItem } from '../utils/normalExpenseHistory'
 import { buildCreditOverview } from '../utils/customerLedger'
 import { buildChequeOverview } from '../utils/chequeLedger'
 import { printChequeDuesReport, printCreditDuesReport } from '../utils/duesReport'
@@ -61,7 +78,15 @@ import {
 import type { BillReminderItem } from '../utils/billReminders'
 import '../pages/Reports.css'
 
-export type ReportSection = 'all' | 'sales' | 'purchase' | 'expense' | 'credit' | 'cheque' | 'loan'
+export type ReportSection =
+  | 'all'
+  | 'sales'
+  | 'purchase'
+  | 'expense'
+  | 'expense-report'
+  | 'credit'
+  | 'cheque'
+  | 'loan'
 
 const DATE_PRESETS: { id: ReportDatePreset; label: string }[] = [
   { id: 'today', label: 'Today' },
@@ -71,12 +96,13 @@ const DATE_PRESETS: { id: ReportDatePreset; label: string }[] = [
   { id: 'all', label: 'All' },
 ]
 
+/** Main report tabs next to Sales — chronological Expense only (not Expense Report). */
 const SECTION_TABS: { id: ReportSection; label: string }[] = [
   { id: 'all', label: '📊 All' },
   { id: 'sales', label: '💰 Sales' },
   { id: 'credit', label: '💳 Credit' },
   { id: 'purchase', label: '🛒 Purchase' },
-  { id: 'expense', label: '📤 Expense Report' },
+  { id: 'expense', label: '📤 Expense' },
   { id: 'cheque', label: '🧾 Cheque' },
   { id: 'loan', label: '🤝 Loan' },
 ]
@@ -194,6 +220,8 @@ export default function ReportsPanel({
   const [expandedSalesPanel, setExpandedSalesPanel] = useState<SalesExpandPanel | null>('collected')
   const [selectedPurchaseSupplierKey, setSelectedPurchaseSupplierKey] = useState<string | null>(null)
   const [selectedExpenseNameKey, setSelectedExpenseNameKey] = useState<string | null>(null)
+  const [expensePayChannel, setExpensePayChannel] = useState<ExpensePayChannelFilter>('all')
+  const [expenseTimelineSort, setExpenseTimelineSort] = useState<ExpenseTimelineSort>('time-desc')
   const [expenseNameSearch, setExpenseNameSearch] = useState('')
   const [expandedReportKey, setExpandedReportKey] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -314,10 +342,25 @@ export default function ReportsPanel({
     const items = buildNormalExpenseHistoryItems(data)
     return filterNormalExpenseHistoryItems(items, datePreset, selectedDate, rangeTo)
   }, [data, datePreset, selectedDate, rangeTo])
-  const expenseTotals = useMemo(() => summarizeNormalExpenses(expenseItems), [expenseItems])
+  const channelExpenseItems = useMemo(
+    () => filterNormalExpensesByPayChannel(expenseItems, expensePayChannel),
+    [expenseItems, expensePayChannel],
+  )
+  const expenseTotals = useMemo(
+    () =>
+      channelExpenseItems.reduce(
+        (acc, item) => {
+          acc.total += item.amount
+          acc.count += 1
+          return acc
+        },
+        { total: 0, count: 0 },
+      ),
+    [channelExpenseItems],
+  )
   const expenseNameGroups = useMemo(
-    () => groupNormalExpensesByName(expenseItems),
-    [expenseItems],
+    () => groupNormalExpensesByName(channelExpenseItems),
+    [channelExpenseItems],
   )
   const filteredExpenseNameGroups = useMemo(() => {
     const q = expenseNameSearch.trim().toLowerCase()
@@ -334,14 +377,96 @@ export default function ReportsPanel({
   }, [selectedExpenseNameGroup, expenseTotals.total])
   const loanOutflowItems = useMemo(() => {
     const items = buildLoanOutflowHistoryItems(data)
-    return filterLoanOutflowHistoryItems(items, datePreset, selectedDate, rangeTo)
-  }, [data, datePreset, selectedDate, rangeTo])
+    const dated = filterLoanOutflowHistoryItems(items, datePreset, selectedDate, rangeTo)
+    if (expensePayChannel === 'all') return dated
+    return dated.filter((item) =>
+      expensePayChannel === 'cash' ? item.paySource !== 'bank' : item.paySource === 'bank',
+    )
+  }, [data, datePreset, selectedDate, rangeTo, expensePayChannel])
   const loanOutflowTotals = useMemo(
     () => summarizeLoanOutflows(loanOutflowItems),
     [loanOutflowItems],
   )
+  const expenseTimeline = useMemo(() => {
+    const allLoans = filterLoanOutflowHistoryItems(
+      buildLoanOutflowHistoryItems(data),
+      datePreset,
+      selectedDate,
+      rangeTo,
+    )
+    return buildExpenseTimelineEntriesFromData(
+      data,
+      expenseItems,
+      purchaseItems,
+      expenseTimelineSort,
+      allLoans,
+      datePreset,
+      selectedDate,
+      rangeTo,
+    )
+  }, [data, expenseItems, purchaseItems, datePreset, selectedDate, rangeTo, expenseTimelineSort])
+  const expenseTimelineSummary = useMemo(
+    () => summarizeExpenseTimeline(expenseTimeline),
+    [expenseTimeline],
+  )
   const combinedExpenseTotal =
-    expenseTotals.total + purchaseTotals.total + loanOutflowTotals.total
+    expenseTimelineSummary.expenseTotal +
+    expenseTimelineSummary.purchaseTotal +
+    expenseTimelineSummary.loanTotal
+  const analyzedExpenseTotal = expenseTotals.total + loanOutflowTotals.total
+
+  const filteredExpenseTimeline = useMemo(() => {
+    const q = expenseNameSearch.trim().toLowerCase()
+    const searched = !q
+      ? expenseTimeline
+      : expenseTimeline.filter((entry) => {
+          if (entry.title.toLowerCase().includes(q)) return true
+          if (entry.detail.toLowerCase().includes(q)) return true
+          if (entry.payLabel.toLowerCase().includes(q)) return true
+          if (String(entry.amount).includes(q)) return true
+          return false
+        })
+    const channelFiltered = filterExpenseTimelineByPayChannel(searched, expensePayChannel)
+    if (expensePayChannel !== 'cash' && expensePayChannel !== 'bank') return channelFiltered
+
+    const transfers = buildTransferExpenseTimelineEntries(
+      data,
+      expensePayChannel,
+      datePreset,
+      selectedDate,
+      rangeTo,
+      expenseTimelineSort,
+    )
+    const transferSearched = !q
+      ? transfers
+      : transfers.filter((entry) => {
+          if (entry.title.toLowerCase().includes(q)) return true
+          if (entry.detail.toLowerCase().includes(q)) return true
+          if (entry.payLabel.toLowerCase().includes(q)) return true
+          if (String(entry.amount).includes(q)) return true
+          return false
+        })
+    const merged = [...channelFiltered, ...transferSearched]
+    merged.sort((a, b) =>
+      expenseTimelineSort === 'time-desc'
+        ? b.sortTime - a.sortTime || b.amount - a.amount
+        : a.sortTime - b.sortTime || a.amount - b.amount,
+    )
+    return merged
+  }, [
+    expenseTimeline,
+    expenseNameSearch,
+    expensePayChannel,
+    data,
+    datePreset,
+    selectedDate,
+    rangeTo,
+    expenseTimelineSort,
+  ])
+  const filteredExpenseTimelineSummary = useMemo(
+    () => summarizeExpenseTimeline(filteredExpenseTimeline),
+    [filteredExpenseTimeline],
+  )
 
   const creditItems = useMemo(() => {
     const items = buildCreditReportItems(data)
@@ -368,8 +493,11 @@ export default function ReportsPanel({
   const chequeTotals = useMemo(() => summarizeChequeItems(chequeItems), [chequeItems])
 
   const creditChequeOpenTotal = creditTotals.pendingTotal + chequeTotals.pendingTotal
-  const showSection = (section: Exclude<ReportSection, 'all'>) =>
-    activeSection === section || activeSection === 'all'
+  const showSection = (section: Exclude<ReportSection, 'all'>) => {
+    if (section === 'expense-report') return activeSection === 'expense-report'
+    if (section === 'expense') return activeSection === 'expense' || activeSection === 'all'
+    return activeSection === section || activeSection === 'all'
+  }
 
   const loanItems = useMemo(() => {
     const items = filterLoanReportItems(
@@ -433,6 +561,8 @@ export default function ReportsPanel({
     setSelectedPurchaseSupplierKey(null)
     setSelectedExpenseNameKey(null)
     setExpenseNameSearch('')
+    setExpensePayChannel('all')
+    setExpenseTimelineSort('time-desc')
     setExpandedReportKey(null)
     bodyRef.current?.scrollTo({ top: 0 })
   }
@@ -488,10 +618,12 @@ export default function ReportsPanel({
                 {selectedExpenseNameGroup
                   ? selectedExpenseNameGroup.name
                   : selectedPurchaseSupplier
-                  ? selectedPurchaseSupplier.shopName
-                  : focusSection
-                    ? SECTION_TABS.find((tab) => tab.id === visibleSection)?.label ?? 'Report'
-                    : 'Reports'}
+                    ? selectedPurchaseSupplier.shopName
+                    : focusSection
+                      ? activeSection === 'expense-report'
+                        ? '📤 Expense Report'
+                        : SECTION_TABS.find((tab) => tab.id === visibleSection)?.label ?? 'Report'
+                      : 'Reports'}
               </h1>
               <p className="reports-sub">{periodLabel}</p>
             </div>
@@ -632,9 +764,9 @@ export default function ReportsPanel({
                   <span>Total expense</span>
                   <strong>{formatMoney(combinedExpenseTotal)}</strong>
                   <small>
-                    Normal {formatMoney(expenseTotals.total)} · Purchase{' '}
-                    {formatMoney(purchaseTotals.total)} · Loan{' '}
-                    {formatMoney(loanOutflowTotals.total)}
+                    Normal {formatMoney(expenseTimelineSummary.expenseTotal)} · Purchase{' '}
+                    {formatMoney(expenseTimelineSummary.purchaseTotal)} · Loan{' '}
+                    {formatMoney(expenseTimelineSummary.loanTotal)}
                   </small>
                 </div>
                 <div className="reports-summary-card reports-summary-card--green">
@@ -719,11 +851,27 @@ export default function ReportsPanel({
                 {activeSection === 'expense' && (
                   <div className="reports-summary-card reports-summary-card--orange">
                     <span>Expense</span>
-                    <strong>{formatMoney(combinedExpenseTotal)}</strong>
+                    <strong>
+                      {formatMoney(
+                        filteredExpenseTimelineSummary.expenseTotal +
+                          filteredExpenseTimelineSummary.purchaseTotal +
+                          filteredExpenseTimelineSummary.loanTotal,
+                      )}
+                    </strong>
                     <small>
-                      Normal {formatMoney(expenseTotals.total)} · Purchase{' '}
-                      {formatMoney(purchaseTotals.total)} · Loan{' '}
+                      {filteredExpenseTimeline.length} items · chronological
+                      {expensePayChannel !== 'all' ? ` · ${expensePayChannel}` : ''}
+                    </small>
+                  </div>
+                )}
+                {activeSection === 'expense-report' && (
+                  <div className="reports-summary-card reports-summary-card--orange">
+                    <span>Expense Report</span>
+                    <strong>{formatMoney(analyzedExpenseTotal)}</strong>
+                    <small>
+                      Names {formatMoney(expenseTotals.total)} · Loan{' '}
                       {formatMoney(loanOutflowTotals.total)}
+                      {expensePayChannel !== 'all' ? ` · ${expensePayChannel}` : ''}
                     </small>
                   </div>
                 )}
@@ -900,147 +1048,263 @@ export default function ReportsPanel({
             <>
               {activeSection === 'all' ? (
                 <div className="reports-section-head">
-                  <h2>📤 Expense Report</h2>
+                  <h2>📤 Expense</h2>
                   <strong>{formatMoney(combinedExpenseTotal)}</strong>
                 </div>
               ) : null}
-            <section className="reports-section">
-              {activeSection === 'all' || !selectedExpenseNameGroup ? (
-                <>
-                  <p className="reports-list-meta">
-                    {expenseNameGroups.length} name{expenseNameGroups.length === 1 ? '' : 's'} ·{' '}
-                    {expenseItems.length} expense{expenseItems.length === 1 ? '' : 's'} · Normal{' '}
-                    {formatMoney(expenseTotals.total)}
-                    {loanOutflowTotals.total > 0
-                      ? ` · Loan ${formatMoney(loanOutflowTotals.total)}`
-                      : ''}
-                    {purchaseTotals.total > 0 && activeSection === 'all'
-                      ? ` · Purchase ${formatMoney(purchaseTotals.total)}`
-                      : ''}
-                  </p>
-                  {activeSection === 'expense' && expenseNameGroups.length > 4 ? (
-                    <input
-                      type="search"
-                      className="reports-inline-search"
-                      value={expenseNameSearch}
-                      onChange={(e) => setExpenseNameSearch(e.target.value)}
-                      placeholder="Search expense name…"
-                      autoComplete="off"
-                      aria-label="Search expense names"
-                    />
-                  ) : null}
-                  {filteredExpenseNameGroups.length === 0 && loanOutflowItems.length === 0 ? (
-                    <p className="reports-empty">No expenses for this period.</p>
-                  ) : (
-                    <ul className="reports-list">
-                      {filteredExpenseNameGroups.map((group) => (
-                        <li key={group.nameKey} className="reports-item reports-item--tap">
+              <section className="reports-section">
+                {(activeSection === 'expense' || activeSection === 'all') && (
+                  <>
+                    {activeSection === 'expense' ? (
+                      <>
+                        <div className="reports-pay-channel-bar" role="group" aria-label="Expense payment channel">
+                          {(
+                            [
+                              { id: 'all' as const, label: 'All' },
+                              { id: 'cash' as const, label: '💵 Cash' },
+                              { id: 'bank' as const, label: '🏦 Bank' },
+                            ] as const
+                          ).map((opt) => (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              className={`reports-date-chip ${expensePayChannel === opt.id ? 'reports-date-chip--active' : ''}`}
+                              onClick={() => setExpensePayChannel(opt.id)}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="reports-pay-channel-bar" role="group" aria-label="Expense sort">
                           <button
                             type="button"
-                            className="reports-supplier-btn"
-                            onClick={() => {
-                              if (activeSection === 'all') {
-                                setActiveSection('expense')
-                              }
-                              setSelectedExpenseNameKey(group.nameKey)
-                              setExpandedReportKey(null)
-                              bodyRef.current?.scrollTo({ top: 0 })
-                            }}
+                            className={`reports-date-chip ${expenseTimelineSort === 'time-desc' ? 'reports-date-chip--active' : ''}`}
+                            onClick={() => setExpenseTimelineSort('time-desc')}
                           >
-                            <div className="reports-item-head">
-                              <span className="reports-item-title">{group.name}</span>
-                              <span className="reports-item-amount">{formatMoney(group.total)}</span>
-                            </div>
-                            <div className="reports-item-meta">
-                              {group.count} expense{group.count === 1 ? '' : 's'} · 💵{' '}
-                              {formatMoney(group.cashTotal)} · 🏦 {formatMoney(group.bankTotal)}
-                              {expenseTotals.total > 0
-                                ? ` · ${((group.total / expenseTotals.total) * 100).toFixed(0)}%`
-                                : ''}
-                            </div>
+                            Latest first
                           </button>
-                        </li>
-                      ))}
-                      {loanOutflowItems.map((row, index) => (
-                        <LoanOutflowReportRow
+                          <button
+                            type="button"
+                            className={`reports-date-chip ${expenseTimelineSort === 'time-asc' ? 'reports-date-chip--active' : ''}`}
+                            onClick={() => setExpenseTimelineSort('time-asc')}
+                          >
+                            Oldest first
+                          </button>
+                        </div>
+                        {filteredExpenseTimeline.length > 4 ? (
+                          <input
+                            type="search"
+                            className="reports-inline-search"
+                            value={expenseNameSearch}
+                            onChange={(e) => setExpenseNameSearch(e.target.value)}
+                            placeholder="Search expense…"
+                            autoComplete="off"
+                            aria-label="Search expenses"
+                          />
+                        ) : null}
+                      </>
+                    ) : null}
+                    <p className="reports-list-meta">
+                      {filteredExpenseTimeline.length} transaction
+                      {filteredExpenseTimeline.length === 1 ? '' : 's'} · order by time · Normal{' '}
+                      {formatMoney(filteredExpenseTimelineSummary.expenseTotal)}
+                      {filteredExpenseTimelineSummary.purchaseTotal > 0
+                        ? ` · Purchase ${formatMoney(filteredExpenseTimelineSummary.purchaseTotal)}`
+                        : ''}
+                      {filteredExpenseTimelineSummary.loanTotal > 0
+                        ? ` · Loan ${formatMoney(filteredExpenseTimelineSummary.loanTotal)}`
+                        : ''}
+                    </p>
+                    {filteredExpenseTimeline.length === 0 ? (
+                      <p className="reports-empty">No expenses for this period.</p>
+                    ) : (
+                      <ul className="reports-list">
+                        {(activeSection === 'all'
+                          ? filteredExpenseTimeline.slice(0, 8)
+                          : filteredExpenseTimeline
+                        ).map((entry, index) => (
+                          <ExpenseTimelineReportRow
+                            key={`${entry.kind}:${entry.id}`}
+                            entry={entry}
+                            index={index + 1}
+                            expanded={expandedReportKey === `expense-tl:${entry.kind}:${entry.id}`}
+                            onToggle={() =>
+                              toggleReportExpand(`expense-tl:${entry.kind}:${entry.id}`)
+                            }
+                          />
+                        ))}
+                      </ul>
+                    )}
+                    {activeSection === 'all' && filteredExpenseTimeline.length > 8 ? (
+                      <button
+                        type="button"
+                        className="reports-supplier-btn reports-expense-open-btn"
+                        onClick={() => setActiveSection('expense')}
+                      >
+                        <div className="reports-item-meta">View all expenses in order →</div>
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              </section>
+            </>
+          )}
+
+          {showSection('expense-report') && (
+            <>
+              <section className="reports-section">
+                <div className="reports-pay-channel-bar" role="group" aria-label="Expense report channel">
+                  {(
+                    [
+                      { id: 'all' as const, label: 'All' },
+                      { id: 'cash' as const, label: '💵 Cash' },
+                      { id: 'bank' as const, label: '🏦 Bank' },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`reports-date-chip ${expensePayChannel === opt.id ? 'reports-date-chip--active' : ''}`}
+                      onClick={() => {
+                        setExpensePayChannel(opt.id)
+                        setSelectedExpenseNameKey(null)
+                        setExpandedReportKey(null)
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {!selectedExpenseNameGroup ? (
+                  <>
+                    <p className="reports-list-meta">
+                      {filteredExpenseNameGroups.length} name
+                      {filteredExpenseNameGroups.length === 1 ? '' : 's'} ·{' '}
+                      {expenseTotals.count} expense
+                      {expenseTotals.count === 1 ? '' : 's'} · {formatMoney(analyzedExpenseTotal)} · by
+                      name %
+                    </p>
+                    {expenseNameGroups.length > 4 ? (
+                      <input
+                        type="search"
+                        className="reports-inline-search"
+                        value={expenseNameSearch}
+                        onChange={(e) => setExpenseNameSearch(e.target.value)}
+                        placeholder="Search expense name…"
+                        autoComplete="off"
+                        aria-label="Search expense names"
+                      />
+                    ) : null}
+                    {filteredExpenseNameGroups.length === 0 && loanOutflowItems.length === 0 ? (
+                      <p className="reports-empty">No expenses for this period.</p>
+                    ) : (
+                      <ul className="reports-list">
+                        {filteredExpenseNameGroups.map((group) => (
+                          <li key={group.nameKey} className="reports-item reports-item--tap">
+                            <button
+                              type="button"
+                              className="reports-supplier-btn"
+                              onClick={() => {
+                                setSelectedExpenseNameKey(group.nameKey)
+                                setExpandedReportKey(null)
+                                bodyRef.current?.scrollTo({ top: 0 })
+                              }}
+                            >
+                              <div className="reports-item-head">
+                                <span className="reports-item-title">{group.name}</span>
+                                <span className="reports-item-amount">{formatMoney(group.total)}</span>
+                              </div>
+                              <div className="reports-item-meta">
+                                {group.count} expense{group.count === 1 ? '' : 's'} · 💵{' '}
+                                {formatMoney(group.cashTotal)} · 🏦 {formatMoney(group.bankTotal)}
+                                {expenseTotals.total > 0
+                                  ? ` · ${((group.total / expenseTotals.total) * 100).toFixed(0)}%`
+                                  : ''}
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                        {loanOutflowItems.map((row, index) => (
+                          <LoanOutflowReportRow
+                            key={row.id}
+                            row={row}
+                            index={index + 1}
+                            expanded={expandedReportKey === `loan-out:${row.id}`}
+                            onToggle={() => toggleReportExpand(`loan-out:${row.id}`)}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {selectedExpenseAnalysis ? (
+                      <div className="reports-expense-analysis" aria-label="Expense name analysis">
+                        <div className="reports-supplier-summary">
+                          <span>
+                            {selectedExpenseAnalysis.count} expense
+                            {selectedExpenseAnalysis.count === 1 ? '' : 's'} in {periodLabel}
+                          </span>
+                          <strong>{formatMoney(selectedExpenseAnalysis.total)}</strong>
+                        </div>
+                        <div className="reports-expense-analysis-grid">
+                          <div className="reports-expense-analysis-card">
+                            <span>Average</span>
+                            <strong>{formatMoney(selectedExpenseAnalysis.average)}</strong>
+                          </div>
+                          <div className="reports-expense-analysis-card">
+                            <span>Share of expenses</span>
+                            <strong>{selectedExpenseAnalysis.shareOfPeriod.toFixed(0)}%</strong>
+                          </div>
+                          <div className="reports-expense-analysis-card">
+                            <span>Cash</span>
+                            <strong>{formatMoney(selectedExpenseAnalysis.cashTotal)}</strong>
+                          </div>
+                          <div className="reports-expense-analysis-card">
+                            <span>Bank</span>
+                            <strong>{formatMoney(selectedExpenseAnalysis.bankTotal)}</strong>
+                          </div>
+                        </div>
+                        {selectedExpenseAnalysis.largest ? (
+                          <p className="reports-expense-analysis-note">
+                            Largest: {formatMoney(selectedExpenseAnalysis.largest.amount)} ·{' '}
+                            {formatDate(selectedExpenseAnalysis.largest.date)} ·{' '}
+                            {selectedExpenseAnalysis.largest.payLabel}
+                          </p>
+                        ) : null}
+                        {selectedExpenseAnalysis.topByAmount.length > 1 ? (
+                          <div className="reports-expense-top">
+                            <span className="reports-expense-top-title">Top amounts</span>
+                            <ul className="reports-expense-top-list">
+                              {selectedExpenseAnalysis.topByAmount.map((row, index) => (
+                                <li key={row.id}>
+                                  <span>
+                                    #{index + 1} · {formatDate(row.date)} · {row.payLabel}
+                                  </span>
+                                  <strong>{formatMoney(row.amount)}</strong>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <p className="reports-list-meta">All entries · newest first · tap for details</p>
+                    <ul className="reports-list">
+                      {selectedExpenseNameGroup.items.map((row, index) => (
+                        <ExpenseReportRow
                           key={row.id}
                           row={row}
                           index={index + 1}
-                          expanded={expandedReportKey === `loan-out:${row.id}`}
-                          onToggle={() => toggleReportExpand(`loan-out:${row.id}`)}
+                          expanded={expandedReportKey === `expense:${row.id}`}
+                          onToggle={() => toggleReportExpand(`expense:${row.id}`)}
                         />
                       ))}
                     </ul>
-                  )}
-                </>
-              ) : (
-                <>
-                  {selectedExpenseAnalysis ? (
-                    <div className="reports-expense-analysis" aria-label="Expense name analysis">
-                      <div className="reports-supplier-summary">
-                        <span>
-                          {selectedExpenseAnalysis.count} expense
-                          {selectedExpenseAnalysis.count === 1 ? '' : 's'} in {periodLabel}
-                        </span>
-                        <strong>{formatMoney(selectedExpenseAnalysis.total)}</strong>
-                      </div>
-                      <div className="reports-expense-analysis-grid">
-                        <div className="reports-expense-analysis-card">
-                          <span>Average</span>
-                          <strong>{formatMoney(selectedExpenseAnalysis.average)}</strong>
-                        </div>
-                        <div className="reports-expense-analysis-card">
-                          <span>Share of expenses</span>
-                          <strong>{selectedExpenseAnalysis.shareOfPeriod.toFixed(0)}%</strong>
-                        </div>
-                        <div className="reports-expense-analysis-card">
-                          <span>Cash</span>
-                          <strong>{formatMoney(selectedExpenseAnalysis.cashTotal)}</strong>
-                        </div>
-                        <div className="reports-expense-analysis-card">
-                          <span>Bank</span>
-                          <strong>{formatMoney(selectedExpenseAnalysis.bankTotal)}</strong>
-                        </div>
-                      </div>
-                      {selectedExpenseAnalysis.largest ? (
-                        <p className="reports-expense-analysis-note">
-                          Largest: {formatMoney(selectedExpenseAnalysis.largest.amount)} ·{' '}
-                          {formatDate(selectedExpenseAnalysis.largest.date)} ·{' '}
-                          {selectedExpenseAnalysis.largest.payLabel}
-                        </p>
-                      ) : null}
-                      {selectedExpenseAnalysis.topByAmount.length > 1 ? (
-                        <div className="reports-expense-top">
-                          <span className="reports-expense-top-title">Top amounts</span>
-                          <ul className="reports-expense-top-list">
-                            {selectedExpenseAnalysis.topByAmount.map((row, index) => (
-                              <li key={row.id}>
-                                <span>
-                                  #{index + 1} · {formatDate(row.date)} · {row.payLabel}
-                                </span>
-                                <strong>{formatMoney(row.amount)}</strong>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                  <p className="reports-list-meta">All entries · newest first · tap for details</p>
-                  <ul className="reports-list">
-                    {selectedExpenseNameGroup.items.map((row, index) => (
-                      <ExpenseReportRow
-                        key={row.id}
-                        row={row}
-                        index={index + 1}
-                        expanded={expandedReportKey === `expense:${row.id}`}
-                        onToggle={() => toggleReportExpand(`expense:${row.id}`)}
-                      />
-                    ))}
-                  </ul>
-                </>
-              )}
-            </section>
+                  </>
+                )}
+              </section>
             </>
           )}
 
@@ -1729,6 +1993,48 @@ function PurchaseReportRow({
   )
 }
 
+function ExpenseTimelineReportRow({
+  entry,
+  index,
+  expanded,
+  onToggle,
+}: {
+  entry: ExpenseTimelineEntry
+  index: number
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <li
+      className={`reports-item reports-item--tap ${expanded ? 'reports-item--expanded' : ''}`}
+      data-report-key={`expense-tl:${entry.kind}:${entry.id}`}
+    >
+      <button type="button" className="reports-item-btn" onClick={onToggle}>
+        <div className="reports-item-head">
+          <span className="reports-item-title">{entry.title}</span>
+          <span className="reports-item-amount">-{formatMoney(entry.amount)}</span>
+        </div>
+        <div className="reports-item-meta">
+          #{index} · {expenseTimelineKindLabel(entry.kind)} · {entry.payLabel} ·{' '}
+          {formatDate(entry.date)} {formatTime(entry.date)}
+        </div>
+      </button>
+      {expanded ? (
+        <ReportDetailGrid
+          rows={[
+            { label: 'Name', value: entry.title },
+            { label: 'Type', value: expenseTimelineKindLabel(entry.kind) },
+            { label: 'Date', value: `${formatDate(entry.date)} ${formatTime(entry.date)}` },
+            { label: 'Amount', value: formatMoney(entry.amount) },
+            { label: 'Payment', value: entry.payDetail },
+            ...(entry.detail ? [{ label: 'Details', value: entry.detail }] : []),
+          ]}
+        />
+      ) : null}
+    </li>
+  )
+}
+
 function ExpenseReportRow({
   row,
   index,
@@ -1753,15 +2059,17 @@ function ExpenseReportRow({
           <span className="reports-item-amount">{formatMoney(row.amount)}</span>
         </div>
         <div className="reports-item-meta">
-          #{index} · {row.name} · {row.payDetail}
+          #{index} · {formatTime(row.date)} · {row.payDetail}
         </div>
       </button>
       {expanded ? (
         <ReportDetailGrid
           rows={[
             { label: 'Name', value: row.name },
-            { label: 'Date', value: formatDate(row.date) },
+            { label: 'Date', value: `${formatDate(row.date)} ${formatTime(row.date)}` },
             { label: 'Amount', value: formatMoney(row.amount) },
+            { label: 'Cash', value: formatMoney(row.cashAmount) },
+            { label: 'Bank', value: formatMoney(row.bankAmount) },
             { label: 'Payment', value: row.payDetail },
           ]}
         />

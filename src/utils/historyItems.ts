@@ -2,6 +2,7 @@ import type { AppData, Expense, Loan, Sale } from '../types'
 import { expenseBillTag, isPurchaseExpense } from './expenseBillLabels'
 import { formatDate, formatMoney, formatTimestamp } from './format'
 import { decorateLoan, loanRemainingAmount, loanSettlementEvents } from './loanLedger'
+import { normalExpensePaidChannels } from './normalExpenseHistory'
 import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, type PurchaseHistoryItem } from './purchaseHistory'
 import { getSaleCustomerName } from './saleCustomerName'
 import { memoByDataRef } from './memoByDataRef'
@@ -2208,21 +2209,26 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
 
   const expenseItems = data.expenses
     .filter((e) => !isPurchaseExpense(e))
-    .map((e) => {
+    .flatMap((e) => {
     if (e.kind === 'transfer') {
       const toBank = e.transferDirection === 'cash-to-bank'
-      return {
+      return [{
         type: 'transfer' as const,
         id: e.id,
         amount: e.amount,
         sub: toBank ? '💵 → 🏦 Cash to bank' : '🏦 → 💵 Bank to cash',
         name: e.name,
         date: e.updatedAt ?? e.createdAt,
-        paymentMode: 'cash' as const,
-        paymentModes: ['cash', 'bank'] as HistoryPaymentMode[],
-      }
+        paymentMode: (toBank ? 'cash' : 'bank') as HistoryPaymentMode,
+        paymentModes: [toBank ? 'cash' : 'bank'] as HistoryPaymentMode[],
+      }]
     }
     const isAdd = e.kind === 'add'
+    if (!isAdd) {
+      const paid = normalExpensePaidChannels(e)
+      // Credit / pending cheque: not a cash or bank expense — omit from expense history
+      if (!(paid.cash > 0 || paid.bank > 0)) return []
+    }
     const payMode: HistoryPaymentMode =
       e.payType === 'bank'
         ? 'bank'
@@ -2230,12 +2236,15 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
           ? 'cheque'
           : e.payType === 'split'
             ? 'split'
-            : 'cash'
+            : e.payType === 'credit'
+              ? 'credit'
+              : 'cash'
     const billTag = e.billNumber ? ` · ${expenseBillTag(e.billNumber)}` : ''
     const giveTag =
       e.giveAmount && e.giveAmount > 0
         ? ` · Give ${formatMoney(e.giveAmount)}${e.changeAmount ? ` · Change ${formatMoney(e.changeAmount)}` : ''}`
         : ''
+    const paidParts = !isAdd ? normalExpensePaidChannels(e) : null
     const expenseSub =
       e.payType === 'split'
         ? `➗ Split${billTag} · 💵 ${formatMoney(e.cashAmount ?? 0)} + 🏦 ${formatMoney(e.bankAmount ?? 0)}${(e.chequeAmount ?? 0) > 0 ? ` + 🧾 ${formatMoney(e.chequeAmount ?? 0)}${e.chequeApproved ? ' ✓' : ''}` : ''}${giveTag}`
@@ -2243,17 +2252,20 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
           ? `🧾 Cheque expense${billTag}${e.chequeApproved ? ' ✓ Bank' : ' pending'}${giveTag}`
           : e.payType === 'bank'
             ? `🏦 Bank expense${billTag}${giveTag}`
-            : `💵 Cash expense${billTag}${giveTag}`
+            : e.payType === 'credit'
+              ? `💳 Credit expense${billTag}${giveTag}`
+              : `💵 Cash expense${billTag}${giveTag}`
     const addSub =
       e.payType === 'split'
         ? `➗ Split add · 💵 ${formatMoney(e.cashAmount ?? 0)} + 🏦 ${formatMoney(e.bankAmount ?? 0)}`
         : e.payType === 'bank'
           ? '🏦 Added to bank'
           : '💵 Added to counter'
-    return {
+    const expenseAmount = paidParts ? paidParts.cash + paidParts.bank : e.amount
+    return [{
       type: isAdd ? ('deposit' as const) : ('expense' as const),
       id: e.id,
-      amount: e.amount,
+      amount: expenseAmount,
       sub: isAdd ? addSub : expenseSub,
       name: e.name,
       date: e.updatedAt ?? e.createdAt,
@@ -2265,7 +2277,7 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
               : (['cash', 'bank', 'split'] as HistoryPaymentMode[]))
           : [payMode],
       receiptLines: buildExpenseReceiptLines(e),
-    }
+    }]
   })
 
   const purchaseItems: HistoryItem[] = buildPurchaseHistoryItems(data).map((item) => {

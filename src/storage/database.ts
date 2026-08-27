@@ -1,4 +1,4 @@
-import type { AppData, AppTheme, Expense, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, SaleReturnEntry, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
+import type { AppData, AppTheme, Expense, ExpenseCreditPayment, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, SaleReturnEntry, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
 import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
 import { buildCustomerSummaries } from '../utils/customerLedger'
 import { collectSplitNameTargets, getSaleCustomerName } from '../utils/saleCustomerName'
@@ -6,8 +6,10 @@ import { stripExpenseBillSuffix, isPurchaseExpense } from '../utils/expenseBillL
 import {
   buildCreditPaymentUpdate,
   isPurchaseCreditExpense,
+  normalizeCreditPaymentPayType,
   purchaseCreditAmount,
   purchasePaidComponents,
+  seedPurchaseCreditPaymentsOnCreate,
   type CreditPaymentInput,
 } from '../utils/purchaseHistory'
 import { notifyDataChanged, notifyDataChangedImmediate } from '../firebase/sync'
@@ -1311,10 +1313,14 @@ export function addTransfer(
 }
 
 export function addExpense(data: AppData, expense: Omit<Expense, 'id' | 'createdAt'>): AppData {
-  const newExpense: Expense = {
+  const createdAt = new Date().toISOString()
+  let newExpense: Expense = {
     ...expense,
     id: crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
+    createdAt,
+  }
+  if (isPurchaseExpense(newExpense)) {
+    newExpense = seedPurchaseCreditPaymentsOnCreate(newExpense)
   }
   const next = { ...data, expenses: [newExpense, ...data.expenses] }
   saveData(next)
@@ -1440,15 +1446,21 @@ export function addExpenseBatch(
   if (expenses.length === 0) return data
   const now = new Date().toISOString()
   const ids = expenses.map(() => crypto.randomUUID())
-  const newExpenses: Expense[] = expenses.map((expense, index) => ({
-    ...expense,
-    id: ids[index],
-    createdAt: expense.createdAt ?? now,
-    billNumber:
-      expense.billNumber ??
-      (expenses.length > 1 ? ((index === 0 ? 1 : 2) as 1 | 2) : undefined),
-    pairedExpenseId: expenses.length > 1 ? ids[1 - index] : undefined,
-  }))
+  const newExpenses: Expense[] = expenses.map((expense, index) => {
+    let row: Expense = {
+      ...expense,
+      id: ids[index],
+      createdAt: expense.createdAt ?? now,
+      billNumber:
+        expense.billNumber ??
+        (expenses.length > 1 ? ((index === 0 ? 1 : 2) as 1 | 2) : undefined),
+      pairedExpenseId: expenses.length > 1 ? ids[1 - index] : undefined,
+    }
+    if (isPurchaseExpense(row)) {
+      row = seedPurchaseCreditPaymentsOnCreate(row)
+    }
+    return row
+  })
   const next = { ...data, expenses: [...newExpenses, ...data.expenses] }
   const supplierName = stripExpenseBillSuffix(expenses[0]?.name?.trim() ?? '')
   const withSupplier = supplierName ? ensureSupplierInData(next, supplierName) : next
@@ -3510,8 +3522,59 @@ export function applyPurchaseCreditPayment(
     return data
   }
 
+  const payType = normalizeCreditPaymentPayType(payment.payType)
+  const openCredit = purchaseCreditAmount(expense)
+  const payNow = Math.min(Math.max(0, payment.payAmount), openCredit)
+  if (!(payNow > 0)) return data
+
+  let addCash = 0
+  let addBank = 0
+  let addCheque = 0
+  let chequeApproved = expense.chequeApproved
+  if (payType === 'cash') addCash = payNow
+  else if (payType === 'bank') addBank = payNow
+  else if (payType === 'cheque') {
+    addCheque = payNow
+    chequeApproved = payment.chequeApproved ?? false
+  } else if (payType === 'split') {
+    addCash = payment.cashAmount ?? 0
+    addBank = payment.bankAmount ?? 0
+    addCheque = payment.chequeApproved ? (payment.chequeAmount ?? 0) : 0
+    chequeApproved = payment.chequeApproved ?? expense.chequeApproved
+  }
+
+  const at = new Date().toISOString()
+  let creditPayments = [...(expense.creditPayments ?? [])]
+  // Backfill create-day paid portion if older bills lack a ledger.
+  if (creditPayments.length === 0) {
+    const prior = purchasePaidComponents(expense)
+    if (prior.cash + prior.bank + prior.cheque > 0) {
+      creditPayments.push({
+        id: crypto.randomUUID(),
+        at: expense.createdAt,
+        cash: prior.cash,
+        bank: prior.bank,
+        cheque: prior.cheque,
+        chequeApproved: prior.cheque > 0 ? expense.chequeApproved : undefined,
+      })
+    }
+  }
+  const paymentEvent: ExpenseCreditPayment = {
+    id: crypto.randomUUID(),
+    at,
+    cash: addCash,
+    bank: addBank,
+    cheque: addCheque,
+    chequeApproved: addCheque > 0 ? chequeApproved : undefined,
+  }
+  creditPayments = [...creditPayments, paymentEvent]
+
   const updates = buildCreditPaymentUpdate(expense, payment)
-  const patched = applyCreditPaymentFields(expense, { ...updates, amount: expense.amount })
+  const patched = applyCreditPaymentFields(expense, {
+    ...updates,
+    amount: expense.amount,
+    creditPayments,
+  })
 
   let next: AppData = {
     ...data,

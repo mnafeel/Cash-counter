@@ -350,7 +350,9 @@
 }
 
 .history-search {
-  font-weight: 600;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
   cursor: text;
 }
 
@@ -363,6 +365,9 @@
 
 .history-search::placeholder {
   color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
 }
 
 .history-date-input {

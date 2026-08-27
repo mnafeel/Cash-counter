@@ -463,18 +463,25 @@
 .counter-customer-input {
   flex: 1 1 72px;
   min-width: 56px;
-  padding: 4px 6px;
+  padding: 4px 8px;
   background: var(--brown-dark);
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--cream);
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1.25;
+  -webkit-font-smoothing: antialiased;
   outline: none;
 }
 
 .counter-customer-input::placeholder {
   color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
 }
 
 .counter-customer-input:focus {

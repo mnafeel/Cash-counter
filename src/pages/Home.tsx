@@ -325,6 +325,11 @@ function Home({ active }: { active: boolean }) {
     () => summarizePurchases(periodPurchaseItems),
     [periodPurchaseItems],
   )
+  /** Cash/bank paid on purchases only — used under Expenses (credit bills stay on Purchases). */
+  const periodPurchasePaidSummary = useMemo(
+    () => summarizePurchases(periodPurchaseItems, true),
+    [periodPurchaseItems],
+  )
   const periodLoanOutflowItems = useMemo(() => {
     const items = buildLoanOutflowHistoryItems(workData)
     return filterLoanOutflowHistoryItems(items, homeDayPreset, homeDayDate)
@@ -345,16 +350,12 @@ function Home({ active }: { active: boolean }) {
       ),
     [workData, periodExpenseItems, periodPurchaseItems, periodLoanOutflowItems, homeDayPreset, homeDayDate],
   )
-  const periodExpenseCombinedTotal =
-    periodExpenseSummary.total +
-    periodPurchaseSummary.total +
-    periodLoanOutflowSummary.total
   const homeExpenseDisplayAmount =
     homeExpenseChannel === 'cash'
-      ? periodExpenseChannels.cash
+      ? periodExpenseChannels.cashWithTransfers
       : homeExpenseChannel === 'bank'
-        ? periodExpenseChannels.bank
-        : periodExpenseCombinedTotal
+        ? periodExpenseChannels.bankWithTransfers
+        : periodExpenseChannels.total
   const periodTopShop = useMemo(
     () => getTopPurchaseShop(periodPurchaseItems),
     [periodPurchaseItems],
@@ -886,15 +887,15 @@ function Home({ active }: { active: boolean }) {
               {homeExpenseChannel === 'all'
                 ? `💵 Cash ${formatMoney(periodExpenseChannels.cash)} · 🏦 Bank ${formatMoney(periodExpenseChannels.bank)}`
                 : homeExpenseChannel === 'cash'
-                  ? `Cash out · ${periodExpenseChannels.count} items · All ${formatMoney(periodExpenseCombinedTotal)}`
-                  : `Bank out · ${periodExpenseChannels.count} items · All ${formatMoney(periodExpenseCombinedTotal)}`}
+                  ? `Cash out · transfers ${formatMoney(periodExpenseChannels.transferCash)} · All ${formatMoney(periodExpenseChannels.total)}`
+                  : `Bank out · transfers ${formatMoney(periodExpenseChannels.transferBank)} · All ${formatMoney(periodExpenseChannels.total)}`}
             </span>
             <span className="stat-meta">
               Normal {formatMoney(periodExpenseSummary.total)} · {periodExpenseItems.length} items
             </span>
             <span className="stat-meta stat-meta--breakdown">
-              + Purchase {formatMoney(periodPurchaseSummary.total)} ·{' '}
-              {periodPurchaseItems.length} items
+              + Purchase {formatMoney(periodPurchasePaidSummary.total)} ·{' '}
+              {periodPurchasePaidSummary.count} paid
             </span>
             <span className="stat-meta stat-meta--breakdown">
               + Loan {formatMoney(periodLoanOutflowSummary.total)} ·{' '}
@@ -1022,7 +1023,7 @@ function Home({ active }: { active: boolean }) {
           <button
             type="button"
             className="home-tool-btn"
-            onClick={() => openReports('month', 'expense')}
+            onClick={() => openReports('month', 'expense-report')}
           >
             📤 Expense Report
           </button>

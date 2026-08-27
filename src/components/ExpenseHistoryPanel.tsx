@@ -18,6 +18,10 @@ import {
   buildNormalExpenseHistoryItems,
   filterNormalExpenseHistoryItems,
 } from '../utils/normalExpenseHistory'
+import {
+  buildLoanOutflowHistoryItems,
+  filterLoanOutflowHistoryItems,
+} from '../utils/loanLedger'
 import { buildPurchaseHistoryItems, filterPurchaseHistoryItems } from '../utils/purchaseHistory'
 import { toInputDate } from '../utils/salesReport'
 import './PurchaseHistoryPanel.css'
@@ -48,6 +52,8 @@ function expensePeriodLabel(fromDate: string, toDate: string): string {
 
 function timelineIcon(kind: ExpenseTimelineKind): string {
   if (kind === 'expense') return '📤'
+  if (kind === 'loan') return '🤝'
+  if (kind === 'transfer') return '⇄'
   if (kind === 'no1-purchase') return '🧾'
   return '🛒'
 }
@@ -75,13 +81,27 @@ export default function ExpenseHistoryPanel({
     () => filterPurchaseHistoryItems(buildPurchaseHistoryItems(data), 'range', rangeFrom, rangeTo),
     [data, rangeFrom, rangeTo],
   )
+  const loanItems = useMemo(
+    () => filterLoanOutflowHistoryItems(buildLoanOutflowHistoryItems(data), 'range', rangeFrom, rangeTo),
+    [data, rangeFrom, rangeTo],
+  )
   const no1PurchaseItems = useMemo(
     () => filterNo1PurchaseItems(purchaseItems),
     [purchaseItems],
   )
   const timeline = useMemo(
-    () => buildExpenseTimelineEntriesFromData(data, normalItems, purchaseItems, sort),
-    [data, normalItems, purchaseItems, sort],
+    () =>
+      buildExpenseTimelineEntriesFromData(
+        data,
+        normalItems,
+        purchaseItems,
+        sort,
+        loanItems,
+        'range',
+        rangeFrom,
+        rangeTo,
+      ),
+    [data, normalItems, purchaseItems, loanItems, sort, rangeFrom, rangeTo],
   )
   const filteredTimeline = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase()
@@ -95,9 +115,10 @@ export default function ExpenseHistoryPanel({
           return false
         })
     const channelFiltered = filterExpenseTimelineByPayChannel(searched, payChannel)
+
+    // Cash → Cash to Bank; Bank → Bank to Cash. Merged and sorted by time.
     if (payChannel !== 'cash' && payChannel !== 'bank') return channelFiltered
 
-    // Cash→Bank / Bank→Cash appear as expenses only on Cash / Bank filters — not on All.
     const transfers = buildTransferExpenseTimelineEntries(
       data,
       payChannel,
@@ -115,7 +136,6 @@ export default function ExpenseHistoryPanel({
           if (String(entry.amount).includes(q)) return true
           return false
         })
-    if (transferSearched.length === 0) return channelFiltered
 
     const merged = [...channelFiltered, ...transferSearched]
     merged.sort((a, b) =>
@@ -282,7 +302,9 @@ export default function ExpenseHistoryPanel({
         <div className="purchase-hist-summary-top">
           <div className="purchase-hist-summary-row purchase-hist-summary-row--total">
             <span>Total · {periodLabel}</span>
-            <strong>{formatMoney(summary.expenseTotal + summary.purchaseTotal)}</strong>
+            <strong>
+              {formatMoney(summary.expenseTotal + summary.purchaseTotal + summary.loanTotal)}
+            </strong>
           </div>
           <div className="purchase-hist-summary-row">
             <span>Normal expenses</span>
@@ -291,6 +313,9 @@ export default function ExpenseHistoryPanel({
           <span className="purchase-hist-summary-count">
             💵 Cash {formatMoney(summary.expenseCash)} · 🏦 Bank {formatMoney(summary.expenseBank)} ·{' '}
             {summary.expenseCount} items
+            {summary.transferCount > 0
+              ? ` · Transfer ${formatMoney(summary.transferTotal)}`
+              : ''}
           </span>
           <div className="purchase-hist-summary-row">
             <span>Purchase expenses</span>
@@ -299,6 +324,14 @@ export default function ExpenseHistoryPanel({
           <span className="purchase-hist-summary-count">
             💵 Cash {formatMoney(summary.purchaseCash)} · 🏦 Bank {formatMoney(summary.purchaseBank)} ·{' '}
             {summary.purchaseCount} purchases · {NO1_EXPENSE_LABEL} {formatMoney(summary.no1Total)}
+          </span>
+          <div className="purchase-hist-summary-row">
+            <span>Loan out</span>
+            <strong>{formatMoney(summary.loanTotal)}</strong>
+          </div>
+          <span className="purchase-hist-summary-count">
+            💵 Cash {formatMoney(summary.loanCash)} · 🏦 Bank {formatMoney(summary.loanBank)} ·{' '}
+            {summary.loanCount} items
           </span>
         </div>
 
@@ -315,7 +348,7 @@ export default function ExpenseHistoryPanel({
         </label>
 
         {filteredTimeline.length === 0 ? (
-          <p className="purchase-hist-empty">No expenses or purchases for this date range.</p>
+          <p className="purchase-hist-empty">No expenses, purchases, or loans for this date range.</p>
         ) : (
           <ul className="purchase-hist-list">
             {filteredTimeline.map((entry) => {

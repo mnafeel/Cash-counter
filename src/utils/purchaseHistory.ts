@@ -1,4 +1,4 @@
-import type { AppData, Expense } from '../types'
+import type { AppData, Expense, ExpenseCreditPayment } from '../types'
 import {
   isGstExpense,
   isPurchaseExpense,
@@ -289,6 +289,75 @@ export function purchasePaidComponents(expense: Expense): {
   return { cash, bank, cheque }
 }
 
+/**
+ * Seed a create-day payment row when cash/bank left with an open credit bill.
+ * Pure cash/bank buys do not need a ledger — they appear on createdAt as a whole.
+ */
+export function seedPurchaseCreditPaymentsOnCreate(expense: Expense): Expense {
+  if ((expense.creditPayments?.length ?? 0) > 0) return expense
+  const openCredit = purchaseCreditAmount(expense)
+  if (openCredit <= 0 && expense.payType !== 'credit') return expense
+  const paid = purchasePaidComponents(expense)
+  const paidOut = paid.cash + paid.bank + paid.cheque
+  if (!(paidOut > 0)) return expense
+  const payment: ExpenseCreditPayment = {
+    id: crypto.randomUUID(),
+    at: expense.createdAt,
+    cash: paid.cash,
+    bank: paid.bank,
+    cheque: paid.cheque,
+    chequeApproved: paid.cheque > 0 ? expense.chequeApproved : undefined,
+  }
+  return { ...expense, creditPayments: [payment] }
+}
+
+/**
+ * Money that left cash/bank for this purchase bill, dated when it actually left.
+ * Unpaid credit produces no rows — that balance stays on the credit list only.
+ */
+export function purchaseExpenseOutflowEvents(
+  expense: Expense,
+): Array<{ id: string; at: string; cash: number; bank: number }> {
+  const payments = expense.creditPayments
+  if (payments && payments.length > 0) {
+    return payments
+      .map((row) => {
+        const cash = row.cash ?? 0
+        const bank =
+          (row.bank ?? 0) +
+          (row.chequeApproved && (row.cheque ?? 0) > 0 ? row.cheque ?? 0 : 0)
+        return { id: row.id, at: row.at, cash, bank }
+      })
+      .filter((row) => row.cash + row.bank > 0)
+  }
+
+  const paid = purchasePaidComponents(expense)
+  const paidOut = paid.cash + paid.bank + paid.cheque
+  if (!(paidOut > 0)) return []
+
+  // Open credit without a ledger: only show paid portion (not unpaid credit).
+  if (purchaseCreditAmount(expense) > 0) {
+    return [
+      {
+        id: `${expense.id}-paid`,
+        at: expense.updatedAt ?? expense.createdAt,
+        cash: paid.cash,
+        bank: paid.bank + paid.cheque,
+      },
+    ]
+  }
+
+  // Fully paid, no credit ledger — appear on bill create day (cash/bank/cheque buy).
+  return [
+    {
+      id: `${expense.id}-paid`,
+      at: expense.createdAt,
+      cash: paid.cash,
+      bank: paid.bank + paid.cheque,
+    },
+  ]
+}
+
 /** Cash / bank / approved cheque paid at purchase time — excludes credit portion. */
 export function purchasePaidAmount(expense: Expense): number {
   const { cash, bank, cheque } = purchasePaidComponents(expense)
@@ -319,16 +388,16 @@ export function purchaseSupplierBillDateDiffers(
 
 /**
  * When cash/bank left for a purchase (and for sorting / credit lists).
- * Full cash/bank/cheque buys use createdAt — never rename-bumped updatedAt,
- * which otherwise dumps old supplier payments into Today after a name change.
- * Open credit/split still uses updatedAt (credit collections bump it).
+ * Credit collections use the payment ledger date; pure cash/bank buys use createdAt.
  */
 export function purchaseExpenseActivityTime(expense: Expense): string {
-  if (expense.payType === 'cash' || expense.payType === 'bank' || expense.payType === 'cheque') {
-    return expense.createdAt
+  const events = purchaseExpenseOutflowEvents(expense)
+  if (events.length > 0) {
+    return events.reduce((latest, row) =>
+      new Date(row.at).getTime() > new Date(latest).getTime() ? row.at : latest,
+    events[0].at)
   }
-  const creditLeft = purchaseCreditAmount(expense)
-  if (creditLeft > 0) return expense.updatedAt ?? expense.createdAt
+  if (purchaseCreditAmount(expense) > 0) return expense.updatedAt ?? expense.createdAt
   return expense.createdAt
 }
 

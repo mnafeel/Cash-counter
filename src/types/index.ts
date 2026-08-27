@@ -65,6 +65,16 @@ export type ExpenseKind = 'expense' | 'add' | 'transfer'
 export type TransferDirection = 'cash-to-bank' | 'bank-to-cash'
 export type AppTheme = 'brown' | 'navy' | 'light' | 'premium'
 
+/** One cash/bank/cheque payment against purchase credit (dated when money left). */
+export interface ExpenseCreditPayment {
+  id: string
+  at: string
+  cash: number
+  bank: number
+  cheque: number
+  chequeApproved?: boolean
+}
+
 export interface Expense {
   id: string
   amount: number
@@ -82,6 +92,11 @@ export interface Expense {
   chequeAmount?: number
   /** Split/cheque expense: cheque portion approved to bank. */
   chequeApproved?: boolean
+  /**
+   * Ledger of payments that cleared credit (and any cash/bank paid with the bill).
+   * Expense reports use these dates — unpaid credit never appears until paid here.
+   */
+  creditPayments?: ExpenseCreditPayment[]
   giveAmount?: number
   changeAmount?: number
   /** Dual purchase: 1 = GST bill, 2 = without GST. */

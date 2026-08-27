@@ -878,9 +878,9 @@ html[data-screen='desktop'] .home-pin-digit {
 }
 
 .home-cash-date-chip {
-  padding: 3px 8px;
-  font-size: 0.58rem;
-  font-weight: 700;
+  padding: 2px 7px;
+  font-size: 0.48rem;
+  font-weight: 600;
   color: var(--cream-dim);
   background: var(--brown-dark);
   border: 1px solid var(--border);
@@ -895,9 +895,9 @@ html[data-screen='desktop'] .home-pin-digit {
 }
 
 .home-cash-date-input {
-  padding: 3px 8px;
-  font-size: 0.58rem;
-  font-weight: 700;
+  padding: 2px 7px;
+  font-size: 0.48rem;
+  font-weight: 600;
   color: var(--cream-dim);
   background: var(--brown-dark);
   border: 1px solid var(--border);
@@ -1437,9 +1437,9 @@ html[data-screen='desktop'] .home-pin-digit {
   background: rgba(0, 0, 0, 0.18);
   color: var(--cream-dim);
   border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 0.58rem;
-  font-weight: 700;
+  padding: 2px 7px;
+  font-size: 0.48rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
