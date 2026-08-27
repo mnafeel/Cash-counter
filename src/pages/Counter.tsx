@@ -26,7 +26,6 @@ import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import {
   buildSaleReturnEntry,
-  saleBalanceAfterReturns,
   saleBillGroupPaidTotal,
   saleBillPaymentLines,
   saleCreditBalanceDue,

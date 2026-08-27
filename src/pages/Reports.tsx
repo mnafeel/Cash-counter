@@ -7,7 +7,7 @@ import { useAppPageBack } from '../hooks/useAppPageBack'
 
 export default function Reports() {
   useOpenTiming('Reports', true, false)
-  const { data, setCustomerReminder, setBillReminder, updateReminderAlertSettings } = useCash()
+  const { data, setCustomerReminder, setBillReminder, updateReminderAlertSettings, applySaleReturn } = useCash()
   const goBack = useAppPageBack('/', { route: '/reports' })
   const [customerName, setCustomerName] = useState<string | undefined>()
 
@@ -30,6 +30,7 @@ export default function Reports() {
         onSetCustomerReminder={setCustomerReminder}
         onSetBillReminder={setBillReminder}
         onSaveAlertSettings={updateReminderAlertSettings}
+        onApplySaleReturn={applySaleReturn}
       />
     </>
   )
