@@ -196,6 +196,7 @@ function Counter({ active }: { active: boolean }) {
     setBillReminder,
     updateReminderAlertSettings,
     applySaleReturn,
+    cancelSaleReturn,
   } = useCashActions()
 
   function recordSale(
@@ -4438,6 +4439,19 @@ function Counter({ active }: { active: boolean }) {
               )
             : Math.max(0, typedBillAmount - draftReturnTotal),
         )}
+        onCancelReturn={(returnId) => {
+          const targetId =
+            collectingCreditId ??
+            effectiveCollectingCreditId ??
+            collectingChequeId ??
+            effectiveCollectingChequeId ??
+            loadedPendingId
+          if (targetId) {
+            cancelSaleReturn(targetId, returnId)
+            return
+          }
+          setDraftReturns((prev) => prev.filter((row) => row.id !== returnId))
+        }}
         onDone={handleReturnDone}
       />
     </div>

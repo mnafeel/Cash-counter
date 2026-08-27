@@ -6,6 +6,7 @@ import {
   formatSaleReturnLine,
   type SaleBillPaymentLine,
 } from '../utils/saleReturns'
+import SaleReturnCancelConfirm from './SaleReturnCancelConfirm'
 import './SaleReturnModal.css'
 
 export type SaleReturnDraft = {
@@ -28,6 +29,8 @@ type SaleReturnModalProps = {
   existingReturns: SaleReturnEntry[]
   /** Max amount still returnable (remaining credit due). */
   maxReturnable: number
+  /** Cancel a processed return (restores credit balance). */
+  onCancelReturn?: (returnId: string) => void
   onDone: (draft: SaleReturnDraft) => void
 }
 
@@ -40,12 +43,14 @@ export default function SaleReturnModal({
   paymentLines = [],
   existingReturns,
   maxReturnable,
+  onCancelReturn,
   onDone,
 }: SaleReturnModalProps) {
   const [itemName, setItemName] = useState('')
   const [qtyStr, setQtyStr] = useState('1')
   const [rateStr, setRateStr] = useState('')
   const [error, setError] = useState('')
+  const [cancelEntry, setCancelEntry] = useState<SaleReturnEntry | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -53,6 +58,7 @@ export default function SaleReturnModal({
     setQtyStr('1')
     setRateStr('')
     setError('')
+    setCancelEntry(null)
   }, [open])
 
   const quantity = Number(qtyStr)
@@ -153,7 +159,18 @@ export default function SaleReturnModal({
             {existingReturns.map((row) => (
               <li key={row.id}>
                 <span>{formatSaleReturnLine(row)}</span>
-                <strong>{formatMoney(row.amount)}</strong>
+                <div className="sale-return-existing-actions">
+                  <strong>{formatMoney(row.amount)}</strong>
+                  {onCancelReturn ? (
+                    <button
+                      type="button"
+                      className="sale-return-cancel-btn"
+                      onClick={() => setCancelEntry(row)}
+                    >
+                      Cancel
+                    </button>
+                  ) : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -219,6 +236,16 @@ export default function SaleReturnModal({
           </button>
         </div>
       </div>
+
+      <SaleReturnCancelConfirm
+        open={Boolean(cancelEntry)}
+        entry={cancelEntry}
+        onClose={() => setCancelEntry(null)}
+        onConfirm={(returnId) => {
+          onCancelReturn?.(returnId)
+          setCancelEntry(null)
+        }}
+      />
     </div>
   )
 }

@@ -4051,6 +4051,48 @@ export function applySaleReturn(
   return next
 }
 
+/**
+ * Undo a processed sale/credit return and restore the credit balance due.
+ */
+export function cancelSaleReturn(data: AppData, saleId: string, returnId: string): AppData {
+  const sale = data.sales.find((s) => s.id === saleId)
+  if (!sale?.returns?.length) return data
+
+  const target = sale.returns.find((row) => row.id === returnId)
+  if (!target) return data
+
+  const returns = sale.returns.filter((row) => row.id !== returnId)
+  const gross = saleGrossBillAmount(sale)
+  const collected = saleBillGroupPaidTotal(sale, data.sales)
+  const returnTotal = saleReturnTotal({ returns })
+  const newDue = Math.max(0, Math.round((gross - collected - returnTotal) * 100) / 100)
+  const now = new Date().toISOString()
+
+  const next = {
+    ...data,
+    sales: data.sales.map((s) => {
+      if (s.id !== saleId) return s
+      if (s.status === 'pending') {
+        return {
+          ...s,
+          returns: returns.length > 0 ? returns : undefined,
+          originalBillAmount: gross,
+          billAmount: newDue,
+          updatedAt: now,
+        }
+      }
+      return {
+        ...s,
+        returns: returns.length > 0 ? returns : undefined,
+        originalBillAmount: gross,
+        updatedAt: now,
+      }
+    }),
+  }
+  saveData(next)
+  return next
+}
+
 export function updateExpenseName(data: AppData, id: string, name: string): AppData {
   const trimmed = name.trim()
   const next = {

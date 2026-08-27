@@ -128,6 +128,7 @@ function Home({ active }: { active: boolean }) {
     updateReminderAlertSettings,
     renameCustomerProfile,
     applySaleReturn,
+    cancelSaleReturn,
   } = useCashActions()
   // Keep real data while tab is hidden (when unlocked) so summaries stay cached on return.
   const workData = !homeUnlocked ? LOCKED_DASHBOARD_DATA : data
@@ -1446,6 +1447,7 @@ function Home({ active }: { active: boolean }) {
           onSetBillReminder={setBillReminder}
           onSaveAlertSettings={updateReminderAlertSettings}
           onApplySaleReturn={applySaleReturn}
+          onCancelSaleReturn={cancelSaleReturn}
         />
       ) : null}
 

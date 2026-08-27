@@ -83,6 +83,7 @@ import {
   updateSaleBill,
   updateSaleCustomerName,
   applySaleReturn,
+  cancelSaleReturn,
   renameCustomer,
   renameSupplier,
 } from '../storage/database'
@@ -171,6 +172,7 @@ interface CashContextValue {
     saleId: string,
     input: { itemName: string; quantity: number; rate: number },
   ) => void
+  cancelSaleReturn: (saleId: string, returnId: string) => void
   recordExpense: (expense: {
     amount: number
     name: string
@@ -1297,6 +1299,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const cancelSaleReturnHandler = useCallback((saleId: string, returnId: string) => {
+    setData((prev) => cancelSaleReturn(prev, saleId, returnId))
+  }, [])
+
   const editPaidSalePaymentHandler = useCallback(
     (id: string, payment: PaidSalePaymentEdit, relatedSaleIds?: string[]) => {
       setData((prev) => editPaidSalePayment(prev, id, payment, relatedSaleIds))
@@ -1430,6 +1436,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateExpense: updateExpenseHandler,
       updateSaleBill: updateSaleBillHandler,
       applySaleReturn: applySaleReturnHandler,
+      cancelSaleReturn: cancelSaleReturnHandler,
       editPaidSalePayment: editPaidSalePaymentHandler,
       replaceAllData,
       hydrateData,
@@ -1494,6 +1501,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateExpenseHandler,
       updateSaleBillHandler,
       applySaleReturnHandler,
+      cancelSaleReturnHandler,
       editPaidSalePaymentHandler,
       replaceAllData,
       hydrateData,

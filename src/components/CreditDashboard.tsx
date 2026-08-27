@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { AppData, ReminderAlertSettings, Sale } from '../types'
+import type { AppData, ReminderAlertSettings, Sale, SaleReturnEntry } from '../types'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { formatMoney, formatDate } from '../utils/format'
 import {
@@ -15,6 +15,7 @@ import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/bi
 import CustomerReminderControl from './CustomerReminderControl'
 import BillReminderControl from './BillReminderControl'
 import SaleReturnModal from './SaleReturnModal'
+import SaleReturnCancelConfirm from './SaleReturnCancelConfirm'
 import DetailDateFilter, { type DetailDateFilterMode } from './DetailDateFilter'
 import { filterByDetailDate } from '../utils/detailDateFilter'
 import { toInputDate } from '../utils/salesReport'
@@ -52,6 +53,7 @@ interface CreditDashboardProps {
     saleId: string,
     input: { itemName: string; quantity: number; rate: number },
   ) => void
+  onCancelSaleReturn: (saleId: string, returnId: string) => void
 }
 
 export default function CreditDashboard({
@@ -64,6 +66,7 @@ export default function CreditDashboard({
   onSetBillReminder,
   onSaveAlertSettings,
   onApplySaleReturn,
+  onCancelSaleReturn,
 }: CreditDashboardProps) {
   const { value: query, setValue: setQuery, deferredValue: deferredQuery } = useDeferredSearch()
   const [listFilter, setListFilter] = useState<CreditListFilter>(initialFilter)
@@ -233,6 +236,7 @@ export default function CreditDashboard({
                 onSetBillReminder={onSetBillReminder}
                 onSaveAlertSettings={onSaveAlertSettings}
                 onApplySaleReturn={onApplySaleReturn}
+                onCancelSaleReturn={onCancelSaleReturn}
               />
             </div>
           </>
@@ -307,6 +311,7 @@ function CreditCustomerDetail({
   onSetBillReminder,
   onSaveAlertSettings,
   onApplySaleReturn,
+  onCancelSaleReturn,
 }: {
   summary: CustomerSummary
   data: AppData
@@ -314,9 +319,13 @@ function CreditCustomerDetail({
   onSetBillReminder: CreditDashboardProps['onSetBillReminder']
   onSaveAlertSettings?: CreditDashboardProps['onSaveAlertSettings']
   onApplySaleReturn: CreditDashboardProps['onApplySaleReturn']
+  onCancelSaleReturn: CreditDashboardProps['onCancelSaleReturn']
 }) {
   const creditReminderAt = getCustomerReminderAt(data, summary.name, 'credit')
   const [returnSale, setReturnSale] = useState<Sale | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<{ saleId: string; entry: SaleReturnEntry } | null>(
+    null,
+  )
 
   return (
     <>
@@ -417,8 +426,17 @@ function CreditCustomerDetail({
                   </div>
                 ) : null}
                 {sale?.returns?.map((row) => (
-                  <div key={row.id} className="customer-purchase-meta customer-purchase-meta--muted">
-                    ↩ {formatSaleReturnLine(row)} · {formatMoney(row.amount)}
+                  <div key={row.id} className="customer-purchase-meta customer-purchase-meta--muted customer-purchase-return-row">
+                    <span>
+                      ↩ {formatSaleReturnLine(row)} · {formatMoney(row.amount)}
+                    </span>
+                    <button
+                      type="button"
+                      className="customer-purchase-return-cancel"
+                      onClick={() => setCancelTarget({ saleId: purchase.id, entry: row })}
+                    >
+                      Cancel
+                    </button>
                   </div>
                 ))}
                 <div className="customer-purchase-meta">{purchase.payDetail}</div>
@@ -481,12 +499,27 @@ function CreditCustomerDetail({
           paymentLines={saleBillPaymentLines(returnSale, data.sales)}
           existingReturns={returnSale.returns ?? []}
           maxReturnable={saleCreditBalanceDue(returnSale, data.sales)}
+          onCancelReturn={(returnId) => {
+            onCancelSaleReturn(returnSale.id, returnId)
+            setReturnSale(null)
+          }}
           onDone={(draft) => {
             onApplySaleReturn(returnSale.id, draft)
             setReturnSale(null)
           }}
         />
       ) : null}
+
+      <SaleReturnCancelConfirm
+        open={Boolean(cancelTarget)}
+        entry={cancelTarget?.entry ?? null}
+        onClose={() => setCancelTarget(null)}
+        onConfirm={(returnId) => {
+          if (!cancelTarget) return
+          onCancelSaleReturn(cancelTarget.saleId, returnId)
+          setCancelTarget(null)
+        }}
+      />
     </>
   )
 }

@@ -1,0 +1,144 @@
+.sale-return-cancel-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 440;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 8px;
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.sale-return-cancel-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(20, 10, 6, 0.78);
+  cursor: pointer;
+}
+
+.sale-return-cancel-panel {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--brown);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.sale-return-cancel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sale-return-cancel-head h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--cream);
+}
+
+.sale-return-cancel-close {
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  border-radius: var(--radius-sm);
+  width: 34px;
+  height: 34px;
+  cursor: pointer;
+}
+
+.sale-return-cancel-copy {
+  margin: 0;
+  font-size: 0.58rem;
+  line-height: 1.4;
+  color: var(--cream-dim);
+}
+
+.sale-return-cancel-detail {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--brown-dark);
+}
+
+.sale-return-cancel-detail span {
+  font-size: 0.58rem;
+  color: var(--cream-dim);
+}
+
+.sale-return-cancel-detail strong {
+  font-size: 0.72rem;
+  color: #e8b07a;
+}
+
+.sale-return-cancel-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sale-return-cancel-field span {
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.sale-return-cancel-field input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 8px 10px;
+  font-size: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+}
+
+.sale-return-cancel-error {
+  margin: 0;
+  font-size: 0.58rem;
+  color: #f0a0a0;
+}
+
+.sale-return-cancel-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: 8px;
+}
+
+.sale-return-cancel-btn-ghost,
+.sale-return-cancel-btn-confirm {
+  min-height: 44px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sale-return-cancel-btn-ghost {
+  background: var(--brown-dark);
+  color: var(--cream);
+}
+
+.sale-return-cancel-btn-confirm {
+  background: linear-gradient(180deg, #c47a7a, #7a3030);
+  color: #fff7f5;
+  border-color: #a85858;
+}
+
+.sale-return-cancel-btn-confirm:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
