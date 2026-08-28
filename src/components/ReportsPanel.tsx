@@ -838,6 +838,9 @@ export default function ReportsPanel({
                     <strong>{formatMoney(creditTotals.pendingTotal)}</strong>
                     <small>
                       Total {formatMoney(creditTotals.total)} · Paid {formatMoney(creditTotals.paidTotal)}
+                      {chequeOverview.totalPending > 0
+                        ? ` · Cheque open ${formatMoney(chequeOverview.totalPending)}`
+                        : ''}
                     </small>
                   </div>
                 )}
@@ -881,6 +884,9 @@ export default function ReportsPanel({
                     <strong>{formatMoney(chequeTotals.total)}</strong>
                     <small>
                       Pending {formatMoney(chequeTotals.pendingTotal)} · {chequeTotals.pendingCount} waiting
+                      {creditOverview.totalPending > 0
+                        ? ` · Credit open ${formatMoney(creditOverview.totalPending)}`
+                        : ''}
                     </small>
                   </div>
                 )}
@@ -1346,6 +1352,16 @@ export default function ReportsPanel({
                                 <span className="reports-credit-notify-meta">
                                   {customer.openBillCount} bill{customer.openBillCount === 1 ? '' : 's'} ·{' '}
                                   {customer.lastCreditLabel}
+                                  {(() => {
+                                    const peer = chequeOverview.customers.find(
+                                      (row) =>
+                                        row.name.trim().toLowerCase() ===
+                                        customer.name.trim().toLowerCase(),
+                                    )
+                                    return peer && peer.pendingAmount > 0
+                                      ? ` · Cheque ${formatMoney(peer.pendingAmount)}`
+                                      : ''
+                                  })()}
                                 </span>
                                 <strong className="reports-credit-notify-amount">
                                   {formatMoney(customer.pendingAmount)}

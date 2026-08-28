@@ -213,7 +213,7 @@ export function buildChequePurchases(data: AppData): ChequePurchaseRow[] {
   return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
 
-export function buildChequeCustomerSummaries(data: AppData): ChequeCustomerSummary[] {
+function buildChequeCustomerSummariesUncached(data: AppData): ChequeCustomerSummary[] {
   const byName = new Map<string, ChequePurchaseRow[]>()
 
   for (const row of buildChequePurchases(data)) {
@@ -268,6 +268,8 @@ export function buildChequeCustomerSummaries(data: AppData): ChequeCustomerSumma
   })
 }
 
+export const buildChequeCustomerSummaries = memoByDataRef(buildChequeCustomerSummariesUncached)
+
 export function filterCustomersWithCheque(summaries: ChequeCustomerSummary[]): ChequeCustomerSummary[] {
   return summaries
     .filter((summary) => summary.totalChequePending > 0)
@@ -308,4 +310,20 @@ export function getChequeCustomerSummary(
 ): ChequeCustomerSummary | undefined {
   const trimmed = name.trim()
   return summaries.find((summary) => summary.name === trimmed)
+}
+
+export function lookupCustomerChequePending(
+  data: AppData,
+  name: string,
+  summaries?: ChequeCustomerSummary[],
+): number {
+  const key = name.trim().toLowerCase()
+  if (!key) return 0
+  const list = summaries ?? buildChequeCustomerSummaries(data)
+  for (const summary of list) {
+    if (summary.name.trim().toLowerCase() === key) {
+      return summary.totalChequePending
+    }
+  }
+  return 0
 }

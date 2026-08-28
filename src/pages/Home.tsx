@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { memo, startTransition, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { AppData } from '../types'
 import AmountDisplay from '../components/AmountDisplay'
@@ -251,19 +251,19 @@ function Home({ active }: { active: boolean }) {
   function openCustomers(filter: CustomerListFilter = 'all', customerName?: string) {
     setCustomerFilter(filter)
     setCustomerInitialName(customerName)
-    setShowCustomers(true)
+    startTransition(() => setShowCustomers(true))
   }
 
   function openCredits(filter: CreditListFilter = 'credit', customerName?: string) {
     setCreditFilter(filter)
     setCreditInitialName(customerName)
-    setShowCredits(true)
+    startTransition(() => setShowCredits(true))
   }
 
   function openCheques(filter: ChequeListFilter = 'cheque', customerName?: string) {
     setChequeFilter(filter)
     setChequeInitialName(customerName)
-    setShowCheques(true)
+    startTransition(() => setShowCheques(true))
   }
 
   function openCustomerFromReports(customerName: string) {

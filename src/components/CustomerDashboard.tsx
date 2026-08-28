@@ -10,6 +10,11 @@ import {
   searchCustomerSummaries,
   type CustomerSummary,
 } from '../utils/customerLedger'
+import {
+  buildChequeCustomerSummaries,
+  getChequeCustomerSummary,
+  type ChequeCustomerSummary,
+} from '../utils/chequeLedger'
 import { getCustomerReminderAt } from '../utils/customerReminders'
 import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/billReminders'
 import CustomerReminderControl from './CustomerReminderControl'
@@ -74,6 +79,14 @@ export default function CustomerDashboard({
 
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const summaries = useMemo(() => buildCustomerSummaries(data), [data])
+  const chequeSummaries = useMemo(() => buildChequeCustomerSummaries(data), [data])
+  const chequePendingByName = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const row of chequeSummaries) {
+      map.set(row.name.trim().toLowerCase(), row.totalChequePending)
+    }
+    return map
+  }, [chequeSummaries])
   const baseList = useMemo(
     () => (listFilter === 'credit' ? filterCustomersWithCredit(summaries) : summaries),
     [summaries, listFilter],
@@ -82,6 +95,10 @@ export default function CustomerDashboard({
   const selected = useMemo(
     () => (selectedName ? getCustomerSummary(summaries, selectedName) : undefined),
     [summaries, selectedName],
+  )
+  const selectedCheque = useMemo(
+    () => (selectedName ? getChequeCustomerSummary(chequeSummaries, selectedName) : undefined),
+    [chequeSummaries, selectedName],
   )
   const filteredSelected = useMemo(() => {
     if (!selected) return undefined
@@ -183,6 +200,7 @@ export default function CustomerDashboard({
                       key={summary.name}
                       summary={summary}
                       data={data}
+                      chequePending={chequePendingByName.get(summary.name.trim().toLowerCase()) ?? 0}
                       showCredit={listFilter === 'credit' || summary.totalCreditPending > 0}
                       showInlineReminder={listFilter === 'credit'}
                       onSelect={() => setSelectedName(summary.name)}
@@ -208,6 +226,7 @@ export default function CustomerDashboard({
               <CustomerDetail
                 summary={filteredSelected}
                 data={data}
+                chequeSummary={selectedCheque}
                 onSetCustomerReminder={onSetCustomerReminder}
                 onRenameCustomer={onRenameCustomer}
                 onRenamed={(nextName) => setSelectedName(nextName)}
@@ -225,6 +244,7 @@ export default function CustomerDashboard({
 function CustomerListItem({
   summary,
   data,
+  chequePending,
   showCredit,
   showInlineReminder,
   onSelect,
@@ -233,6 +253,7 @@ function CustomerListItem({
 }: {
   summary: CustomerSummary
   data: AppData
+  chequePending: number
   showCredit: boolean
   showInlineReminder: boolean
   onSelect: () => void
@@ -250,7 +271,7 @@ function CustomerListItem({
     <li className={`customer-list-row ${canSetReminder ? 'customer-list-row--stack' : ''}`}>
       <button
         type="button"
-        className={`customer-list-btn ${summary.totalCreditPending > 0 ? 'customer-list-btn--credit' : ''}`}
+        className={`customer-list-btn ${summary.totalCreditPending > 0 || chequePending > 0 ? 'customer-list-btn--credit' : ''}`}
         onClick={onSelect}
       >
         <strong>{summary.name}</strong>
@@ -258,7 +279,8 @@ function CustomerListItem({
           {summary.purchaseCount} bills · Paid {formatMoney(summary.totalPaid)}
           {summary.totalCreditPending > 0
             ? ` · Credit ${formatMoney(summary.totalCreditPending)}`
-            : ''}{' '}
+            : ''}
+          {chequePending > 0 ? ` · Cheque ${formatMoney(chequePending)}` : ''}{' '}
           · Last {summary.lastPurchaseLabel}
           {alertInfo?.isAlertActive ? ' · 🔔 Alert' : reminderAt ? ' · 🔔 Reminder set' : ''}
         </small>
@@ -281,6 +303,7 @@ function CustomerListItem({
 function CustomerDetail({
   summary,
   data,
+  chequeSummary,
   onSetCustomerReminder,
   onRenameCustomer,
   onRenamed,
@@ -288,6 +311,7 @@ function CustomerDetail({
 }: {
   summary: CustomerSummary
   data: AppData
+  chequeSummary?: ChequeCustomerSummary
   onSetCustomerReminder: CustomerDashboardProps['onSetCustomerReminder']
   onRenameCustomer?: CustomerDashboardProps['onRenameCustomer']
   onRenamed?: (name: string) => void
@@ -296,6 +320,8 @@ function CustomerDetail({
   const creditReminderAt = getCustomerReminderAt(data, summary.name, 'credit')
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(summary.name)
+  const chequePending = chequeSummary?.totalChequePending ?? 0
+  const openChequeBills = chequeSummary?.chequeBills ?? []
 
   useEffect(() => {
     if (!editingName) setNameDraft(summary.name)
@@ -382,8 +408,11 @@ function CustomerDetail({
           </div>
         )}
         <p>
-          {summary.purchaseCount} purchases in period · {summary.creditTimes} credit bills · Last visit{' '}
-          {summary.lastPurchaseLabel}
+          {summary.purchaseCount} purchases in period · {summary.creditTimes} credit bills
+          {chequeSummary && chequeSummary.chequeTimes > 0
+            ? ` · ${chequeSummary.chequeTimes} cheque bills`
+            : ''}{' '}
+          · Last visit {summary.lastPurchaseLabel}
         </p>
       </div>
 
@@ -392,6 +421,12 @@ function CustomerDetail({
           <span>Credit open</span>
           <strong>{formatMoney(summary.totalCreditPending)}</strong>
         </div>
+        {chequePending > 0 ? (
+          <div className="customer-summary-card customer-summary-card--peer">
+            <span>Cheque open</span>
+            <strong>{formatMoney(chequePending)}</strong>
+          </div>
+        ) : null}
         <div className="customer-summary-card">
           <span>Open credit bills</span>
           <strong>{summary.openCreditCount}</strong>
@@ -450,6 +485,28 @@ function CustomerDetail({
         ) : (
           <p className="customer-empty customer-empty--inline">No open credit for this customer.</p>
         )}
+
+        {openChequeBills.length > 0 ? (
+          <>
+            <h3 className="customer-section-title customer-section-title--peer">
+              Open cheque · {formatMoney(chequePending)}
+            </h3>
+            {openChequeBills.map((purchase) => (
+              <div key={purchase.id} className="customer-purchase-item customer-purchase-item--cheque">
+                <div className="customer-purchase-head">
+                  <strong>Bill {purchase.billDateLabel}</strong>
+                  <span>{formatMoney(purchase.chequePending)}</span>
+                </div>
+                <div className="customer-purchase-meta">{purchase.payDetail}</div>
+                {purchase.paymentHistory ? (
+                  <div className="customer-purchase-meta customer-purchase-meta--muted">
+                    {purchase.paymentHistory}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </>
+        ) : null}
 
         <h3 className="customer-section-title">All purchases</h3>
         {summary.purchases.length === 0 ? (

@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { User } from 'firebase/auth'
 import { useCash } from '../context/CashContext'
 import { useOpenTiming } from '../hooks/useOpenTiming'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import { isFirebaseConfigured } from '../firebase/config'
@@ -46,7 +47,6 @@ import {
   isoToTimeInputValue,
   parseAmount,
 } from '../utils/format'
-import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { buildHistoryItems, getHistoryPaymentLabel, historyItemSortTime, matchesHistorySearch, type HistoryItem } from '../utils/historyItems'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount } from '../utils/salePayment'
@@ -110,14 +110,17 @@ import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import './Settings.css'
 
+const WebsiteApiSettings = lazy(() => import('../components/WebsiteApiSettings'))
+
 type SettingsField = 'openingCash' | 'openingBank' | 'pin' | 'pinConfirm'
-type SettingsTab = 'general' | 'tally' | 'pinelabs' | 'cloud'
+type SettingsTab = 'general' | 'tally' | 'pinelabs' | 'cloud' | 'website'
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'general', label: 'General' },
   { id: 'tally', label: 'Tally' },
   { id: 'pinelabs', label: 'Pine Labs' },
   { id: 'cloud', label: 'Cloud' },
+  { id: 'website', label: 'Website API' },
 ]
 
 type BillEditFilter = 'all' | 'pending' | 'paid'
@@ -298,6 +301,7 @@ export default function Settings() {
   const tallyScrollRef = useRef<HTMLDivElement>(null)
   const pinelabsScrollRef = useRef<HTMLDivElement>(null)
   const cloudScrollRef = useRef<HTMLDivElement>(null)
+  const websiteScrollRef = useRef<HTMLDivElement>(null)
   const billEditListRef = useRef<HTMLUListElement>(null)
 
   useEffect(() => {
@@ -308,7 +312,9 @@ export default function Settings() {
           ? tallyScrollRef.current
           : tab === 'pinelabs'
             ? pinelabsScrollRef.current
-            : cloudScrollRef.current
+            : tab === 'website'
+              ? websiteScrollRef.current
+              : cloudScrollRef.current
     scrollEl?.scrollTo(0, 0)
   }, [tab])
 
@@ -2757,6 +2763,14 @@ export default function Settings() {
               </p>
             )}
           </section>
+          </div>
+        )}
+
+        {tab === 'website' && (
+          <div ref={websiteScrollRef}>
+            <Suspense fallback={<p className="settings-backup-meta">Loading Website API…</p>}>
+              <WebsiteApiSettings data={data} cloudLoggedIn={Boolean(cloudUser)} />
+            </Suspense>
           </div>
         )}
       </div>

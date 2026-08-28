@@ -140,6 +140,10 @@
   color: var(--warning, #f5c542);
 }
 
+.customer-summary-card--peer strong {
+  color: var(--transfer-text, #9fd0ff);
+}
+
 .customer-section-title {
   margin: 6px 0 2px;
   font-size: 0.58rem;
@@ -153,9 +157,29 @@
   color: var(--warning, #f5c542);
 }
 
+.customer-section-title--peer {
+  color: var(--transfer-text, #9fd0ff);
+}
+
 .customer-purchase-item--credit {
   border-color: rgba(245, 197, 66, 0.45);
   background: rgba(245, 197, 66, 0.06);
+}
+
+.customer-purchase-item--cheque {
+  border-color: rgba(110, 181, 255, 0.45);
+  background: rgba(110, 181, 255, 0.06);
+}
+
+.customer-peer-note {
+  margin: 6px 0 4px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid rgba(242, 220, 192, 0.2);
+  background: rgba(0, 0, 0, 0.18);
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--cream-dim);
 }
 
 .customer-empty--inline {

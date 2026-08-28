@@ -388,7 +388,7 @@ export function buildCustomerPurchases(data: AppData): CustomerPurchaseRow[] {
   return rows.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
 
-export function buildCustomerSummaries(data: AppData): CustomerSummary[] {
+function buildCustomerSummariesUncached(data: AppData): CustomerSummary[] {
   const byName = new Map<string, CustomerPurchaseRow[]>()
 
   for (const row of buildCustomerPurchases(data)) {
@@ -442,6 +442,8 @@ export function buildCustomerSummaries(data: AppData): CustomerSummary[] {
     return a.name.localeCompare(b.name)
   })
 }
+
+export const buildCustomerSummaries = memoByDataRef(buildCustomerSummariesUncached)
 
 export function searchCustomerSummaries(
   summaries: CustomerSummary[],

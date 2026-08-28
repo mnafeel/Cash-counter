@@ -3,6 +3,11 @@ import type { AppData, ReminderAlertSettings, Sale, SaleReturnEntry } from '../t
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { formatMoney, formatDate } from '../utils/format'
 import {
+  buildChequeCustomerSummaries,
+  getChequeCustomerSummary,
+  type ChequeCustomerSummary,
+} from '../utils/chequeLedger'
+import {
   buildCreditOverview,
   buildCustomerSummaries,
   filterCustomersWithCredit,
@@ -94,6 +99,14 @@ export default function CreditDashboard({
 
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const summaries = useMemo(() => buildCustomerSummaries(data), [data])
+  const chequeSummaries = useMemo(() => buildChequeCustomerSummaries(data), [data])
+  const chequePendingByName = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const row of chequeSummaries) {
+      map.set(row.name.trim().toLowerCase(), row.totalChequePending)
+    }
+    return map
+  }, [chequeSummaries])
   const baseList = useMemo(
     () => (listFilter === 'credit' ? filterCustomersWithCredit(summaries) : summaries),
     [summaries, listFilter],
@@ -102,6 +115,10 @@ export default function CreditDashboard({
   const selected = useMemo(
     () => (selectedName ? getCustomerSummary(summaries, selectedName) : undefined),
     [summaries, selectedName],
+  )
+  const selectedCheque = useMemo(
+    () => (selectedName ? getChequeCustomerSummary(chequeSummaries, selectedName) : undefined),
+    [chequeSummaries, selectedName],
   )
   const filteredSelected = useMemo(() => {
     if (!selected) return undefined
@@ -208,6 +225,7 @@ export default function CreditDashboard({
                       key={summary.name}
                       summary={summary}
                       data={data}
+                      chequePending={chequePendingByName.get(summary.name.trim().toLowerCase()) ?? 0}
                       showInlineReminder={summary.totalCreditPending > 0}
                       onSelect={() => setSelectedName(summary.name)}
                       onSetCustomerReminder={onSetCustomerReminder}
@@ -232,6 +250,7 @@ export default function CreditDashboard({
               <CreditCustomerDetail
                 summary={filteredSelected}
                 data={data}
+                chequeSummary={selectedCheque}
                 onSetCustomerReminder={onSetCustomerReminder}
                 onSetBillReminder={onSetBillReminder}
                 onSaveAlertSettings={onSaveAlertSettings}
@@ -250,6 +269,7 @@ export default function CreditDashboard({
 function CreditListItem({
   summary,
   data,
+  chequePending,
   showInlineReminder,
   onSelect,
   onSetCustomerReminder,
@@ -257,6 +277,7 @@ function CreditListItem({
 }: {
   summary: CustomerSummary
   data: AppData
+  chequePending: number
   showInlineReminder: boolean
   onSelect: () => void
   onSetCustomerReminder: CreditDashboardProps['onSetCustomerReminder']
@@ -280,7 +301,8 @@ function CreditListItem({
           {summary.purchaseCount} bills · Paid {formatMoney(summary.totalPaid)}
           {summary.totalCreditPending > 0
             ? ` · Credit ${formatMoney(summary.totalCreditPending)}`
-            : ''}{' '}
+            : ''}
+          {chequePending > 0 ? ` · Cheque ${formatMoney(chequePending)}` : ''}{' '}
           · Last {summary.lastPurchaseLabel}
           {alertInfo?.isAlertActive
             ? ` · 🔔 Alert`
@@ -307,6 +329,7 @@ function CreditListItem({
 function CreditCustomerDetail({
   summary,
   data,
+  chequeSummary,
   onSetCustomerReminder,
   onSetBillReminder,
   onSaveAlertSettings,
@@ -315,6 +338,7 @@ function CreditCustomerDetail({
 }: {
   summary: CustomerSummary
   data: AppData
+  chequeSummary?: ChequeCustomerSummary
   onSetCustomerReminder: CreditDashboardProps['onSetCustomerReminder']
   onSetBillReminder: CreditDashboardProps['onSetBillReminder']
   onSaveAlertSettings?: CreditDashboardProps['onSaveAlertSettings']
@@ -326,14 +350,18 @@ function CreditCustomerDetail({
   const [cancelTarget, setCancelTarget] = useState<{ saleId: string; entry: SaleReturnEntry } | null>(
     null,
   )
+  const chequePending = chequeSummary?.totalChequePending ?? 0
 
   return (
     <>
       <div className="customer-detail-head">
         <h2>{summary.name}</h2>
         <p>
-          {summary.purchaseCount} purchases in period · {summary.creditTimes} credit bills · Last visit{' '}
-          {summary.lastPurchaseLabel}
+          {summary.purchaseCount} purchases in period · {summary.creditTimes} credit bills
+          {chequeSummary && chequeSummary.chequeTimes > 0
+            ? ` · ${chequeSummary.chequeTimes} cheque bills`
+            : ''}{' '}
+          · Last visit {summary.lastPurchaseLabel}
         </p>
         {summary.totalCreditPending > 0 ? (
           <button
@@ -351,6 +379,12 @@ function CreditCustomerDetail({
           <span>Credit open</span>
           <strong>{formatMoney(summary.totalCreditPending)}</strong>
         </div>
+        {chequePending > 0 ? (
+          <div className="customer-summary-card customer-summary-card--peer">
+            <span>Cheque open</span>
+            <strong>{formatMoney(chequePending)}</strong>
+          </div>
+        ) : null}
         <div className="customer-summary-card">
           <span>Open credit bills</span>
           <strong>{summary.openCreditCount}</strong>
@@ -464,6 +498,23 @@ function CreditCustomerDetail({
         ) : (
           <p className="customer-empty customer-empty--inline">No open credit for this customer.</p>
         )}
+
+        {chequePending > 0 && chequeSummary && chequeSummary.chequeBills.length > 0 ? (
+          <>
+            <h3 className="customer-section-title customer-section-title--peer">
+              Also open cheque · {formatMoney(chequePending)}
+            </h3>
+            {chequeSummary.chequeBills.map((purchase) => (
+              <div key={purchase.id} className="customer-purchase-item customer-purchase-item--cheque">
+                <div className="customer-purchase-head">
+                  <strong>Bill {purchase.billDateLabel}</strong>
+                  <span>{formatMoney(purchase.chequePending)}</span>
+                </div>
+                <div className="customer-purchase-meta">{purchase.payDetail}</div>
+              </div>
+            ))}
+          </>
+        ) : null}
 
         <h3 className="customer-section-title">All credit purchases</h3>
         {summary.purchases.length === 0 ? (

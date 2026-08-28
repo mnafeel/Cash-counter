@@ -156,7 +156,7 @@ export async function logoutCloud(): Promise<void> {
   await signOut(getFirebaseAuth())
 }
 
-function requireCloudUser(): User {
+export function requireCloudUser(): User {
   const user = getCloudUser()
   if (!user) throw new Error('Login to cloud account first.')
   return user

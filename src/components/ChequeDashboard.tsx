@@ -10,6 +10,7 @@ import {
   searchChequeCustomerSummaries,
   type ChequeCustomerSummary,
 } from '../utils/chequeLedger'
+import { buildCustomerSummaries } from '../utils/customerLedger'
 import { getCustomerReminderAt } from '../utils/customerReminders'
 import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/billReminders'
 import CustomerReminderControl from './CustomerReminderControl'
@@ -75,6 +76,13 @@ export default function ChequeDashboard({
 
   const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
   const summaries = useMemo(() => buildChequeCustomerSummaries(data), [data])
+  const creditPendingByName = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const row of buildCustomerSummaries(data)) {
+      map.set(row.name.trim().toLowerCase(), row.totalCreditPending)
+    }
+    return map
+  }, [data])
   const baseList = useMemo(
     () => (listFilter === 'cheque' ? filterCustomersWithCheque(summaries) : summaries),
     [summaries, listFilter],
@@ -189,6 +197,7 @@ export default function ChequeDashboard({
                       key={summary.name}
                       summary={summary}
                       data={data}
+                      creditPending={creditPendingByName.get(summary.name.trim().toLowerCase()) ?? 0}
                       showInlineReminder={summary.totalChequePending > 0}
                       onSelect={() => setSelectedName(summary.name)}
                       onSetCustomerReminder={onSetCustomerReminder}
@@ -213,6 +222,7 @@ export default function ChequeDashboard({
               <ChequeCustomerDetail
                 summary={filteredSelected}
                 data={data}
+                creditPending={creditPendingByName.get(filteredSelected.name.trim().toLowerCase()) ?? 0}
                 onSetCustomerReminder={onSetCustomerReminder}
                 onSetBillReminder={onSetBillReminder}
                 onSaveAlertSettings={onSaveAlertSettings}
@@ -229,6 +239,7 @@ export default function ChequeDashboard({
 function ChequeListItem({
   summary,
   data,
+  creditPending,
   showInlineReminder,
   onSelect,
   onSetCustomerReminder,
@@ -236,6 +247,7 @@ function ChequeListItem({
 }: {
   summary: ChequeCustomerSummary
   data: AppData
+  creditPending: number
   showInlineReminder: boolean
   onSelect: () => void
   onSetCustomerReminder: ChequeDashboardProps['onSetCustomerReminder']
@@ -259,7 +271,8 @@ function ChequeListItem({
           {summary.purchaseCount} bills · Paid {formatMoney(summary.totalPaid)}
           {summary.totalChequePending > 0
             ? ` · Cheque ${formatMoney(summary.totalChequePending)}`
-            : ''}{' '}
+            : ''}
+          {creditPending > 0 ? ` · Credit ${formatMoney(creditPending)}` : ''}{' '}
           · Last {summary.lastPurchaseLabel}
           {alertInfo?.isAlertActive
             ? ` · 🔔 Alert`
@@ -286,12 +299,14 @@ function ChequeListItem({
 function ChequeCustomerDetail({
   summary,
   data,
+  creditPending,
   onSetCustomerReminder,
   onSetBillReminder,
   onSaveAlertSettings,
 }: {
   summary: ChequeCustomerSummary
   data: AppData
+  creditPending: number
   onSetCustomerReminder: ChequeDashboardProps['onSetCustomerReminder']
   onSetBillReminder: ChequeDashboardProps['onSetBillReminder']
   onSaveAlertSettings?: ChequeDashboardProps['onSaveAlertSettings']
@@ -303,7 +318,8 @@ function ChequeCustomerDetail({
       <div className="customer-detail-head">
         <h2>{summary.name}</h2>
         <p>
-          {summary.purchaseCount} purchases in period · {summary.chequeTimes} cheque bills · Last visit{' '}
+          {summary.purchaseCount} purchases in period · {summary.chequeTimes} cheque bills
+          {creditPending > 0 ? ` · Credit open ${formatMoney(creditPending)}` : ''} · Last visit{' '}
           {summary.lastPurchaseLabel}
         </p>
         {summary.totalChequePending > 0 ? (
@@ -322,6 +338,12 @@ function ChequeCustomerDetail({
           <span>Cheque open</span>
           <strong>{formatMoney(summary.totalChequePending)}</strong>
         </div>
+        {creditPending > 0 ? (
+          <div className="customer-summary-card customer-summary-card--peer">
+            <span>Credit open</span>
+            <strong>{formatMoney(creditPending)}</strong>
+          </div>
+        ) : null}
         <div className="customer-summary-card">
           <span>Open cheque bills</span>
           <strong>{summary.openChequeCount}</strong>
@@ -396,6 +418,12 @@ function ChequeCustomerDetail({
         ) : (
           <p className="customer-empty customer-empty--inline">No open cheque for this customer.</p>
         )}
+
+        {creditPending > 0 ? (
+          <p className="customer-peer-note" role="status">
+            Also credit open · {formatMoney(creditPending)}
+          </p>
+        ) : null}
 
         <h3 className="customer-section-title">All cheque purchases</h3>
         {summary.purchases.length === 0 ? (

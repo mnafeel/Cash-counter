@@ -33,6 +33,23 @@ import {
   type CloudBackupTotals,
 } from './backup'
 
+function pushWebsiteExportBestEffort(data: AppData): void {
+  void import('../api/websiteApi')
+    .then((mod) => mod.pushWebsiteExportAfterBackup(data))
+    .catch(() => {
+      /* website API is optional */
+    })
+}
+
+/** Auto-publish to Website API after any local save — independent of cloud backup. */
+function scheduleWebsiteApiExportBestEffort(data: AppData): void {
+  void import('../api/websiteApi')
+    .then((mod) => mod.scheduleWebsiteApiExport(data))
+    .catch(() => {
+      /* website API is optional */
+    })
+}
+
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let pendingData: AppData | null = null
 let onStatusChange: ((message: string, isError?: boolean) => void) | null = null
@@ -535,6 +552,7 @@ async function runBackup(options?: { force?: boolean }): Promise<void> {
     lastAppliedRemoteBackupAt = parseBackupTimestamp(at)
     const totals = cloudBackupTotals(data)
     emitCloudRemoteSummary(data, at)
+    void pushWebsiteExportBestEffort(data)
     emitBackupStatus(
       `Backed up · ${totals.bills} bills · cash ${totals.cash} · bank ${totals.bank} · ${new Date(at).toLocaleString()}`,
     )
@@ -555,6 +573,10 @@ async function runBackup(options?: { force?: boolean }): Promise<void> {
 }
 
 export function notifyDataChanged(data: AppData): void {
+  // Website API auto-export: always schedule when enabled (does not wait for backup).
+  if (!applyingRemote && !loginRestoreActive) {
+    scheduleWebsiteApiExportBestEffort(data)
+  }
   if (!isFirebaseConfigured() || !isAutoBackupEnabled() || !isMainBillingDevice()) return
   pendingData = data
   if (!isCloudLoggedIn() || applyingRemote || loginRestoreActive) return
@@ -565,6 +587,9 @@ export function notifyDataChanged(data: AppData): void {
 
 /** Push full local snapshot to cloud right away — used after deletes so other devices match. */
 export function notifyDataChangedImmediate(data: AppData): void {
+  if (!applyingRemote && !loginRestoreActive) {
+    scheduleWebsiteApiExportBestEffort(data)
+  }
   if (!isFirebaseConfigured() || !isAutoBackupEnabled() || !isMainBillingDevice()) return
   pendingData = data
   if (!isCloudLoggedIn() || applyingRemote || loginRestoreActive) return
@@ -605,6 +630,7 @@ export async function backupNow(options?: { force?: boolean }): Promise<string> 
   lastAppliedRemoteBackupAt = parseBackupTimestamp(at)
   const totals = cloudBackupTotals(data)
   emitCloudRemoteSummary(data, at)
+  void pushWebsiteExportBestEffort(data)
   emitBackupStatus(
     `Backed up · ${totals.bills} bills · cash ${totals.cash} · bank ${totals.bank} · ${new Date(at).toLocaleString()}`,
   )
