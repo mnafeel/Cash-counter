@@ -1832,7 +1832,6 @@ export function updateExpenseStaffSalaryMonth(
             ...expense,
             staffSalaryMonth,
             staffSalaryLink: true,
-            updatedAt: new Date().toISOString(),
           }
         : expense,
     ),
@@ -1853,7 +1852,6 @@ export function unlinkExpenseFromStaff(data: AppData, expenseId: string): AppDat
             staffId: undefined,
             staffSalaryMonth: undefined,
             staffSalaryLink: false,
-            updatedAt: new Date().toISOString(),
           }
         : expense,
     ),

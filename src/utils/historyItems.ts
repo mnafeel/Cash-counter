@@ -2218,7 +2218,8 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
         amount: e.amount,
         sub: toBank ? '💵 → 🏦 Cash to bank' : '🏦 → 💵 Bank to cash',
         name: e.name,
-        date: e.updatedAt ?? e.createdAt,
+        date: e.createdAt,
+        billCreatedAt: e.createdAt,
         paymentMode: toBank ? 'cash' : 'bank',
         paymentModes: [toBank ? 'cash' : 'bank'],
       }]
@@ -2268,7 +2269,8 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
       amount: expenseAmount,
       sub: isAdd ? addSub : expenseSub,
       name: e.name,
-      date: e.updatedAt ?? e.createdAt,
+      date: e.createdAt,
+      billCreatedAt: e.createdAt,
       paymentMode: payMode,
       paymentModes:
         e.payType === 'split'
