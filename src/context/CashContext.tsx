@@ -59,6 +59,7 @@ import {
   type PaidSalePaymentEdit,
   computeDrawerBalances,
   getPendingBills,
+  importManualTallyPendingBill,
   importTallyBills,
   loadData,
   purgeTrashRecord,
@@ -79,6 +80,7 @@ import {
   updateExpense,
   updateStaffMember,
   updateExpenseStaffSalaryMonth,
+  unlinkExpenseFromStaff,
   updatePendingBill,
   updateSaleBill,
   updateSaleCustomerName,
@@ -232,6 +234,7 @@ interface CashContextValue {
   removeStaffLeave: (leaveId: string) => void
   applyStaffSalaryAdvance: (input: { staffId: string; fromMonth: string }) => string | null
   updateExpenseStaffSalaryMonth: (expenseId: string, staffSalaryMonth: string) => void
+  unlinkExpenseFromStaff: (expenseId: string) => void
   cancelApprovedCheque: (id: string, eventIndex?: number | null) => boolean
   cancelCreditCollection: (id: string, eventIndex?: number | null) => boolean
   updateApprovedChequeDate: (
@@ -371,6 +374,7 @@ interface CashContextValue {
   saveTallyApiUrl: (url: string) => void
   saveTallyDateScope: (scope: TallyDateScope) => void
   syncTallyBills: () => Promise<{ connected: boolean; billCount: number; imported: number }>
+  addManualTallyPendingBill: (customerName: string, billAmount: number) => void
   giveLoan: (input: {
     personName: string
     amount: number
@@ -546,6 +550,15 @@ export function CashProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const refresh = useCallback(() => setData(loadData()), [])
+
+  const addManualTallyPendingBill = useCallback((customerName: string, billAmount: number) => {
+    setData((prev) =>
+      importManualTallyPendingBill(prev, {
+        billAmount,
+        customerName: customerName.trim() || undefined,
+      }),
+    )
+  }, [])
 
   const syncTallyBills = useCallback(async () => {
     const apiUrl = getTallyApiUrl()
@@ -888,6 +901,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const updateExpenseStaffSalaryMonthHandler = useCallback((expenseId: string, staffSalaryMonth: string) => {
     setData((prev) => updateExpenseStaffSalaryMonth(prev, expenseId, staffSalaryMonth))
+  }, [])
+
+  const unlinkExpenseFromStaffHandler = useCallback((expenseId: string) => {
+    setData((prev) => unlinkExpenseFromStaff(prev, expenseId))
   }, [])
 
   const addSupplier = useCallback((name: string) => {
@@ -1409,6 +1426,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeStaffLeave: removeStaffLeaveHandler,
       applyStaffSalaryAdvance: applyStaffSalaryAdvanceHandler,
       updateExpenseStaffSalaryMonth: updateExpenseStaffSalaryMonthHandler,
+      unlinkExpenseFromStaff: unlinkExpenseFromStaffHandler,
       addSupplier,
       addSupplierItem,
       cancelApprovedCheque: cancelApprovedChequeSale,
@@ -1447,6 +1465,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       saveTallyApiUrl: saveTallyApiUrlHandler,
       saveTallyDateScope: saveTallyDateScopeHandler,
       syncTallyBills,
+      addManualTallyPendingBill,
       giveLoan: giveLoanHandler,
       takeLoan: takeLoanHandler,
       settleLoanRecord: settleLoanRecordHandler,
@@ -1475,6 +1494,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeStaffLeaveHandler,
       applyStaffSalaryAdvanceHandler,
       updateExpenseStaffSalaryMonthHandler,
+      unlinkExpenseFromStaffHandler,
       addSupplier,
       addSupplierItem,
       cancelApprovedChequeSale,
@@ -1510,6 +1530,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       saveTallyApiUrlHandler,
       saveTallyDateScopeHandler,
       syncTallyBills,
+      addManualTallyPendingBill,
       giveLoanHandler,
       takeLoanHandler,
       settleLoanRecordHandler,

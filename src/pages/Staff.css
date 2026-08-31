@@ -1124,6 +1124,30 @@
   border-color: rgba(126, 200, 227, 0.55);
 }
 
+.staff-page-payment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.staff-page-payment-unlink {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--cream-dim);
+  font-size: 0.58rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.staff-page-payment-unlink:hover {
+  color: var(--cream);
+  border-color: color-mix(in srgb, var(--cream) 35%, var(--border));
+}
+
 .staff-page-payment-month-edit {
   display: flex;
   flex-direction: column;

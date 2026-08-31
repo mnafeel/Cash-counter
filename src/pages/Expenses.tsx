@@ -5,6 +5,7 @@ import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
 import ExpenseHistoryPanel from '../components/ExpenseHistoryPanel'
+import StaffSalaryUnlinkConfirm from '../components/StaffSalaryUnlinkConfirm'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { usePageEscape } from '../hooks/usePageEscape'
 import type { ExpensePayType } from '../types'
@@ -65,7 +66,9 @@ function Expenses({ active }: { active: boolean }) {
   const [highlightedNameIndex, setHighlightedNameIndex] = useState(-1)
   const [amountDropdownOpen, setAmountDropdownOpen] = useState(false)
   const [highlightedAmountIndex, setHighlightedAmountIndex] = useState(-1)
-  const [linkToSalary, setLinkToSalary] = useState(true)
+  const [linkToSalary, setLinkToSalary] = useState(false)
+  const [staffLinkDismissed, setStaffLinkDismissed] = useState(false)
+  const [unlinkConfirmKind, setUnlinkConfirmKind] = useState<'dismiss' | 'checkbox' | null>(null)
   const [staffSalaryMonth, setStaffSalaryMonth] = useState(currentSalaryMonth())
   const salaryMonthOptions = useMemo(() => listSalaryMonthPickerOptions(), [])
   const [showExpenseHistory, setShowExpenseHistory] = useState(false)
@@ -116,22 +119,25 @@ function Expenses({ active }: { active: boolean }) {
   const staffRemainingCaption = staffRemainingAmount
     ? `${formatSalaryMonthLabel(staffSalaryMonth)} remaining`
     : undefined
-  const showStaffOptions = Boolean(matchedStaff)
+  const showStaffOptions = Boolean(matchedStaff) && !staffLinkDismissed
   const salaryMonthHint = useMemo(
     () => (showStaffOptions && shouldPromptSalaryMonthChoice() ? salaryMonthChoiceHint() : ''),
     [showStaffOptions],
   )
 
   useEffect(() => {
-    if (!matchedStaff) return
-    setLinkToSalary(true)
+    if (!matchedStaff) {
+      setStaffLinkDismissed(false)
+      setLinkToSalary(false)
+      return
+    }
     setStaffSalaryMonth(suggestDefaultSalaryMonth())
   }, [matchedStaff?.id])
 
   useEffect(() => {
     if (!matchedStaff) return
     staffPanelRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [matchedStaff?.id, linkToSalary])
+  }, [matchedStaff?.id, linkToSalary, staffLinkDismissed])
 
   const amount = parseAmount(amountStr)
   const cashSplitAmount = parseAmount(cashSplitStr)
@@ -175,8 +181,33 @@ function Expenses({ active }: { active: boolean }) {
   }
 
   function resetStaffFields() {
-    setLinkToSalary(true)
+    setLinkToSalary(false)
+    setStaffLinkDismissed(false)
     setStaffSalaryMonth(suggestDefaultSalaryMonth())
+  }
+
+  function requestDismissStaffLink() {
+    if (!matchedStaff) return
+    setUnlinkConfirmKind('dismiss')
+  }
+
+  function requestUnlinkCheckbox() {
+    if (!linkToSalary) return
+    setUnlinkConfirmKind('checkbox')
+  }
+
+  function confirmStaffUnlink() {
+    if (unlinkConfirmKind === 'dismiss') {
+      setStaffLinkDismissed(true)
+      setLinkToSalary(false)
+    } else if (unlinkConfirmKind === 'checkbox') {
+      setLinkToSalary(false)
+    }
+    setUnlinkConfirmKind(null)
+  }
+
+  function reopenStaffLink() {
+    setStaffLinkDismissed(false)
   }
 
   const resetExpenseForm = useCallback(() => {
@@ -199,8 +230,9 @@ function Expenses({ active }: { active: boolean }) {
 
   function applyNameSuggestion(option: ExpenseNamePickerOption) {
     setName(option.name)
+    setStaffLinkDismissed(false)
+    setLinkToSalary(false)
     if (option.staffSalaryMonth) {
-      setLinkToSalary(true)
       setStaffSalaryMonth(option.staffSalaryMonth)
     }
     setNameDropdownOpen(false)
@@ -233,16 +265,6 @@ function Expenses({ active }: { active: boolean }) {
         staffSalaryMonth,
         staffSalaryLink: true,
       })
-    } else if (matchedStaff && !linkToSalary) {
-      recordExpense({
-        amount,
-        name: name.trim(),
-        payType,
-        cashAmount: splitMode ? cashSplitAmount : undefined,
-        bankAmount: splitMode ? bankSplitAmount : undefined,
-        kind: 'expense',
-        staffSalaryLink: false,
-      })
     } else {
       recordExpense({
         amount,
@@ -251,6 +273,7 @@ function Expenses({ active }: { active: boolean }) {
         cashAmount: splitMode ? cashSplitAmount : undefined,
         bankAmount: splitMode ? bankSplitAmount : undefined,
         kind: 'expense',
+        ...(matchedStaff || staffLinkDismissed ? { staffSalaryLink: false as const } : {}),
       })
     }
 
@@ -665,9 +688,24 @@ function Expenses({ active }: { active: boolean }) {
 
       {showStaffOptions && matchedStaff ? (
         <div ref={staffPanelRef} className="expenses-staff expenses-staff--active">
-          <p className="expenses-staff-heading">
-            Staff salary · <strong>{matchedStaff.name}</strong>
-          </p>
+          <div className="expenses-staff-heading-row">
+            <p className="expenses-staff-heading">
+              Staff · <strong>{matchedStaff.name}</strong>
+            </p>
+            <button
+              type="button"
+              className="expenses-staff-unlink"
+              aria-label={`Record ${matchedStaff.name} as a general expense (not salary)`}
+              title="Unlink from salary"
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                requestDismissStaffLink()
+              }}
+            >
+              ×
+            </button>
+          </div>
           {staffRemainingAmount ? (
             <p className="expenses-staff-remaining">
               Remaining <strong>{formatMoney(staffRemainingAmount)}</strong> for{' '}
@@ -680,9 +718,15 @@ function Expenses({ active }: { active: boolean }) {
             <input
               type="checkbox"
               checked={linkToSalary}
-              onChange={(e) => setLinkToSalary(e.target.checked)}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setLinkToSalary(true)
+                  return
+                }
+                requestUnlinkCheckbox()
+              }}
             />
-            <span>Link to salary balance</span>
+            <span>Link to salary balance (confirm)</span>
           </label>
 
           {linkToSalary ? (
@@ -703,6 +747,15 @@ function Expenses({ active }: { active: boolean }) {
           ) : (
             <p className="expenses-staff-note">Recorded as a general expense only — salary balance will not change.</p>
           )}
+        </div>
+      ) : matchedStaff && staffLinkDismissed ? (
+        <div className="expenses-staff-dismissed">
+          <span>
+            {matchedStaff.name} · general expense only (not linked to salary)
+          </span>
+          <button type="button" className="expenses-staff-relink" onClick={reopenStaffLink}>
+            Link salary
+          </button>
         </div>
       ) : null}
 
@@ -760,6 +813,13 @@ function Expenses({ active }: { active: boolean }) {
           {!saved ? <span className="btn-shortcut">Alt+S</span> : null}
         </button>
       </div>
+
+      <StaffSalaryUnlinkConfirm
+        open={unlinkConfirmKind !== null}
+        staffName={matchedStaff?.name ?? 'Staff'}
+        onClose={() => setUnlinkConfirmKind(null)}
+        onConfirm={confirmStaffUnlink}
+      />
 
       <ExpenseHistoryPanel
         open={showExpenseHistory}

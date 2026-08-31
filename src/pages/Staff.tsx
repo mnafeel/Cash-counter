@@ -37,6 +37,7 @@ import {
   type SalaryMonthKey,
 } from '../utils/staffLedger'
 import { printStaffSalaryReport } from '../utils/staffSalaryReport'
+import StaffSalaryUnlinkConfirm from '../components/StaffSalaryUnlinkConfirm'
 import './Staff.css'
 
 export default function Staff() {
@@ -51,6 +52,7 @@ export default function Staff() {
     removeStaffLeave,
     applyStaffSalaryAdvance,
     updateExpenseStaffSalaryMonth,
+    unlinkExpenseFromStaff,
   } = useCash()
   const now = new Date()
   const [year, setYear] = useState(staffDefaultYear(now))
@@ -66,6 +68,7 @@ export default function Staff() {
   const [pendingRemoveStaffId, setPendingRemoveStaffId] = useState<string | null>(null)
   const [inlineEditStaffId, setInlineEditStaffId] = useState<string | null>(null)
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
+  const [pendingUnlinkExpenseId, setPendingUnlinkExpenseId] = useState<string | null>(null)
   const [editingPaymentMonth, setEditingPaymentMonth] = useState<SalaryMonthKey>(currentSalaryMonth())
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [attendanceMenuDate, setAttendanceMenuDate] = useState<string | null>(null)
@@ -127,6 +130,14 @@ export default function Staff() {
     )
     return row ? formatSalaryMonthLabel(row.fromMonth as SalaryMonthKey) : null
   }, [data.staffSalaryAdvances, selectedStaffId, monthKey, selectedSummary?.advanceIn])
+
+  const pendingUnlinkExpense = useMemo(
+    () =>
+      pendingUnlinkExpenseId
+        ? data.expenses.find((expense) => expense.id === pendingUnlinkExpenseId) ?? null
+        : null,
+    [data.expenses, pendingUnlinkExpenseId],
+  )
 
   useEffect(() => {
     setAttendanceMenuDate(null)
@@ -201,6 +212,18 @@ export default function Staff() {
     if (!editingPaymentMonth) return
     updateExpenseStaffSalaryMonth(expenseId, editingPaymentMonth)
     setEditingPaymentId(null)
+    setFormError('')
+  }
+
+  function requestUnlinkPayment(expenseId: string) {
+    setPendingUnlinkExpenseId(expenseId)
+  }
+
+  function confirmUnlinkPayment() {
+    if (!pendingUnlinkExpenseId) return
+    unlinkExpenseFromStaff(pendingUnlinkExpenseId)
+    if (editingPaymentId === pendingUnlinkExpenseId) setEditingPaymentId(null)
+    setPendingUnlinkExpenseId(null)
     setFormError('')
   }
 
@@ -1002,13 +1025,23 @@ export default function Staff() {
                           </div>
                         </label>
                       ) : (
-                        <button
-                          type="button"
-                          className="staff-page-payment-month-btn"
-                          onClick={() => startEditPaymentMonth(expense.id, countedMonth)}
-                        >
-                          Counted for {formatSalaryMonthLabel(countedMonth)} · Edit month
-                        </button>
+                        <div className="staff-page-payment-actions">
+                          <button
+                            type="button"
+                            className="staff-page-payment-month-btn"
+                            onClick={() => startEditPaymentMonth(expense.id, countedMonth)}
+                          >
+                            Counted for {formatSalaryMonthLabel(countedMonth)} · Edit month
+                          </button>
+                          <button
+                            type="button"
+                            className="staff-page-payment-unlink"
+                            onClick={() => requestUnlinkPayment(expense.id)}
+                            title="Keep expense, remove salary link"
+                          >
+                            × Unlink
+                          </button>
+                        </div>
                       )}
                     </div>
                   </li>
@@ -1230,6 +1263,18 @@ export default function Staff() {
           </div>
         </div>
       ) : null}
+
+      <StaffSalaryUnlinkConfirm
+        open={pendingUnlinkExpense !== null}
+        staffName={pendingUnlinkExpense?.name ?? 'Expense'}
+        detail={
+          pendingUnlinkExpense
+            ? `${formatMoney(pendingUnlinkExpense.amount)} · paid ${formatDate(pendingUnlinkExpense.createdAt)}`
+            : undefined
+        }
+        onClose={() => setPendingUnlinkExpenseId(null)}
+        onConfirm={confirmUnlinkPayment}
+      />
     </div>
   )
 }

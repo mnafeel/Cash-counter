@@ -204,7 +204,7 @@ export default function Settings() {
     replaceAllData,
     hydrateData,
     resetAllData,
-    recordSale,
+    addManualTallyPendingBill,
     getTallyApiUrl,
     getTallyDateScope,
     saveTallyApiUrl,
@@ -1369,15 +1369,7 @@ export default function Settings() {
       setTallyError(true)
       return
     }
-    recordSale({
-      billAmount: amount,
-      paidAmount: 0,
-      changeAmount: 0,
-      payType: 'credit',
-      pendingPayType: 'credit',
-      status: 'pending',
-      customerName: name || undefined,
-    })
+    addManualTallyPendingBill(name, amount)
     setManualName('')
     setManualAmount('')
     setTallyStatus(`Added pending bill${name ? ` · ${name}` : ''} · ${formatMoney(amount)}`)

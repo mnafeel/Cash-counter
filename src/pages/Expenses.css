@@ -242,6 +242,60 @@
   color: var(--cream-dim);
 }
 
+.expenses-staff-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.expenses-staff-unlink {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  font-size: 1rem;
+  line-height: 1;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.expenses-staff-unlink:hover {
+  color: var(--cream);
+  border-color: color-mix(in srgb, var(--cream) 35%, var(--border));
+}
+
+.expenses-staff-dismissed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+}
+
+.expenses-staff-relink {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.56rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .expenses-staff-heading strong {
   color: var(--cream);
 }

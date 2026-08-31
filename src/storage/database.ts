@@ -1250,8 +1250,7 @@ export function addTallyPendingBill(
     paidAmount: 0,
     changeAmount: 0,
     status: 'pending',
-    payType: 'credit',
-    pendingPayType: 'credit',
+    payType: 'cash',
     customerName: bill.customerName?.trim() || undefined,
     source: 'tally',
     sourceId: bill.sourceId,
@@ -1259,6 +1258,21 @@ export function addTallyPendingBill(
     updatedAt: now,
   }
   return { ...data, sales: [newSale, ...data.sales] }
+}
+
+/** Manual Tally entry from Settings when the HTTP API is unavailable. */
+export function importManualTallyPendingBill(
+  data: AppData,
+  bill: { billAmount: number; customerName?: string },
+): AppData {
+  if (!(bill.billAmount > 0)) return data
+  return importTallyBills(data, [
+    {
+      sourceId: `manual:${crypto.randomUUID()}`,
+      billAmount: bill.billAmount,
+      customerName: bill.customerName,
+    },
+  ])
 }
 
 export function importTallyBills(
@@ -1737,6 +1751,7 @@ export function linkExistingExpensesToStaff(
   const expenses = data.expenses.map((expense) => {
     if (!isStaffLinkableExpense(expense)) return expense
     if (expense.staffId) return expense
+    if (expense.staffSalaryLink === false) return expense
     if (expense.name.trim().toLowerCase() !== key) return expense
     changed = true
     return {
@@ -1817,6 +1832,27 @@ export function updateExpenseStaffSalaryMonth(
             ...expense,
             staffSalaryMonth,
             staffSalaryLink: true,
+            updatedAt: new Date().toISOString(),
+          }
+        : expense,
+    ),
+  }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function unlinkExpenseFromStaff(data: AppData, expenseId: string): AppData {
+  const existing = data.expenses.find((expense) => expense.id === expenseId)
+  if (!existing?.staffId) return data
+  const next = {
+    ...data,
+    expenses: data.expenses.map((expense) =>
+      expense.id === expenseId
+        ? {
+            ...expense,
+            staffId: undefined,
+            staffSalaryMonth: undefined,
+            staffSalaryLink: false,
             updatedAt: new Date().toISOString(),
           }
         : expense,
