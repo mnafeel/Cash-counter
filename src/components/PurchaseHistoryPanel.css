@@ -2081,11 +2081,162 @@
 }
 
 .purchase-hist-credits-tools {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.purchase-hist-supplier-sort--credits {
+  min-width: 0;
+  margin: 0;
+}
+
+.purchase-hist-supplier-sort--root {
+  margin-top: 2px;
+}
+
+.purchase-hist-supplier-sort-scroll {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.purchase-hist-credits-sort-chip {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  font-size: 0.52rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.purchase-hist-credits-sort-chip--active {
+  color: #e8c080;
+  border-color: rgba(200, 150, 80, 0.55);
+  background: rgba(180, 120, 40, 0.16);
+}
+
+.purchase-hist-credits-action-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+  padding: 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.purchase-hist-credits-action-bar--active {
+  border-color: rgba(200, 150, 80, 0.35);
+  background: rgba(180, 120, 40, 0.08);
+}
+
+.purchase-hist-credits-select-btn {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream);
+  font-size: 0.58rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.purchase-hist-credits-select-btn--active {
+  color: #e8c080;
+  border-color: rgba(200, 150, 80, 0.55);
+  background: rgba(180, 120, 40, 0.14);
+}
+
+.purchase-hist-credits-action-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.purchase-hist-credits-chip-btn {
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  font-size: 0.52rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.purchase-hist-credits-chip-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.purchase-hist-credits-pay-btn {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  min-width: 108px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(200, 150, 80, 0.55);
+  background: linear-gradient(180deg, rgba(232, 192, 128, 0.28), rgba(180, 120, 40, 0.22));
+  color: #fff8eb;
+  cursor: pointer;
+}
+
+.purchase-hist-credits-pay-btn span {
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.purchase-hist-credits-pay-btn small {
+  font-size: 0.48rem;
+  font-weight: 700;
+  color: rgba(255, 248, 235, 0.78);
+}
+
+.purchase-hist-credits-pay-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.purchase-hist-credit-item-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.purchase-hist-credit-item-sep {
+  color: var(--text-muted);
+}
+
+@media (max-width: 480px) {
+  .purchase-hist-credits-tools {
+    grid-template-columns: 1fr;
+  }
+
+  .purchase-hist-credits-action-bar {
+    align-items: stretch;
+  }
+
+  .purchase-hist-credits-pay-btn {
+    margin-left: 0;
+    width: 100%;
+    align-items: center;
+  }
 }
 
 .purchase-hist-credits-month {
@@ -2189,27 +2340,28 @@ html[data-screen='phone'] .purchase-hist-item-actions {
 }
 
 .purchase-hist-credits-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0.5rem 0 0.75rem;
+  display: none;
 }
 
 .purchase-hist-select-check {
   display: flex;
   align-items: center;
-  padding: 0 0.35rem 0 0.75rem;
+  justify-content: center;
+  width: 34px;
+  flex-shrink: 0;
+  padding: 0 0 0 4px;
 }
 
 .purchase-hist-select-check input {
-  width: 1.1rem;
-  height: 1.1rem;
+  width: 1rem;
+  height: 1rem;
+  accent-color: #e8c080;
 }
 
 .purchase-hist-credit-item--selected {
-  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  border-radius: 12px;
+  border-color: rgba(200, 150, 80, 0.55);
+  background: rgba(180, 120, 40, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(200, 150, 80, 0.2);
 }
 
 .purchase-hist-credit-supplier-inline {
@@ -2234,6 +2386,109 @@ html[data-screen='phone'] .purchase-hist-item-actions {
   border-radius: 16px;
   padding: 1rem;
   box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.purchase-credit-pay-modal--wide {
+  width: min(100%, 520px);
+  max-height: min(88vh, 720px);
+  overflow: auto;
+}
+
+.sale-credit-pay-party {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.sale-credit-pay-party-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.sale-credit-pay-party-head strong {
+  font-size: 0.78rem;
+}
+
+.sale-credit-pay-party-head span {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.purchase-credit-pay-bill {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.purchase-credit-pay-bill--no1 {
+  border-color: rgba(143, 212, 255, 0.35);
+  background: rgba(143, 212, 255, 0.05);
+}
+
+.purchase-credit-pay-bill--no2 {
+  border-color: rgba(255, 212, 143, 0.35);
+  background: rgba(255, 212, 143, 0.05);
+}
+
+.purchase-credit-pay-bill-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.purchase-credit-pay-bill-head strong {
+  font-size: 0.78rem;
+}
+
+.purchase-credit-pay-bill-head span {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.purchase-credit-pay-modes--bill {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.purchase-credit-pay-mode-btn {
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  font-size: 0.58rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.purchase-credit-pay-mode-btn--active {
+  color: #e8c080;
+  border-color: rgba(200, 150, 80, 0.55);
+  background: rgba(180, 120, 40, 0.16);
+}
+
+.purchase-credit-pay-bill--no1 .purchase-credit-pay-mode-btn--active {
+  color: #8fd4ff;
+  border-color: rgba(143, 212, 255, 0.55);
+  background: rgba(143, 212, 255, 0.12);
+}
+
+.purchase-credit-pay-bill--no2 .purchase-credit-pay-mode-btn--active {
+  color: #ffd48f;
+  border-color: rgba(255, 212, 143, 0.55);
+  background: rgba(255, 212, 143, 0.12);
 }
 
 .purchase-credit-pay-head {
@@ -2314,9 +2569,9 @@ html[data-screen='phone'] .purchase-hist-item-actions {
   border: none;
   border-radius: 10px;
   padding: 0.55rem 0.85rem;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 600;
+  background: linear-gradient(180deg, rgba(232, 192, 128, 0.95), rgba(180, 120, 40, 0.92));
+  color: #2a1c08;
+  font-weight: 700;
   cursor: pointer;
 }
 

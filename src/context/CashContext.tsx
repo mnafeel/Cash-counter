@@ -37,6 +37,7 @@ import {
   applyPartialBalanceSaleCollection,
   applyPurchaseCreditPayment,
   applyBulkPurchaseCreditPayments,
+  applyBulkSaleCreditPayments,
   cancelApprovedCheque,
   cancelApprovedChequeEntry,
   cancelCreditCollectionEntry,
@@ -236,6 +237,7 @@ interface CashContextValue {
     monthlySalary?: number
     salaryDaysPerMonth?: number
     commissionPercent?: number
+    active?: boolean
   }) => void
   updateStaffCommissionDefault: (percent: number) => void
   updateStaffBonusMonthSettings: (
@@ -307,6 +309,22 @@ interface CashContextValue {
         bankAmount?: number
         chequeAmount?: number
         chequeApproved?: boolean
+      }
+    }>,
+  ) => void
+  applyBulkSaleCreditPayments: (
+    payments: Array<{
+      id: string
+      payment: {
+        collected: number
+        payType: PayType
+        cashAmount?: number
+        bankAmount?: number
+        chequeAmount?: number
+        chequeApproved?: boolean
+        customerName?: string
+        changeAmount?: number
+        collectTarget?: number
       }
     }>,
   ) => void
@@ -859,6 +877,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         monthlySalary?: number
         salaryDaysPerMonth?: number
         commissionPercent?: number
+        active?: boolean
       },
     ) => {
       setData((prev) => updateStaffMember(prev, id, updates))
@@ -1198,6 +1217,28 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const applyBulkSaleCreditPaymentsHandler = useCallback(
+    (
+      payments: Array<{
+        id: string
+        payment: {
+          collected: number
+          payType: PayType
+          cashAmount?: number
+          bankAmount?: number
+          chequeAmount?: number
+          chequeApproved?: boolean
+          customerName?: string
+          changeAmount?: number
+          collectTarget?: number
+        }
+      }>,
+    ) => {
+      setData((prev) => applyBulkSaleCreditPayments(prev, payments))
+    },
+    [],
+  )
+
   const restoreTrashRecordHandler = useCallback((kind: TrashKind, id: string) => {
     setData((prev) => restoreTrashRecord(prev, kind, id))
   }, [])
@@ -1498,6 +1539,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateReminderAlertSettings: updateReminderAlertSettingsHandler,
       applyPurchaseCreditPayment: applyPurchaseCreditPaymentHandler,
       applyBulkPurchaseCreditPayments: applyBulkPurchaseCreditPaymentsHandler,
+      applyBulkSaleCreditPayments: applyBulkSaleCreditPaymentsHandler,
       restoreTrashRecord: restoreTrashRecordHandler,
       purgeTrashRecord: purgeTrashRecordHandler,
       emptyTrash: emptyTrashHandler,
@@ -1568,6 +1610,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateReminderAlertSettingsHandler,
       applyPurchaseCreditPaymentHandler,
       applyBulkPurchaseCreditPaymentsHandler,
+      applyBulkSaleCreditPaymentsHandler,
       restoreTrashRecordHandler,
       purgeTrashRecordHandler,
       emptyTrashHandler,

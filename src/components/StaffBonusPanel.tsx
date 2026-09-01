@@ -1,4 +1,4 @@
-import { memo, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { StaffBonusMemberShare, StaffBonusMonthSettings, StaffBonusPart, StaffMember } from '../types'
 import { formatMoney, parseAmount } from '../utils/format'
 import RoundTypeChips from './RoundTypeChips'
@@ -25,14 +25,18 @@ import {
   sumBonusRemainingForStaff,
 } from '../utils/staffCommission'
 import Portal from './Portal'
+import StaffOverlayMonthBar from './StaffOverlayMonthBar'
 import './StaffBonusPanel.css'
 
 type StaffBonusPanelProps = {
   open: boolean
   onClose: () => void
-  overlayTop?: number
   monthKey: SalaryMonthKey
   monthLabel: string
+  year: number
+  monthOptions: Array<{ key: SalaryMonthKey; label: string }>
+  onMonthPick: (monthKey: SalaryMonthKey) => void
+  onYearShift: (delta: number) => void
   staff: StaffMember[]
   collectedActual: number
   settings: StaffBonusMonthSettings
@@ -523,9 +527,12 @@ function StepSection({ step, title, hint, children }: StepSectionProps) {
 export default function StaffBonusPanel({
   open,
   onClose,
-  overlayTop = 0,
   monthKey,
   monthLabel,
+  year,
+  monthOptions,
+  onMonthPick,
+  onYearShift,
   staff,
   collectedActual,
   settings,
@@ -601,10 +608,6 @@ export default function StaffBonusPanel({
 
   if (!open) return null
 
-  const panelStyle = {
-    '--staff-bonus-top': `${Math.max(overlayTop, 0)}px`,
-  } as CSSProperties
-
   function savePlan() {
     const next: StaffBonusMonthSettings = {
       ...draft,
@@ -643,16 +646,15 @@ export default function StaffBonusPanel({
     <Portal>
       <div
         className="staff-bonus-overlay"
-        style={panelStyle}
         role="dialog"
         aria-modal="true"
-        aria-label="Staff bonus plan"
+        aria-label="Staff incentive plan"
       >
-        <div className="staff-bonus-backdrop" aria-hidden="true" />
+        <button type="button" className="staff-bonus-backdrop" aria-label="Close incentive plan" onClick={onClose} />
         <section className="staff-bonus-panel">
           <header className="staff-bonus-panel-head">
             <div>
-              <h2>Bonus plan</h2>
+              <h2>Incentive plan</h2>
               <p>{monthLabel}</p>
             </div>
             <button type="button" className="staff-bonus-close" onClick={onClose}>
@@ -660,7 +662,15 @@ export default function StaffBonusPanel({
             </button>
           </header>
 
-          <StepSection step={1} title="Sales credited" hint="Pick the collection amount used for bonus">
+          <StaffOverlayMonthBar
+            monthKey={monthKey}
+            year={year}
+            monthOptions={monthOptions}
+            onMonthPick={onMonthPick}
+            onYearShift={onYearShift}
+          />
+
+          <StepSection step={1} title="Sales credited" hint="Pick the collection amount used for incentive">
             <div className="staff-bonus-credit">
               <div className="staff-bonus-credit-row">
                 <span>Actual {formatMoney(collectedActual)}</span>
@@ -688,7 +698,7 @@ export default function StaffBonusPanel({
             </div>
           </StepSection>
 
-          <StepSection step={2} title="Bonus pool" hint="Set pool rate — the bonus amount to split">
+          <StepSection step={2} title="Incentive pool" hint="Set pool rate — the incentive amount to split">
             <div className="staff-bonus-summary">
               <label>
                 <span>Pool rate % · {monthLabel}</span>
@@ -705,11 +715,11 @@ export default function StaffBonusPanel({
                 <strong>{formatMoney(poolAmount)}</strong>
                 {totalBonusRemaining > 0 ? (
                   <small className="staff-bonus-remaining-hint">
-                    {formatMoney(totalBonusRemaining)} bonus remaining
+                    {formatMoney(totalBonusRemaining)} incentive remaining
                   </small>
                 ) : totalPaidOut > 0 ? (
                   <small className="staff-bonus-remaining-hint staff-bonus-remaining-hint--paid">
-                    Bonus paid
+                    Incentive paid
                   </small>
                 ) : null}
               </div>
@@ -812,9 +822,9 @@ export default function StaffBonusPanel({
             </div>
           </StepSection>
 
-          <StepSection step={5} title="Payout preview" hint="Each staff member's bonus before saving">
+          <StepSection step={5} title="Payout preview" hint="Each staff member's incentive before saving">
             <div className="staff-bonus-balance-summary staff-bonus-balance-summary--total">
-              <span>Staff bonus</span>
+              <span>Staff incentive</span>
               <strong>
                 {formatMoney(totalPaidOut)}
                 {totalBonusRemaining > 0 ? (
@@ -851,7 +861,7 @@ export default function StaffBonusPanel({
                           ) : null}
                         </>
                       ) : (
-                        'No bonus'
+                        'No incentive'
                       )}
                     </strong>
                   </li>

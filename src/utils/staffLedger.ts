@@ -139,10 +139,22 @@ export function expenseLinkedToStaff(expense: Expense): boolean {
   return Boolean(expense.staffId) && isStaffLinkableExpense(expense)
 }
 
+export function isStaffActive(member: StaffMember): boolean {
+  return member.active !== false
+}
+
+export function listActiveStaffMembers(data: AppData): StaffMember[] {
+  return (data.staff ?? []).filter(isStaffActive)
+}
+
+export function listInactiveStaffMembers(data: AppData): StaffMember[] {
+  return (data.staff ?? []).filter((member) => !isStaffActive(member))
+}
+
 export function findStaffByName(data: AppData, name: string): StaffMember | undefined {
   const key = name.trim().toLowerCase()
   if (!key) return undefined
-  return (data.staff ?? []).find((member) => member.name.trim().toLowerCase() === key)
+  return listActiveStaffMembers(data).find((member) => member.name.trim().toLowerCase() === key)
 }
 
 export function isStaffRosterName(data: AppData, name: string): boolean {
@@ -152,7 +164,7 @@ export function isStaffRosterName(data: AppData, name: string): boolean {
 export function searchStaffNames(data: AppData, query: string): string[] {
   const q = query.trim().toLowerCase()
   if (!q) return []
-  return (data.staff ?? [])
+  return listActiveStaffMembers(data)
     .map((member) => member.name.trim())
     .filter((raw) => raw && raw.toLowerCase().includes(q))
 }
@@ -299,7 +311,7 @@ export function getStaffMonthSummary(
 }
 
 export function buildStaffMonthSummaries(data: AppData, monthKey: SalaryMonthKey): StaffMonthSummary[] {
-  return (data.staff ?? [])
+  return listActiveStaffMembers(data)
     .map((member) => getStaffMonthSummary(data, member.id, monthKey))
     .filter((summary): summary is StaffMonthSummary => summary !== null)
     .sort((a, b) => a.name.localeCompare(b.name))

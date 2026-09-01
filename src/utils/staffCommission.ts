@@ -1,4 +1,5 @@
 import type { AppData, Sale, StaffBonusMonthSettings } from '../types'
+import { listActiveStaffMembers } from './staffLedger'
 import type { RoundOption } from './roundSuggestions'
 import { saleCollectedForFilter, sumSalesCollectedForFilter, toInputDate } from './salesReport'
 import { computeStaffBonusTotals, sumBonusParts, cloneBonusPlanStructure, bonusMonthHasStructure, normalizeBonusMonthPlanForSave } from './staffBonusAllocation'
@@ -279,7 +280,7 @@ export function buildStaffCommissionSummaryMap(
   context: StaffCommissionMonthContext,
 ): Map<string, StaffCommissionSummary> {
   const map = new Map<string, StaffCommissionSummary>()
-  for (const member of data.staff ?? []) {
+  for (const member of listActiveStaffMembers(data)) {
     map.set(member.id, commissionSummaryFromContext(member, context))
   }
   return map
@@ -361,7 +362,7 @@ export function buildStaffCommissionOverview(
   monthKey: SalaryMonthKey,
   context?: StaffCommissionMonthContext,
 ): StaffCommissionOverview {
-  const staff = data.staff ?? []
+  const staff = listActiveStaffMembers(data)
   const ctx = context ?? buildStaffCommissionMonthContext(data, monthKey)
   const totalCommission = [...ctx.bonusTotals.values()].reduce((sum, amount) => sum + amount, 0)
   const bonusRemainingByStaff = buildStaffBonusRemainingMap(data, monthKey, ctx)

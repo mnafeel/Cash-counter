@@ -607,3 +607,97 @@ html[data-screen='phone'] .customer-filter-chip {
     font-size: 0.88rem;
   }
 }
+
+.customer-credit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 8px;
+  align-items: center;
+}
+
+.customer-credit-toolbar--detail {
+  margin: 0 8px 8px;
+}
+
+.customer-bill-clear-btn {
+  margin-left: auto;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  font-size: 0.58rem;
+  font-weight: 700;
+}
+
+.customer-bill-clear-btn:disabled {
+  opacity: 0.45;
+}
+
+.customer-pay-status {
+  margin: 2px 0 0;
+  font-size: 0.56rem;
+  color: #a8d4b8;
+}
+
+.customer-credit-bill-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.customer-credit-bill-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.customer-credit-bill-row--selected {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.06);
+}
+
+.customer-credit-bill-check {
+  display: flex;
+  align-items: center;
+  padding: 0 0 0 8px;
+}
+
+.customer-credit-bill-check--inline {
+  padding: 0;
+  margin-bottom: 4px;
+}
+
+.customer-credit-bill-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+  border: none;
+  background: transparent;
+  color: var(--cream);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.customer-credit-bill-btn strong {
+  font-size: 0.68rem;
+}
+
+.customer-credit-bill-btn small {
+  font-size: 0.54rem;
+  color: var(--cream-dim);
+}
+
+.customer-purchase-item--selected {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.06);
+}

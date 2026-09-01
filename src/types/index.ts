@@ -217,6 +217,10 @@ export interface StaffMember {
   salaryDaysPerMonth?: number
   /** Share of the monthly bonus pool for this staff member (0–100). */
   commissionPercent?: number
+  /** When false, hidden from salary and incentive lists (default true). */
+  active?: boolean
+  /** Set when the member is marked inactive. */
+  inactiveAt?: string
   createdAt: string
 }
 

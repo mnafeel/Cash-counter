@@ -47,9 +47,7 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
     const { applyBulkPurchaseCreditPayments } = useCash()
     const { value: search, setValue: setSearch, deferredValue: deferredSearch } = useDeferredSearch()
     const [selectedSupplierKey, setSelectedSupplierKey] = useState<string | null>(null)
-    const [expandedCreditId, setExpandedCreditId] = useState<string | null>(null)
     const [selectedMonth, setSelectedMonth] = useState<string>('all')
-    const [showDetails, setShowDetails] = useState(false)
     const [selectMode, setSelectMode] = useState(false)
     const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
     const [creditSort, setCreditSort] = useState<PurchaseCreditBillSort>('newest')
@@ -131,14 +129,9 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
         setPayModalOpen(false)
         return
       }
-      if (expandedCreditId) {
-        setExpandedCreditId(null)
-        return
-      }
       if (selectedSupplierKey) {
         setSelectedSupplierKey(null)
         setSelectedMonth('all')
-        setShowDetails(false)
         setSelectMode(false)
         clearSelection()
         return
@@ -156,9 +149,7 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
 
     function openSupplier(shopKey: string) {
       setSelectedSupplierKey(shopKey)
-      setExpandedCreditId(null)
       setSelectedMonth('all')
-      setShowDetails(false)
       clearSelection()
     }
 
@@ -195,14 +186,9 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
           setPayModalOpen(false)
           return true
         }
-        if (expandedCreditId) {
-          setExpandedCreditId(null)
-          return true
-        }
         if (selectedSupplierKey) {
           setSelectedSupplierKey(null)
           setSelectedMonth('all')
-          setShowDetails(false)
           setSelectMode(false)
           clearSelection()
           return true
@@ -219,7 +205,7 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
       }
       window.addEventListener('keydown', onKeyDown)
       return () => window.removeEventListener('keydown', onKeyDown)
-    }, [expandedCreditId, selectedSupplierKey, payModalOpen, onClose])
+    }, [selectedSupplierKey, payModalOpen, onClose])
 
     function renderCreditReport(
       summary: ReturnType<typeof summarizePurchaseCreditItems>,
@@ -267,12 +253,11 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
     }
 
     function renderPurchaseCreditItem(credit: PurchaseCreditItem, showSupplier = false) {
-      const expanded = showDetails && expandedCreditId === credit.id
       const checked = selectedIds.has(credit.id)
       return (
         <li
           key={credit.id}
-          className={`purchase-hist-credit-item ${expanded ? 'purchase-hist-credit-item--expanded' : ''}${checked ? ' purchase-hist-credit-item--selected' : ''}`}
+          className={`purchase-hist-credit-item${checked ? ' purchase-hist-credit-item--selected' : ''}`}
         >
           <div className="purchase-hist-credit-item-row">
             {selectMode ? (
@@ -289,23 +274,18 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
               type="button"
               className="purchase-hist-credit-item-btn"
               onClick={() => {
-                if (selectMode) {
-                  toggleCreditSelection(credit.id)
-                  return
-                }
-                if (!showDetails) return
-                setExpandedCreditId(expanded ? null : credit.id)
+                if (selectMode) toggleCreditSelection(credit.id)
               }}
             >
               <span className="purchase-hist-credit-item-top">
-                <span>
+                <span className="purchase-hist-credit-item-title">
                   {showSupplier ? (
                     <>
                       <strong className="purchase-hist-credit-supplier-inline">{credit.shopName}</strong>
-                      {' · '}
+                      <span className="purchase-hist-credit-item-sep">·</span>
                     </>
                   ) : null}
-                  {credit.description || credit.billLabel}
+                  <span>{credit.description || credit.billLabel}</span>
                 </span>
                 <span className="purchase-hist-credit-item-balance">{formatMoney(credit.amount)}</span>
               </span>
@@ -323,25 +303,6 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
             </button>
             {renderCreditSideButton(credit.id)}
           </div>
-          {expanded ? (
-            <div className="purchase-hist-item-credit">
-              {credit.description ? (
-                <span className="purchase-hist-credit-item-pay">{credit.description}</span>
-              ) : null}
-              {credit.billNo ? (
-                <span className="purchase-hist-credit-item-pay">Bill No · {credit.billNo}</span>
-              ) : null}
-              <span className="purchase-hist-credit-item-pay">{credit.payDetail}</span>
-              <div className="purchase-hist-item-credit-row">
-                <span>Open credit</span>
-                <strong>{formatMoney(credit.amount)}</strong>
-              </div>
-            </div>
-          ) : showDetails && !selectMode ? (
-            <div className="purchase-hist-credits-item-inline">
-              <span>{credit.payDetail}</span>
-            </div>
-          ) : null}
         </li>
       )
     }
@@ -353,8 +314,8 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
             <h3>{selectedSupplier ? selectedSupplier.shopName : 'Purchase Credits'}</h3>
             <p className="purchase-hist-credits-sub">
               {selectedSupplier
-                ? `${supplierAllSummary?.creditCount ?? 0} credit bills · search · select · bulk pay`
-                : `${purchaseCreditItems.length} open bills · ${supplierGroups.length} suppliers · select to pay many at once`}
+                ? `${supplierAllSummary?.creditCount ?? 0} open bills · select and pay`
+                : `${purchaseCreditItems.length} open bills · ${supplierGroups.length} suppliers`}
             </p>
           </div>
 
@@ -369,34 +330,45 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
             aria-label="Search purchase credits"
           />
 
-          <div className="purchase-hist-credits-toolbar">
+          <div
+            className={`purchase-hist-credits-action-bar ${selectMode ? 'purchase-hist-credits-action-bar--active' : ''}`}
+          >
             <button
               type="button"
-              className={`purchase-hist-date-chip ${selectMode ? 'purchase-hist-date-chip--active' : ''}`}
+              className={`purchase-hist-credits-select-btn ${selectMode ? 'purchase-hist-credits-select-btn--active' : ''}`}
               onClick={toggleSelectMode}
             >
-              {selectMode ? 'Done selecting' : 'Select'}
+              {selectMode ? 'Done' : 'Select bills'}
             </button>
             {selectMode ? (
               <>
-                <button type="button" className="purchase-hist-date-chip" onClick={selectAllVisible}>
-                  Select all
-                </button>
+                <div className="purchase-hist-credits-action-group">
+                  <button
+                    type="button"
+                    className="purchase-hist-credits-chip-btn"
+                    onClick={selectAllVisible}
+                  >
+                    All
+                  </button>
+                  <button
+                    type="button"
+                    className="purchase-hist-credits-chip-btn"
+                    onClick={clearSelection}
+                    disabled={selectedIds.size === 0}
+                  >
+                    Clear
+                  </button>
+                </div>
                 <button
                   type="button"
-                  className="purchase-hist-date-chip"
-                  onClick={clearSelection}
-                  disabled={selectedIds.size === 0}
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  className="purchase-credit-pay-submit purchase-credit-pay-submit--inline"
+                  className="purchase-hist-credits-pay-btn"
                   disabled={selectedIds.size === 0}
                   onClick={() => setPayModalOpen(true)}
                 >
-                  Pay selected · {formatMoney(selectedTotal)}
+                  <span>Pay {formatMoney(selectedTotal)}</span>
+                  <small>
+                    {selectedIds.size} bill{selectedIds.size === 1 ? '' : 's'}
+                  </small>
                 </button>
               </>
             ) : null}
@@ -418,7 +390,6 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
                     value={selectedMonth}
                     onChange={(e) => {
                       setSelectedMonth(e.target.value)
-                      setExpandedCreditId(null)
                       clearSelection()
                     }}
                     aria-label="Filter credits by month"
@@ -431,50 +402,41 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
                     ))}
                   </select>
                 </label>
-                <div className="purchase-hist-supplier-sort">
+                <div className="purchase-hist-supplier-sort purchase-hist-supplier-sort--credits">
                   <span>Sort</span>
-                  {CREDIT_SORT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      className={`purchase-hist-date-chip ${creditSort === opt.id ? 'purchase-hist-date-chip--active' : ''}`}
-                      onClick={() => setCreditSort(opt.id)}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                  <div className="purchase-hist-supplier-sort-scroll">
+                    {CREDIT_SORT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        className={`purchase-hist-credits-sort-chip ${creditSort === opt.id ? 'purchase-hist-credits-sort-chip--active' : ''}`}
+                        onClick={() => setCreditSort(opt.id)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                {!selectMode ? (
-                  <label className="purchase-hist-credits-details-toggle">
-                    <input
-                      type="checkbox"
-                      checked={showDetails}
-                      onChange={(e) => {
-                        setShowDetails(e.target.checked)
-                        if (!e.target.checked) setExpandedCreditId(null)
-                      }}
-                    />
-                    <span>Show details</span>
-                  </label>
-                ) : null}
               </div>
             </>
           ) : (
             <>
               {renderCreditReport(rootSummary, 'All suppliers')}
               {selectMode ? (
-                <div className="purchase-hist-supplier-sort">
+                <div className="purchase-hist-supplier-sort purchase-hist-supplier-sort--credits purchase-hist-supplier-sort--root">
                   <span>Sort</span>
-                  {CREDIT_SORT_OPTIONS.map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      className={`purchase-hist-date-chip ${creditSort === opt.id ? 'purchase-hist-date-chip--active' : ''}`}
-                      onClick={() => setCreditSort(opt.id)}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                  <div className="purchase-hist-supplier-sort-scroll">
+                    {CREDIT_SORT_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        className={`purchase-hist-credits-sort-chip ${creditSort === opt.id ? 'purchase-hist-credits-sort-chip--active' : ''}`}
+                        onClick={() => setCreditSort(opt.id)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : null}
             </>
@@ -545,7 +507,11 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
 
         <PurchaseCreditPayModal
           open={payModalOpen}
-          selections={selectedCredits.map((item) => ({ id: item.id, amount: item.amount }))}
+          selections={selectedCredits.map((item) => ({
+            id: item.id,
+            amount: item.amount,
+            billNumber: item.billNumber,
+          }))}
           onClose={() => setPayModalOpen(false)}
           onConfirm={handleBulkPay}
         />

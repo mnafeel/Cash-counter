@@ -183,7 +183,7 @@ function buildStaffSalaryReportHtml(
   <h2>${escapeHtml(title)}</h2>
   <p class="meta">Generated ${escapeHtml(exportedAt)} · ${escapeHtml(monthLabel)}${scopeLabel ? ` · ${escapeHtml(scopeLabel)}` : ''}${
     bonusOverview.poolAmount > 0
-      ? ` · Bonus pool ${escapeHtml(formatMoney(bonusOverview.poolAmount))} (${escapeHtml(String(bonusOverview.poolPercent))}%)`
+      ? ` · Incentive pool ${escapeHtml(formatMoney(bonusOverview.poolAmount))} (${escapeHtml(String(bonusOverview.poolPercent))}%)`
       : ''
   }</p>
   <div class="summary">
@@ -204,7 +204,7 @@ function buildStaffSalaryReportHtml(
       <strong>${escapeHtml(formatMoney(overview.totalRemaining))}</strong>
     </div>
     <div class="summary-card">
-      <span>Staff Bonus</span>
+      <span>Staff Incentive</span>
       <strong>${escapeHtml(formatMoney(bonusOverview.totalBonus))}</strong>
     </div>
     <div class="summary-card">
@@ -212,7 +212,7 @@ function buildStaffSalaryReportHtml(
       <strong>${escapeHtml(formatMoney(bonusOverview.totalDue))}</strong>
     </div>
   </div>
-  <p class="meta">Payments cover salary first, then bonus. Remaining = what is still left to pay.</p>
+  <p class="meta">Payments cover salary first, then incentive. Remaining = what is still left to pay.</p>
   <h2>Salaried Staff</h2>
   <table>
     <thead>
@@ -224,8 +224,8 @@ function buildStaffSalaryReportHtml(
         <th class="num">Net Salary</th>
         <th class="num">Paid</th>
         <th class="num">Salary Left</th>
-        <th class="num">Bonus</th>
-        <th class="num">Bonus Left</th>
+        <th class="num">Incentive</th>
+        <th class="num">Incentive Left</th>
         <th class="num">Total Left</th>
       </tr>
     </thead>

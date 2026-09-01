@@ -676,6 +676,7 @@ function normalizeStaffBonusMonthSettings(
 }
 
 function normalizeStaffMember(raw: Partial<StaffMember>): StaffMember {
+  const active = raw.active !== false
   return {
     id: raw.id ?? crypto.randomUUID(),
     name: (raw.name ?? 'Staff').trim() || 'Staff',
@@ -685,6 +686,8 @@ function normalizeStaffMember(raw: Partial<StaffMember>): StaffMember {
       raw.commissionPercent === undefined || raw.commissionPercent === null
         ? undefined
         : Math.max(0, Math.min(100, Number(raw.commissionPercent) || 0)),
+    active,
+    inactiveAt: active ? undefined : raw.inactiveAt ?? undefined,
     createdAt: raw.createdAt ?? new Date().toISOString(),
   }
 }
@@ -1870,6 +1873,7 @@ export function addStaffMember(
     name,
     monthlySalary: Math.max(0, input.monthlySalary),
     commissionPercent,
+    active: true,
     createdAt: new Date().toISOString(),
   }
   let next: AppData = { ...data, staff: [member, ...(data.staff ?? [])] }
@@ -1883,7 +1887,13 @@ export function addStaffMember(
 export function updateStaffMember(
   data: AppData,
   id: string,
-  updates: { name?: string; monthlySalary?: number; salaryDaysPerMonth?: number; commissionPercent?: number },
+  updates: {
+    name?: string
+    monthlySalary?: number
+    salaryDaysPerMonth?: number
+    commissionPercent?: number
+    active?: boolean
+  },
 ): AppData {
   const current = (data.staff ?? []).find((member) => member.id === id)
   if (!current) return data
@@ -1899,6 +1909,13 @@ export function updateStaffMember(
     updates.commissionPercent !== undefined
       ? Math.max(0, Math.min(100, updates.commissionPercent))
       : current.commissionPercent
+  const nextActive = updates.active !== undefined ? updates.active : current.active !== false
+  const nextInactiveAt =
+    updates.active === true
+      ? undefined
+      : updates.active === false
+        ? current.inactiveAt ?? new Date().toISOString()
+        : current.inactiveAt
   const nextStaff = (data.staff ?? []).map((member) =>
     member.id === id
       ? {
@@ -1907,6 +1924,8 @@ export function updateStaffMember(
           monthlySalary: nextSalary,
           salaryDaysPerMonth: nextDays,
           commissionPercent: nextCommission,
+          active: nextActive,
+          inactiveAt: nextActive ? undefined : nextInactiveAt,
         }
       : member,
   )
@@ -3816,6 +3835,31 @@ export function applyBulkPurchaseCreditPayments(
   let next = data
   for (const row of payments) {
     next = applyPurchaseCreditPayment(next, row.id, row.payment)
+  }
+  return next
+}
+
+/** Clear multiple open sale credit bills in one action. */
+export function applyBulkSaleCreditPayments(
+  data: AppData,
+  payments: Array<{
+    id: string
+    payment: {
+      collected: number
+      payType: PayType
+      cashAmount?: number
+      bankAmount?: number
+      chequeAmount?: number
+      chequeApproved?: boolean
+      customerName?: string
+      changeAmount?: number
+      collectTarget?: number
+    }
+  }>,
+): AppData {
+  let next = data
+  for (const row of payments) {
+    next = applyPartialBalanceSaleCollection(next, row.id, row.payment)
   }
   return next
 }

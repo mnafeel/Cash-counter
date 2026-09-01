@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AppData, ReminderAlertSettings, Sale, SaleReturnEntry } from '../types'
+import { useCash } from '../context/CashContext'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { formatMoney, formatDate } from '../utils/format'
 import {
@@ -34,11 +35,20 @@ import {
   saleGrossBillAmount,
   saleReturnTotal,
 } from '../utils/saleReturns'
+import {
+  buildOpenSaleCreditItems,
+  groupSaleCreditSelectionsByParty,
+  searchSaleCreditItems,
+  type SaleCreditPaySelection,
+  type SaleCreditPaymentInput,
+} from '../utils/saleCreditPayment'
+import SaleCreditPayModal from './SaleCreditPayModal'
 import './CustomerDashboard.css'
 import Portal from './Portal'
 import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
 
 export type CreditListFilter = 'all' | 'credit'
+export type CreditViewMode = 'parties' | 'bills'
 
 interface CreditDashboardProps {
   open: boolean
@@ -73,29 +83,44 @@ export default function CreditDashboard({
   onApplySaleReturn,
   onCancelSaleReturn,
 }: CreditDashboardProps) {
+  const { applyBulkSaleCreditPayments } = useCash()
   const { value: query, setValue: setQuery, deferredValue: deferredQuery } = useDeferredSearch()
   const [listFilter, setListFilter] = useState<CreditListFilter>(initialFilter)
+  const [viewMode, setViewMode] = useState<CreditViewMode>('parties')
   const [selectedName, setSelectedName] = useState<string | null>(initialCustomer ?? null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [payModalOpen, setPayModalOpen] = useState(false)
+  const [payStatus, setPayStatus] = useState('')
   const [detailDateMode, setDetailDateMode] = useState<DetailDateFilterMode>('all')
   const [detailSelectedDate, setDetailSelectedDate] = useState('')
   const [detailRangeTo, setDetailRangeTo] = useState(() => toInputDate())
 
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), [])
+
   useEffect(() => {
     if (!open) return
     setListFilter(initialFilter)
+    setViewMode('parties')
     setSelectedName(initialCustomer ?? null)
+    setSelectMode(false)
+    clearSelection()
+    setPayModalOpen(false)
+    setPayStatus('')
     if (!initialCustomer) setQuery('')
     setDetailDateMode('all')
     setDetailSelectedDate('')
     setDetailRangeTo(toInputDate())
-  }, [open, initialFilter, initialCustomer])
+  }, [open, initialFilter, initialCustomer, clearSelection, setQuery])
 
   useEffect(() => {
     if (!selectedName) return
     setDetailDateMode('all')
     setDetailSelectedDate('')
     setDetailRangeTo(toInputDate())
-  }, [selectedName])
+    setSelectMode(false)
+    clearSelection()
+  }, [selectedName, clearSelection])
 
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const summaries = useMemo(() => buildCustomerSummaries(data), [data])
@@ -143,6 +168,94 @@ export default function CreditDashboard({
     }
   }, [selected, detailDateMode, detailSelectedDate, detailRangeTo])
 
+  const openCreditItems = useMemo(() => buildOpenSaleCreditItems(data), [data])
+  const filteredOpenBills = useMemo(
+    () => searchSaleCreditItems(openCreditItems, deferredQuery),
+    [openCreditItems, deferredQuery],
+  )
+  const partySelectableBills = useMemo(() => {
+    if (!filteredSelected) return []
+    return filteredSelected.creditBills.map((bill) => {
+      const sale = data.sales.find((entry) => entry.id === bill.id)
+      const amount = sale ? saleCreditBalanceDue(sale, data.sales) : bill.creditPending
+      return {
+        id: bill.id,
+        customerName: filteredSelected.name,
+        amount,
+        billDateLabel: bill.billDateLabel,
+        date: bill.date,
+      }
+    }).filter((row) => row.amount > 0)
+  }, [filteredSelected, data.sales])
+  const flatSelectableItems = selectedName ? partySelectableBills : filteredOpenBills
+  const selectedPayRows = useMemo((): SaleCreditPaySelection[] => {
+    return flatSelectableItems
+      .filter((row) => selectedIds.has(row.id))
+      .map((row) => ({
+        id: row.id,
+        amount: row.amount,
+        customerName: row.customerName,
+      }))
+  }, [flatSelectableItems, selectedIds])
+  const selectedTotal = useMemo(
+    () => selectedPayRows.reduce((sum, row) => sum + row.amount, 0),
+    [selectedPayRows],
+  )
+
+  function toggleBillSelection(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function selectAllVisibleBills() {
+    setSelectedIds(new Set(flatSelectableItems.map((row) => row.id)))
+  }
+
+  function toggleSelectMode() {
+    setSelectMode((prev) => {
+      if (prev) clearSelection()
+      return !prev
+    })
+  }
+
+  function handleBulkPay(payments: Array<{ id: string; payment: SaleCreditPaymentInput }>) {
+    applyBulkSaleCreditPayments(payments)
+    const groups = groupSaleCreditSelectionsByParty(selectedPayRows)
+    const summary = groups
+      .map((group) => {
+        const partyPayment = payments.find((row) =>
+          group.selections.some((bill) => bill.id === row.id),
+        )
+        const mode = partyPayment?.payment.payType ?? 'cash'
+        const modeLabel =
+          mode === 'bank' ? 'Bank' : mode === 'cheque' ? 'Cheque' : mode === 'split' ? 'Split' : 'Cash'
+        return `${group.customerName} via ${modeLabel}`
+      })
+      .join(' · ')
+    setPayModalOpen(false)
+    clearSelection()
+    setSelectMode(false)
+    setPayStatus(
+      `Cleared ${payments.length} bill${payments.length === 1 ? '' : 's'}${summary ? ` · ${summary}` : ''}`,
+    )
+  }
+
+  function handleBack() {
+    if (payModalOpen) {
+      setPayModalOpen(false)
+      return
+    }
+    if (selectedName) {
+      setSelectedName(null)
+      return
+    }
+    onClose()
+  }
+
   if (!open) return null
 
   return (
@@ -151,16 +264,18 @@ export default function CreditDashboard({
       <div className="customer-panel page-shell">
         <PageCorners
         left={
-          selected ? (
-            <PageBackButton onClick={() => setSelectedName(null)} ariaLabel="Back to customers" />
-          ) : (
-            <PageBackButton onClick={onClose} ariaLabel="Back" />
-          )
+          <PageBackButton
+            onClick={handleBack}
+            ariaLabel={selectedName ? 'Back to parties' : 'Back'}
+          />
         }
           right={<PageCloseButton onClick={onClose} />}
         />
         <header className="customer-head page-head--corners">
-          <h1 className="customer-title">{selected?.name ?? 'Credit Dashboard'}</h1>
+          <h1 className="customer-title">
+            {selected?.name ?? (viewMode === 'bills' ? 'All credit bills' : 'Credit · Parties')}
+          </h1>
+          {payStatus ? <p className="customer-pay-status">{payStatus}</p> : null}
         </header>
 
         {!selected ? (
@@ -185,18 +300,78 @@ export default function CreditDashboard({
             <div className="customer-filter-bar">
               <button
                 type="button"
-                className={`customer-filter-chip ${listFilter === 'all' ? 'customer-filter-chip--active' : ''}`}
-                onClick={() => setListFilter('all')}
+                className={`customer-filter-chip ${viewMode === 'parties' ? 'customer-filter-chip--active' : ''}`}
+                onClick={() => {
+                  setViewMode('parties')
+                  setSelectMode(false)
+                  clearSelection()
+                }}
               >
-                All credit customers
+                Parties
               </button>
               <button
                 type="button"
-                className={`customer-filter-chip ${listFilter === 'credit' ? 'customer-filter-chip--active' : ''}`}
-                onClick={() => setListFilter('credit')}
+                className={`customer-filter-chip ${viewMode === 'bills' ? 'customer-filter-chip--active' : ''}`}
+                onClick={() => {
+                  setViewMode('bills')
+                  setSelectMode(false)
+                  clearSelection()
+                }}
               >
-                Credit due
+                All bills
               </button>
+              {viewMode === 'parties' ? (
+                <>
+                  <button
+                    type="button"
+                    className={`customer-filter-chip ${listFilter === 'all' ? 'customer-filter-chip--active' : ''}`}
+                    onClick={() => setListFilter('all')}
+                  >
+                    All customers
+                  </button>
+                  <button
+                    type="button"
+                    className={`customer-filter-chip ${listFilter === 'credit' ? 'customer-filter-chip--active' : ''}`}
+                    onClick={() => setListFilter('credit')}
+                  >
+                    Credit due
+                  </button>
+                </>
+              ) : null}
+            </div>
+
+            <div className="customer-credit-toolbar">
+              <button
+                type="button"
+                className={`customer-filter-chip ${selectMode ? 'customer-filter-chip--active' : ''}`}
+                onClick={toggleSelectMode}
+                disabled={flatSelectableItems.length === 0 && viewMode === 'bills'}
+              >
+                {selectMode ? 'Done selecting' : 'Select bills'}
+              </button>
+              {selectMode ? (
+                <>
+                  <button type="button" className="customer-filter-chip" onClick={selectAllVisibleBills}>
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    className="customer-filter-chip"
+                    onClick={clearSelection}
+                    disabled={selectedIds.size === 0}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    className="customer-bill-clear-btn"
+                    disabled={selectedIds.size === 0}
+                    onClick={() => setPayModalOpen(true)}
+                  >
+                    Bill clear · {formatMoney(selectedTotal)}
+                  </button>
+                </>
+              ) : null}
             </div>
 
             <div className="customer-search">
@@ -205,18 +380,40 @@ export default function CreditDashboard({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={
-                  listFilter === 'credit'
-                    ? 'Search customers with open credit…'
-                    : 'Search customer name…'
+                  viewMode === 'bills'
+                    ? 'Search party or bill…'
+                    : listFilter === 'credit'
+                      ? 'Search parties with open credit…'
+                      : 'Search party name…'
                 }
-                aria-label="Search credit customers"
+                aria-label="Search credit"
               />
             </div>
 
             <div className="customer-body">
-              {filtered.length === 0 ? (
+              {viewMode === 'bills' ? (
+                filteredOpenBills.length === 0 ? (
+                  <p className="customer-empty">No open credit bills.</p>
+                ) : (
+                  <ul className="customer-credit-bill-list">
+                    {filteredOpenBills.map((bill) => (
+                      <OpenCreditBillRow
+                        key={bill.id}
+                        bill={bill}
+                        selectMode={selectMode}
+                        checked={selectedIds.has(bill.id)}
+                        onToggle={() => toggleBillSelection(bill.id)}
+                        onOpenParty={() => {
+                          setViewMode('parties')
+                          setSelectedName(bill.customerName)
+                        }}
+                      />
+                    ))}
+                  </ul>
+                )
+              ) : filtered.length === 0 ? (
                 <p className="customer-empty">
-                  {listFilter === 'credit' ? 'No customers with open credit.' : 'No credit customers found.'}
+                  {listFilter === 'credit' ? 'No parties with open credit.' : 'No parties found.'}
                 </p>
               ) : (
                 <ul className="customer-list">
@@ -238,6 +435,39 @@ export default function CreditDashboard({
           </>
         ) : filteredSelected ? (
           <>
+            <div className="customer-credit-toolbar customer-credit-toolbar--detail">
+              <button
+                type="button"
+                className={`customer-filter-chip ${selectMode ? 'customer-filter-chip--active' : ''}`}
+                onClick={toggleSelectMode}
+                disabled={partySelectableBills.length === 0}
+              >
+                {selectMode ? 'Done selecting' : 'Select bills'}
+              </button>
+              {selectMode ? (
+                <>
+                  <button type="button" className="customer-filter-chip" onClick={selectAllVisibleBills}>
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    className="customer-filter-chip"
+                    onClick={clearSelection}
+                    disabled={selectedIds.size === 0}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    className="customer-bill-clear-btn"
+                    disabled={selectedIds.size === 0}
+                    onClick={() => setPayModalOpen(true)}
+                  >
+                    Bill clear · {formatMoney(selectedTotal)}
+                  </button>
+                </>
+              ) : null}
+            </div>
             <DetailDateFilter
               mode={detailDateMode}
               selectedDate={detailSelectedDate}
@@ -251,6 +481,9 @@ export default function CreditDashboard({
                 summary={filteredSelected}
                 data={data}
                 chequeSummary={selectedCheque}
+                selectMode={selectMode}
+                selectedIds={selectedIds}
+                onToggleBill={toggleBillSelection}
                 onSetCustomerReminder={onSetCustomerReminder}
                 onSetBillReminder={onSetBillReminder}
                 onSaveAlertSettings={onSaveAlertSettings}
@@ -260,9 +493,61 @@ export default function CreditDashboard({
             </div>
           </>
         ) : null}
+
+        <SaleCreditPayModal
+          open={payModalOpen}
+          selections={selectedPayRows}
+          onClose={() => setPayModalOpen(false)}
+          onConfirm={handleBulkPay}
+        />
       </div>
     </div>
     </Portal>
+  )
+}
+
+function OpenCreditBillRow({
+  bill,
+  selectMode,
+  checked,
+  onToggle,
+  onOpenParty,
+}: {
+  bill: {
+    id: string
+    customerName: string
+    amount: number
+    billDateLabel: string
+  }
+  selectMode: boolean
+  checked: boolean
+  onToggle: () => void
+  onOpenParty: () => void
+}) {
+  return (
+    <li className={`customer-credit-bill-row ${checked ? 'customer-credit-bill-row--selected' : ''}`}>
+      {selectMode ? (
+        <label className="customer-credit-bill-check">
+          <input type="checkbox" checked={checked} onChange={onToggle} aria-label={`Select bill ${bill.billDateLabel}`} />
+        </label>
+      ) : null}
+      <button
+        type="button"
+        className="customer-credit-bill-btn"
+        onClick={() => {
+          if (selectMode) {
+            onToggle()
+            return
+          }
+          onOpenParty()
+        }}
+      >
+        <strong>{bill.customerName}</strong>
+        <small>
+          Bill {bill.billDateLabel} · {formatMoney(bill.amount)}
+        </small>
+      </button>
+    </li>
   )
 }
 
@@ -330,6 +615,9 @@ function CreditCustomerDetail({
   summary,
   data,
   chequeSummary,
+  selectMode,
+  selectedIds,
+  onToggleBill,
   onSetCustomerReminder,
   onSetBillReminder,
   onSaveAlertSettings,
@@ -339,6 +627,9 @@ function CreditCustomerDetail({
   summary: CustomerSummary
   data: AppData
   chequeSummary?: ChequeCustomerSummary
+  selectMode: boolean
+  selectedIds: Set<string>
+  onToggleBill: (id: string) => void
   onSetCustomerReminder: CreditDashboardProps['onSetCustomerReminder']
   onSetBillReminder: CreditDashboardProps['onSetBillReminder']
   onSaveAlertSettings?: CreditDashboardProps['onSaveAlertSettings']
@@ -437,16 +728,46 @@ function CreditCustomerDetail({
               const showBreakdown =
                 returnTotal > 0 || paidSoFar > 0 || gross !== toPay
               return (
-              <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit customer-purchase-item--stack customer-purchase-item--returnable">
+              <div
+                key={purchase.id}
+                className={`customer-purchase-item customer-purchase-item--credit customer-purchase-item--stack customer-purchase-item--returnable ${
+                  selectedIds.has(purchase.id) ? 'customer-purchase-item--selected' : ''
+                }`}
+              >
+                {selectMode ? (
+                  <label className="customer-credit-bill-check customer-credit-bill-check--inline">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(purchase.id)}
+                      onChange={() => onToggleBill(purchase.id)}
+                      aria-label={`Select bill ${purchase.billDateLabel}`}
+                    />
+                  </label>
+                ) : null}
                 <button
                   type="button"
                   className="customer-purchase-return-btn"
                   onClick={() => sale && setReturnSale(sale)}
-                  disabled={!sale || saleBalanceAfterReturns(sale, data.sales) <= 0}
+                  disabled={!sale || saleBalanceAfterReturns(sale, data.sales) <= 0 || selectMode}
                 >
                   Return
                 </button>
-                <div className="customer-purchase-head">
+                <div
+                  className="customer-purchase-head"
+                  role={selectMode ? 'button' : undefined}
+                  tabIndex={selectMode ? 0 : undefined}
+                  onClick={selectMode ? () => onToggleBill(purchase.id) : undefined}
+                  onKeyDown={
+                    selectMode
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            onToggleBill(purchase.id)
+                          }
+                        }
+                      : undefined
+                  }
+                >
                   <strong>Bill {purchase.billDateLabel}</strong>
                   <span>{formatMoney(toPay)}</span>
                 </div>

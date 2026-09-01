@@ -2,6 +2,8 @@ import type { AppData, Expense, ExpenseCreditPayment } from '../types'
 import {
   isGstExpense,
   isPurchaseExpense,
+  NO1_BILL_LABEL,
+  NO2_BILL_LABEL,
   purchaseBillLabel,
   stripExpenseBillSuffix,
 } from './expenseBillLabels'
@@ -613,6 +615,36 @@ export function buildCreditPaymentUpdate(
 export interface BulkCreditPaySelection {
   id: string
   amount: number
+  billNumber: 1 | 2
+}
+
+export interface PurchaseCreditBillGroup {
+  billNumber: 1 | 2
+  label: string
+  selections: BulkCreditPaySelection[]
+  total: number
+}
+
+export function groupPurchaseCreditSelectionsByBill(
+  selections: BulkCreditPaySelection[],
+): PurchaseCreditBillGroup[] {
+  const map = new Map<1 | 2, BulkCreditPaySelection[]>()
+  for (const row of selections) {
+    const list = map.get(row.billNumber) ?? []
+    list.push(row)
+    map.set(row.billNumber, list)
+  }
+  return ([1, 2] as const)
+    .filter((billNumber) => (map.get(billNumber)?.length ?? 0) > 0)
+    .map((billNumber) => {
+      const partySelections = map.get(billNumber) ?? []
+      return {
+        billNumber,
+        label: billNumber === 1 ? NO1_BILL_LABEL : NO2_BILL_LABEL,
+        selections: partySelections,
+        total: partySelections.reduce((sum, row) => sum + row.amount, 0),
+      }
+    })
 }
 
 /** Build per-bill credit payments for bulk pay (full clear on each selected bill). */

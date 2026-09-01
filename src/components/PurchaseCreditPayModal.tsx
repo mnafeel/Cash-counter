@@ -1,11 +1,24 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ExpensePayType } from '../types'
+import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
 import { formatMoney, parseAmount } from '../utils/format'
-import { buildBulkCreditPaymentPlan, type BulkCreditPaySelection } from '../utils/purchaseHistory'
+import {
+  buildBulkCreditPaymentPlan,
+  groupPurchaseCreditSelectionsByBill,
+  type BulkCreditPaySelection,
+} from '../utils/purchaseHistory'
 import Portal from './Portal'
 import './PurchaseHistoryPanel.css'
 
 type PayMode = 'cash' | 'bank' | 'cheque' | 'split'
+
+type BillPayDraft = {
+  mode: PayMode
+  cashStr: string
+  bankStr: string
+  chequeStr: string
+  chequeApproved: boolean
+}
 
 interface PurchaseCreditPayModalProps {
   open: boolean
@@ -26,75 +39,132 @@ interface PurchaseCreditPayModalProps {
   ) => void
 }
 
+function defaultBillDraft(total: number, billNumber: 1 | 2, mode: PayMode = 'cash'): BillPayDraft {
+  return {
+    mode,
+    cashStr: mode === 'split' ? String(total) : '',
+    bankStr: '',
+    chequeStr: '',
+    chequeApproved: true,
+  }
+}
+
+function billKey(billNumber: 1 | 2): string {
+  return billNumber === 1 ? 'no1' : 'no2'
+}
+
+function payModeLabel(mode: PayMode): string {
+  if (mode === 'cash') return '💵 Cash'
+  if (mode === 'bank') return '🏦 Bank'
+  if (mode === 'cheque') return '🧾 Cheque'
+  return '➗ Split'
+}
+
 export default function PurchaseCreditPayModal({
   open,
   selections,
   onClose,
   onConfirm,
 }: PurchaseCreditPayModalProps) {
-  const [payMode, setPayMode] = useState<PayMode>('cash')
-  const [cashStr, setCashStr] = useState('')
-  const [bankStr, setBankStr] = useState('')
-  const [chequeStr, setChequeStr] = useState('')
-  const [chequeApproved, setChequeApproved] = useState(true)
-  const [error, setError] = useState('')
-
+  const billGroups = useMemo(() => groupPurchaseCreditSelectionsByBill(selections), [selections])
   const totalDue = useMemo(
     () => selections.reduce((sum, row) => sum + row.amount, 0),
     [selections],
   )
+  const [billDrafts, setBillDrafts] = useState<Record<string, BillPayDraft>>({})
+  const [error, setError] = useState('')
 
   useEffect(() => {
     if (!open) return
-    setPayMode('cash')
-    setCashStr('')
-    setBankStr('')
-    setChequeStr('')
-    setChequeApproved(true)
-    setError('')
-  }, [open, selections])
-
-  useEffect(() => {
-    if (!open || payMode !== 'split') return
-    if (!cashStr && !bankStr && !chequeStr) {
-      setCashStr(String(totalDue))
+    const next: Record<string, BillPayDraft> = {}
+    for (const group of billGroups) {
+      next[billKey(group.billNumber)] = defaultBillDraft(group.total, group.billNumber)
     }
-  }, [open, payMode, totalDue, cashStr, bankStr, chequeStr])
+    setBillDrafts(next)
+    setError('')
+  }, [open, billGroups])
 
   if (!open || selections.length === 0) return null
 
+  function updateBillDraft(billNumber: 1 | 2, patch: Partial<BillPayDraft>) {
+    const key = billKey(billNumber)
+    setBillDrafts((current) => ({
+      ...current,
+      [key]: { ...defaultBillDraft(0, billNumber), ...current[key], ...patch },
+    }))
+  }
+
+  function modesForBill(billNumber: 1 | 2): PayMode[] {
+    return billNumber === 1 ? ['cash', 'bank', 'split'] : ['cash', 'bank', 'cheque', 'split']
+  }
+
+  function accountHint(billNumber: 1 | 2, mode: PayMode): string {
+    if (billNumber === 1) {
+      if (mode === 'cash') return `${NO1_BILL_LABEL} bills clear from cash.`
+      if (mode === 'bank') return `${NO1_BILL_LABEL} bills clear from bank.`
+      return `${NO1_BILL_LABEL} split between cash and bank.`
+    }
+    if (mode === 'cheque') return `${NO2_BILL_LABEL} bills clear by cheque.`
+    if (mode === 'bank') return `${NO2_BILL_LABEL} bills clear from bank.`
+    if (mode === 'cash') return `${NO2_BILL_LABEL} bills clear from cash.`
+    return `${NO2_BILL_LABEL} split between cash, bank, and cheque.`
+  }
+
   function handleSubmit() {
     setError('')
-    if (payMode === 'split') {
-      const cash = parseAmount(cashStr)
-      const bank = parseAmount(bankStr)
-      const cheque = chequeApproved ? parseAmount(chequeStr) : 0
-      const sum = cash + bank + cheque
-      if (Math.abs(sum - totalDue) > 0.009) {
-        setError(`Split must equal ${formatMoney(totalDue)}`)
-        return
+    const allPayments: Array<{
+      id: string
+      payment: {
+        payType: ExpensePayType
+        payAmount: number
+        cashAmount?: number
+        bankAmount?: number
+        chequeAmount?: number
+        chequeApproved?: boolean
       }
-      const plan = buildBulkCreditPaymentPlan(selections, 'split', {
-        cash,
-        bank,
-        cheque,
-        chequeApproved,
-      })
+    }> = []
+
+    for (const group of billGroups) {
+      const draft = billDrafts[billKey(group.billNumber)] ?? defaultBillDraft(group.total, group.billNumber)
+      if (draft.mode === 'split') {
+        const cash = parseAmount(draft.cashStr)
+        const bank = parseAmount(draft.bankStr)
+        const cheque =
+          group.billNumber === 2 && draft.chequeApproved ? parseAmount(draft.chequeStr) : 0
+        const sum = cash + bank + cheque
+        if (Math.abs(sum - group.total) > 0.009) {
+          setError(`${group.label}: split must equal ${formatMoney(group.total)}`)
+          return
+        }
+        const plan = buildBulkCreditPaymentPlan(group.selections, 'split', {
+          cash,
+          bank,
+          cheque,
+          chequeApproved: draft.chequeApproved,
+        })
+        if (plan.length === 0) {
+          setError(`${group.label}: enter cash or bank amounts.`)
+          return
+        }
+        allPayments.push(...plan)
+        continue
+      }
+
+      const plan = buildBulkCreditPaymentPlan(group.selections, draft.mode)
       if (plan.length === 0) {
-        setError('Enter cash, bank, or cheque amounts.')
+        setError(`Could not build payment for ${group.label}.`)
         return
       }
-      onConfirm(plan)
-      return
+      allPayments.push(...plan)
     }
 
-    onConfirm(buildBulkCreditPaymentPlan(selections, payMode))
+    onConfirm(allPayments)
   }
 
   return (
     <Portal>
       <div className="purchase-credit-pay-overlay" role="dialog" aria-modal="true">
-        <div className="purchase-credit-pay-modal">
+        <div className="purchase-credit-pay-modal purchase-credit-pay-modal--wide">
           <header className="purchase-credit-pay-head">
             <h4>Pay selected credits</h4>
             <button type="button" className="purchase-credit-pay-close" onClick={onClose} aria-label="Close">
@@ -107,70 +177,92 @@ export default function PurchaseCreditPayModal({
             <strong>{formatMoney(totalDue)}</strong>
           </p>
 
-          <div className="purchase-credit-pay-modes">
-            {(
-              [
-                ['cash', '💵 Cash'],
-                ['bank', '🏦 Bank'],
-                ['cheque', '🧾 Cheque'],
-                ['split', '➗ Split'],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                className={`purchase-hist-date-chip ${payMode === id ? 'purchase-hist-date-chip--active' : ''}`}
-                onClick={() => setPayMode(id)}
+          {billGroups.map((group) => {
+            const draft = billDrafts[billKey(group.billNumber)] ?? defaultBillDraft(group.total, group.billNumber)
+            const modes = modesForBill(group.billNumber)
+            return (
+              <section
+                key={group.billNumber}
+                className={`purchase-credit-pay-bill purchase-credit-pay-bill--no${group.billNumber}`}
               >
-                {label}
-              </button>
-            ))}
-          </div>
+                <div className="purchase-credit-pay-bill-head">
+                  <strong>{group.label}</strong>
+                  <span>
+                    {group.selections.length} bill{group.selections.length === 1 ? '' : 's'} ·{' '}
+                    {formatMoney(group.total)}
+                  </span>
+                </div>
 
-          {payMode === 'split' ? (
-            <div className="purchase-credit-pay-split">
-              <label>
-                <span>Cash</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={cashStr}
-                  onChange={(e) => setCashStr(e.target.value)}
-                />
-              </label>
-              <label>
-                <span>Bank</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={bankStr}
-                  onChange={(e) => setBankStr(e.target.value)}
-                />
-              </label>
-              <label>
-                <span>Cheque</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={chequeStr}
-                  onChange={(e) => setChequeStr(e.target.value)}
-                />
-              </label>
-              <label className="purchase-credit-pay-cheque-approved">
-                <input
-                  type="checkbox"
-                  checked={chequeApproved}
-                  onChange={(e) => setChequeApproved(e.target.checked)}
-                />
-                <span>Cheque approved to bank</span>
-              </label>
-            </div>
-          ) : (
-            <p className="purchase-credit-pay-hint">
-              Each selected bill will be cleared in full using{' '}
-              {payMode === 'cash' ? 'cash' : payMode === 'bank' ? 'bank' : 'cheque'}.
-            </p>
-          )}
+                <div className="purchase-credit-pay-modes purchase-credit-pay-modes--bill">
+                  {modes.map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={`purchase-credit-pay-mode-btn ${draft.mode === mode ? 'purchase-credit-pay-mode-btn--active' : ''}`}
+                      onClick={() =>
+                        updateBillDraft(group.billNumber, {
+                          mode,
+                          cashStr: mode === 'split' ? String(group.total) : '',
+                          bankStr: '',
+                          chequeStr: '',
+                        })
+                      }
+                    >
+                      {payModeLabel(mode)}
+                    </button>
+                  ))}
+                </div>
+
+                {draft.mode === 'split' ? (
+                  <div className="purchase-credit-pay-split">
+                    <label>
+                      <span>Cash</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={draft.cashStr}
+                        onChange={(e) => updateBillDraft(group.billNumber, { cashStr: e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      <span>Bank</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={draft.bankStr}
+                        onChange={(e) => updateBillDraft(group.billNumber, { bankStr: e.target.value })}
+                      />
+                    </label>
+                    {group.billNumber === 2 ? (
+                      <>
+                        <label>
+                          <span>Cheque</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={draft.chequeStr}
+                            onChange={(e) => updateBillDraft(group.billNumber, { chequeStr: e.target.value })}
+                          />
+                        </label>
+                        <label className="purchase-credit-pay-cheque-approved">
+                          <input
+                            type="checkbox"
+                            checked={draft.chequeApproved}
+                            onChange={(e) =>
+                              updateBillDraft(group.billNumber, { chequeApproved: e.target.checked })
+                            }
+                          />
+                          <span>Cheque approved to bank</span>
+                        </label>
+                      </>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="purchase-credit-pay-hint">{accountHint(group.billNumber, draft.mode)}</p>
+                )}
+              </section>
+            )
+          })}
 
           {error ? <p className="purchase-credit-pay-error">{error}</p> : null}
 

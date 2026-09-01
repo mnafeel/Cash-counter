@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useCash } from '../context/CashContext'
 import { useOpenTiming } from '../hooks/useOpenTiming'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
@@ -27,6 +27,8 @@ import {
   currentSalaryMonth,
   formatSalaryMonthLabel,
   getStaffSalaryPayments,
+  listActiveStaffMembers,
+  listInactiveStaffMembers,
   listMonthOptionsForYear,
   listSalaryMonthPickerOptions,
   parseSalaryMonth,
@@ -39,6 +41,7 @@ import {
 } from '../utils/staffLedger'
 import { printSelectedStaffSalaryReports, printStaffMemberSalaryReport, printStaffSalaryReport } from '../utils/staffSalaryReport'
 import StaffBonusPanel from '../components/StaffBonusPanel'
+import StaffOverlayMonthBar from '../components/StaffOverlayMonthBar'
 import {
   buildStaffBonusRemainingMap,
   buildStaffCommissionMonthContext,
@@ -59,7 +62,6 @@ export default function Staff() {
     data,
     addStaff,
     updateStaff,
-    removeStaff,
     updateStaffBonusMonthSettings,
     setStaffAttendance,
     removeStaffLeave,
@@ -79,7 +81,8 @@ export default function Staff() {
   const [formError, setFormError] = useState('')
   const [showSalaryEdit, setShowSalaryEdit] = useState(false)
   const [showBonusPanel, setShowBonusPanel] = useState(false)
-  const [pendingRemoveStaffId, setPendingRemoveStaffId] = useState<string | null>(null)
+  const [pendingDeactivateStaffId, setPendingDeactivateStaffId] = useState<string | null>(null)
+  const [staffListView, setStaffListView] = useState<'active' | 'inactive'>('active')
   const [inlineEditStaffId, setInlineEditStaffId] = useState<string | null>(null)
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
   const [pendingUnlinkExpenseId, setPendingUnlinkExpenseId] = useState<string | null>(null)
@@ -95,7 +98,6 @@ export default function Staff() {
   const [, startMonthTransition] = useTransition()
   const attendanceModalRef = useRef<HTMLDivElement>(null)
   const monthToolbarRef = useRef<HTMLDivElement>(null)
-  const [bonusPanelTop, setBonusPanelTop] = useState(0)
   const attendanceDayButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   const calendarGrid = useMemo(() => buildMonthCalendarGrid(monthKey), [monthKey])
@@ -154,7 +156,19 @@ export default function Staff() {
     () => resolveStaffBonusMonthSettings(data, monthKey),
     [data, monthKey],
   )
-  const staffList = useMemo(() => (data.staff ?? []).slice().sort((a, b) => a.name.localeCompare(b.name)), [data.staff])
+  const activeStaffList = useMemo(
+    () => listActiveStaffMembers(data).slice().sort((a, b) => a.name.localeCompare(b.name)),
+    [data],
+  )
+  const inactiveStaffList = useMemo(
+    () => listInactiveStaffMembers(data).slice().sort((a, b) => a.name.localeCompare(b.name)),
+    [data],
+  )
+  const filteredInactiveStaff = useMemo(() => {
+    const q = deferredQuery.trim().toLowerCase()
+    if (!q) return inactiveStaffList
+    return inactiveStaffList.filter((member) => member.name.toLowerCase().includes(q))
+  }, [inactiveStaffList, deferredQuery])
   const selectedSummary = useMemo(
     () => summaries.find((row) => row.staffId === selectedStaffId) ?? null,
     [summaries, selectedStaffId],
@@ -196,19 +210,6 @@ export default function Staff() {
     setAttendanceMenuHighlight(0)
     setAttendanceFocusedDate(defaultAttendanceFocusedDate())
   }, [monthKey, selectedStaffId, defaultAttendanceFocusedDate])
-
-  const measureBonusPanelTop = useCallback(() => {
-    const toolbar = monthToolbarRef.current
-    if (!toolbar) return
-    setBonusPanelTop(Math.ceil(toolbar.getBoundingClientRect().bottom))
-  }, [])
-
-  useLayoutEffect(() => {
-    if (!showBonusPanel) return
-    measureBonusPanelTop()
-    window.addEventListener('resize', measureBonusPanelTop)
-    return () => window.removeEventListener('resize', measureBonusPanelTop)
-  }, [showBonusPanel, monthKey, year, measureBonusPanelTop])
 
   useEffect(() => {
     if (!showAttendanceModal) {
@@ -393,28 +394,50 @@ export default function Staff() {
     setFormError('')
   }
 
-  const pendingRemoveStaff = useMemo(
-    () => (data.staff ?? []).find((member) => member.id === pendingRemoveStaffId) ?? null,
-    [data.staff, pendingRemoveStaffId],
+  const pendingDeactivateStaff = useMemo(
+    () => (data.staff ?? []).find((member) => member.id === pendingDeactivateStaffId) ?? null,
+    [data.staff, pendingDeactivateStaffId],
   )
 
-  function requestRemoveStaff(staffId: string | null = selectedStaffId) {
+  function requestDeactivateStaff(staffId: string | null = selectedStaffId) {
     if (!staffId) return
-    setPendingRemoveStaffId(staffId)
+    setPendingDeactivateStaffId(staffId)
   }
 
-  function cancelRemoveStaff() {
-    setPendingRemoveStaffId(null)
+  function cancelDeactivateStaff() {
+    setPendingDeactivateStaffId(null)
   }
 
-  function confirmRemoveStaff() {
-    if (!pendingRemoveStaffId) return
-    removeStaff(pendingRemoveStaffId)
-    if (selectedStaffId === pendingRemoveStaffId) {
+  function confirmDeactivateStaff() {
+    if (!pendingDeactivateStaffId) return
+    updateStaff(pendingDeactivateStaffId, { active: false })
+    if (selectedStaffId === pendingDeactivateStaffId) {
       setSelectedStaffId(null)
       setShowSalaryEdit(false)
+      setShowAttendanceModal(false)
     }
-    setPendingRemoveStaffId(null)
+    setPendingDeactivateStaffId(null)
+    setFormError('')
+  }
+
+  function activateStaffMember(staffId: string) {
+    updateStaff(staffId, { active: true })
+    setFormError('')
+  }
+
+  function openInactiveStaffView() {
+    setStaffListView('inactive')
+    setSelectedStaffId(null)
+    setShowSalaryEdit(false)
+    setShowCreate(false)
+    setSelectMode(false)
+    setSelectedStaffIds(new Set())
+    setFormError('')
+  }
+
+  function openActiveStaffView() {
+    setStaffListView('active')
+    setSelectedStaffId(null)
     setFormError('')
   }
 
@@ -642,15 +665,19 @@ export default function Staff() {
       setFormError('')
       return
     }
+    if (staffListView === 'inactive') {
+      openActiveStaffView()
+      return
+    }
     if (selectedStaffId) {
       setSelectedStaffId(null)
       setShowSalaryEdit(false)
-      setPendingRemoveStaffId(null)
+      setPendingDeactivateStaffId(null)
       setInlineEditStaffId(null)
       return
     }
     goBack()
-  }, [goBack, selectedStaffId, showAttendanceModal, showCreate, showBonusPanel])
+  }, [goBack, selectedStaffId, showAttendanceModal, showCreate, showBonusPanel, staffListView])
 
   usePageEscape(handlePageBack)
 
@@ -686,12 +713,21 @@ export default function Staff() {
               <button
                 type="button"
                 className="staff-page-corner-btn staff-page-corner-btn--remove"
-                onClick={() => requestRemoveStaff()}
+                onClick={() => requestDeactivateStaff()}
               >
-                <span aria-hidden="true">✕</span>
-                <span>Remove</span>
+                <span aria-hidden="true">⏸</span>
+                <span>Inactive</span>
               </button>
             </>
+          ) : staffListView === 'inactive' ? (
+            <button
+              type="button"
+              className="staff-page-corner-btn staff-page-corner-btn--add"
+              onClick={openActiveStaffView}
+            >
+              <span aria-hidden="true">←</span>
+              <span>Active staff</span>
+            </button>
           ) : (
             <>
               <button
@@ -700,8 +736,18 @@ export default function Staff() {
                 onClick={() => setShowBonusPanel(true)}
               >
                 <span aria-hidden="true">%</span>
-                <span>Bonus</span>
+                <span>Incentive</span>
               </button>
+              {inactiveStaffList.length > 0 ? (
+                <button
+                  type="button"
+                  className="staff-page-corner-btn staff-page-corner-btn--inactive"
+                  onClick={openInactiveStaffView}
+                >
+                  <span aria-hidden="true">⏸</span>
+                  <span>Inactive · {inactiveStaffList.length}</span>
+                </button>
+              ) : null}
               <button
                 type="button"
                 className={`staff-page-corner-btn staff-page-corner-btn--add ${showCreate ? 'staff-page-corner-btn--active' : ''}`}
@@ -720,8 +766,12 @@ export default function Staff() {
 
       <header className="staff-page-head page-head--corners">
         <div className="staff-page-head-text">
-          <h1>Staff & Salary</h1>
-          <p>{formatSalaryMonthLabel(monthKey)} · monthly salary tracking</p>
+          <h1>{staffListView === 'inactive' ? 'Inactive staff' : 'Staff & Salary'}</h1>
+          <p>
+            {staffListView === 'inactive'
+              ? `${inactiveStaffList.length} inactive · not on salary or incentive lists`
+              : `${formatSalaryMonthLabel(monthKey)} · monthly salary tracking`}
+          </p>
         </div>
       </header>
 
@@ -768,7 +818,7 @@ export default function Staff() {
         </div>
       </div>
 
-      {!selectedStaffId ? (
+      {!selectedStaffId && staffListView === 'active' ? (
         <>
           <div className="staff-page-summary">
             <div className="staff-page-summary-card">
@@ -798,7 +848,7 @@ export default function Staff() {
 
           <div className="staff-page-summary staff-page-summary--bonus">
             <div className="staff-page-summary-card staff-page-summary-card--bonus">
-              <span>Bonus pool</span>
+              <span>Incentive pool</span>
               <strong>{formatMoney(commissionOverview.poolAmount)}</strong>
               <small>
                 {commissionOverview.poolPercent}%
@@ -810,14 +860,14 @@ export default function Staff() {
               </small>
             </div>
             <div className="staff-page-summary-card staff-page-summary-card--bonus">
-              <span>Staff bonus</span>
+              <span>Staff incentive</span>
               <strong>{formatMoney(commissionOverview.totalCommission)}</strong>
               <small>
                 {commissionOverview.totalBonusRemaining > 0
                   ? `${formatMoney(commissionOverview.totalBonusRemaining)} remaining`
                   : commissionOverview.totalCommission > 0
                     ? 'Paid'
-                    : 'Tap Bonus'}
+                    : 'Tap Incentive'}
               </small>
             </div>
           </div>
@@ -902,7 +952,45 @@ export default function Staff() {
 
       <div className="staff-page-body">
         {!selectedStaffId ? (
-          summaries.length === 0 ? (
+          staffListView === 'inactive' ? (
+            filteredInactiveStaff.length === 0 ? (
+              <p className="staff-page-empty">
+                {inactiveStaffList.length === 0
+                  ? 'No inactive staff.'
+                  : 'No inactive staff match your search.'}
+              </p>
+            ) : (
+              <>
+                <div className="staff-page-list-head">
+                  <h2 className="staff-page-list-title">Inactive staff</h2>
+                </div>
+                <ul className="staff-page-list staff-page-list--inactive">
+                  {filteredInactiveStaff.map((member) => (
+                    <li key={member.id} className="staff-page-inactive-row">
+                      <div className="staff-page-inactive-main">
+                        <strong>{member.name}</strong>
+                        <span className="staff-page-status staff-page-status--inactive">Inactive</span>
+                        <small>
+                          {member.inactiveAt
+                            ? `Since ${formatDate(member.inactiveAt)}`
+                            : 'Marked inactive'}
+                          {' · '}
+                          {formatMoney(member.monthlySalary)}/mo
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        className="staff-page-btn staff-page-btn--primary staff-page-inactive-activate"
+                        onClick={() => activateStaffMember(member.id)}
+                      >
+                        Activate
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )
+          ) : summaries.length === 0 ? (
             <p className="staff-page-empty">No staff yet. Add a staff member to track salary.</p>
           ) : (
             <>
@@ -998,7 +1086,7 @@ export default function Staff() {
                           · {row.paymentCount} payment
                           {row.paymentCount === 1 ? '' : 's'}
                           {payout.bonusEarned > 0
-                            ? ` · Bonus ${formatMoney(payout.bonusEarned)}${payout.bonusRemaining > 0 ? ` (${formatMoney(payout.bonusRemaining)} left)` : ''}`
+                            ? ` · Incentive ${formatMoney(payout.bonusEarned)}${payout.bonusRemaining > 0 ? ` (${formatMoney(payout.bonusRemaining)} left)` : ''}`
                             : ''}
                         </small>
                       </div>
@@ -1053,10 +1141,10 @@ export default function Staff() {
                       <button
                         type="button"
                         className="staff-page-row-action staff-page-row-action--remove"
-                        aria-label={`Remove ${row.name}`}
-                        onClick={() => requestRemoveStaff(row.staffId)}
+                        aria-label={`Mark ${row.name} inactive`}
+                        onClick={() => requestDeactivateStaff(row.staffId)}
                       >
-                        ✕
+                        ⏸
                       </button>
                     </div>
                     ) : null}
@@ -1071,7 +1159,10 @@ export default function Staff() {
           <section className="staff-page-detail">
             <div className="staff-page-detail-head">
               <div className="staff-page-detail-head-text">
-                <h2>{selectedSummary.name}</h2>
+                <h2>
+                  {selectedSummary.name}
+                  <span className="staff-page-status staff-page-status--active">Active</span>
+                </h2>
                 <p>{formatSalaryMonthLabel(monthKey)}</p>
               </div>
               <button
@@ -1144,7 +1235,7 @@ export default function Staff() {
                   <div>
                     <span>Net salary</span>
                     <strong>{formatMoney(selectedPayout.netSalary)}</strong>
-                    <small>Without bonus</small>
+                    <small>Without incentive</small>
                   </div>
                   <div>
                     <span>Paid</span>
@@ -1159,28 +1250,28 @@ export default function Staff() {
                   <div>
                     <span>Salary remaining</span>
                     <strong>{formatMoney(selectedPayout.salaryRemaining)}</strong>
-                    <small>Without bonus</small>
+                    <small>Without incentive</small>
                   </div>
                 </div>
 
-                <h3 className="staff-page-section-title">Bonus</h3>
+                <h3 className="staff-page-section-title">Incentive</h3>
                 <div className="staff-page-detail-grid staff-page-detail-grid--bonus">
                   <div>
-                    <span>Bonus</span>
+                    <span>Incentive</span>
                     <strong className="staff-page-bonus-amount">
                       {formatMoney(selectedPayout.bonusEarned)}
                     </strong>
                     <small>Earned this month</small>
                   </div>
                   <div>
-                    <span>Bonus remaining</span>
+                    <span>Incentive remaining</span>
                     <strong>{formatMoney(selectedPayout.bonusRemaining)}</strong>
                     <small>After salary payments</small>
                   </div>
                   <div>
-                    <span>Total with bonus</span>
+                    <span>Total with incentive</span>
                     <strong>{formatMoney(selectedPayout.totalWithBonus)}</strong>
-                    <small>Net salary + bonus</small>
+                    <small>Net salary + incentive</small>
                   </div>
                   <div>
                     <span>Total remaining</span>
@@ -1197,7 +1288,7 @@ export default function Staff() {
                           ? `Overpaid ${formatMoney(selectedPayout.overpaidAmount)}`
                           : formatMoney(0)}
                     </strong>
-                    <small>Salary + bonus left to pay</small>
+                    <small>Salary + incentive left to pay</small>
                   </div>
                 </div>
                 <button
@@ -1205,7 +1296,7 @@ export default function Staff() {
                   className="staff-page-btn staff-page-btn--ghost staff-page-bonus-open-btn"
                   onClick={() => setShowBonusPanel(true)}
                 >
-                  Open bonus plan
+                  Open incentive plan
                 </button>
 
                 {selectedAttributedSales.length > 0 ? (
@@ -1379,6 +1470,14 @@ export default function Staff() {
               </button>
             </div>
 
+            <StaffOverlayMonthBar
+              monthKey={monthKey}
+              year={year}
+              monthOptions={monthOptions}
+              onMonthPick={handleMonthPick}
+              onYearShift={shiftYear}
+            />
+
             <p className="staff-attendance-panel-note">
               Arrow keys move the selected date. Enter opens the menu. Esc closes the menu. In the
               menu use ↑↓ or 1–4, then Enter to pick.
@@ -1531,28 +1630,29 @@ export default function Staff() {
         </div>
       ) : null}
 
-      {pendingRemoveStaff ? (
-        <div className="staff-remove-overlay" role="dialog" aria-modal="true" aria-labelledby="staff-remove-title">
+      {pendingDeactivateStaff ? (
+        <div className="staff-remove-overlay" role="dialog" aria-modal="true" aria-labelledby="staff-deactivate-title">
           <button
             type="button"
             className="staff-remove-backdrop"
-            aria-label="Cancel remove staff"
-            onClick={cancelRemoveStaff}
+            aria-label="Cancel mark inactive"
+            onClick={cancelDeactivateStaff}
           />
           <div className="staff-remove-panel">
-            <h2 id="staff-remove-title" className="staff-remove-title">
-              Remove staff?
+            <h2 id="staff-deactivate-title" className="staff-remove-title">
+              Mark inactive?
             </h2>
             <p className="staff-remove-copy">
-              Remove <strong>{pendingRemoveStaff.name}</strong> from the staff list? Their payments stay in
-              expense history as normal expenses and will no longer count toward salary.
+              Mark <strong>{pendingDeactivateStaff.name}</strong> as inactive? They will be hidden from
+              the salary and incentive lists until you activate them again. Past payments stay in expense
+              history.
             </p>
             <div className="staff-remove-actions">
-              <button type="button" className="staff-page-btn staff-page-btn--ghost" onClick={cancelRemoveStaff}>
+              <button type="button" className="staff-page-btn staff-page-btn--ghost" onClick={cancelDeactivateStaff}>
                 Cancel
               </button>
-              <button type="button" className="staff-page-btn staff-page-btn--danger" onClick={confirmRemoveStaff}>
-                Yes, remove
+              <button type="button" className="staff-page-btn staff-page-btn--danger" onClick={confirmDeactivateStaff}>
+                Yes, mark inactive
               </button>
             </div>
           </div>
@@ -1575,10 +1675,13 @@ export default function Staff() {
         <StaffBonusPanel
           open
           onClose={() => setShowBonusPanel(false)}
-          overlayTop={bonusPanelTop}
           monthKey={monthKey}
           monthLabel={formatSalaryMonthLabel(monthKey)}
-          staff={staffList}
+          year={year}
+          monthOptions={monthOptions}
+          onMonthPick={handleMonthPick}
+          onYearShift={shiftYear}
+          staff={activeStaffList}
           collectedActual={commissionOverview.storeCollections}
           settings={bonusMonthSettings}
           defaultPoolPercent={data.staffCommissionDefaultPercent ?? 0}

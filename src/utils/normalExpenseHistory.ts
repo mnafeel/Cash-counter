@@ -165,7 +165,7 @@ export function buildExpenseAmountPickerOptions(
 
   const metaLabel =
     allocation.bonusRemaining > 0
-      ? `${formatSalaryMonthLabel(monthKey)} left (salary + bonus)`
+      ? `${formatSalaryMonthLabel(monthKey)} left (salary + incentive)`
       : `${formatSalaryMonthLabel(monthKey)} remaining`
 
   return [

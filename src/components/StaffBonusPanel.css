@@ -1,14 +1,12 @@
 .staff-bonus-overlay {
   position: fixed;
-  top: var(--staff-bonus-top, 0px);
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 1200;
+  inset: 0;
+  z-index: 2000;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
-  pointer-events: none;
+  padding: 12px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 
 .staff-bonus-backdrop {
@@ -16,7 +14,8 @@
   inset: 0;
   border: 0;
   background: rgba(0, 0, 0, 0.55);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .staff-bonus-panel {
@@ -24,8 +23,7 @@
   z-index: 1;
   pointer-events: auto;
   width: min(100%, 520px);
-  max-height: 100%;
-  margin-top: auto;
+  max-height: min(92vh, 720px);
   overflow: auto;
   overscroll-behavior: contain;
   scroll-behavior: smooth;
@@ -34,9 +32,10 @@
   gap: 10px;
   padding: 12px;
   padding-bottom: max(12px, env(safe-area-inset-bottom));
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
 }
 
 .staff-bonus-step {

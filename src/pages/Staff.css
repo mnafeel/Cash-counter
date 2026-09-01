@@ -899,7 +899,7 @@
 .staff-attendance-overlay {
   position: fixed;
   inset: 0;
-  z-index: 320;
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -967,6 +967,70 @@
   font-size: 0.58rem;
   line-height: 1.45;
   color: var(--cream-dim);
+}
+
+.staff-overlay-month-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 10px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+}
+
+.staff-overlay-month-year {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.staff-overlay-month-year button {
+  min-width: 30px;
+  min-height: 30px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.staff-overlay-month-year strong {
+  min-width: 44px;
+  text-align: center;
+  color: var(--cream);
+  font-size: 0.78rem;
+}
+
+.staff-overlay-month-chips {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.staff-overlay-month-chip {
+  min-height: 28px;
+  padding: 4px 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream-dim);
+  font-size: 0.56rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.staff-overlay-month-chip--active {
+  color: var(--cream);
+  border-color: var(--cream-dim);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.staff-bonus-panel .staff-overlay-month-bar {
+  margin-top: 0;
 }
 
 .staff-page-error--modal {
@@ -1734,7 +1798,7 @@
 .staff-remove-overlay {
   position: fixed;
   inset: 0;
-  z-index: 300;
+  z-index: 2100;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1841,4 +1905,77 @@
 .staff-page-payment--advance {
   border-color: rgba(120, 180, 140, 0.35);
   background: rgba(64, 145, 108, 0.08);
+}
+
+.staff-page-status {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.staff-page-status--active {
+  color: #a8d4b8;
+  border: 1px solid rgba(120, 180, 140, 0.45);
+  background: rgba(64, 145, 108, 0.12);
+}
+
+.staff-page-status--inactive {
+  color: #e8c4a0;
+  border: 1px solid rgba(220, 160, 80, 0.45);
+  background: rgba(220, 160, 80, 0.12);
+}
+
+.staff-page-corner-btn--inactive {
+  border-color: rgba(220, 160, 80, 0.45);
+  background: rgba(220, 160, 80, 0.1);
+}
+
+.staff-page-list--inactive {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.staff-page-inactive-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.staff-page-inactive-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.staff-page-inactive-main strong {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--cream);
+}
+
+.staff-page-inactive-main small {
+  font-size: 0.56rem;
+  color: var(--cream-dim);
+  line-height: 1.4;
+}
+
+.staff-page-inactive-activate {
+  flex-shrink: 0;
 }
