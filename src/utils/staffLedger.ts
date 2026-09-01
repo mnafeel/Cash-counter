@@ -131,8 +131,12 @@ export function isStaffLinkableExpense(expense: Expense): boolean {
 
 export function expenseCountsTowardStaffSalary(expense: Expense): boolean {
   if (!expense.staffId) return false
-  if (expense.staffSalaryLink === false) return false
+  if (expense.staffSalaryLink !== true) return false
   return isStaffLinkableExpense(expense)
+}
+
+export function expenseLinkedToStaff(expense: Expense): boolean {
+  return Boolean(expense.staffId) && isStaffLinkableExpense(expense)
 }
 
 export function findStaffByName(data: AppData, name: string): StaffMember | undefined {

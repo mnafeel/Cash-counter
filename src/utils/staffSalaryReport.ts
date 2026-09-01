@@ -82,6 +82,25 @@ function escapeHtml(value: string | number | undefined | null): string {
     .replace(/"/g, '&quot;')
 }
 
+function formatExportedAt(): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date())
+}
+
+function overviewFromSummaries(summaries: StaffMonthSummary[]): StaffOverview {
+  return {
+    staffCount: summaries.length,
+    totalSalary: summaries.reduce((sum, row) => sum + row.monthlySalary, 0),
+    totalDeductions: summaries.reduce((sum, row) => sum + row.deductionTotal, 0),
+    totalPaidDays: summaries.reduce((sum, row) => sum + row.paidDays, 0),
+    totalNetSalary: summaries.reduce((sum, row) => sum + row.netSalary, 0),
+    totalPaid: summaries.reduce((sum, row) => sum + row.paidTotal, 0),
+    totalRemaining: summaries.reduce((sum, row) => sum + Math.max(0, row.remaining), 0),
+  }
+}
+
 function staffTableRows(summaries: StaffMonthSummary[]): string {
   return summaries
     .map(
@@ -103,13 +122,16 @@ function buildStaffSalaryReportHtml(
   overview: StaffOverview,
   summaries: StaffMonthSummary[],
   exportedAt: string,
+  scopeLabel?: string,
 ): string {
   const monthLabel = formatSalaryMonthLabel(monthKey)
-  const title = `Staff Salary Report · ${monthLabel}`
+  const title = scopeLabel
+    ? `Staff Salary Report · ${monthLabel} · ${scopeLabel}`
+    : `Staff Salary Report · ${monthLabel}`
 
   const body = `
   <h2>${escapeHtml(title)}</h2>
-  <p class="meta">Generated ${escapeHtml(exportedAt)} · ${escapeHtml(monthLabel)}</p>
+  <p class="meta">Generated ${escapeHtml(exportedAt)} · ${escapeHtml(monthLabel)}${scopeLabel ? ` · ${escapeHtml(scopeLabel)}` : ''}</p>
   <div class="summary">
     <div class="summary-card">
       <span>Base Salary</span>
@@ -164,13 +186,54 @@ function buildStaffSalaryReportHtml(
 </html>`
 }
 
+function printStaffSalaryReportForSummaries(
+  monthKey: SalaryMonthKey,
+  summaries: StaffMonthSummary[],
+  scopeLabel?: string,
+): void {
+  if (summaries.length === 0) return
+  const overview = overviewFromSummaries(summaries)
+  const exportedAt = formatExportedAt()
+  const html = buildStaffSalaryReportHtml(monthKey, overview, summaries, exportedAt, scopeLabel)
+  printHtmlReport(html)
+}
+
+function summariesForStaffIds(
+  data: AppData,
+  monthKey: SalaryMonthKey,
+  staffIds: string[],
+): StaffMonthSummary[] {
+  const idSet = new Set(staffIds)
+  return buildStaffMonthSummaries(data, monthKey).filter((row) => idSet.has(row.staffId))
+}
+
 export function printStaffSalaryReport(data: AppData, monthKey: SalaryMonthKey): void {
   const summaries = buildStaffMonthSummaries(data, monthKey)
   const overview = buildStaffOverview(data, monthKey)
-  const exportedAt = new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date())
+  const exportedAt = formatExportedAt()
   const html = buildStaffSalaryReportHtml(monthKey, overview, summaries, exportedAt)
   printHtmlReport(html)
+}
+
+export function printStaffMemberSalaryReport(
+  data: AppData,
+  monthKey: SalaryMonthKey,
+  staffId: string,
+): void {
+  const summaries = summariesForStaffIds(data, monthKey, [staffId])
+  const name = summaries[0]?.name
+  printStaffSalaryReportForSummaries(monthKey, summaries, name ? `${name} only` : '1 selected')
+}
+
+export function printSelectedStaffSalaryReports(
+  data: AppData,
+  monthKey: SalaryMonthKey,
+  staffIds: string[],
+): void {
+  const summaries = summariesForStaffIds(data, monthKey, staffIds)
+  const scopeLabel =
+    summaries.length === 1
+      ? `${summaries[0]?.name ?? '1 staff'} only`
+      : `${summaries.length} selected`
+  printStaffSalaryReportForSummaries(monthKey, summaries, scopeLabel)
 }

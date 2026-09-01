@@ -3,7 +3,7 @@ import { isPurchaseExpense } from './expenseBillLabels'
 import { formatMoney, formatTime } from './format'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
 import {
-  expenseCountsTowardStaffSalary,
+  expenseLinkedToStaff,
   formatSalaryMonthLabel,
   getStaffMonthSummary,
   isStaffRosterName,
@@ -58,7 +58,7 @@ export interface ExpenseAmountPickerContext {
 function isStaffExpenseName(data: AppData, expense: Expense): boolean {
   const raw = expense.name?.trim()
   if (!raw) return false
-  return expenseCountsTowardStaffSalary(expense) || isStaffRosterName(data, raw)
+  return expenseLinkedToStaff(expense) || isStaffRosterName(data, raw)
 }
 
 function expenseToPickerOption(data: AppData, expense: Expense): ExpenseNamePickerOption {

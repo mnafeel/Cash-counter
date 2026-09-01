@@ -36,7 +36,7 @@ import {
   STAFF_MIN_YEAR,
   type SalaryMonthKey,
 } from '../utils/staffLedger'
-import { printStaffSalaryReport } from '../utils/staffSalaryReport'
+import { printSelectedStaffSalaryReports, printStaffMemberSalaryReport, printStaffSalaryReport } from '../utils/staffSalaryReport'
 import StaffSalaryUnlinkConfirm from '../components/StaffSalaryUnlinkConfirm'
 import './Staff.css'
 
@@ -69,6 +69,8 @@ export default function Staff() {
   const [inlineEditStaffId, setInlineEditStaffId] = useState<string | null>(null)
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
   const [pendingUnlinkExpenseId, setPendingUnlinkExpenseId] = useState<string | null>(null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedStaffIds, setSelectedStaffIds] = useState<Set<string>>(() => new Set())
   const [editingPaymentMonth, setEditingPaymentMonth] = useState<SalaryMonthKey>(currentSalaryMonth())
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
   const [attendanceMenuDate, setAttendanceMenuDate] = useState<string | null>(null)
@@ -198,6 +200,7 @@ export default function Staff() {
 
   function handleMonthPick(nextKey: SalaryMonthKey) {
     setMonthKey(nextKey)
+    setSelectedStaffIds(new Set())
     const { year: nextYear } = parseSalaryMonth(nextKey)
     setYear(clampStaffYear(nextYear))
   }
@@ -332,6 +335,38 @@ export default function Staff() {
 
   function handleDownloadSalaryReport() {
     printStaffSalaryReport(data, monthKey)
+  }
+
+  function handleDownloadSelectedSalaryReport() {
+    if (selectedStaffIds.size === 0) return
+    printSelectedStaffSalaryReports(data, monthKey, [...selectedStaffIds])
+    setSelectMode(false)
+    setSelectedStaffIds(new Set())
+  }
+
+  function toggleSelectMode() {
+    setSelectMode((current) => {
+      if (current) setSelectedStaffIds(new Set())
+      return !current
+    })
+  }
+
+  function toggleStaffSelection(staffId: string) {
+    setSelectedStaffIds((current) => {
+      const next = new Set(current)
+      if (next.has(staffId)) next.delete(staffId)
+      else next.add(staffId)
+      return next
+    })
+  }
+
+  function selectAllVisibleStaff() {
+    setSelectedStaffIds(new Set(summaries.map((row) => row.staffId)))
+  }
+
+  function handlePrintStaffMember() {
+    if (!selectedStaffId) return
+    printStaffMemberSalaryReport(data, monthKey, selectedStaffId)
   }
 
   function closeAttendanceModal() {
@@ -724,7 +759,8 @@ export default function Staff() {
             />
           </label>
           <p className="staff-page-form-note">
-            Existing general expenses with the same name will link to this staff member automatically.
+            Existing expenses with the same name will be linked to this staff member. New expenses
+            count toward salary by default.
           </p>
           {formError ? <p className="staff-page-error">{formError}</p> : null}
           <button type="button" className="staff-page-btn staff-page-btn--primary" onClick={handleCreateStaff}>
@@ -740,23 +776,67 @@ export default function Staff() {
           ) : (
             <>
               <div className="staff-page-list-head">
-                <button
-                  type="button"
-                  className="staff-page-download-btn"
-                  onClick={handleDownloadSalaryReport}
-                >
-                  Download PDF
-                </button>
+                <div className="staff-page-list-toolbar">
+                  <button
+                    type="button"
+                    className={`staff-page-select-btn ${selectMode ? 'staff-page-select-btn--active' : ''}`}
+                    onClick={toggleSelectMode}
+                  >
+                    {selectMode ? 'Done' : 'Select'}
+                  </button>
+                  {selectMode ? (
+                    <>
+                      <button
+                        type="button"
+                        className="staff-page-select-btn"
+                        onClick={selectAllVisibleStaff}
+                      >
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        className="staff-page-download-btn"
+                        onClick={handleDownloadSelectedSalaryReport}
+                        disabled={selectedStaffIds.size === 0}
+                      >
+                        Download PDF · {selectedStaffIds.size}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="staff-page-download-btn"
+                      onClick={handleDownloadSalaryReport}
+                    >
+                      Download PDF
+                    </button>
+                  )}
+                </div>
                 <h2 className="staff-page-list-title">Salaried Staff</h2>
               </div>
             <ul className="staff-page-list">
-              {summaries.map((row) => (
+              {summaries.map((row) => {
+                const isSelected = selectedStaffIds.has(row.staffId)
+                return (
                 <li key={row.staffId}>
-                  <div className="staff-page-row-wrap">
+                  <div className={`staff-page-row-wrap ${isSelected ? 'staff-page-row-wrap--selected' : ''}`}>
+                    {selectMode ? (
+                      <label className="staff-page-row-check" aria-label={`Select ${row.name}`}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleStaffSelection(row.staffId)}
+                        />
+                      </label>
+                    ) : null}
                     <button
                       type="button"
                       className="staff-page-row"
                       onClick={() => {
+                        if (selectMode) {
+                          toggleStaffSelection(row.staffId)
+                          return
+                        }
                         if (inlineEditStaffId === row.staffId) return
                         setSelectedStaffId(row.staffId)
                         setEditSalary(String(row.monthlySalary))
@@ -784,7 +864,7 @@ export default function Staff() {
                           {row.paymentCount === 1 ? '' : 's'}
                         </small>
                       </div>
-                      {inlineEditStaffId === row.staffId ? (
+                      {inlineEditStaffId === row.staffId && !selectMode ? (
                         <input
                           type="text"
                           inputMode="decimal"
@@ -806,7 +886,7 @@ export default function Staff() {
                           autoFocus
                           aria-label={`Edit salary for ${row.name}`}
                         />
-                      ) : (
+                      ) : !selectMode ? (
                         <button
                           type="button"
                           className="staff-page-row-amount staff-page-row-amount--edit"
@@ -818,8 +898,11 @@ export default function Staff() {
                         >
                           {formatMoney(row.monthlySalary)}
                         </button>
+                      ) : (
+                        <span className="staff-page-row-amount">{formatMoney(row.monthlySalary)}</span>
                       )}
                     </button>
+                    {!selectMode ? (
                     <div className="staff-page-row-actions">
                       <button
                         type="button"
@@ -838,17 +921,28 @@ export default function Staff() {
                         ✕
                       </button>
                     </div>
+                    ) : null}
                   </div>
                 </li>
-              ))}
+                )
+              })}
             </ul>
             </>
           )
         ) : selectedSummary ? (
           <section className="staff-page-detail">
             <div className="staff-page-detail-head">
-              <h2>{selectedSummary.name}</h2>
-              <p>{formatSalaryMonthLabel(monthKey)}</p>
+              <div className="staff-page-detail-head-text">
+                <h2>{selectedSummary.name}</h2>
+                <p>{formatSalaryMonthLabel(monthKey)}</p>
+              </div>
+              <button
+                type="button"
+                className="staff-page-detail-print-btn"
+                onClick={handlePrintStaffMember}
+              >
+                Download PDF
+              </button>
             </div>
             <div className="staff-page-detail-grid">
               <div>
@@ -1037,9 +1131,9 @@ export default function Staff() {
                             type="button"
                             className="staff-page-payment-unlink"
                             onClick={() => requestUnlinkPayment(expense.id)}
-                            title="Keep expense, remove salary link"
+                            title="Remove salary month credit (expense stays linked to staff)"
                           >
-                            × Unlink
+                            × Remove credit
                           </button>
                         </div>
                       )}

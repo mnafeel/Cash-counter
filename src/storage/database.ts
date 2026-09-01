@@ -39,7 +39,7 @@ import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
 import { loanBankToBalance, loanCashToDrawer, loanRemainingAmount } from '../utils/loanLedger'
-import { getStaffMonthSummary, isStaffLinkableExpense, salaryMonthFromDate, type SalaryMonthKey } from '../utils/staffLedger'
+import { getStaffMonthSummary, isStaffLinkableExpense, type SalaryMonthKey } from '../utils/staffLedger'
 import { validateStaffLeaveInput, resolveStaffSalaryDays, normalizeStaffLeaveTypeValue, isSundayDate, isRedundantStaffLeaveRecord } from '../utils/staffAttendance'
 import { isoToDateInputValue } from '../utils/format'
 import { sealTodayDrawerOpenings } from '../utils/dayDrawerOpenings'
@@ -1705,13 +1705,15 @@ export function addExpenseWithOptionalStaff(
   let staffId = options?.staffId
   const linkSalary = options?.staffSalaryLink === true
 
+  if (!staffId) {
+    const key = expense.name.trim().toLowerCase()
+    const existing = (next.staff ?? []).find((member) => member.name.trim().toLowerCase() === key)
+    if (existing) staffId = existing.id
+  }
+
   if (linkSalary) {
     if (!staffId) {
-      const key = expense.name.trim().toLowerCase()
-      const existing = (next.staff ?? []).find((member) => member.name.trim().toLowerCase() === key)
-      if (existing) {
-        staffId = existing.id
-      } else if (options?.createStaffIfMissing) {
+      if (options?.createStaffIfMissing) {
         const ensured = ensureStaffMember(next, expense.name, 0)
         next = ensured.data
         staffId = ensured.staffId ?? undefined
@@ -1734,7 +1736,7 @@ export function addExpenseWithOptionalStaff(
   next = addExpense(next, {
     ...expense,
     staffId: staffId || undefined,
-    staffSalaryMonth: undefined,
+    staffSalaryMonth: options?.staffSalaryLink === true ? options?.staffSalaryMonth : undefined,
     staffSalaryLink: options?.staffSalaryLink,
   })
   return { data: next, ok: true }
@@ -1757,8 +1759,6 @@ export function linkExistingExpensesToStaff(
     return {
       ...expense,
       staffId,
-      staffSalaryLink: true,
-      staffSalaryMonth: salaryMonthFromDate(expense.createdAt),
     }
   })
   if (!changed) return data
@@ -1849,7 +1849,6 @@ export function unlinkExpenseFromStaff(data: AppData, expenseId: string): AppDat
       expense.id === expenseId
         ? {
             ...expense,
-            staffId: undefined,
             staffSalaryMonth: undefined,
             staffSalaryLink: false,
           }
