@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useCash } from '../context/CashContext'
 import { useOpenTiming } from '../hooks/useOpenTiming'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
@@ -31,12 +31,22 @@ import {
   listSalaryMonthPickerOptions,
   parseSalaryMonth,
   salaryMonthFromDate,
+  salaryMonthKey,
   searchStaffSummaries,
   staffDefaultYear,
   STAFF_MIN_YEAR,
   type SalaryMonthKey,
 } from '../utils/staffLedger'
 import { printSelectedStaffSalaryReports, printStaffMemberSalaryReport, printStaffSalaryReport } from '../utils/staffSalaryReport'
+import StaffBonusPanel from '../components/StaffBonusPanel'
+import {
+  buildStaffCommissionMonthContext,
+  buildStaffCommissionOverview,
+  buildStaffCommissionSummaryMap,
+  buildStaffPayoutBreakdown,
+  getStaffAttributedSales,
+  getStaffBonusMonthSettings,
+} from '../utils/staffCommission'
 import StaffSalaryUnlinkConfirm from '../components/StaffSalaryUnlinkConfirm'
 import './Staff.css'
 
@@ -48,6 +58,7 @@ export default function Staff() {
     addStaff,
     updateStaff,
     removeStaff,
+    updateStaffBonusMonthSettings,
     setStaffAttendance,
     removeStaffLeave,
     applyStaffSalaryAdvance,
@@ -65,6 +76,7 @@ export default function Staff() {
   const [editSalary, setEditSalary] = useState('')
   const [formError, setFormError] = useState('')
   const [showSalaryEdit, setShowSalaryEdit] = useState(false)
+  const [showBonusPanel, setShowBonusPanel] = useState(false)
   const [pendingRemoveStaffId, setPendingRemoveStaffId] = useState<string | null>(null)
   const [inlineEditStaffId, setInlineEditStaffId] = useState<string | null>(null)
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
@@ -78,7 +90,10 @@ export default function Staff() {
   const [attendanceMenuHighlight, setAttendanceMenuHighlight] = useState(0)
   const [editingSalaryDays, setEditingSalaryDays] = useState(false)
   const [editSalaryDays, setEditSalaryDays] = useState('30')
+  const [, startMonthTransition] = useTransition()
   const attendanceModalRef = useRef<HTMLDivElement>(null)
+  const monthToolbarRef = useRef<HTMLDivElement>(null)
+  const [bonusPanelTop, setBonusPanelTop] = useState(0)
   const attendanceDayButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   const calendarGrid = useMemo(() => buildMonthCalendarGrid(monthKey), [monthKey])
@@ -116,7 +131,24 @@ export default function Staff() {
     () => searchStaffSummaries(monthSummaries, deferredQuery),
     [monthSummaries, deferredQuery],
   )
+  const commissionMonth = useMemo(
+    () => buildStaffCommissionMonthContext(data, monthKey),
+    [data, monthKey],
+  )
+  const commissionByStaffId = useMemo(
+    () => buildStaffCommissionSummaryMap(data, commissionMonth),
+    [data, commissionMonth],
+  )
   const overview = useMemo(() => buildStaffOverview(data, monthKey), [data, monthKey])
+  const commissionOverview = useMemo(
+    () => buildStaffCommissionOverview(data, monthKey, commissionMonth),
+    [data, monthKey, commissionMonth],
+  )
+  const bonusMonthSettings = useMemo(
+    () => getStaffBonusMonthSettings(data, monthKey),
+    [data, monthKey],
+  )
+  const staffList = useMemo(() => (data.staff ?? []).slice().sort((a, b) => a.name.localeCompare(b.name)), [data.staff])
   const selectedSummary = useMemo(
     () => summaries.find((row) => row.staffId === selectedStaffId) ?? null,
     [summaries, selectedStaffId],
@@ -125,6 +157,23 @@ export default function Staff() {
     () => (selectedStaffId ? getStaffSalaryPayments(data, selectedStaffId, monthKey) : []),
     [data, selectedStaffId, monthKey],
   )
+  const selectedCommission = useMemo(
+    () => (selectedStaffId ? commissionByStaffId.get(selectedStaffId) ?? null : null),
+    [commissionByStaffId, selectedStaffId],
+  )
+  const selectedAttributedSales = useMemo(
+    () => (selectedStaffId ? getStaffAttributedSales(data, selectedStaffId, monthKey) : []),
+    [data, selectedStaffId, monthKey],
+  )
+  const selectedPayout = useMemo(() => {
+    if (!selectedSummary) return null
+    return buildStaffPayoutBreakdown(
+      selectedSummary.netSalary,
+      selectedSummary.paidTotal,
+      selectedSummary.remaining,
+      selectedCommission,
+    )
+  }, [selectedSummary, selectedCommission])
   const selectedAdvanceFromMonth = useMemo(() => {
     if (!selectedStaffId || !selectedSummary?.advanceIn) return null
     const row = (data.staffSalaryAdvances ?? []).find(
@@ -146,6 +195,19 @@ export default function Staff() {
     setAttendanceMenuHighlight(0)
     setAttendanceFocusedDate(defaultAttendanceFocusedDate())
   }, [monthKey, selectedStaffId, defaultAttendanceFocusedDate])
+
+  const measureBonusPanelTop = useCallback(() => {
+    const toolbar = monthToolbarRef.current
+    if (!toolbar) return
+    setBonusPanelTop(Math.ceil(toolbar.getBoundingClientRect().bottom))
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!showBonusPanel) return
+    measureBonusPanelTop()
+    window.addEventListener('resize', measureBonusPanelTop)
+    return () => window.removeEventListener('resize', measureBonusPanelTop)
+  }, [showBonusPanel, monthKey, year, measureBonusPanelTop])
 
   useEffect(() => {
     if (!showAttendanceModal) {
@@ -199,10 +261,24 @@ export default function Staff() {
   }, [showAttendanceModal, attendanceMenuDate, attendanceFocusedDate, focusAttendanceDate])
 
   function handleMonthPick(nextKey: SalaryMonthKey) {
-    setMonthKey(nextKey)
-    setSelectedStaffIds(new Set())
-    const { year: nextYear } = parseSalaryMonth(nextKey)
-    setYear(clampStaffYear(nextYear))
+    startMonthTransition(() => {
+      setMonthKey(nextKey)
+      setSelectedStaffIds(new Set())
+      const { year: nextYear } = parseSalaryMonth(nextKey)
+      setYear(clampStaffYear(nextYear))
+      setShowBonusPanel(false)
+    })
+  }
+
+  function shiftYear(delta: number) {
+    startMonthTransition(() => {
+      const nextYear = clampStaffYear(year + delta)
+      const { month } = parseSalaryMonth(monthKey)
+      setYear(nextYear)
+      setMonthKey(salaryMonthKey(nextYear, month))
+      setSelectedStaffIds(new Set())
+      setShowBonusPanel(false)
+    })
   }
 
   function startEditPaymentMonth(expenseId: string, currentMonth: SalaryMonthKey) {
@@ -247,7 +323,11 @@ export default function Staff() {
       setFormError('Enter monthly salary.')
       return
     }
-    const ok = addStaff({ name, monthlySalary: salary, linkExisting: true })
+    const ok = addStaff({
+      name,
+      monthlySalary: salary,
+      linkExisting: true,
+    })
     if (!ok) {
       setFormError('Staff already exists or could not save.')
       return
@@ -294,6 +374,10 @@ export default function Staff() {
     updateStaff(selectedStaffId, { monthlySalary: salary })
     setFormError('')
     setShowSalaryEdit(false)
+  }
+
+  function saveBonusPlan(forMonthKey: SalaryMonthKey, plan: import('../types').StaffBonusMonthSettings) {
+    updateStaffBonusMonthSettings(forMonthKey, { plan })
   }
 
   function saveSalaryDays() {
@@ -541,6 +625,10 @@ export default function Staff() {
   }
 
   const handlePageBack = useCallback(() => {
+    if (showBonusPanel) {
+      setShowBonusPanel(false)
+      return
+    }
     if (showAttendanceModal) {
       setShowAttendanceModal(false)
       setAttendanceMenuDate(null)
@@ -561,7 +649,7 @@ export default function Staff() {
       return
     }
     goBack()
-  }, [goBack, selectedStaffId, showAttendanceModal, showCreate])
+  }, [goBack, selectedStaffId, showAttendanceModal, showCreate, showBonusPanel])
 
   usePageEscape(handlePageBack)
 
@@ -604,17 +692,27 @@ export default function Staff() {
               </button>
             </>
           ) : (
-            <button
-              type="button"
-              className={`staff-page-corner-btn staff-page-corner-btn--add ${showCreate ? 'staff-page-corner-btn--active' : ''}`}
-              onClick={() => {
-                setShowCreate((open) => !open)
-                setFormError('')
-              }}
-            >
-              <span aria-hidden="true">+</span>
-              <span>{showCreate ? 'Close' : 'Add staff'}</span>
-            </button>
+            <>
+              <button
+                type="button"
+                className={`staff-page-corner-btn staff-page-corner-btn--bonus ${showBonusPanel ? 'staff-page-corner-btn--active' : ''}`}
+                onClick={() => setShowBonusPanel(true)}
+              >
+                <span aria-hidden="true">%</span>
+                <span>Bonus</span>
+              </button>
+              <button
+                type="button"
+                className={`staff-page-corner-btn staff-page-corner-btn--add ${showCreate ? 'staff-page-corner-btn--active' : ''}`}
+                onClick={() => {
+                  setShowCreate((open) => !open)
+                  setFormError('')
+                }}
+              >
+                <span aria-hidden="true">+</span>
+                <span>{showCreate ? 'Close' : 'Add staff'}</span>
+              </button>
+            </>
           )
         }
       />
@@ -626,12 +724,12 @@ export default function Staff() {
         </div>
       </header>
 
-      <div className="staff-page-toolbar">
+      <div className="staff-page-toolbar" ref={monthToolbarRef}>
         <div className="staff-page-year">
           <button
             type="button"
             disabled={year <= STAFF_MIN_YEAR}
-            onClick={() => setYear((value) => clampStaffYear(value - 1))}
+            onClick={() => shiftYear(-1)}
             aria-label="Previous year"
           >
             ‹
@@ -639,7 +737,7 @@ export default function Staff() {
           <strong>{year}</strong>
           <button
             type="button"
-            onClick={() => setYear((value) => clampStaffYear(value + 1))}
+            onClick={() => shiftYear(1)}
             aria-label="Next year"
           >
             ›
@@ -657,41 +755,60 @@ export default function Staff() {
             </button>
           ))}
         </div>
-        <input
-          type="search"
-          className="staff-page-search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search staff"
-          aria-label="Search staff"
-        />
+        <div className="staff-page-toolbar-search-row">
+          <input
+            type="search"
+            className="staff-page-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search staff"
+            aria-label="Search staff"
+          />
+        </div>
       </div>
 
-      <div className="staff-page-summary">
-        <div className="staff-page-summary-card">
-          <span>Gross salary</span>
-          <strong>{formatMoney(overview.totalSalary)}</strong>
-          <small>{overview.staffCount} staff</small>
-        </div>
-        <div className="staff-page-summary-card staff-page-summary-card--leave">
-          <span>Deduction</span>
-          <strong>{formatMoney(overview.totalDeductions)}</strong>
-          <small>{overview.totalDeductions > 0 ? 'Leave marked' : 'No leave'}</small>
-        </div>
-        <div className="staff-page-summary-card staff-page-summary-card--net">
-          <span>Net salary</span>
-          <strong>{formatMoney(overview.totalNetSalary)}</strong>
-          <small>To receive this month</small>
-        </div>
-        <div className="staff-page-summary-card">
-          <span>Paid</span>
-          <strong>{formatMoney(overview.totalPaid)}</strong>
-        </div>
-        <div className="staff-page-summary-card staff-page-summary-card--due">
-          <span>Remaining</span>
-          <strong>{formatMoney(overview.totalRemaining)}</strong>
-        </div>
-      </div>
+      {!selectedStaffId ? (
+        <>
+          <div className="staff-page-summary">
+            <div className="staff-page-summary-card">
+              <span>Gross salary</span>
+              <strong>{formatMoney(overview.totalSalary)}</strong>
+              <small>{overview.staffCount} staff</small>
+            </div>
+            <div className="staff-page-summary-card staff-page-summary-card--leave">
+              <span>Deduction</span>
+              <strong>{formatMoney(overview.totalDeductions)}</strong>
+              <small>{overview.totalDeductions > 0 ? 'Leave marked' : 'No leave'}</small>
+            </div>
+            <div className="staff-page-summary-card staff-page-summary-card--net">
+              <span>Net salary</span>
+              <strong>{formatMoney(overview.totalNetSalary)}</strong>
+              <small>To receive this month</small>
+            </div>
+            <div className="staff-page-summary-card">
+              <span>Paid</span>
+              <strong>{formatMoney(overview.totalPaid)}</strong>
+            </div>
+            <div className="staff-page-summary-card staff-page-summary-card--due">
+              <span>Remaining</span>
+              <strong>{formatMoney(overview.totalRemaining)}</strong>
+            </div>
+          </div>
+
+          <div className="staff-page-summary staff-page-summary--bonus">
+            <div className="staff-page-summary-card staff-page-summary-card--bonus">
+              <span>Bonus pool</span>
+              <strong>{formatMoney(commissionOverview.poolAmount)}</strong>
+              <small>{commissionOverview.poolPercent}%</small>
+            </div>
+            <div className="staff-page-summary-card staff-page-summary-card--bonus">
+              <span>Staff bonus</span>
+              <strong>{formatMoney(commissionOverview.totalCommission)}</strong>
+              <small>Tap Bonus</small>
+            </div>
+          </div>
+        </>
+      ) : null}
 
       <div className="staff-page-actions">
         {selectedStaffId ? (
@@ -817,6 +934,7 @@ export default function Staff() {
             <ul className="staff-page-list">
               {summaries.map((row) => {
                 const isSelected = selectedStaffIds.has(row.staffId)
+                const commission = commissionByStaffId.get(row.staffId)
                 return (
                 <li key={row.staffId}>
                   <div className={`staff-page-row-wrap ${isSelected ? 'staff-page-row-wrap--selected' : ''}`}>
@@ -862,6 +980,9 @@ export default function Staff() {
                             : ''}{' '}
                           · {row.paymentCount} payment
                           {row.paymentCount === 1 ? '' : 's'}
+                          {commission && commission.commissionEarned > 0
+                            ? ` · Bonus ${formatMoney(commission.commissionEarned)} · Total due ${formatMoney(row.remaining + commission.commissionEarned)}`
+                            : ''}
                         </small>
                       </div>
                       {inlineEditStaffId === row.staffId && !selectMode ? (
@@ -944,89 +1065,151 @@ export default function Staff() {
                 Download PDF
               </button>
             </div>
-            <div className="staff-page-detail-grid">
-              <div>
-                <span>Monthly salary</span>
-                <strong>{formatMoney(selectedSummary.monthlySalary)}</strong>
-              </div>
-              <div>
-                <span>Daily rate</span>
-                <strong>{formatMoney(selectedSummary.dailyRate)}</strong>
-                {editingSalaryDays ? (
-                  <label className="staff-page-days-edit">
-                    <span>÷</span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      className="staff-page-days-input"
-                      value={editSalaryDays}
-                      onChange={(e) => setEditSalaryDays(e.target.value)}
-                      onBlur={saveSalaryDays}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          saveSalaryDays()
-                        }
-                        if (e.key === 'Escape') {
-                          setEditingSalaryDays(false)
+            {selectedPayout ? (
+              <>
+                <h3 className="staff-page-section-title">Salary · {formatSalaryMonthLabel(monthKey)}</h3>
+                <div className="staff-page-detail-grid">
+                  <div>
+                    <span>Monthly salary</span>
+                    <strong>{formatMoney(selectedSummary.monthlySalary)}</strong>
+                  </div>
+                  <div>
+                    <span>Daily rate</span>
+                    <strong>{formatMoney(selectedSummary.dailyRate)}</strong>
+                    {editingSalaryDays ? (
+                      <label className="staff-page-days-edit">
+                        <span>÷</span>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          className="staff-page-days-input"
+                          value={editSalaryDays}
+                          onChange={(e) => setEditSalaryDays(e.target.value)}
+                          onBlur={saveSalaryDays}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              saveSalaryDays()
+                            }
+                            if (e.key === 'Escape') {
+                              setEditingSalaryDays(false)
+                              setEditSalaryDays(String(selectedSummary.salaryDaysPerMonth))
+                            }
+                          }}
+                          autoFocus
+                          aria-label="Salary days per month"
+                        />
+                        <span>days</span>
+                      </label>
+                    ) : (
+                      <button
+                        type="button"
+                        className="staff-page-days-link"
+                        onClick={() => {
                           setEditSalaryDays(String(selectedSummary.salaryDaysPerMonth))
-                        }
-                      }}
-                      autoFocus
-                      aria-label="Salary days per month"
-                    />
-                    <span>days</span>
-                  </label>
-                ) : (
-                  <button
-                    type="button"
-                    className="staff-page-days-link"
-                    onClick={() => {
-                      setEditSalaryDays(String(selectedSummary.salaryDaysPerMonth))
-                      setEditingSalaryDays(true)
-                      setFormError('')
-                    }}
-                  >
-                    ÷ {selectedSummary.salaryDaysPerMonth} days
-                  </button>
-                )}
-              </div>
-              <div>
-                <span>Deduction</span>
-                <strong>{formatMoney(selectedSummary.deductionTotal)}</strong>
-                <small>
-                  {selectedSummary.deductionTotal > 0
-                    ? `${selectedSummary.halfDayCount} half · ${selectedSummary.notPaidCount} unpaid`
-                    : 'No leave marked'}
-                </small>
-              </div>
-              <div>
-                <span>Net salary</span>
-                <strong>{formatMoney(selectedSummary.netSalary)}</strong>
-              </div>
-              <div>
-                <span>Paid</span>
-                <strong>{formatMoney(selectedSummary.paidTotal)}</strong>
-                {selectedSummary.advanceIn > 0 ? (
-                  <small>
-                    {formatMoney(selectedSummary.expensePaid)} expenses +{' '}
-                    {formatMoney(selectedSummary.advanceIn)} from {selectedAdvanceFromMonth ?? 'prev. month'}
-                  </small>
-                ) : selectedSummary.expensePaid !== selectedSummary.paidTotal ? (
-                  <small>{formatMoney(selectedSummary.expensePaid)} from expenses</small>
-                ) : null}
-              </div>
-              <div>
-                <span>Remaining</span>
-                <strong
-                  className={
-                    selectedSummary.remaining < 0 ? 'staff-page-remaining--overpaid' : undefined
-                  }
+                          setEditingSalaryDays(true)
+                          setFormError('')
+                        }}
+                      >
+                        ÷ {selectedSummary.salaryDaysPerMonth} days
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    <span>Deduction</span>
+                    <strong>{formatMoney(selectedSummary.deductionTotal)}</strong>
+                    <small>
+                      {selectedSummary.deductionTotal > 0
+                        ? `${selectedSummary.halfDayCount} half · ${selectedSummary.notPaidCount} unpaid`
+                        : 'No leave marked'}
+                    </small>
+                  </div>
+                  <div>
+                    <span>Net salary</span>
+                    <strong>{formatMoney(selectedPayout.netSalary)}</strong>
+                    <small>Without bonus</small>
+                  </div>
+                  <div>
+                    <span>Paid</span>
+                    <strong>{formatMoney(selectedPayout.paid)}</strong>
+                    {selectedSummary.advanceIn > 0 ? (
+                      <small>
+                        {formatMoney(selectedSummary.expensePaid)} +{' '}
+                        {formatMoney(selectedSummary.advanceIn)} prev.
+                      </small>
+                    ) : null}
+                  </div>
+                  <div>
+                    <span>Salary remaining</span>
+                    <strong
+                      className={
+                        selectedPayout.salaryRemaining < 0 ? 'staff-page-remaining--overpaid' : undefined
+                      }
+                    >
+                      {formatMoney(selectedPayout.salaryRemaining)}
+                    </strong>
+                    <small>Without bonus</small>
+                  </div>
+                </div>
+
+                <h3 className="staff-page-section-title">Bonus</h3>
+                <div className="staff-page-detail-grid staff-page-detail-grid--bonus">
+                  <div>
+                    <span>Pool</span>
+                    <strong>{formatMoney(selectedPayout.poolAmount)}</strong>
+                    <small>{selectedPayout.poolPercent}%</small>
+                  </div>
+                  <div>
+                    <span>Bonus</span>
+                    <strong className="staff-page-bonus-amount">
+                      {formatMoney(selectedPayout.bonusEarned)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Total with bonus</span>
+                    <strong>{formatMoney(selectedPayout.totalWithBonus)}</strong>
+                    <small>Net salary + bonus</small>
+                  </div>
+                  <div>
+                    <span>Total remaining</span>
+                    <strong
+                      className={
+                        selectedPayout.totalRemaining < 0 ? 'staff-page-remaining--overpaid' : undefined
+                      }
+                    >
+                      {formatMoney(selectedPayout.totalRemaining)}
+                    </strong>
+                    <small>Salary left + bonus</small>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="staff-page-btn staff-page-btn--ghost staff-page-bonus-open-btn"
+                  onClick={() => setShowBonusPanel(true)}
                 >
-                  {formatMoney(selectedSummary.remaining)}
-                </strong>
-              </div>
-            </div>
+                  Open bonus plan
+                </button>
+
+                {selectedAttributedSales.length > 0 ? (
+                  <>
+                    <h4 className="staff-page-subsection-title">
+                      Their sales on Counter ({selectedPayout.attributedSaleCount})
+                    </h4>
+                    <ul className="staff-page-commission-sales">
+                      {selectedAttributedSales.map(({ sale, collected }) => (
+                        <li key={sale.id}>
+                          <strong>{sale.customerName?.trim() || 'Sale'}</strong>
+                          <span>{formatMoney(collected)}</span>
+                          <small>
+                            Bill {formatMoney(sale.billAmount)} · {formatDate(sale.createdAt)}
+                          </small>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : null}
+              </>
+            ) : null}
             {selectedSummary.canApplyToNextMonth ? (
               <div className="staff-page-overpaid">
                 <p>
@@ -1369,6 +1552,21 @@ export default function Staff() {
         onClose={() => setPendingUnlinkExpenseId(null)}
         onConfirm={confirmUnlinkPayment}
       />
+
+      {showBonusPanel ? (
+        <StaffBonusPanel
+          open
+          onClose={() => setShowBonusPanel(false)}
+          overlayTop={bonusPanelTop}
+          monthKey={monthKey}
+          monthLabel={formatSalaryMonthLabel(monthKey)}
+          staff={staffList}
+          collectedActual={commissionOverview.storeCollections}
+          settings={bonusMonthSettings}
+          defaultPoolPercent={data.staffCommissionDefaultPercent ?? 0}
+          onSave={saveBonusPlan}
+        />
+      ) : null}
     </div>
   )
 }

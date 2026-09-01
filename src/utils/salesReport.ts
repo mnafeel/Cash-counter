@@ -795,6 +795,86 @@ function sortSalesBillRows(rows: SalesBillRow[], sort: ReportSort): SalesBillRow
   })
 }
 
+/** Sum collected sales for a filter without building/sorting full bill rows. */
+export function sumSalesCollectedForFilter(data: AppData, filter?: SalesReportFilter): number {
+  const mode = filter?.dateMode ?? 'collected'
+  const hasDateFilter = Boolean(filter?.fromDate || filter?.toDate)
+  const includeCollected = (
+    collectedTotal: number,
+    creditPending: number,
+    chequePending: number,
+  ) =>
+    !hasDateFilter ||
+    mode === 'created' ||
+    collectedTotal > 0 ||
+    creditPending > 0 ||
+    chequePending > 0
+
+  const childrenByParent = buildChildrenMap(data.sales)
+  const consumedChildIds = new Set<string>()
+  let total = 0
+
+  for (const sale of data.sales) {
+    if (sale.parentSplitId) continue
+
+    const children = childrenByParent.get(sale.id) ?? []
+    const isSplitGroup = sale.payType === 'split' || children.length > 0
+
+    if (isSplitGroup) {
+      for (const child of children) consumedChildIds.add(child.id)
+      const members = [sale, ...children]
+      const inRange = members.filter((member) => saleMatchesReportFilter(member, filter))
+      if (inRange.length === 0) continue
+
+      const cashTotal = inRange.reduce(
+        (sum, member) => sum + saleCollectedForFilter(member, filter).cash,
+        0,
+      )
+      const bankTotal = inRange.reduce(
+        (sum, member) => sum + saleCollectedForFilter(member, filter).bank,
+        0,
+      )
+      const chequeTotal = inRange.reduce(
+        (sum, member) => sum + saleCollectedForFilter(member, filter).cheque,
+        0,
+      )
+      const collectedTotal = collectedForSalesDisplay({
+        cash: cashTotal,
+        bank: bankTotal,
+        cheque: chequeTotal,
+        total: cashTotal + bankTotal + chequeTotal,
+      }).total
+      const creditPending = groupCreditPending(sale, children, filter)
+      const chequePending = groupChequePending(sale, children, filter)
+      if (includeCollected(collectedTotal, creditPending, chequePending)) {
+        total += collectedTotal
+      }
+      continue
+    }
+
+    if (!saleMatchesReportFilter(sale, filter)) continue
+    const collectedTotal = collectedForSalesDisplay(saleCollectedForFilter(sale, filter)).total
+    const creditPending = saleCreditPendingForFilter(sale, filter)
+    const chequePending = saleChequePendingForFilter(sale, filter)
+    if (includeCollected(collectedTotal, creditPending, chequePending)) {
+      total += collectedTotal
+    }
+  }
+
+  for (const sale of data.sales) {
+    if (!sale.parentSplitId || consumedChildIds.has(sale.id)) continue
+    if (!saleMatchesReportFilter(sale, filter)) continue
+    const collectedTotal = collectedForSalesDisplay(saleCollectedForFilter(sale, filter)).total
+    const creditPending = saleCreditPendingForFilter(sale, filter)
+    const chequePending = saleChequePendingForFilter(sale, filter)
+    if (includeCollected(collectedTotal, creditPending, chequePending)) {
+      total += collectedTotal
+    }
+  }
+
+  return total
+}
+
 export function buildSalesBillList(
   data: AppData,
   sort: ReportSort,

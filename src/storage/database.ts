@@ -1,4 +1,4 @@
-import type { AppData, AppTheme, Expense, ExpenseCreditPayment, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, SaleReturnEntry, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
+import type { AppData, AppTheme, Expense, ExpenseCreditPayment, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, SaleReturnEntry, StaffBonusMemberShare, StaffBonusMonthSettings, StaffBonusPart, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
 import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
 import { buildCustomerSummaries } from '../utils/customerLedger'
 import { collectSplitNameTargets, getSaleCustomerName } from '../utils/saleCustomerName'
@@ -516,6 +516,11 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
       .map((leave) => normalizeStaffLeave(leave))
       .filter((leave) => !isRedundantStaffLeaveRecord(leave.date, leave.type)),
     staffSalaryAdvances: (parsed.staffSalaryAdvances ?? []).map((row) => normalizeStaffSalaryAdvance(row)),
+    staffCommissionDefaultPercent:
+      parsed.staffCommissionDefaultPercent === undefined
+        ? undefined
+        : Math.max(0, Math.min(100, Number(parsed.staffCommissionDefaultPercent) || 0)),
+    staffBonusMonthSettings: normalizeStaffBonusMonthSettings(parsed.staffBonusMonthSettings),
     trash: normalizeTrash(parsed.trash),
   }
 }
@@ -593,12 +598,92 @@ function normalizeStaffLeave(raw: Partial<StaffLeave>): StaffLeave {
   }
 }
 
+function normalizeStaffBonusMemberShare(raw: unknown): StaffBonusMemberShare | null {
+  if (!raw || typeof raw !== 'object') return null
+  const row = raw as Partial<StaffBonusMemberShare>
+  if (!row.staffId) return null
+  const share: StaffBonusMemberShare = { staffId: row.staffId }
+  if (row.percent !== undefined && row.percent !== null) {
+    share.percent = Math.max(0, Math.min(100, Number(row.percent) || 0))
+  }
+  return share
+}
+
+function normalizeStaffBonusPart(raw: unknown): StaffBonusPart | null {
+  if (!raw || typeof raw !== 'object') return null
+  const row = raw as Partial<StaffBonusPart>
+  if (!row.id) return null
+  const members = Array.isArray(row.members)
+    ? row.members
+        .map((member) => normalizeStaffBonusMemberShare(member))
+        .filter((member): member is StaffBonusMemberShare => member !== null)
+    : undefined
+  const subParts = Array.isArray(row.subParts)
+    ? row.subParts
+        .map((part) => normalizeStaffBonusPart(part))
+        .filter((part): part is StaffBonusPart => part !== null)
+    : undefined
+  return {
+    id: row.id,
+    amount: Math.max(0, Number(row.amount) || 0),
+    percent:
+      row.percent !== undefined && row.percent !== null
+        ? Math.max(0, Math.min(100, Number(row.percent) || 0))
+        : undefined,
+    members: members && members.length > 0 ? members : undefined,
+    subParts: subParts && subParts.length > 0 ? subParts : undefined,
+  }
+}
+
+function normalizeStaffBonusMonthSettings(
+  raw: unknown,
+): Record<string, StaffBonusMonthSettings> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined
+  const out: Record<string, StaffBonusMonthSettings> = {}
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^\d{4}-\d{2}$/.test(key) || !value || typeof value !== 'object') continue
+    const row = value as Partial<StaffBonusMonthSettings> & {
+      salesRounded?: number
+      collectedRounded?: number
+    }
+    const entry: StaffBonusMonthSettings = {}
+    const collectedRounded =
+      row.collectedRounded !== undefined && row.collectedRounded !== null
+        ? row.collectedRounded
+        : row.salesRounded
+    if (collectedRounded !== undefined && collectedRounded !== null) {
+      entry.collectedRounded = Math.max(0, Number(collectedRounded) || 0)
+    }
+    if (row.poolPercent !== undefined && row.poolPercent !== null) {
+      entry.poolPercent = Math.max(0, Math.min(100, Number(row.poolPercent) || 0))
+    }
+    if (Array.isArray(row.parts)) {
+      const parts = row.parts
+        .map((part) => normalizeStaffBonusPart(part))
+        .filter((part): part is StaffBonusPart => part !== null)
+      if (parts.length > 0) entry.parts = parts
+    }
+    if (Array.isArray(row.remainderMembers)) {
+      const remainderMembers = row.remainderMembers
+        .map((member) => normalizeStaffBonusMemberShare(member))
+        .filter((member): member is StaffBonusMemberShare => member !== null)
+      if (remainderMembers.length > 0) entry.remainderMembers = remainderMembers
+    }
+    if (Object.keys(entry).length > 0) out[key] = entry
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
 function normalizeStaffMember(raw: Partial<StaffMember>): StaffMember {
   return {
     id: raw.id ?? crypto.randomUUID(),
     name: (raw.name ?? 'Staff').trim() || 'Staff',
     monthlySalary: Math.max(0, Number(raw.monthlySalary) || 0),
     salaryDaysPerMonth: resolveStaffSalaryDays(raw.salaryDaysPerMonth),
+    commissionPercent:
+      raw.commissionPercent === undefined || raw.commissionPercent === null
+        ? undefined
+        : Math.max(0, Math.min(100, Number(raw.commissionPercent) || 0)),
     createdAt: raw.createdAt ?? new Date().toISOString(),
   }
 }
@@ -1769,16 +1854,21 @@ export function linkExistingExpensesToStaff(
 
 export function addStaffMember(
   data: AppData,
-  input: { name: string; monthlySalary: number; linkExisting?: boolean },
+  input: { name: string; monthlySalary: number; linkExisting?: boolean; commissionPercent?: number },
 ): AppData {
   const name = input.name.trim()
   if (!name) return data
   const exists = (data.staff ?? []).some((member) => member.name.trim().toLowerCase() === name.toLowerCase())
   if (exists) return data
+  const commissionPercent =
+    input.commissionPercent !== undefined
+      ? Math.max(0, Math.min(100, input.commissionPercent))
+      : 0
   const member: StaffMember = {
     id: crypto.randomUUID(),
     name,
     monthlySalary: Math.max(0, input.monthlySalary),
+    commissionPercent,
     createdAt: new Date().toISOString(),
   }
   let next: AppData = { ...data, staff: [member, ...(data.staff ?? [])] }
@@ -1792,7 +1882,7 @@ export function addStaffMember(
 export function updateStaffMember(
   data: AppData,
   id: string,
-  updates: { name?: string; monthlySalary?: number; salaryDaysPerMonth?: number },
+  updates: { name?: string; monthlySalary?: number; salaryDaysPerMonth?: number; commissionPercent?: number },
 ): AppData {
   const current = (data.staff ?? []).find((member) => member.id === id)
   if (!current) return data
@@ -1804,14 +1894,106 @@ export function updateStaffMember(
     updates.salaryDaysPerMonth !== undefined
       ? resolveStaffSalaryDays(updates.salaryDaysPerMonth)
       : resolveStaffSalaryDays(current.salaryDaysPerMonth)
+  const nextCommission =
+    updates.commissionPercent !== undefined
+      ? Math.max(0, Math.min(100, updates.commissionPercent))
+      : current.commissionPercent
   const nextStaff = (data.staff ?? []).map((member) =>
     member.id === id
-      ? { ...member, name: nextName, monthlySalary: nextSalary, salaryDaysPerMonth: nextDays }
+      ? {
+          ...member,
+          name: nextName,
+          monthlySalary: nextSalary,
+          salaryDaysPerMonth: nextDays,
+          commissionPercent: nextCommission,
+        }
       : member,
   )
   let next: AppData = { ...data, staff: nextStaff }
   if (nextName.toLowerCase() !== current.name.trim().toLowerCase()) {
     next = linkExistingExpensesToStaff(next, id, nextName)
+  }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function updateStaffCommissionDefaultPercent(data: AppData, percent: number): AppData {
+  const next = {
+    ...data,
+    staffCommissionDefaultPercent: Math.max(0, Math.min(100, percent)),
+  }
+  saveData(next, { cloudImmediate: true })
+  return next
+}
+
+export function updateStaffBonusMonthSettings(
+  data: AppData,
+  monthKey: string,
+  updates: {
+    collectedRounded?: number | null
+    poolPercent?: number | null
+    parts?: StaffBonusPart[] | null
+    remainderMembers?: StaffBonusMemberShare[] | null
+    plan?: StaffBonusMonthSettings | null
+  },
+): AppData {
+  if ('plan' in updates) {
+    const nextSettings = { ...(data.staffBonusMonthSettings ?? {}) }
+    if (!updates.plan || Object.keys(updates.plan).length === 0) {
+      delete nextSettings[monthKey]
+    } else {
+      nextSettings[monthKey] = updates.plan
+    }
+    const next: AppData = {
+      ...data,
+      staffBonusMonthSettings: Object.keys(nextSettings).length > 0 ? nextSettings : undefined,
+    }
+    saveData(next, { cloudImmediate: true })
+    return next
+  }
+
+  const current = data.staffBonusMonthSettings?.[monthKey] ?? {}
+  const nextEntry: StaffBonusMonthSettings = { ...current }
+
+  if ('collectedRounded' in updates) {
+    if (updates.collectedRounded === undefined || updates.collectedRounded === null) {
+      delete nextEntry.collectedRounded
+    } else {
+      nextEntry.collectedRounded = Math.max(0, Number(updates.collectedRounded) || 0)
+    }
+  }
+  if ('poolPercent' in updates) {
+    if (updates.poolPercent === undefined || updates.poolPercent === null) {
+      delete nextEntry.poolPercent
+    } else {
+      nextEntry.poolPercent = Math.max(0, Math.min(100, Number(updates.poolPercent) || 0))
+    }
+  }
+  if ('parts' in updates) {
+    if (!updates.parts || updates.parts.length === 0) {
+      delete nextEntry.parts
+    } else {
+      nextEntry.parts = updates.parts
+    }
+  }
+  if ('remainderMembers' in updates) {
+    if (!updates.remainderMembers || updates.remainderMembers.length === 0) {
+      delete nextEntry.remainderMembers
+    } else {
+      nextEntry.remainderMembers = updates.remainderMembers
+    }
+  }
+
+  const nextSettings = { ...(data.staffBonusMonthSettings ?? {}) }
+  if (Object.keys(nextEntry).length === 0) {
+    delete nextSettings[monthKey]
+  } else {
+    nextSettings[monthKey] = nextEntry
+  }
+
+  const next: AppData = {
+    ...data,
+    staffBonusMonthSettings: Object.keys(nextSettings).length > 0 ? nextSettings : undefined,
   }
   saveData(next, { cloudImmediate: true })
   return next

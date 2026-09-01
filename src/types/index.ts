@@ -58,6 +58,8 @@ export interface Sale {
   reminderAt?: string
   /** Optional note shown with reminder alerts. */
   reminderNote?: string
+  /** Staff member who made / owns this sale (for commission). */
+  staffId?: string
 }
 
 export type ExpensePayType = Extract<PayType, 'cash' | 'bank' | 'credit' | 'split' | 'cheque'>
@@ -213,6 +215,8 @@ export interface StaffMember {
   monthlySalary: number
   /** Days used to divide monthly salary for daily rate (default 30). */
   salaryDaysPerMonth?: number
+  /** Share of the monthly bonus pool for this staff member (0–100). */
+  commissionPercent?: number
   createdAt: string
 }
 
@@ -226,6 +230,38 @@ export interface StaffLeave {
   date: string
   type: StaffLeaveType
   createdAt: string
+}
+
+export type StaffBonusBaseSource = 'sales' | 'collected'
+
+/** Staff share within a bonus part or remainder. */
+export interface StaffBonusMemberShare {
+  staffId: string
+  /** Portion within the part (0–100). Equal split when omitted. */
+  percent?: number
+}
+
+/** One slice of the bonus pool — can contain nested sub-parts. */
+export interface StaffBonusPart {
+  id: string
+  /** Fixed slice amount (top-level parts and fixed sub-parts). */
+  amount: number
+  /** Portion of parent part (0–100). Used for sub-parts when set. */
+  percent?: number
+  members?: StaffBonusMemberShare[]
+  subParts?: StaffBonusPart[]
+}
+
+/** Per-month bonus plan — rounding applies to collected only. */
+export interface StaffBonusMonthSettings {
+  /** Optional rounded sales-collected figure for bonus pool only. */
+  collectedRounded?: number
+  /** Pool rate for this month (e.g. 0.25). Falls back to staffCommissionDefaultPercent. */
+  poolPercent?: number
+  /** Top-level splits of the pool. */
+  parts?: StaffBonusPart[]
+  /** Staff for any pool amount not covered by parts. */
+  remainderMembers?: StaffBonusMemberShare[]
 }
 
 export interface AppData {
@@ -250,6 +286,10 @@ export interface AppData {
   staffLeaves?: StaffLeave[]
   /** Overpaid salary moved from one month to count as paid in the next. */
   staffSalaryAdvances?: StaffSalaryAdvance[]
+  /** Default bonus pool % of sales/collected (e.g. 0.25). Staff shares split this pool. */
+  staffCommissionDefaultPercent?: number
+  /** Per-month bonus rounding and base source (YYYY-MM). */
+  staffBonusMonthSettings?: Record<string, StaffBonusMonthSettings>
   /** Recently deleted records — restore from Settings. */
   trash?: TrashedRecord[]
 }

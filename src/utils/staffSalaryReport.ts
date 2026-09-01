@@ -1,6 +1,7 @@
 import type { AppData } from '../types'
 import { formatMoney } from './format'
 import { printHtmlReport } from './printHtmlReport'
+import { buildStaffCommissionMonthContext, type StaffCommissionMonthContext } from './staffCommission'
 import {
   buildStaffMonthSummaries,
   buildStaffOverview,
@@ -9,6 +10,18 @@ import {
   type StaffMonthSummary,
   type StaffOverview,
 } from './staffLedger'
+
+type ReportStaffRow = StaffMonthSummary & {
+  bonusEarned: number
+  totalDue: number
+}
+
+type ReportBonusOverview = {
+  poolPercent: number
+  poolAmount: number
+  totalBonus: number
+  totalDue: number
+}
 
 const REPORT_STYLES = `
   * { box-sizing: border-box; }
@@ -28,7 +41,7 @@ const REPORT_STYLES = `
   .meta { margin: 0 0 14px; color: #555; font-size: 10px; }
   .summary {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
     margin: 0 0 16px;
   }
@@ -89,6 +102,35 @@ function formatExportedAt(): string {
   }).format(new Date())
 }
 
+function buildReportStaffRows(
+  data: AppData,
+  monthKey: SalaryMonthKey,
+  summaries: StaffMonthSummary[],
+): { rows: ReportStaffRow[]; commissionMonth: StaffCommissionMonthContext } {
+  const commissionMonth = buildStaffCommissionMonthContext(data, monthKey)
+  const rows = summaries.map((row) => {
+    const bonusEarned = commissionMonth.bonusTotals.get(row.staffId) ?? 0
+    return {
+      ...row,
+      bonusEarned,
+      totalDue: Math.max(0, row.remaining) + bonusEarned,
+    }
+  })
+  return { rows, commissionMonth }
+}
+
+function bonusOverviewForRows(
+  commissionMonth: StaffCommissionMonthContext,
+  rows: ReportStaffRow[],
+): ReportBonusOverview {
+  return {
+    poolPercent: commissionMonth.poolPercent,
+    poolAmount: commissionMonth.poolAmount,
+    totalBonus: rows.reduce((sum, row) => sum + row.bonusEarned, 0),
+    totalDue: rows.reduce((sum, row) => sum + row.totalDue, 0),
+  }
+}
+
 function overviewFromSummaries(summaries: StaffMonthSummary[]): StaffOverview {
   return {
     staffCount: summaries.length,
@@ -101,8 +143,8 @@ function overviewFromSummaries(summaries: StaffMonthSummary[]): StaffOverview {
   }
 }
 
-function staffTableRows(summaries: StaffMonthSummary[]): string {
-  return summaries
+function staffTableRows(rows: ReportStaffRow[]): string {
+  return rows
     .map(
       (row, index) => `<tr>
         <td class="num">${index + 1}</td>
@@ -112,6 +154,8 @@ function staffTableRows(summaries: StaffMonthSummary[]): string {
         <td class="num">${escapeHtml(formatMoney(row.netSalary))}</td>
         <td class="num">${escapeHtml(formatMoney(row.paidTotal))}</td>
         <td class="num">${escapeHtml(formatMoney(row.remaining))}</td>
+        <td class="num">${escapeHtml(formatMoney(row.bonusEarned))}</td>
+        <td class="num">${escapeHtml(formatMoney(row.totalDue))}</td>
       </tr>`,
     )
     .join('')
@@ -120,7 +164,8 @@ function staffTableRows(summaries: StaffMonthSummary[]): string {
 function buildStaffSalaryReportHtml(
   monthKey: SalaryMonthKey,
   overview: StaffOverview,
-  summaries: StaffMonthSummary[],
+  rows: ReportStaffRow[],
+  bonusOverview: ReportBonusOverview,
   exportedAt: string,
   scopeLabel?: string,
 ): string {
@@ -131,7 +176,11 @@ function buildStaffSalaryReportHtml(
 
   const body = `
   <h2>${escapeHtml(title)}</h2>
-  <p class="meta">Generated ${escapeHtml(exportedAt)} · ${escapeHtml(monthLabel)}${scopeLabel ? ` · ${escapeHtml(scopeLabel)}` : ''}</p>
+  <p class="meta">Generated ${escapeHtml(exportedAt)} · ${escapeHtml(monthLabel)}${scopeLabel ? ` · ${escapeHtml(scopeLabel)}` : ''}${
+    bonusOverview.poolAmount > 0
+      ? ` · Bonus pool ${escapeHtml(formatMoney(bonusOverview.poolAmount))} (${escapeHtml(String(bonusOverview.poolPercent))}%)`
+      : ''
+  }</p>
   <div class="summary">
     <div class="summary-card">
       <span>Base Salary</span>
@@ -146,11 +195,19 @@ function buildStaffSalaryReportHtml(
       <strong>${escapeHtml(formatMoney(overview.totalNetSalary))}</strong>
     </div>
     <div class="summary-card">
-      <span>Remaining</span>
+      <span>Salary Remaining</span>
       <strong>${escapeHtml(formatMoney(overview.totalRemaining))}</strong>
     </div>
+    <div class="summary-card">
+      <span>Staff Bonus</span>
+      <strong>${escapeHtml(formatMoney(bonusOverview.totalBonus))}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Total Due</span>
+      <strong>${escapeHtml(formatMoney(bonusOverview.totalDue))}</strong>
+    </div>
   </div>
-  <p class="meta">Net salary = base salary − deduction (Half Day or Unpaid leave only).</p>
+  <p class="meta">Net salary = base salary − deduction. Total due = salary remaining + bonus.</p>
   <h2>Salaried Staff</h2>
   <table>
     <thead>
@@ -162,12 +219,14 @@ function buildStaffSalaryReportHtml(
         <th class="num">Net Salary</th>
         <th class="num">Paid</th>
         <th class="num">Remaining</th>
+        <th class="num">Bonus</th>
+        <th class="num">Total Due</th>
       </tr>
     </thead>
     <tbody>
       ${
-        staffTableRows(summaries) ||
-        '<tr><td colspan="7">No staff on record for this month.</td></tr>'
+        staffTableRows(rows) ||
+        '<tr><td colspan="9">No staff on record for this month.</td></tr>'
       }
     </tbody>
   </table>`
@@ -187,14 +246,24 @@ function buildStaffSalaryReportHtml(
 }
 
 function printStaffSalaryReportForSummaries(
+  data: AppData,
   monthKey: SalaryMonthKey,
   summaries: StaffMonthSummary[],
   scopeLabel?: string,
 ): void {
   if (summaries.length === 0) return
+  const { rows, commissionMonth } = buildReportStaffRows(data, monthKey, summaries)
   const overview = overviewFromSummaries(summaries)
+  const bonusOverview = bonusOverviewForRows(commissionMonth, rows)
   const exportedAt = formatExportedAt()
-  const html = buildStaffSalaryReportHtml(monthKey, overview, summaries, exportedAt, scopeLabel)
+  const html = buildStaffSalaryReportHtml(
+    monthKey,
+    overview,
+    rows,
+    bonusOverview,
+    exportedAt,
+    scopeLabel,
+  )
   printHtmlReport(html)
 }
 
@@ -209,9 +278,17 @@ function summariesForStaffIds(
 
 export function printStaffSalaryReport(data: AppData, monthKey: SalaryMonthKey): void {
   const summaries = buildStaffMonthSummaries(data, monthKey)
+  const { rows, commissionMonth } = buildReportStaffRows(data, monthKey, summaries)
   const overview = buildStaffOverview(data, monthKey)
+  const bonusOverview = bonusOverviewForRows(commissionMonth, rows)
   const exportedAt = formatExportedAt()
-  const html = buildStaffSalaryReportHtml(monthKey, overview, summaries, exportedAt)
+  const html = buildStaffSalaryReportHtml(
+    monthKey,
+    overview,
+    rows,
+    bonusOverview,
+    exportedAt,
+  )
   printHtmlReport(html)
 }
 
@@ -222,7 +299,7 @@ export function printStaffMemberSalaryReport(
 ): void {
   const summaries = summariesForStaffIds(data, monthKey, [staffId])
   const name = summaries[0]?.name
-  printStaffSalaryReportForSummaries(monthKey, summaries, name ? `${name} only` : '1 selected')
+  printStaffSalaryReportForSummaries(data, monthKey, summaries, name ? `${name} only` : '1 selected')
 }
 
 export function printSelectedStaffSalaryReports(
@@ -235,5 +312,5 @@ export function printSelectedStaffSalaryReports(
     summaries.length === 1
       ? `${summaries[0]?.name ?? '1 staff'} only`
       : `${summaries.length} selected`
-  printStaffSalaryReportForSummaries(monthKey, summaries, scopeLabel)
+  printStaffSalaryReportForSummaries(data, monthKey, summaries, scopeLabel)
 }

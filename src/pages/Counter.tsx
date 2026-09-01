@@ -198,12 +198,18 @@ function Counter({ active }: { active: boolean }) {
     applySaleReturn,
     cancelSaleReturn,
   } = useCashActions()
+  const [counterStaffId, setCounterStaffId] = useState('')
+  const counterStaffOptions = useMemo(
+    () => (data.staff ?? []).slice().sort((a, b) => a.name.localeCompare(b.name)),
+    [data.staff],
+  )
 
   function recordSale(
     sale: Parameters<typeof recordSaleAction>[0],
   ) {
     recordSaleAction({
       ...sale,
+      ...(counterStaffId ? { staffId: counterStaffId } : {}),
       ...(deductDraftReturns ? { originalBillAmount: typedBillAmount } : {}),
       ...(draftReturns.length > 0 && !loadedPendingId ? { returns: draftReturns } : {}),
     })
@@ -4040,6 +4046,25 @@ function Counter({ active }: { active: boolean }) {
             onFocusSection={clearPendingSection}
             onFocusChange={setNameSectionFocus}
           />
+
+          {counterStaffOptions.length > 0 ? (
+            <label className="counter-staff-picker">
+              <span>Sales by</span>
+              <select
+                value={counterStaffId}
+                onChange={(e) => setCounterStaffId(e.target.value)}
+                aria-label="Staff member for commission"
+              >
+                <option value="">— Not assigned —</option>
+                {counterStaffOptions.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                    {member.commissionPercent ? ` · Share ${member.commissionPercent}%` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
 
           <div className="counter-pay">
             <PayTypeChips

@@ -79,6 +79,8 @@ import {
   updateExpenseName,
   updateExpense,
   updateStaffMember,
+  updateStaffCommissionDefaultPercent,
+  updateStaffBonusMonthSettings,
   updateExpenseStaffSalaryMonth,
   unlinkExpenseFromStaff,
   updatePendingBill,
@@ -138,6 +140,7 @@ interface CashContextValue {
     customerName?: string
     status?: SaleStatus
     returns?: SaleReturnEntry[]
+    staffId?: string
   }) => void
   updatePendingSale: (
     id: string,
@@ -222,8 +225,29 @@ interface CashContextValue {
   removeSale: (id: string, relatedSaleIds?: string[]) => void
   removeExpense: (id: string) => void
   removeLoan: (id: string) => void
-  addStaff: (input: { name: string; monthlySalary: number; linkExisting?: boolean }) => boolean
-  updateStaff: (id: string, updates: { name?: string; monthlySalary?: number; salaryDaysPerMonth?: number }) => void
+  addStaff: (input: {
+    name: string
+    monthlySalary: number
+    linkExisting?: boolean
+    commissionPercent?: number
+  }) => boolean
+  updateStaff: (id: string, updates: {
+    name?: string
+    monthlySalary?: number
+    salaryDaysPerMonth?: number
+    commissionPercent?: number
+  }) => void
+  updateStaffCommissionDefault: (percent: number) => void
+  updateStaffBonusMonthSettings: (
+    monthKey: string,
+    updates: {
+      collectedRounded?: number | null
+      poolPercent?: number | null
+      parts?: import('../types').StaffBonusPart[] | null
+      remainderMembers?: import('../types').StaffBonusMemberShare[] | null
+      plan?: import('../types').StaffBonusMonthSettings | null
+    },
+  ) => void
   removeStaff: (id: string) => void
   addStaffLeave: (input: { staffId: string; date: string; type: StaffLeaveType }) => string | null
   setStaffAttendance: (input: {
@@ -614,6 +638,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       customerName?: string
       status?: SaleStatus
       returns?: SaleReturnEntry[]
+      staffId?: string
     }) => {
       setData((prev) => addSale(prev, sale))
     },
@@ -814,7 +839,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const addStaff = useCallback(
-    (input: { name: string; monthlySalary: number; linkExisting?: boolean }): boolean => {
+    (input: { name: string; monthlySalary: number; linkExisting?: boolean; commissionPercent?: number }): boolean => {
       let success = false
       setData((prev) => {
         const next = addStaffMember(prev, input)
@@ -827,8 +852,36 @@ export function CashProvider({ children }: { children: ReactNode }) {
   )
 
   const updateStaff = useCallback(
-    (id: string, updates: { name?: string; monthlySalary?: number; salaryDaysPerMonth?: number }) => {
+    (
+      id: string,
+      updates: {
+        name?: string
+        monthlySalary?: number
+        salaryDaysPerMonth?: number
+        commissionPercent?: number
+      },
+    ) => {
       setData((prev) => updateStaffMember(prev, id, updates))
+    },
+    [],
+  )
+
+  const updateStaffCommissionDefault = useCallback((percent: number) => {
+    setData((prev) => updateStaffCommissionDefaultPercent(prev, percent))
+  }, [])
+
+  const updateStaffBonusMonthSettingsHandler = useCallback(
+    (
+      monthKey: string,
+      updates: {
+        collectedRounded?: number | null
+        poolPercent?: number | null
+        parts?: import('../types').StaffBonusPart[] | null
+        remainderMembers?: import('../types').StaffBonusMemberShare[] | null
+        plan?: import('../types').StaffBonusMonthSettings | null
+      },
+    ) => {
+      setData((prev) => updateStaffBonusMonthSettings(prev, monthKey, updates))
     },
     [],
   )
@@ -1420,6 +1473,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeLoan,
       addStaff,
       updateStaff,
+      updateStaffCommissionDefault,
+      updateStaffBonusMonthSettings: updateStaffBonusMonthSettingsHandler,
       removeStaff,
       addStaffLeave: addStaffLeaveHandler,
       setStaffAttendance: setStaffAttendanceHandler,
@@ -1488,6 +1543,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeLoan,
       addStaff,
       updateStaff,
+      updateStaffCommissionDefault,
+      updateStaffBonusMonthSettingsHandler,
       removeStaff,
       addStaffLeaveHandler,
       setStaffAttendanceHandler,
