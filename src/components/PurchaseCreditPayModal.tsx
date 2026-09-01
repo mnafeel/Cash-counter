@@ -39,7 +39,7 @@ interface PurchaseCreditPayModalProps {
   ) => void
 }
 
-function defaultBillDraft(total: number, billNumber: 1 | 2, mode: PayMode = 'cash'): BillPayDraft {
+function defaultBillDraft(total: number, mode: PayMode = 'cash'): BillPayDraft {
   return {
     mode,
     cashStr: mode === 'split' ? String(total) : '',
@@ -78,7 +78,7 @@ export default function PurchaseCreditPayModal({
     if (!open) return
     const next: Record<string, BillPayDraft> = {}
     for (const group of billGroups) {
-      next[billKey(group.billNumber)] = defaultBillDraft(group.total, group.billNumber)
+      next[billKey(group.billNumber)] = defaultBillDraft(group.total)
     }
     setBillDrafts(next)
     setError('')
@@ -90,7 +90,7 @@ export default function PurchaseCreditPayModal({
     const key = billKey(billNumber)
     setBillDrafts((current) => ({
       ...current,
-      [key]: { ...defaultBillDraft(0, billNumber), ...current[key], ...patch },
+      [key]: { ...defaultBillDraft(0), ...current[key], ...patch },
     }))
   }
 
@@ -125,7 +125,7 @@ export default function PurchaseCreditPayModal({
     }> = []
 
     for (const group of billGroups) {
-      const draft = billDrafts[billKey(group.billNumber)] ?? defaultBillDraft(group.total, group.billNumber)
+      const draft = billDrafts[billKey(group.billNumber)] ?? defaultBillDraft(group.total)
       if (draft.mode === 'split') {
         const cash = parseAmount(draft.cashStr)
         const bank = parseAmount(draft.bankStr)
@@ -178,7 +178,7 @@ export default function PurchaseCreditPayModal({
           </p>
 
           {billGroups.map((group) => {
-            const draft = billDrafts[billKey(group.billNumber)] ?? defaultBillDraft(group.total, group.billNumber)
+            const draft = billDrafts[billKey(group.billNumber)] ?? defaultBillDraft(group.total)
             const modes = modesForBill(group.billNumber)
             return (
               <section
