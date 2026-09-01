@@ -139,6 +139,31 @@ export function addSupplier(data: AppData, rawName: string): AppData {
   return next
 }
 
+/** Drop supplier registry entries that have no purchase bills. */
+export function pruneSuppliersWithoutBills(data: AppData): AppData {
+  const billKeys = new Set<string>()
+  for (const expense of data.expenses) {
+    if (!isPurchaseExpense(expense)) continue
+    const raw = stripExpenseBillSuffix(expense.name ?? '').trim()
+    if (!raw) continue
+    billKeys.add(raw.toLowerCase())
+  }
+
+  const suppliers = normalizeSuppliers(data.suppliers).filter((supplier) =>
+    billKeys.has(supplier.name.trim().toLowerCase()),
+  )
+
+  const current = normalizeSuppliers(data.suppliers)
+  if (suppliers.length === current.length) return data
+
+  const next: AppData = {
+    ...data,
+    suppliers: suppliers.length > 0 ? suppliers : undefined,
+  }
+  saveData(next)
+  return next
+}
+
 export function addSupplierItem(data: AppData, rawName: string, item: string): AppData {
   const supplierName = stripExpenseBillSuffix(rawName.trim())
   const itemLabel = item.trim()

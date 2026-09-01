@@ -175,15 +175,24 @@ export default defineConfig(({ command }) => ({
       ],
     },
   },
-  optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom', 'firebase/app', 'firebase/auth', 'firebase/firestore'],
+    optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-router-dom',
+      'firebase/app',
+      'firebase/auth',
+      'firebase/firestore',
+      'pdfjs-dist/legacy/build/pdf.mjs',
+    ],
   },
   build: {
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules/firebase')) return 'firebase'
-          if (id.includes('node_modules/xlsx')) return 'xlsx'
+          if (id.includes('node_modules/tesseract.js')) return 'ocr'
+          if (id.includes('node_modules/pdfjs-dist')) return 'pdfjs'
           if (
             id.includes('node_modules/react') ||
             id.includes('node_modules/react-dom') ||

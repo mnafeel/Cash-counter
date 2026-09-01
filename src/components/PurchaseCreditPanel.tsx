@@ -5,6 +5,7 @@ import { useCash } from '../context/CashContext'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
 import { formatDate, formatMoney } from '../utils/format'
+import { buildPurchaseSupplierOptions } from '../utils/supplierSuggestions'
 import {
   buildPurchaseCreditItems,
   filterPurchaseCreditItemsByMonth,
@@ -20,6 +21,7 @@ import {
   type PurchaseCreditSupplierGroup,
 } from '../utils/purchaseHistory'
 import PurchaseCreditPayModal from './PurchaseCreditPayModal'
+import BulkPurchaseCreateModal from './BulkPurchaseCreateModal'
 import './PurchaseHistoryPanel.css'
 
 interface PurchaseCreditPanelProps {
@@ -52,6 +54,7 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
     const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
     const [creditSort, setCreditSort] = useState<PurchaseCreditBillSort>('newest')
     const [payModalOpen, setPayModalOpen] = useState(false)
+    const [bulkCreateOpen, setBulkCreateOpen] = useState(false)
     const [payStatus, setPayStatus] = useState('')
 
     const purchaseCreditItems = useMemo(() => buildPurchaseCreditItems(data), [data])
@@ -98,6 +101,7 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
       () => (selectedSupplier ? summarizePurchaseCreditItems(selectedSupplier.items) : null),
       [selectedSupplier],
     )
+    const supplierNames = useMemo(() => buildPurchaseSupplierOptions(data), [data])
     const selectedCredits = useMemo(
       () => flatSelectableItems.filter((item) => selectedIds.has(item.id)),
       [flatSelectableItems, selectedIds],
@@ -125,6 +129,10 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
     }
 
     function handleBack() {
+      if (bulkCreateOpen) {
+        setBulkCreateOpen(false)
+        return
+      }
       if (payModalOpen) {
         setPayModalOpen(false)
         return
@@ -182,6 +190,10 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
 
     useImperativeHandle(ref, () => ({
       back: () => {
+        if (bulkCreateOpen) {
+          setBulkCreateOpen(false)
+          return true
+        }
         if (payModalOpen) {
           setPayModalOpen(false)
           return true
@@ -205,7 +217,7 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
       }
       window.addEventListener('keydown', onKeyDown)
       return () => window.removeEventListener('keydown', onKeyDown)
-    }, [selectedSupplierKey, payModalOpen, onClose])
+    }, [selectedSupplierKey, payModalOpen, bulkCreateOpen, onClose])
 
     function renderCreditReport(
       summary: ReturnType<typeof summarizePurchaseCreditItems>,
@@ -340,6 +352,15 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
             >
               {selectMode ? 'Done' : 'Select bills'}
             </button>
+            {!selectMode ? (
+              <button
+                type="button"
+                className="purchase-hist-credits-chip-btn"
+                onClick={() => setBulkCreateOpen(true)}
+              >
+                Bulk create
+              </button>
+            ) : null}
             {selectMode ? (
               <>
                 <div className="purchase-hist-credits-action-group">
@@ -514,6 +535,17 @@ const PurchaseCreditPanel = forwardRef<PurchaseCreditPanelHandle, PurchaseCredit
           }))}
           onClose={() => setPayModalOpen(false)}
           onConfirm={handleBulkPay}
+        />
+
+        <BulkPurchaseCreateModal
+          open={bulkCreateOpen}
+          data={data}
+          supplierNames={supplierNames}
+          initialSupplier={selectedSupplier?.shopName ?? ''}
+          onClose={() => setBulkCreateOpen(false)}
+          onCreated={(count) => {
+            setPayStatus(`Created ${count} bill${count === 1 ? '' : 's'} for ${selectedSupplier?.shopName ?? 'supplier'}`)
+          }}
         />
       </div>
     )

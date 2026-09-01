@@ -1,0 +1,330 @@
+.smart-purchase-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+.smart-purchase-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(20, 10, 6, 0.78);
+  cursor: pointer;
+}
+
+.smart-purchase-panel {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 440px);
+  max-height: min(92vh, 720px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(120, 180, 140, 0.35);
+  background: var(--surface);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.smart-purchase-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.smart-purchase-head h2 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--cream);
+}
+
+.smart-purchase-head p {
+  margin: 4px 0 0;
+  font-size: 0.58rem;
+  line-height: 1.4;
+  color: var(--cream-dim);
+}
+
+.smart-purchase-close {
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  cursor: pointer;
+}
+
+.smart-purchase-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.smart-purchase-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 88px;
+  padding: 10px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  cursor: pointer;
+}
+
+.smart-purchase-action span {
+  font-size: 1.2rem;
+}
+
+.smart-purchase-action strong {
+  font-size: 0.62rem;
+}
+
+.smart-purchase-action small {
+  font-size: 0.5rem;
+  color: var(--cream-dim);
+  text-align: center;
+  line-height: 1.3;
+}
+
+.smart-purchase-action--camera {
+  border-color: rgba(120, 180, 140, 0.45);
+  background: rgba(64, 145, 108, 0.12);
+}
+
+.smart-purchase-processing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  text-align: center;
+}
+
+.smart-purchase-processing p {
+  margin: 0;
+  font-size: 0.62rem;
+  color: var(--cream-dim);
+}
+
+.smart-purchase-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(242, 220, 192, 0.25);
+  border-top-color: #a8d4b8;
+  border-radius: 50%;
+  animation: smart-purchase-spin 0.8s linear infinite;
+}
+
+@keyframes smart-purchase-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.smart-purchase-preview {
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: #111;
+}
+
+.smart-purchase-preview--small {
+  max-height: 120px;
+}
+
+.smart-purchase-review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.smart-purchase-fields {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.smart-purchase-fields li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+}
+
+.smart-purchase-fields span {
+  font-size: 0.54rem;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.smart-purchase-fields strong {
+  font-size: 0.68rem;
+  color: var(--cream);
+  text-align: right;
+}
+
+.smart-purchase-fields--missing strong {
+  color: var(--cream-dim);
+  font-style: italic;
+  font-weight: 500;
+}
+
+.smart-purchase-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.smart-purchase-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+}
+
+.smart-purchase-field span {
+  font-size: 0.54rem;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.smart-purchase-field input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--cream);
+  font-size: 0.68rem;
+  padding: 0;
+  outline: none;
+}
+
+.smart-purchase-field input::placeholder {
+  color: var(--cream-dim);
+  opacity: 0.75;
+}
+
+.smart-purchase-field--missing input::placeholder {
+  font-style: italic;
+}
+
+.smart-purchase-field--static {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.smart-purchase-field--static strong {
+  font-size: 0.68rem;
+  color: var(--cream);
+}
+
+.smart-purchase-note {
+  margin: 0;
+  font-size: 0.56rem;
+  line-height: 1.45;
+  color: var(--cream-dim);
+}
+
+.smart-purchase-bill-type {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.smart-purchase-bill-type-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 72px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  cursor: pointer;
+  text-align: left;
+}
+
+.smart-purchase-bill-type-btn strong {
+  font-size: 0.68rem;
+}
+
+.smart-purchase-bill-type-btn small {
+  font-size: 0.52rem;
+  color: var(--cream-dim);
+}
+
+.smart-purchase-bill-type-btn--active {
+  border-color: rgba(120, 180, 140, 0.5);
+  background: rgba(64, 145, 108, 0.14);
+}
+
+.smart-purchase-foot {
+  display: flex;
+  gap: 8px;
+}
+
+.smart-purchase-btn {
+  flex: 1;
+  min-height: 34px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.smart-purchase-btn--primary {
+  border-color: rgba(64, 145, 108, 0.45);
+  background: rgba(64, 145, 108, 0.22);
+}
+
+.smart-purchase-error {
+  margin: 0;
+  font-size: 0.58rem;
+  color: #e8a0a0;
+}
+
+.smart-purchase-file-input {
+  display: none;
+}
+
+.purchase-corner-btn--smart {
+  border-color: rgba(120, 180, 140, 0.45);
+  background: rgba(64, 145, 108, 0.12);
+}
+
+@media (max-width: 420px) {
+  .smart-purchase-actions {
+    grid-template-columns: 1fr;
+  }
+}

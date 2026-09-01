@@ -1,0 +1,396 @@
+.bulk-purchase-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+.bulk-purchase-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(20, 10, 6, 0.78);
+  cursor: pointer;
+}
+
+.bulk-purchase-panel {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 580px);
+  max-height: min(92vh, 760px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(120, 160, 200, 0.35);
+  background: var(--surface);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+.bulk-purchase-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bulk-purchase-head h2 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--cream);
+}
+
+.bulk-purchase-head p {
+  margin: 4px 0 0;
+  font-size: 0.58rem;
+  line-height: 1.4;
+  color: var(--cream-dim);
+}
+
+.bulk-purchase-close {
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  cursor: pointer;
+}
+
+.bulk-purchase-bill-type {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.bulk-purchase-bill-type-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  cursor: pointer;
+  text-align: left;
+}
+
+.bulk-purchase-bill-type-btn strong {
+  font-size: 0.64rem;
+}
+
+.bulk-purchase-bill-type-btn small {
+  font-size: 0.5rem;
+  color: var(--cream-dim);
+}
+
+.bulk-purchase-bill-type-btn--active {
+  border-color: rgba(120, 180, 140, 0.65);
+  background: rgba(80, 120, 90, 0.22);
+}
+
+.bulk-purchase-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: 8px;
+}
+
+.bulk-purchase-meta--stacked {
+  grid-template-columns: 1fr;
+}
+
+.bulk-purchase-row--custom-date input[type='date'] {
+  border-color: rgba(180, 150, 90, 0.55);
+}
+
+.bulk-purchase-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.bulk-purchase-field span {
+  font-size: 0.54rem;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.bulk-purchase-field input {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.68rem;
+}
+
+.bulk-purchase-input {
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.64rem;
+  font-family: inherit;
+  outline: none;
+  color-scheme: dark;
+}
+
+.bulk-purchase-input::placeholder {
+  color: var(--cream-dim);
+  opacity: 0.75;
+}
+
+.bulk-purchase-input:focus {
+  border-color: rgba(120, 180, 140, 0.55);
+}
+
+.bulk-purchase-input:-webkit-autofill,
+.bulk-purchase-input:-webkit-autofill:hover,
+.bulk-purchase-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--cream);
+  box-shadow: 0 0 0 1000px var(--brown-dark) inset;
+  caret-color: var(--cream);
+}
+
+.bulk-purchase-field--supplier {
+  position: relative;
+}
+
+.bulk-purchase-suggestions {
+  position: absolute;
+  z-index: 3;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  max-height: 160px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.bulk-purchase-suggestions li {
+  margin: 0;
+  padding: 0;
+}
+
+.bulk-purchase-suggestion {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cream);
+  font-size: 0.64rem;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.bulk-purchase-suggestion--active,
+.bulk-purchase-suggestion:hover {
+  background: rgba(120, 180, 140, 0.22);
+}
+
+.bulk-purchase-suggestion--active {
+  background: rgba(120, 180, 140, 0.32);
+  box-shadow: inset 0 0 0 1px rgba(120, 180, 140, 0.45);
+}
+
+.bulk-purchase-rows-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.7fr) minmax(0, 0.82fr) minmax(0, 0.62fr) 28px;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.bulk-purchase-rows-head span {
+  font-size: 0.5rem;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.bulk-purchase-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+.bulk-purchase-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.7fr) minmax(0, 0.82fr) minmax(0, 0.62fr) 28px;
+  gap: 6px;
+  align-items: start;
+}
+
+.bulk-purchase-row-cell {
+  position: relative;
+  min-width: 0;
+}
+
+.bulk-purchase-suggestions--item {
+  top: calc(100% + 2px);
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.bulk-purchase-row input {
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.64rem;
+}
+
+.bulk-purchase-row .bulk-purchase-input {
+  min-width: 0;
+}
+
+.bulk-purchase-row-remove {
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--cream-dim);
+  cursor: pointer;
+}
+
+.bulk-purchase-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bulk-purchase-chip-btn {
+  padding: 5px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  font-size: 0.54rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.bulk-purchase-chip-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.bulk-purchase-pay {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bulk-purchase-pay-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+@media (max-width: 480px) {
+  .bulk-purchase-pay-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.bulk-purchase-pay-btn {
+  padding: 8px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream);
+  font-size: 0.6rem;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.bulk-purchase-pay-btn:focus-visible {
+  outline: 2px solid rgba(120, 180, 140, 0.55);
+  outline-offset: 1px;
+}
+
+.bulk-purchase-pay-btn--active {
+  border-color: rgba(120, 180, 140, 0.65);
+  background: rgba(80, 120, 90, 0.22);
+}
+
+.bulk-purchase-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  font-size: 0.62rem;
+  color: var(--cream-dim);
+}
+
+.bulk-purchase-summary strong {
+  color: var(--cream);
+}
+
+.bulk-purchase-error {
+  margin: 0;
+  font-size: 0.58rem;
+  color: #ffb4b4;
+}
+
+.bulk-purchase-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.bulk-purchase-btn {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+  color: var(--cream-dim);
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bulk-purchase-btn--primary {
+  border-color: rgba(120, 180, 140, 0.65);
+  background: rgba(80, 120, 90, 0.35);
+  color: var(--cream);
+}
+
+.bulk-purchase-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

@@ -101,6 +101,10 @@
   min-width: 0;
 }
 
+.counter-top {
+  overflow: visible;
+}
+
 .counter-amounts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -288,6 +292,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   min-width: 0;
+  overflow: visible;
 }
 
 .counter-customer-row {
@@ -365,20 +370,28 @@
   position: absolute;
   left: 6px;
   right: 6px;
-  bottom: calc(100% + 4px);
-  z-index: 30;
+  top: calc(100% + 4px);
+  bottom: auto;
+  z-index: 40;
   margin: 0;
   padding: 4px;
   list-style: none;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 160px;
+  max-height: min(200px, 32vh);
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   background: var(--brown-dark);
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.counter-customer-suggestions li {
+  margin: 0;
+  padding: 0;
 }
 
 .counter-customer-suggestion {
@@ -435,6 +448,11 @@
   color: var(--cream);
 }
 
+.counter-customer-suggestion--active {
+  background: rgba(120, 180, 140, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(120, 180, 140, 0.45);
+}
+
 .counter-customer-label {
   flex-shrink: 0;
   font-size: 0.48rem;
@@ -458,6 +476,7 @@
 .counter-customer--focused {
   border-color: var(--cream);
   box-shadow: 0 0 0 1px var(--cream-dim);
+  z-index: 35;
 }
 
 .counter-customer-input {

@@ -7,6 +7,8 @@ import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
 import BillNoChips, { type BillMode } from '../components/BillNoChips'
 import PurchaseHistoryPanel from '../components/PurchaseHistoryPanel'
+import SmartPurchaseScanModal from '../components/SmartPurchaseScanModal'
+import BulkPurchaseCreateModal from '../components/BulkPurchaseCreateModal'
 import type { Expense, ExpensePayType } from '../types'
 import { formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
@@ -26,6 +28,12 @@ import { usePageEscape } from '../hooks/usePageEscape'
 import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
 import { toInputDate } from '../utils/salesReport'
 import { searchNamesByPrefix } from '../utils/normalExpenseHistory'
+import {
+  buildPurchaseSupplierOptions,
+  clearDraftSupplierNames,
+} from '../utils/supplierSuggestions'
+import type { PurchaseScanResult } from '../utils/purchaseScan'
+import { textsOverlap } from '../utils/purchaseScan'
 import './PurchaseExpense.css'
 
 type BillSlot = 1 | 2
@@ -369,7 +377,7 @@ function billStateForLoad(expense: Expense, mode: 'open' | 'update'): BillFormSt
 
 export default function PurchaseExpense() {
   const routeActive = useIsActiveRoute('/purchase')
-  const { recordExpenses, updateExpense, addSupplier, applyPurchaseCreditPayment, data } = useCash()
+  const { recordExpenses, updateExpense, addSupplier, addSupplierItem, applyPurchaseCreditPayment, pruneOrphanSuppliers, data } = useCash()
   const goBack = useAppPageBack('/', { route: '/purchase' })
   const [searchParams, setSearchParams] = useSearchParams()
   const [name, setName] = useState('')
@@ -384,6 +392,8 @@ export default function PurchaseExpense() {
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false)
   const [itemDropdownOpen, setItemDropdownOpen] = useState(false)
   const [showPurchaseHistory, setShowPurchaseHistory] = useState(false)
+  const [showSmartScan, setShowSmartScan] = useState(false)
+  const [showBulkCreate, setShowBulkCreate] = useState(false)
   const [formNote, setFormNote] = useState<string | null>(null)
   const [editingExpenseIds, setEditingExpenseIds] = useState<string[]>([])
   const [loadedExpenseIds, setLoadedExpenseIds] = useState<string[]>([])
@@ -410,32 +420,12 @@ export default function PurchaseExpense() {
   const bill2Amount = parseAmount(bill2.amountStr)
   const purchaseTotal = bill1Amount + bill2Amount
 
-  const purchaseSupplierSuggestions = useMemo(() => {
-    const seen = new Map<string, string>()
-    for (let i = data.expenses.length - 1; i >= 0; i--) {
-      const item = data.expenses[i]
-      if (!isPurchaseExpense(item)) continue
-      const raw = stripExpenseBillSuffix(item?.name ?? '')
-      if (!raw) continue
-      const key = raw.toLowerCase()
-      if (!seen.has(key)) seen.set(key, raw)
-    }
-    return Array.from(seen.values())
-  }, [data.expenses])
+  const supplierOptions = useMemo(() => buildPurchaseSupplierOptions(data), [data])
 
-  const supplierOptions = useMemo(() => {
-    const seen = new Map<string, string>()
-    for (const supplier of data.suppliers ?? []) {
-      const trimmed = supplier.name.trim()
-      if (!trimmed) continue
-      seen.set(trimmed.toLowerCase(), trimmed)
-    }
-    for (const item of purchaseSupplierSuggestions) {
-      const key = item.toLowerCase()
-      if (!seen.has(key)) seen.set(key, item)
-    }
-    return Array.from(seen.values())
-  }, [data.suppliers, purchaseSupplierSuggestions])
+  useEffect(() => {
+    clearDraftSupplierNames()
+    pruneOrphanSuppliers()
+  }, [pruneOrphanSuppliers])
 
   const supplierItemOptions = useMemo(() => {
     const supplierKey = name.trim().toLowerCase()
@@ -814,6 +804,56 @@ export default function PurchaseExpense() {
   function handleBillModeChange(mode: BillMode) {
     setBillMode(mode)
     setActiveField('amount')
+  }
+
+  function applySmartScanResult(result: PurchaseScanResult, scannedBillMode: BillMode) {
+    setEditingExpenseIds([])
+    setLoadedExpenseIds([])
+    setSaved(false)
+    setFormNote('Smart entry applied — review detected fields, then save as credit.')
+    const supplierName = result.partyName?.trim() ?? ''
+    const itemDetail =
+      result.itemName?.trim() && !textsOverlap(result.itemName, supplierName)
+        ? result.itemName.trim()
+        : ''
+    setName(supplierName)
+    setDescription(itemDetail)
+    setBillNo(result.billNumber?.trim() ?? '')
+    if (result.billDate) {
+      setBillDateStr(result.billDate)
+    }
+    setBillMode(scannedBillMode)
+
+    const amountStr =
+      result.totalAmount && result.totalAmount > 0 ? String(result.totalAmount) : ''
+    const creditBill: BillFormState = {
+      amountStr,
+      payType: 'credit',
+      cashSplitStr: '',
+      bankSplitStr: '',
+      creditSplitStr: '',
+      chequeSplitStr: '',
+      chequeApproved: false,
+    }
+
+    if (scannedBillMode === 'no1') {
+      setBill1(creditBill)
+      setBill2({ ...EMPTY_BILL, payType: 'cash' })
+    } else {
+      setBill2(creditBill)
+      setBill1({ ...EMPTY_BILL })
+    }
+
+    if (supplierName) {
+      addSupplier(supplierName)
+    }
+    if (supplierName && itemDetail) {
+      addSupplierItem(supplierName, itemDetail)
+    }
+
+    setActiveField(amountStr ? 'pay' : supplierName ? 'amount' : 'name')
+    setNameDropdownOpen(false)
+    setItemDropdownOpen(false)
   }
 
   function resetPurchaseForm() {
@@ -1529,31 +1569,70 @@ export default function PurchaseExpense() {
   }
 
   const handlePageBack = useCallback(() => {
+    if (showBulkCreate) {
+      setShowBulkCreate(false)
+      return
+    }
+    if (showSmartScan) {
+      setShowSmartScan(false)
+      return
+    }
     if (showPurchaseHistory) {
       setShowPurchaseHistory(false)
       return
     }
     goBack()
-  }, [goBack, showPurchaseHistory])
+  }, [goBack, showPurchaseHistory, showSmartScan, showBulkCreate])
 
-  usePageEscape(handlePageBack, routeActive && !showPurchaseHistory)
+  usePageEscape(
+    handlePageBack,
+    routeActive && !showPurchaseHistory && !showSmartScan && !showBulkCreate,
+  )
 
   return (
     <div className="purchase-page expenses-page page-shell">
       <PageCorners
         left={<PageBackButton onClick={handlePageBack} ariaLabel="Back" />}
         right={
-          <button
-            type="button"
-            className="purchase-corner-btn"
-            onClick={() => setShowPurchaseHistory(true)}
-            aria-label="Purchase history"
-          >
-            <span className="purchase-corner-btn-icon" aria-hidden="true">
-              📋
-            </span>
-            <span>History</span>
-          </button>
+          <>
+            {!isCreditUpdateMode ? (
+              <>
+                <button
+                  type="button"
+                  className="purchase-corner-btn purchase-corner-btn--bulk"
+                  onClick={() => setShowBulkCreate(true)}
+                  aria-label="Bulk purchase create"
+                >
+                  <span className="purchase-corner-btn-icon" aria-hidden="true">
+                    📑
+                  </span>
+                  <span>Bulk</span>
+                </button>
+                <button
+                  type="button"
+                  className="purchase-corner-btn purchase-corner-btn--smart"
+                  onClick={() => setShowSmartScan(true)}
+                  aria-label="Smart purchase entry"
+                >
+                  <span className="purchase-corner-btn-icon" aria-hidden="true">
+                    📷
+                  </span>
+                  <span>Smart</span>
+                </button>
+              </>
+            ) : null}
+            <button
+              type="button"
+              className="purchase-corner-btn"
+              onClick={() => setShowPurchaseHistory(true)}
+              aria-label="Purchase history"
+            >
+              <span className="purchase-corner-btn-icon" aria-hidden="true">
+                📋
+              </span>
+              <span>History</span>
+            </button>
+          </>
         }
       />
 
@@ -1825,6 +1904,23 @@ export default function PurchaseExpense() {
         onUpdateBill={(expenseId) => {
           setShowPurchaseHistory(false)
           loadPurchaseBill(expenseId, 'update')
+        }}
+      />
+
+      <SmartPurchaseScanModal
+        open={showSmartScan}
+        onClose={() => setShowSmartScan(false)}
+        onApply={applySmartScanResult}
+      />
+
+      <BulkPurchaseCreateModal
+        open={showBulkCreate}
+        data={data}
+        supplierNames={supplierOptions}
+        initialBillMode={billMode}
+        onClose={() => setShowBulkCreate(false)}
+        onCreated={(count) => {
+          setFormNote(`Bulk entry created ${count} bill${count === 1 ? '' : 's'} — review in history.`)
         }}
       />
     </div>

@@ -13,9 +13,11 @@
   "dependencies": {
     "fast-xml-parser": "^5.9.3",
     "firebase": "^12.16.0",
+    "pdfjs-dist": "^6.3.289",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",
+    "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

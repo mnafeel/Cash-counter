@@ -27,6 +27,7 @@ import {
   addExpenseWithOptionalStaff,
   addSale,
   addSupplier as addSupplierToData,
+  pruneSuppliersWithoutBills,
   addSupplierItem as addSupplierItemToData,
   addLoan,
   addStaffMember,
@@ -207,6 +208,27 @@ interface CashContextValue {
       payType: ExpensePayType
       cashAmount?: number
       bankAmount?: number
+      creditAmount?: number
+      chequeAmount?: number
+      chequeApproved?: boolean
+      giveAmount?: number
+      changeAmount?: number
+      billNumber?: 1 | 2
+      kind?: ExpenseKind
+    }[],
+  ) => void
+  recordIndependentExpenses: (
+    expenses: {
+      amount: number
+      name: string
+      description?: string
+      billNo?: string
+      billDate?: string
+      createdAt?: string
+      payType: ExpensePayType
+      cashAmount?: number
+      bankAmount?: number
+      creditAmount?: number
       chequeAmount?: number
       chequeApproved?: boolean
       giveAmount?: number
@@ -362,6 +384,7 @@ interface CashContextValue {
     },
   ) => void
   addSupplier: (name: string) => void
+  pruneOrphanSuppliers: () => void
   addSupplierItem: (name: string, item: string) => void
   updateHistoryName: (
     type: 'sale' | 'expense' | 'deposit' | 'transfer',
@@ -819,6 +842,67 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const recordIndependentExpenses = useCallback(
+    (
+      expenses: {
+        amount: number
+        name: string
+        description?: string
+        billNo?: string
+        billDate?: string
+        createdAt?: string
+        payType: ExpensePayType
+        cashAmount?: number
+        bankAmount?: number
+        creditAmount?: number
+        chequeAmount?: number
+        chequeApproved?: boolean
+        giveAmount?: number
+        changeAmount?: number
+        billNumber?: 1 | 2
+        kind?: ExpenseKind
+      }[],
+    ) => {
+      if (expenses.length === 0) return
+      setData((prev) => {
+        let next = prev
+        for (const expense of expenses) {
+          next = addExpenseBatch(next, [
+            {
+              amount: expense.amount,
+              name: expense.name.trim(),
+              description: expense.description?.trim() || undefined,
+              billNo: expense.billNo?.trim() || undefined,
+              billDate: expense.billDate?.trim() || undefined,
+              createdAt: expense.createdAt,
+              payType: expense.payType,
+              cashAmount: expense.payType === 'split' ? expense.cashAmount : undefined,
+              bankAmount:
+                expense.payType === 'split' || expense.payType === 'bank'
+                  ? expense.bankAmount ?? (expense.payType === 'bank' ? expense.amount : undefined)
+                  : undefined,
+              creditAmount:
+                expense.payType === 'split' || expense.payType === 'credit'
+                  ? expense.creditAmount ?? (expense.payType === 'credit' ? expense.amount : undefined)
+                  : undefined,
+              chequeAmount:
+                expense.payType === 'split' || expense.payType === 'cheque'
+                  ? expense.chequeAmount ?? (expense.payType === 'cheque' ? expense.amount : undefined)
+                  : undefined,
+              chequeApproved: expense.chequeApproved,
+              giveAmount: expense.giveAmount,
+              changeAmount: expense.changeAmount,
+              billNumber: expense.billNumber,
+              kind: expense.kind ?? 'expense',
+            },
+          ])
+        }
+        return next
+      })
+    },
+    [],
+  )
+
   const recordTransfer = useCallback(
     (transfer: { amount: number; name: string; direction: TransferDirection }) => {
       setData((prev) =>
@@ -981,6 +1065,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const addSupplier = useCallback((name: string) => {
     setData((prev) => addSupplierToData(prev, name))
+  }, [])
+
+  const pruneOrphanSuppliers = useCallback(() => {
+    setData((prev) => pruneSuppliersWithoutBills(prev))
   }, [])
 
   const addSupplierItem = useCallback((name: string, item: string) => {
@@ -1505,6 +1593,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       collectPendingSale,
       recordExpense,
       recordExpenses,
+      recordIndependentExpenses,
       recordTransfer,
       updateOpeningBalance,
       updateOpeningBankBalance,
@@ -1524,6 +1613,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateExpenseStaffSalaryMonth: updateExpenseStaffSalaryMonthHandler,
       unlinkExpenseFromStaff: unlinkExpenseFromStaffHandler,
       addSupplier,
+      pruneOrphanSuppliers,
       addSupplierItem,
       cancelApprovedCheque: cancelApprovedChequeSale,
       updateApprovedChequeDate: updateApprovedChequeDateHandler,
@@ -1576,6 +1666,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       collectPendingSale,
       recordExpense,
       recordExpenses,
+      recordIndependentExpenses,
       recordTransfer,
       updateOpeningBalance,
       updateOpeningBankBalance,
@@ -1595,6 +1686,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateExpenseStaffSalaryMonthHandler,
       unlinkExpenseFromStaffHandler,
       addSupplier,
+      pruneOrphanSuppliers,
       addSupplierItem,
       cancelApprovedChequeSale,
       updateApprovedChequeDateHandler,

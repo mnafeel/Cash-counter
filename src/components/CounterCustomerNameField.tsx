@@ -33,6 +33,50 @@ function customerBarTagLabel(tag: CustomerBarTag): string {
   return tag.label
 }
 
+function scrollActiveOptionIntoView(option: HTMLElement | null, list: HTMLElement | null) {
+  if (!option || !list) return
+  const listRect = list.getBoundingClientRect()
+  const itemRect = option.getBoundingClientRect()
+  if (itemRect.top < listRect.top) {
+    list.scrollTop -= listRect.top - itemRect.top
+  } else if (itemRect.bottom > listRect.bottom) {
+    list.scrollTop += itemRect.bottom - listRect.bottom
+  }
+}
+
+function nextHighlightedIndex(prev: number, count: number, direction: 1 | -1): number {
+  if (count <= 0) return -1
+  if (prev < 0) return direction > 0 ? 0 : count - 1
+  return (prev + direction + count) % count
+}
+
+function getSuggestionPageSize(list: HTMLElement | null): number {
+  if (!list) return 5
+  const item = list.querySelector('button')
+  if (!(item instanceof HTMLElement)) return 5
+  const itemHeight = item.offsetHeight + 2
+  if (itemHeight <= 0) return 5
+  return Math.max(1, Math.floor(list.clientHeight / itemHeight))
+}
+
+function pageHighlightedIndex(
+  prev: number,
+  count: number,
+  direction: 1 | -1,
+  pageSize: number,
+): number {
+  if (count <= 0) return -1
+  const start = prev < 0 ? (direction > 0 ? 0 : count - 1) : prev
+  const next = start + direction * pageSize
+  if (next < 0) return 0
+  if (next >= count) return count - 1
+  return next
+}
+
+function isSuggestionNavKey(key: string): boolean {
+  return key === 'ArrowDown' || key === 'ArrowUp' || key === 'PageDown' || key === 'PageUp'
+}
+
 const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, CounterCustomerNameFieldProps>(
   function CounterCustomerNameField(
     {
@@ -51,8 +95,10 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
     const [dropdownOpen, setDropdownOpen] = useState(false)
     const [highlightedIndex, setHighlightedIndex] = useState(-1)
     const inputRef = useRef<HTMLInputElement>(null)
+    const customerRootRef = useRef<HTMLDivElement>(null)
     const activeSuggestionRef = useRef<HTMLButtonElement>(null)
     const suggestionsListRef = useRef<HTMLUListElement>(null)
+    const keyboardNavRef = useRef(false)
 
     useImperativeHandle(ref, () => ({
       focus: () => inputRef.current?.focus(),
@@ -69,8 +115,8 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
 
     const filteredSuggestions = useMemo(() => {
       const query = draft.trim()
-      if (!query) return customerNameSuggestions.slice(0, 8)
-      return searchNamesByPrefix(customerNameSuggestions, query, 8)
+      if (!query) return customerNameSuggestions
+      return searchNamesByPrefix(customerNameSuggestions, query, 20)
     }, [draft, customerNameSuggestions])
 
     const customerBarTags = useMemo(() => {
@@ -110,20 +156,19 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
 
     useEffect(() => {
       if (highlightedIndex < 0) return
-      const item = activeSuggestionRef.current
-      const list = suggestionsListRef.current
-      if (!item || !list) return
-      const itemTop = item.offsetTop
-      const itemBottom = itemTop + item.offsetHeight
-      if (itemTop < list.scrollTop) {
-        list.scrollTop = itemTop
-      } else if (itemBottom > list.scrollTop + list.clientHeight) {
-        list.scrollTop = itemBottom - list.clientHeight
-      }
-    }, [highlightedIndex])
+      const frame = window.requestAnimationFrame(() => {
+        scrollActiveOptionIntoView(activeSuggestionRef.current, suggestionsListRef.current)
+        activeSuggestionRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+        customerRootRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      })
+      return () => window.cancelAnimationFrame(frame)
+    }, [highlightedIndex, filteredSuggestions.length])
 
     return (
-      <div className={`counter-customer ${focused ? 'counter-customer--focused' : ''}`}>
+      <div
+        ref={customerRootRef}
+        className={`counter-customer ${focused ? 'counter-customer--focused' : ''}`}
+      >
         <div className="counter-customer-row">
           <label className="counter-customer-label" htmlFor="customer-name">
             Customer Name <span className="counter-shortcut-hint">Alt+N</span>
@@ -150,27 +195,41 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
               setFocused(false)
               onFocusChange?.(false)
               setDropdownOpen(false)
+              keyboardNavRef.current = false
             }}
             onKeyDown={(e) => {
+              const count = filteredSuggestions.length
+
               if (e.key === 'Escape') {
                 setDropdownOpen(false)
                 setHighlightedIndex(-1)
+                keyboardNavRef.current = false
                 return
               }
-              if (!dropdownOpen || filteredSuggestions.length === 0) return
-              if (e.key === 'ArrowDown') {
+
+              if (count > 0 && isSuggestionNavKey(e.key)) {
                 e.preventDefault()
-                setHighlightedIndex((prev) => (prev + 1) % filteredSuggestions.length)
-              } else if (e.key === 'ArrowUp') {
-                e.preventDefault()
-                setHighlightedIndex((prev) =>
-                  prev <= 0 ? filteredSuggestions.length - 1 : prev - 1,
-                )
-              } else if (e.key === 'Enter' && highlightedIndex >= 0) {
+                keyboardNavRef.current = true
+                if (!dropdownOpen) setDropdownOpen(true)
+                const direction =
+                  e.key === 'ArrowDown' || e.key === 'PageDown' ? 1 : -1
+                if (e.key === 'PageDown' || e.key === 'PageUp') {
+                  const pageSize = getSuggestionPageSize(suggestionsListRef.current)
+                  setHighlightedIndex((prev) =>
+                    pageHighlightedIndex(prev, count, direction, pageSize),
+                  )
+                } else {
+                  setHighlightedIndex((prev) => nextHighlightedIndex(prev, count, direction))
+                }
+                return
+              }
+
+              if (dropdownOpen && count > 0 && e.key === 'Enter' && highlightedIndex >= 0) {
                 e.preventDefault()
                 setDraft(filteredSuggestions[highlightedIndex])
                 setDropdownOpen(false)
                 setHighlightedIndex(-1)
+                keyboardNavRef.current = false
               }
             }}
             placeholder="Optional"
@@ -191,7 +250,15 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
           ) : null}
         </div>
         {dropdownOpen && filteredSuggestions.length > 0 ? (
-          <ul ref={suggestionsListRef} className="counter-customer-suggestions" role="listbox">
+          <ul
+            ref={suggestionsListRef}
+            className="counter-customer-suggestions"
+            role="listbox"
+            onMouseMove={() => {
+              keyboardNavRef.current = false
+            }}
+            onWheel={(event) => event.stopPropagation()}
+          >
             {filteredSuggestions.map((name, index) => {
               const creditDue = customerPendingByName.get(name.toLowerCase()) ?? 0
               const chequeDue = customerChequePendingByName.get(name.toLowerCase()) ?? 0
@@ -201,7 +268,10 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
                     type="button"
                     ref={index === highlightedIndex ? activeSuggestionRef : null}
                     className={`counter-customer-suggestion ${index === highlightedIndex ? 'counter-customer-suggestion--active' : ''}`}
-                    onMouseEnter={() => setHighlightedIndex(index)}
+                    aria-selected={index === highlightedIndex}
+                    onMouseEnter={() => {
+                      if (!keyboardNavRef.current) setHighlightedIndex(index)
+                    }}
                     onMouseDown={(e) => {
                       e.preventDefault()
                       setDraft(name)
