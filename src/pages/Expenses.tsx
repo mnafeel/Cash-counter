@@ -32,6 +32,7 @@ import {
   shouldPromptSalaryMonthChoice,
   suggestDefaultSalaryMonth,
 } from '../utils/staffLedger'
+import { getStaffCommissionSummary, getStaffPayoutAllocation } from '../utils/staffCommission'
 import './Expenses.css'
 
 type ExpenseField = 'name' | 'amount' | 'cashSplit' | 'bankSplit' | 'pay'
@@ -110,10 +111,13 @@ function Expenses({ active }: { active: boolean }) {
     return getStaffMonthSummary(data, matchedStaff.id, staffSalaryMonth)
   }, [data, matchedStaff, linkToSalary, staffSalaryMonth])
 
-  const staffRemainingAmount =
-    staffSalarySummary && staffSalarySummary.remaining > 0 && !staffSalarySummary.canApplyToNextMonth
-      ? staffSalarySummary.remaining
-      : undefined
+  const staffRemainingAmount = useMemo(() => {
+    if (!matchedStaff || !linkToSalary || !staffSalarySummary) return undefined
+    const commission = getStaffCommissionSummary(data, matchedStaff.id, staffSalaryMonth)
+    const allocation = getStaffPayoutAllocation(staffSalarySummary, commission)
+    if (allocation.totalRemaining <= 0 || allocation.canApplyToNextMonth) return undefined
+    return allocation.totalRemaining
+  }, [data, matchedStaff, linkToSalary, staffSalaryMonth, staffSalarySummary])
 
   const staffRemainingCaption = staffRemainingAmount
     ? `${formatSalaryMonthLabel(staffSalaryMonth)} remaining`

@@ -40,6 +40,7 @@ import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
 import { loanBankToBalance, loanCashToDrawer, loanRemainingAmount } from '../utils/loanLedger'
 import { getStaffMonthSummary, isStaffLinkableExpense, type SalaryMonthKey } from '../utils/staffLedger'
+import { getStaffCommissionSummary, getStaffPayoutAllocation } from '../utils/staffCommission'
 import { validateStaffLeaveInput, resolveStaffSalaryDays, normalizeStaffLeaveTypeValue, isSundayDate, isRedundantStaffLeaveRecord } from '../utils/staffAttendance'
 import { isoToDateInputValue } from '../utils/format'
 import { sealTodayDrawerOpenings } from '../utils/dayDrawerOpenings'
@@ -2070,7 +2071,9 @@ export function applyStaffSalaryAdvance(
 ): { data: AppData; ok: boolean; error?: string } {
   const summary = getStaffMonthSummary(data, input.staffId, input.fromMonth)
   if (!summary) return { data, ok: false, error: 'Staff not found.' }
-  if (!summary.canApplyToNextMonth || summary.overpaidAmount <= 0) {
+  const commission = getStaffCommissionSummary(data, input.staffId, input.fromMonth)
+  const allocation = getStaffPayoutAllocation(summary, commission)
+  if (!allocation.canApplyToNextMonth || allocation.overpaidAmount <= 0) {
     return { data, ok: false, error: 'Nothing to apply to next month.' }
   }
   const alreadyApplied = (data.staffSalaryAdvances ?? []).some(
@@ -2085,7 +2088,7 @@ export function applyStaffSalaryAdvance(
     staffId: input.staffId,
     fromMonth: input.fromMonth,
     toMonth: summary.nextMonthKey,
-    amount: summary.overpaidAmount,
+    amount: allocation.overpaidAmount,
     createdAt: new Date().toISOString(),
   }
   const next = {

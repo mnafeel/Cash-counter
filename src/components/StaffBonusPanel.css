@@ -412,6 +412,25 @@
   color: #fbbf24;
 }
 
+.staff-bonus-part-remaining,
+.staff-bonus-member-remaining,
+.staff-bonus-remaining-hint {
+  margin-left: 4px;
+  font-weight: 400;
+  color: var(--warning, #f5c542);
+  font-size: 0.56rem;
+}
+
+.staff-bonus-remaining-hint--paid {
+  color: #a8d4b8;
+}
+
+.staff-bonus-balance-summary .staff-bonus-remaining-hint {
+  display: block;
+  margin-left: 0;
+  margin-top: 2px;
+}
+
 .staff-bonus-part-pct {
   margin-left: 4px;
   font-weight: 400;

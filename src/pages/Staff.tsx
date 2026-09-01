@@ -40,12 +40,14 @@ import {
 import { printSelectedStaffSalaryReports, printStaffMemberSalaryReport, printStaffSalaryReport } from '../utils/staffSalaryReport'
 import StaffBonusPanel from '../components/StaffBonusPanel'
 import {
+  buildStaffBonusRemainingMap,
   buildStaffCommissionMonthContext,
   buildStaffCommissionOverview,
   buildStaffCommissionSummaryMap,
   buildStaffPayoutBreakdown,
   getStaffAttributedSales,
-  getStaffBonusMonthSettings,
+  getStaffPayoutAllocation,
+  resolveStaffBonusMonthSettings,
 } from '../utils/staffCommission'
 import StaffSalaryUnlinkConfirm from '../components/StaffSalaryUnlinkConfirm'
 import './Staff.css'
@@ -144,8 +146,12 @@ export default function Staff() {
     () => buildStaffCommissionOverview(data, monthKey, commissionMonth),
     [data, monthKey, commissionMonth],
   )
+  const bonusRemainingByStaffId = useMemo(
+    () => buildStaffBonusRemainingMap(data, monthKey, commissionMonth),
+    [data, monthKey, commissionMonth],
+  )
   const bonusMonthSettings = useMemo(
-    () => getStaffBonusMonthSettings(data, monthKey),
+    () => resolveStaffBonusMonthSettings(data, monthKey),
     [data, monthKey],
   )
   const staffList = useMemo(() => (data.staff ?? []).slice().sort((a, b) => a.name.localeCompare(b.name)), [data.staff])
@@ -167,12 +173,7 @@ export default function Staff() {
   )
   const selectedPayout = useMemo(() => {
     if (!selectedSummary) return null
-    return buildStaffPayoutBreakdown(
-      selectedSummary.netSalary,
-      selectedSummary.paidTotal,
-      selectedSummary.remaining,
-      selectedCommission,
-    )
+    return buildStaffPayoutBreakdown(selectedSummary, selectedCommission)
   }, [selectedSummary, selectedCommission])
   const selectedAdvanceFromMonth = useMemo(() => {
     if (!selectedStaffId || !selectedSummary?.advanceIn) return null
@@ -799,12 +800,25 @@ export default function Staff() {
             <div className="staff-page-summary-card staff-page-summary-card--bonus">
               <span>Bonus pool</span>
               <strong>{formatMoney(commissionOverview.poolAmount)}</strong>
-              <small>{commissionOverview.poolPercent}%</small>
+              <small>
+                {commissionOverview.poolPercent}%
+                {commissionOverview.totalBonusRemaining > 0
+                  ? ` · ${formatMoney(commissionOverview.totalBonusRemaining)} remaining`
+                  : commissionOverview.totalCommission > 0
+                    ? ' · paid'
+                    : ''}
+              </small>
             </div>
             <div className="staff-page-summary-card staff-page-summary-card--bonus">
               <span>Staff bonus</span>
               <strong>{formatMoney(commissionOverview.totalCommission)}</strong>
-              <small>Tap Bonus</small>
+              <small>
+                {commissionOverview.totalBonusRemaining > 0
+                  ? `${formatMoney(commissionOverview.totalBonusRemaining)} remaining`
+                  : commissionOverview.totalCommission > 0
+                    ? 'Paid'
+                    : 'Tap Bonus'}
+              </small>
             </div>
           </div>
         </>
@@ -935,6 +949,7 @@ export default function Staff() {
               {summaries.map((row) => {
                 const isSelected = selectedStaffIds.has(row.staffId)
                 const commission = commissionByStaffId.get(row.staffId)
+                const payout = getStaffPayoutAllocation(row, commission ?? null)
                 return (
                 <li key={row.staffId}>
                   <div className={`staff-page-row-wrap ${isSelected ? 'staff-page-row-wrap--selected' : ''}`}>
@@ -972,16 +987,18 @@ export default function Staff() {
                             ? ` · Deduction −${formatMoney(row.deductionTotal)}`
                             : ' · Deduction ₹0'}
                           {` · Net ${formatMoney(row.netSalary)}`} ·{' '}
-                          {row.canApplyToNextMonth
-                            ? `Overpaid ${formatMoney(row.overpaidAmount)}`
-                            : `Remaining ${formatMoney(row.remaining)}`}
+                          {payout.canApplyToNextMonth
+                            ? `Overpaid ${formatMoney(payout.overpaidAmount)}`
+                            : payout.totalRemaining > 0
+                              ? `Remaining ${formatMoney(payout.totalRemaining)}`
+                              : 'Paid'}
                           {row.advanceOut > 0
                             ? ` · Applied ${formatMoney(row.advanceOut)} to ${formatSalaryMonthLabel(row.nextMonthKey)}`
                             : ''}{' '}
                           · {row.paymentCount} payment
                           {row.paymentCount === 1 ? '' : 's'}
-                          {commission && commission.commissionEarned > 0
-                            ? ` · Bonus ${formatMoney(commission.commissionEarned)} · Total due ${formatMoney(row.remaining + commission.commissionEarned)}`
+                          {payout.bonusEarned > 0
+                            ? ` · Bonus ${formatMoney(payout.bonusEarned)}${payout.bonusRemaining > 0 ? ` (${formatMoney(payout.bonusRemaining)} left)` : ''}`
                             : ''}
                         </small>
                       </div>
@@ -1141,13 +1158,7 @@ export default function Staff() {
                   </div>
                   <div>
                     <span>Salary remaining</span>
-                    <strong
-                      className={
-                        selectedPayout.salaryRemaining < 0 ? 'staff-page-remaining--overpaid' : undefined
-                      }
-                    >
-                      {formatMoney(selectedPayout.salaryRemaining)}
-                    </strong>
+                    <strong>{formatMoney(selectedPayout.salaryRemaining)}</strong>
                     <small>Without bonus</small>
                   </div>
                 </div>
@@ -1155,15 +1166,16 @@ export default function Staff() {
                 <h3 className="staff-page-section-title">Bonus</h3>
                 <div className="staff-page-detail-grid staff-page-detail-grid--bonus">
                   <div>
-                    <span>Pool</span>
-                    <strong>{formatMoney(selectedPayout.poolAmount)}</strong>
-                    <small>{selectedPayout.poolPercent}%</small>
-                  </div>
-                  <div>
                     <span>Bonus</span>
                     <strong className="staff-page-bonus-amount">
                       {formatMoney(selectedPayout.bonusEarned)}
                     </strong>
+                    <small>Earned this month</small>
+                  </div>
+                  <div>
+                    <span>Bonus remaining</span>
+                    <strong>{formatMoney(selectedPayout.bonusRemaining)}</strong>
+                    <small>After salary payments</small>
                   </div>
                   <div>
                     <span>Total with bonus</span>
@@ -1174,12 +1186,18 @@ export default function Staff() {
                     <span>Total remaining</span>
                     <strong
                       className={
-                        selectedPayout.totalRemaining < 0 ? 'staff-page-remaining--overpaid' : undefined
+                        selectedPayout.totalRemaining <= 0 && selectedPayout.overpaidAmount > 0
+                          ? 'staff-page-remaining--overpaid'
+                          : undefined
                       }
                     >
-                      {formatMoney(selectedPayout.totalRemaining)}
+                      {selectedPayout.totalRemaining > 0
+                        ? formatMoney(selectedPayout.totalRemaining)
+                        : selectedPayout.overpaidAmount > 0
+                          ? `Overpaid ${formatMoney(selectedPayout.overpaidAmount)}`
+                          : formatMoney(0)}
                     </strong>
-                    <small>Salary left + bonus</small>
+                    <small>Salary + bonus left to pay</small>
                   </div>
                 </div>
                 <button
@@ -1210,10 +1228,10 @@ export default function Staff() {
                 ) : null}
               </>
             ) : null}
-            {selectedSummary.canApplyToNextMonth ? (
+            {selectedPayout?.canApplyToNextMonth ? (
               <div className="staff-page-overpaid">
                 <p>
-                  Overpaid by {formatMoney(selectedSummary.overpaidAmount)}. Apply to{' '}
+                  Overpaid by {formatMoney(selectedPayout.overpaidAmount)}. Apply to{' '}
                   {formatSalaryMonthLabel(selectedSummary.nextMonthKey)} so it counts as paid there.
                 </p>
                 <button
@@ -1221,7 +1239,7 @@ export default function Staff() {
                   className="staff-page-btn staff-page-btn--primary"
                   onClick={handleApplyToNextMonth}
                 >
-                  Apply {formatMoney(selectedSummary.overpaidAmount)} to next month
+                  Apply {formatMoney(selectedPayout.overpaidAmount)} to next month
                 </button>
               </div>
             ) : null}
@@ -1564,6 +1582,7 @@ export default function Staff() {
           collectedActual={commissionOverview.storeCollections}
           settings={bonusMonthSettings}
           defaultPoolPercent={data.staffCommissionDefaultPercent ?? 0}
+          bonusRemainingByStaffId={bonusRemainingByStaffId}
           onSave={saveBonusPlan}
         />
       ) : null}

@@ -11,6 +11,7 @@ import {
   suggestDefaultSalaryMonth,
   type SalaryMonthKey,
 } from './staffLedger'
+import { getStaffCommissionSummary, getStaffPayoutAllocation } from './staffCommission'
 
 export type NormalExpenseDateFilter = CashDateFilter
 
@@ -156,14 +157,23 @@ export function buildExpenseAmountPickerOptions(
 
   const monthKey = context.staffSalaryMonth ?? suggestDefaultSalaryMonth(date)
   const summary = getStaffMonthSummary(data, context.staffId, monthKey)
-  if (!summary || summary.remaining <= 0 || summary.canApplyToNextMonth) return []
+  if (!summary) return []
+
+  const commission = getStaffCommissionSummary(data, context.staffId, monthKey)
+  const allocation = getStaffPayoutAllocation(summary, commission)
+  if (allocation.totalRemaining <= 0 || allocation.canApplyToNextMonth) return []
+
+  const metaLabel =
+    allocation.bonusRemaining > 0
+      ? `${formatSalaryMonthLabel(monthKey)} left (salary + bonus)`
+      : `${formatSalaryMonthLabel(monthKey)} remaining`
 
   return [
     {
       key: `staff-remaining-${summary.staffId}-${monthKey}`,
-      amount: summary.remaining,
-      label: formatMoney(summary.remaining),
-      metaLabel: `${formatSalaryMonthLabel(monthKey)} remaining`,
+      amount: allocation.totalRemaining,
+      label: formatMoney(allocation.totalRemaining),
+      metaLabel,
     },
   ]
 }

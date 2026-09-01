@@ -1,7 +1,7 @@
 import type { AppData } from '../types'
 import { formatMoney } from './format'
 import { printHtmlReport } from './printHtmlReport'
-import { buildStaffCommissionMonthContext, type StaffCommissionMonthContext } from './staffCommission'
+import { allocateStaffPayout, buildStaffCommissionMonthContext, type StaffCommissionMonthContext } from './staffCommission'
 import {
   buildStaffMonthSummaries,
   buildStaffOverview,
@@ -13,6 +13,7 @@ import {
 
 type ReportStaffRow = StaffMonthSummary & {
   bonusEarned: number
+  bonusRemaining: number
   totalDue: number
 }
 
@@ -110,10 +111,13 @@ function buildReportStaffRows(
   const commissionMonth = buildStaffCommissionMonthContext(data, monthKey)
   const rows = summaries.map((row) => {
     const bonusEarned = commissionMonth.bonusTotals.get(row.staffId) ?? 0
+    const allocation = allocateStaffPayout(row.netSalary, bonusEarned, row.paidTotal, row.advanceOut)
     return {
       ...row,
+      remaining: allocation.salaryRemaining,
       bonusEarned,
-      totalDue: Math.max(0, row.remaining) + bonusEarned,
+      bonusRemaining: allocation.bonusRemaining,
+      totalDue: allocation.totalRemaining,
     }
   })
   return { rows, commissionMonth }
@@ -155,6 +159,7 @@ function staffTableRows(rows: ReportStaffRow[]): string {
         <td class="num">${escapeHtml(formatMoney(row.paidTotal))}</td>
         <td class="num">${escapeHtml(formatMoney(row.remaining))}</td>
         <td class="num">${escapeHtml(formatMoney(row.bonusEarned))}</td>
+        <td class="num">${escapeHtml(formatMoney(row.bonusRemaining))}</td>
         <td class="num">${escapeHtml(formatMoney(row.totalDue))}</td>
       </tr>`,
     )
@@ -207,7 +212,7 @@ function buildStaffSalaryReportHtml(
       <strong>${escapeHtml(formatMoney(bonusOverview.totalDue))}</strong>
     </div>
   </div>
-  <p class="meta">Net salary = base salary − deduction. Total due = salary remaining + bonus.</p>
+  <p class="meta">Payments cover salary first, then bonus. Remaining = what is still left to pay.</p>
   <h2>Salaried Staff</h2>
   <table>
     <thead>
@@ -218,15 +223,16 @@ function buildStaffSalaryReportHtml(
         <th class="num">Deduction</th>
         <th class="num">Net Salary</th>
         <th class="num">Paid</th>
-        <th class="num">Remaining</th>
+        <th class="num">Salary Left</th>
         <th class="num">Bonus</th>
-        <th class="num">Total Due</th>
+        <th class="num">Bonus Left</th>
+        <th class="num">Total Left</th>
       </tr>
     </thead>
     <tbody>
       ${
         staffTableRows(rows) ||
-        '<tr><td colspan="9">No staff on record for this month.</td></tr>'
+        '<tr><td colspan="10">No staff on record for this month.</td></tr>'
       }
     </tbody>
   </table>`

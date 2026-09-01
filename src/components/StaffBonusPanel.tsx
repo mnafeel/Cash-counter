@@ -11,8 +11,10 @@ import {
   createEmptySharePart,
   createEqualPoolParts,
   distributeBonusToMembers,
+  normalizeBonusMonthPlanForSave,
   partBalanceAmount,
   partBalancePercent,
+  rebalanceTopLevelPartAmounts,
   resolvePartAmount,
   sumResolvedSubParts,
 } from '../utils/staffBonusAllocation'
@@ -20,6 +22,7 @@ import {
   computePoolAmount,
   getStaffBonusRoundOptions,
   resolveCollectedForBonus,
+  sumBonusRemainingForStaff,
 } from '../utils/staffCommission'
 import Portal from './Portal'
 import './StaffBonusPanel.css'
@@ -34,7 +37,12 @@ type StaffBonusPanelProps = {
   collectedActual: number
   settings: StaffBonusMonthSettings
   defaultPoolPercent: number
+  bonusRemainingByStaffId?: Map<string, number>
   onSave: (monthKey: SalaryMonthKey, plan: StaffBonusMonthSettings) => void
+}
+
+function bonusRemainingLabel(amount: number): string | null {
+  return amount > 0 ? `${formatMoney(amount)} left` : null
 }
 
 function clonePlan(settings: StaffBonusMonthSettings): StaffBonusMonthSettings {
@@ -67,6 +75,7 @@ type MemberPickerProps = {
   members: StaffBonusMemberShare[] | undefined
   blockedIds: Set<string>
   sliceAmount: number
+  bonusRemainingByStaffId?: Map<string, number>
   onChange: (members: StaffBonusMemberShare[]) => void
 }
 
@@ -75,6 +84,7 @@ const MemberPicker = memo(function MemberPicker({
   members,
   blockedIds,
   sliceAmount,
+  bonusRemainingByStaffId,
   onChange,
 }: MemberPickerProps) {
   const distribution = useMemo(
@@ -90,6 +100,8 @@ const MemberPicker = memo(function MemberPicker({
         const blocked = !selected && blockedIds.has(member.id)
         const share = (members ?? []).find((row) => row.staffId === member.id)
         const shareAmount = distribution.amounts.get(member.id) ?? 0
+        const memberRemaining = bonusRemainingByStaffId?.get(member.id) ?? 0
+        const remainingLabel = bonusRemainingLabel(memberRemaining)
         return (
           <div
             key={member.id}
@@ -123,7 +135,16 @@ const MemberPicker = memo(function MemberPicker({
               ) : null}
             </div>
             <span className="staff-bonus-member-amount-slot">
-              {selected && sliceAmount > 0 ? formatMoney(shareAmount) : '\u00A0'}
+              {selected && sliceAmount > 0 ? (
+                <>
+                  {formatMoney(shareAmount)}
+                  {remainingLabel ? (
+                    <small className="staff-bonus-member-remaining"> ({remainingLabel})</small>
+                  ) : null}
+                </>
+              ) : (
+                '\u00A0'
+              )}
             </span>
           </div>
         )
@@ -239,6 +260,7 @@ type PartEditorProps = {
   depth?: number
   blockedTopLevelIds: Set<string>
   blockedWithinParent?: Set<string>
+  bonusRemainingByStaffId?: Map<string, number>
   onChange: (part: StaffBonusPart) => void
   onRemove?: () => void
 }
@@ -261,6 +283,7 @@ const PartEditor = memo(function PartEditor({
   depth = 0,
   blockedTopLevelIds,
   blockedWithinParent,
+  bonusRemainingByStaffId,
   onChange,
   onRemove,
 }: PartEditorProps) {
@@ -327,6 +350,10 @@ const PartEditor = memo(function PartEditor({
 
   const showSharePercent = isSubPart && part.amount <= 0
   const focusSharePercent = showSharePercent && (part.percent === undefined || part.percent <= 0)
+  const partRemaining = bonusRemainingByStaffId
+    ? sumBonusRemainingForStaff(collectStaffIdsInPart(part), bonusRemainingByStaffId)
+    : 0
+  const partRemainingLabel = bonusRemainingLabel(partRemaining)
 
   return (
     <div className={`staff-bonus-part ${depth > 0 ? 'staff-bonus-part--nested' : ''}`}>
@@ -334,6 +361,9 @@ const PartEditor = memo(function PartEditor({
         <strong>
           {depth === 0 ? `Part ${partIndex + 1}` : `Share ${partIndex + 1}`}
           <span className="staff-bonus-part-amount">{formatMoney(partAmount)}</span>
+          {partRemainingLabel ? (
+            <span className="staff-bonus-part-remaining"> ({partRemainingLabel})</span>
+          ) : null}
           {showSharePercent ? (
             <span className="staff-bonus-part-pct">
               {part.percent !== undefined && part.percent > 0 ? `${part.percent}%` : 'Type %'}
@@ -376,6 +406,7 @@ const PartEditor = memo(function PartEditor({
             members={part.members}
             blockedIds={blockedForMembers()}
             sliceAmount={partAmount}
+            bonusRemainingByStaffId={bonusRemainingByStaffId}
             onChange={(members) => updatePart({ members })}
           />
         </div>
@@ -395,6 +426,7 @@ const PartEditor = memo(function PartEditor({
                 depth={depth + 1}
                 blockedTopLevelIds={blockedTopLevelIds}
                 blockedWithinParent={blockedWithinParentPart(part, subPart.id)}
+                bonusRemainingByStaffId={bonusRemainingByStaffId}
                 onChange={(next) => updateSubPart(index, next)}
                 onRemove={() => removeSubPart(index)}
               />
@@ -418,6 +450,7 @@ const PartEditor = memo(function PartEditor({
                   members={part.members}
                   blockedIds={blockedForBalanceMembers()}
                   sliceAmount={balanceAmount}
+                  bonusRemainingByStaffId={bonusRemainingByStaffId}
                   onChange={(members) => updatePart({ members })}
                 />
               </>
@@ -497,6 +530,7 @@ export default function StaffBonusPanel({
   collectedActual,
   settings,
   defaultPoolPercent,
+  bonusRemainingByStaffId,
   onSave,
 }: StaffBonusPanelProps) {
   const [draft, setDraft] = useState<StaffBonusMonthSettings>(() => clonePlan(settings))
@@ -537,9 +571,14 @@ export default function StaffBonusPanel({
     return map
   }, [deferredDraft])
 
+  const displayParts = useMemo(
+    () => rebalanceTopLevelPartAmounts(draft.parts ?? [], poolAmount),
+    [draft.parts, poolAmount],
+  )
+
   const bonusBreakdown = useMemo(
-    () => computeStaffBonusBreakdown(deferredDraft, poolAmount),
-    [deferredDraft, poolAmount],
+    () => computeStaffBonusBreakdown({ ...deferredDraft, parts: displayParts }, poolAmount),
+    [deferredDraft, displayParts, poolAmount],
   )
   const bonusTotals = bonusBreakdown.totals
   const poolBalanceAmount = bonusBreakdown.poolBalanceAmount
@@ -548,6 +587,17 @@ export default function StaffBonusPanel({
     () => [...bonusTotals.values()].reduce((sum, amount) => sum + amount, 0),
     [bonusTotals],
   )
+  const totalBonusRemaining = useMemo(() => {
+    if (!bonusRemainingByStaffId) return 0
+    return [...bonusRemainingByStaffId.values()].reduce((sum, amount) => sum + amount, 0)
+  }, [bonusRemainingByStaffId])
+  const poolBalanceRemaining = useMemo(() => {
+    if (!bonusRemainingByStaffId || !draft.remainderMembers?.length) return 0
+    return sumBonusRemainingForStaff(
+      draft.remainderMembers.map((member) => member.staffId),
+      bonusRemainingByStaffId,
+    )
+  }, [bonusRemainingByStaffId, draft.remainderMembers])
 
   if (!open) return null
 
@@ -565,7 +615,7 @@ export default function StaffBonusPanel({
           ? draft.remainderMembers
           : undefined,
     }
-    onSave(monthKey, next)
+    onSave(monthKey, normalizeBonusMonthPlanForSave(next, poolAmount))
     onClose()
   }
 
@@ -653,6 +703,15 @@ export default function StaffBonusPanel({
               <div>
                 <span>Pool amount</span>
                 <strong>{formatMoney(poolAmount)}</strong>
+                {totalBonusRemaining > 0 ? (
+                  <small className="staff-bonus-remaining-hint">
+                    {formatMoney(totalBonusRemaining)} bonus remaining
+                  </small>
+                ) : totalPaidOut > 0 ? (
+                  <small className="staff-bonus-remaining-hint staff-bonus-remaining-hint--paid">
+                    Bonus paid
+                  </small>
+                ) : null}
               </div>
             </div>
           </StepSection>
@@ -680,12 +739,13 @@ export default function StaffBonusPanel({
                 </button>
               </div>
             </div>
-            {(draft.parts ?? []).length === 0 ? (
+            {(displayParts ?? []).length === 0 ? (
               <p className="staff-bonus-empty">Tap ÷2 to split the pool into equal parts.</p>
             ) : (
               <div className="staff-bonus-parts">
-                {(draft.parts ?? []).map((part, index) => {
+                {displayParts.map((part, index) => {
                   const blockedIds = partBlockedIds.get(part.id) ?? new Set<string>()
+                  const draftIndex = (draft.parts ?? []).findIndex((row) => row.id === part.id)
                   return (
                     <PartEditor
                       key={part.id}
@@ -693,12 +753,16 @@ export default function StaffBonusPanel({
                       partIndex={index}
                       staff={staff}
                       blockedTopLevelIds={blockedIds}
+                      bonusRemainingByStaffId={bonusRemainingByStaffId}
                       onChange={(next) => {
                         const parts = [...(draft.parts ?? [])]
-                        parts[index] = next
+                        const targetIndex = draftIndex >= 0 ? draftIndex : index
+                        parts[targetIndex] = next
                         updateParts(parts)
                       }}
-                      onRemove={() => updateParts((draft.parts ?? []).filter((_, i) => i !== index))}
+                      onRemove={() =>
+                        updateParts((draft.parts ?? []).filter((_, i) => i !== (draftIndex >= 0 ? draftIndex : index)))
+                      }
                     />
                   )
                 })}
@@ -714,6 +778,11 @@ export default function StaffBonusPanel({
             <div className="staff-bonus-balance staff-bonus-balance--stable staff-bonus-balance--pool">
               <div className="staff-bonus-balance-summary">
                 <span>{formatMoney(poolBalanceAmount)}</span>
+                {poolBalanceRemaining > 0 ? (
+                  <small className="staff-bonus-remaining-hint">
+                    {formatMoney(poolBalanceRemaining)} left
+                  </small>
+                ) : null}
               </div>
               {poolBalanceAmount > 0 ? (
                 <>
@@ -725,6 +794,7 @@ export default function StaffBonusPanel({
                     members={draft.remainderMembers}
                     blockedIds={remainderBlockedIds}
                     sliceAmount={poolBalanceAmount}
+                    bonusRemainingByStaffId={bonusRemainingByStaffId}
                     onChange={(remainderMembers) =>
                       setDraft((current) => ({ ...current, remainderMembers }))
                     }
@@ -744,19 +814,46 @@ export default function StaffBonusPanel({
 
           <StepSection step={5} title="Payout preview" hint="Each staff member's bonus before saving">
             <div className="staff-bonus-balance-summary staff-bonus-balance-summary--total">
-              <span>Total</span>
-              <strong>{formatMoney(totalPaidOut)}</strong>
+              <span>Staff bonus</span>
+              <strong>
+                {formatMoney(totalPaidOut)}
+                {totalBonusRemaining > 0 ? (
+                  <small className="staff-bonus-remaining-hint">
+                    {' '}
+                    ({formatMoney(totalBonusRemaining)} left)
+                  </small>
+                ) : null}
+              </strong>
             </div>
+            {poolRoundingRemainder > 0 ? (
+              <div className="staff-bonus-rounding-row staff-bonus-rounding-row--pool">
+                <span>Rounding balance (not paid to staff)</span>
+                <strong>{formatMoney(poolRoundingRemainder)}</strong>
+              </div>
+            ) : null}
             <ul className="staff-bonus-payout-list">
               {staff.map((member) => {
                 const amount = bonusTotals.get(member.id) ?? 0
+                const memberRemaining = bonusRemainingByStaffId?.get(member.id) ?? 0
+                const remainingLabel = bonusRemainingLabel(memberRemaining)
                 return (
                   <li
                     key={member.id}
                     className={`staff-bonus-payout-row ${amount > 0 ? 'staff-bonus-payout-row--paid' : 'staff-bonus-payout-row--none'}`}
                   >
                     <span>{member.name}</span>
-                    <strong>{amount > 0 ? formatMoney(amount) : 'No bonus'}</strong>
+                    <strong>
+                      {amount > 0 ? (
+                        <>
+                          {formatMoney(amount)}
+                          {remainingLabel ? (
+                            <small className="staff-bonus-member-remaining"> ({remainingLabel})</small>
+                          ) : null}
+                        </>
+                      ) : (
+                        'No bonus'
+                      )}
+                    </strong>
                   </li>
                 )
               })}

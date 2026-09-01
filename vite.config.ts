@@ -150,6 +150,34 @@ function tallyApiProxy(): Plugin {
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/Cash-counter/' : '/',
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: false,
+    watch: {
+      awaitWriteFinish: {
+        stabilityThreshold: 800,
+        pollInterval: 100,
+      },
+      ignored: [
+        '**/functions/**',
+        '**/docs/**',
+        '**/dist/**',
+        '**/.git/**',
+        '**/terminals/**',
+        '**/.env',
+        '**/.env.*',
+        '**/index.html',
+        '**/index.vite.html',
+        '**/tsconfig.json',
+        '**/tsconfig.*.json',
+        '**/vite.config.ts',
+      ],
+    },
+  },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom', 'firebase/app', 'firebase/auth', 'firebase/firestore'],
+  },
   build: {
     rollupOptions: {
       output: {

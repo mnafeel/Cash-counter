@@ -403,6 +403,11 @@
   color: #fbbf24;
 }
 
+.staff-page-summary-card--bonus small.staff-page-summary-remaining {
+  color: #fbbf24;
+  opacity: 0.85;
+}
+
 .staff-page-toolbar-search-row {
   display: flex;
   align-items: flex-end;

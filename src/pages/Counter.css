@@ -238,39 +238,6 @@
   border-radius: var(--radius-sm);
 }
 
-.counter-staff-picker {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  min-width: 0;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.counter-staff-picker > span {
-  font-size: 0.58rem;
-  font-weight: 700;
-  color: var(--cream-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.counter-staff-picker select {
-  width: 100%;
-  min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--brown-dark);
-  color: var(--cream);
-  font-size: 0.72rem;
-}
-
 .counter-pay {
   flex-shrink: 0;
   padding: 6px 8px;

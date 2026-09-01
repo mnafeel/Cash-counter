@@ -1,11 +1,13 @@
 import type { AppData, Sale, StaffBonusMonthSettings } from '../types'
 import type { RoundOption } from './roundSuggestions'
 import { saleCollectedForFilter, sumSalesCollectedForFilter, toInputDate } from './salesReport'
-import { computeStaffBonusTotals, sumBonusParts } from './staffBonusAllocation'
+import { computeStaffBonusTotals, sumBonusParts, cloneBonusPlanStructure, bonusMonthHasStructure, normalizeBonusMonthPlanForSave } from './staffBonusAllocation'
 import {
+  buildStaffMonthSummaries,
   currentSalaryMonth,
   parseSalaryMonth,
   type SalaryMonthKey,
+  type StaffMonthSummary,
 } from './staffLedger'
 
 export interface StaffCommissionSummary {
@@ -38,6 +40,7 @@ export interface StaffCommissionOverview {
   poolPercent: number
   poolAmount: number
   totalCommission: number
+  totalBonusRemaining: number
   allocatedTotal: number
   remainderAmount: number
   staffCount: number
@@ -106,8 +109,55 @@ export function getStaffBonusMonthSettings(
   return data.staffBonusMonthSettings?.[monthKey] ?? {}
 }
 
+function listSavedBonusMonthKeys(data: AppData): SalaryMonthKey[] {
+  return Object.keys(data.staffBonusMonthSettings ?? {})
+    .filter((key) => /^\d{4}-\d{2}$/.test(key))
+    .sort() as SalaryMonthKey[]
+}
+
+/** Latest saved month at or before `monthKey` that defines a bonus structure. */
+export function findPriorBonusPlanMonth(
+  data: AppData,
+  monthKey: SalaryMonthKey,
+): SalaryMonthKey | null {
+  let match: SalaryMonthKey | null = null
+  for (const key of listSavedBonusMonthKeys(data)) {
+    if (key > monthKey) continue
+    const entry = data.staffBonusMonthSettings?.[key]
+    if (bonusMonthHasStructure(entry)) match = key
+  }
+  return match
+}
+
+/**
+ * Merge this month's overrides with the nearest prior saved plan.
+ * Structure (staff splits) carries forward; sales rounding and pool % stay per month.
+ */
+export function resolveStaffBonusMonthSettings(
+  data: AppData,
+  monthKey: SalaryMonthKey,
+): StaffBonusMonthSettings {
+  const explicit = getStaffBonusMonthSettings(data, monthKey)
+  const originKey = findPriorBonusPlanMonth(data, monthKey)
+  if (!originKey) return { ...explicit }
+
+  const origin = data.staffBonusMonthSettings?.[originKey] ?? {}
+  const structure = cloneBonusPlanStructure(origin)
+
+  return {
+    poolPercent: explicit.poolPercent ?? structure.poolPercent,
+    collectedRounded: explicit.collectedRounded,
+    parts: explicit.parts?.length ? explicit.parts.map((part) => ({ ...part })) : structure.parts,
+    remainderMembers: explicit.remainderMembers?.length
+      ? explicit.remainderMembers.map((member) => ({ ...member }))
+      : structure.remainderMembers,
+  }
+}
+
+export { normalizeBonusMonthPlanForSave }
+
 export function resolvePoolPercent(data: AppData, monthKey: SalaryMonthKey): number {
-  const monthPercent = getStaffBonusMonthSettings(data, monthKey).poolPercent
+  const monthPercent = resolveStaffBonusMonthSettings(data, monthKey).poolPercent
   const raw = monthPercent ?? data.staffCommissionDefaultPercent ?? 0
   return Math.max(0, Math.min(100, Number(raw) || 0))
 }
@@ -166,7 +216,7 @@ export function buildStaffCommissionMonthContext(
   data: AppData,
   monthKey: SalaryMonthKey,
 ): StaffCommissionMonthContext {
-  const settings = getStaffBonusMonthSettings(data, monthKey)
+  const settings = resolveStaffBonusMonthSettings(data, monthKey)
   const collectedActual = getStoreMonthCollections(data, monthKey)
   const collectedForBonus = resolveCollectedForBonus(settings, collectedActual)
   const poolPercent = resolvePoolPercent(data, monthKey)
@@ -276,6 +326,36 @@ export function getStaffCommissionSummary(
   return commissionSummaryFromContext(member, ctx)
 }
 
+export function buildStaffBonusRemainingMap(
+  data: AppData,
+  monthKey: SalaryMonthKey,
+  context?: StaffCommissionMonthContext,
+): Map<string, number> {
+  const ctx = context ?? buildStaffCommissionMonthContext(data, monthKey)
+  const summaries = buildStaffMonthSummaries(data, monthKey)
+  const map = new Map<string, number>()
+  for (const summary of summaries) {
+    const bonus = ctx.bonusTotals.get(summary.staffId) ?? 0
+    map.set(
+      summary.staffId,
+      allocateStaffPayout(summary.netSalary, bonus, summary.paidTotal, summary.advanceOut)
+        .bonusRemaining,
+    )
+  }
+  return map
+}
+
+export function sumBonusRemainingForStaff(
+  staffIds: Iterable<string>,
+  remainingByStaffId: Map<string, number>,
+): number {
+  let sum = 0
+  for (const id of staffIds) {
+    sum += remainingByStaffId.get(id) ?? 0
+  }
+  return sum
+}
+
 export function buildStaffCommissionOverview(
   data: AppData,
   monthKey: SalaryMonthKey,
@@ -284,7 +364,9 @@ export function buildStaffCommissionOverview(
   const staff = data.staff ?? []
   const ctx = context ?? buildStaffCommissionMonthContext(data, monthKey)
   const totalCommission = [...ctx.bonusTotals.values()].reduce((sum, amount) => sum + amount, 0)
-  const partsTotal = sumBonusParts(ctx.settings.parts)
+  const bonusRemainingByStaff = buildStaffBonusRemainingMap(data, monthKey, ctx)
+  const totalBonusRemaining = [...bonusRemainingByStaff.values()].reduce((sum, amount) => sum + amount, 0)
+  const partsTotal = sumBonusParts(ctx.settings.parts, ctx.poolAmount)
   let totalAttributedCollections = 0
   for (const amount of ctx.personalCollections.values()) {
     totalAttributedCollections += amount
@@ -296,6 +378,7 @@ export function buildStaffCommissionOverview(
     poolPercent: ctx.poolPercent,
     poolAmount: ctx.poolAmount,
     totalCommission,
+    totalBonusRemaining,
     allocatedTotal: partsTotal,
     remainderAmount: Math.max(0, ctx.poolAmount - partsTotal),
     staffCount: staff.length,
@@ -306,13 +389,72 @@ export function buildStaffCommissionOverview(
   }
 }
 
+export interface StaffPayoutAllocation {
+  netSalary: number
+  bonusEarned: number
+  totalOwed: number
+  paid: number
+  salaryRemaining: number
+  bonusRemaining: number
+  totalRemaining: number
+  overpaidAmount: number
+  canApplyToNextMonth: boolean
+}
+
+/** Payments cover salary first, then bonus. Nothing shows negative. */
+export function allocateStaffPayout(
+  netSalary: number,
+  bonusEarned: number,
+  paidTotal: number,
+  advanceOut = 0,
+): StaffPayoutAllocation {
+  const net = Math.max(0, netSalary)
+  const bonus = Math.max(0, bonusEarned)
+  const paid = Math.max(0, paidTotal)
+  const totalOwed = net + bonus
+
+  const salaryPortionPaid = Math.min(paid, net)
+  const bonusPortionPaid = Math.min(Math.max(0, paid - net), bonus)
+  const salaryRemaining = Math.max(0, net - salaryPortionPaid)
+  const bonusRemaining = Math.max(0, bonus - bonusPortionPaid)
+  const totalRemaining = Math.max(0, totalOwed - paid)
+  const rawOverpaid = Math.max(0, paid - totalOwed)
+  const overpaidAmount = Math.max(0, rawOverpaid - Math.max(0, advanceOut))
+
+  return {
+    netSalary: net,
+    bonusEarned: bonus,
+    totalOwed,
+    paid,
+    salaryRemaining,
+    bonusRemaining,
+    totalRemaining,
+    overpaidAmount,
+    canApplyToNextMonth: overpaidAmount > 0,
+  }
+}
+
+export function getStaffPayoutAllocation(
+  summary: Pick<StaffMonthSummary, 'netSalary' | 'paidTotal' | 'advanceOut'>,
+  commission: StaffCommissionSummary | null,
+): StaffPayoutAllocation {
+  return allocateStaffPayout(
+    summary.netSalary,
+    commission?.commissionEarned ?? 0,
+    summary.paidTotal,
+    summary.advanceOut,
+  )
+}
 export interface StaffPayoutBreakdown {
   netSalary: number
   bonusEarned: number
+  bonusRemaining: number
   totalWithBonus: number
   paid: number
   salaryRemaining: number
   totalRemaining: number
+  overpaidAmount: number
+  canApplyToNextMonth: boolean
   collectedActual: number
   collectedForBonus: number
   poolPercent: number
@@ -333,19 +475,20 @@ export interface StaffPayoutBreakdown {
 }
 
 export function buildStaffPayoutBreakdown(
-  netSalary: number,
-  paidTotal: number,
-  salaryRemaining: number,
+  summary: Pick<StaffMonthSummary, 'netSalary' | 'paidTotal' | 'advanceOut'>,
   commission: StaffCommissionSummary | null,
 ): StaffPayoutBreakdown {
-  const bonusEarned = commission?.commissionEarned ?? 0
+  const allocation = getStaffPayoutAllocation(summary, commission)
   return {
-    netSalary,
-    bonusEarned,
-    totalWithBonus: netSalary + bonusEarned,
-    paid: paidTotal,
-    salaryRemaining,
-    totalRemaining: salaryRemaining + bonusEarned,
+    netSalary: allocation.netSalary,
+    bonusEarned: allocation.bonusEarned,
+    bonusRemaining: allocation.bonusRemaining,
+    totalWithBonus: allocation.totalOwed,
+    paid: allocation.paid,
+    salaryRemaining: allocation.salaryRemaining,
+    totalRemaining: allocation.totalRemaining,
+    overpaidAmount: allocation.overpaidAmount,
+    canApplyToNextMonth: allocation.canApplyToNextMonth,
     collectedActual: commission?.collectedActual ?? 0,
     collectedForBonus: commission?.collectedForBonus ?? 0,
     poolPercent: commission?.poolPercent ?? 0,

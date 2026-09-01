@@ -2,7 +2,7 @@ import type { StaffBonusMemberShare, StaffBonusMonthSettings, StaffBonusPart } f
 
 export type BonusDistribution = {
   amounts: Map<string, number>
-  /** Small leftover from equal floor splits — goes to balance, not last person */
+  /** Small leftover from equal floor splits — never paid to staff */
   roundingRemainder: number
 }
 
@@ -12,14 +12,18 @@ function mergeBonusMaps(target: Map<string, number>, source: Map<string, number>
   }
 }
 
-export function resolvePartAmount(part: StaffBonusPart, parentAmount?: number): number {
+export function resolvePartAmount(
+  part: StaffBonusPart,
+  parentAmount?: number,
+  _poolAmount?: number,
+): number {
   if (parentAmount !== undefined && part.percent !== undefined && part.percent > 0) {
     return Math.floor((parentAmount * part.percent) / 100)
   }
   return Math.max(0, part.amount)
 }
 
-/** Equal floor shares for everyone; rounding dust returned separately. */
+/** Equal floor shares for everyone; rounding dust returned separately (never to staff). */
 export function distributeBonusToMembers(
   amount: number,
   members: StaffBonusMemberShare[],
@@ -94,8 +98,8 @@ export function sumResolvedSubParts(part: StaffBonusPart, parentAmount: number):
   )
 }
 
-export function partBalanceAmount(part: StaffBonusPart, parentAmount?: number): number {
-  const partAmount = resolvePartAmount(part, parentAmount)
+export function partBalanceAmount(part: StaffBonusPart, parentAmount?: number, poolAmount?: number): number {
+  const partAmount = resolvePartAmount(part, parentAmount, poolAmount)
   const subTotal = sumResolvedSubParts(part, partAmount)
   return Math.max(0, partAmount - subTotal)
 }
@@ -113,34 +117,35 @@ function distributeMembers(
 function processBonusPart(
   part: StaffBonusPart,
   totals: Map<string, number>,
-  parentRounding: { value: number },
+  roundingDust: { value: number },
   parentAmount?: number,
-) {
-  const partAmount = resolvePartAmount(part, parentAmount)
+  poolAmount?: number,
+): number {
+  const partAmount = resolvePartAmount(part, parentAmount, poolAmount)
   const subParts = part.subParts ?? []
   if (subParts.length > 0) {
-    const percentLeftover = partBalanceAmount(part, parentAmount)
-    const sectionRounding = { value: 0 }
+    const percentLeftover = partBalanceAmount(part, parentAmount, poolAmount)
     for (const subPart of subParts) {
-      processBonusPart(subPart, totals, sectionRounding, partAmount)
+      processBonusPart(subPart, totals, roundingDust, partAmount)
     }
-    const balancePool = percentLeftover + sectionRounding.value
     const balanceMembers = part.members ?? []
-    if (balancePool > 0 && balanceMembers.length > 0) {
-      sectionRounding.value = distributeMembers(balancePool, balanceMembers, totals)
-    } else {
-      sectionRounding.value = balancePool
+    if (percentLeftover > 0 && balanceMembers.length > 0) {
+      roundingDust.value += distributeMembers(percentLeftover, balanceMembers, totals)
+    } else if (percentLeftover > 0) {
+      return percentLeftover
     }
-    parentRounding.value += sectionRounding.value
-    return
+    return 0
   }
 
   const members = part.members ?? []
   if (members.length > 0) {
-    parentRounding.value += distributeMembers(partAmount, members, totals)
-  } else if (partAmount > 0) {
-    parentRounding.value += partAmount
+    roundingDust.value += distributeMembers(partAmount, members, totals)
+    return 0
   }
+  if (partAmount > 0) {
+    return partAmount
+  }
+  return 0
 }
 
 export function computeStaffBonusTotals(
@@ -155,32 +160,37 @@ export function computeStaffBonusBreakdown(
   poolAmount: number,
 ): { totals: Map<string, number>; poolBalanceAmount: number; roundingRemainder: number } {
   const totals = new Map<string, number>()
-  const parts = settings.parts ?? []
-  const partsTotal = parts.reduce((sum, part) => sum + resolvePartAmount(part), 0)
+  const parts = rebalanceTopLevelPartAmounts(settings.parts ?? [], poolAmount)
+  const partsTotal = parts.reduce((sum, part) => sum + resolvePartAmount(part, undefined, poolAmount), 0)
   const poolRemainder = Math.max(0, poolAmount - partsTotal)
-  const poolRounding = { value: 0 }
+  const roundingDust = { value: 0 }
+  let unassignedFromParts = 0
 
   for (const part of parts) {
-    processBonusPart(part, totals, poolRounding)
+    unassignedFromParts += processBonusPart(part, totals, roundingDust, undefined, poolAmount)
   }
 
   const balanceMembers = settings.remainderMembers ?? []
-  const poolBalanceAmount = poolRemainder + poolRounding.value
-  let finalRounding = 0
+  const distributableBalance = poolRemainder + unassignedFromParts
+  let balanceRounding = 0
 
-  if (poolBalanceAmount > 0 && balanceMembers.length > 0) {
-    finalRounding = distributeMembers(poolBalanceAmount, balanceMembers, totals)
+  if (distributableBalance > 0 && balanceMembers.length > 0) {
+    balanceRounding = distributeMembers(distributableBalance, balanceMembers, totals)
   }
+
+  const roundingRemainder = roundingDust.value + balanceRounding
+  const poolBalanceAmount =
+    balanceMembers.length > 0 ? distributableBalance : distributableBalance + roundingRemainder
 
   return {
     totals,
     poolBalanceAmount,
-    roundingRemainder: balanceMembers.length > 0 ? finalRounding : poolBalanceAmount,
+    roundingRemainder: balanceMembers.length > 0 ? balanceRounding : roundingRemainder,
   }
 }
 
-export function sumBonusParts(parts: StaffBonusPart[] | undefined): number {
-  return (parts ?? []).reduce((sum, part) => sum + resolvePartAmount(part), 0)
+export function sumBonusParts(parts: StaffBonusPart[] | undefined, poolAmount?: number): number {
+  return (parts ?? []).reduce((sum, part) => sum + resolvePartAmount(part, undefined, poolAmount), 0)
 }
 
 export function sumSubPartPercents(part: StaffBonusPart): number {
@@ -225,14 +235,67 @@ export function createBonusPart(amount = 0): StaffBonusPart {
   }
 }
 
-/** Split pool into equal top-level parts (last part absorbs rounding). */
+/** Split pool into equal top-level parts — same floor amount each; dust stays in balance. */
 export function createEqualPoolParts(poolAmount: number, count: number): StaffBonusPart[] {
   if (count <= 0 || poolAmount <= 0) return []
   const each = Math.floor(poolAmount / count)
-  let assigned = 0
-  return Array.from({ length: count }, (_, index) => {
-    const amount = index === count - 1 ? poolAmount - assigned : each
-    assigned += amount
-    return createBonusPart(amount)
-  })
+  return Array.from({ length: count }, () => createBonusPart(each))
+}
+
+/** Recompute equal top-level part amounts from the current pool (no last-part extra rupee). */
+export function rebalanceTopLevelPartAmounts(
+  parts: StaffBonusPart[],
+  poolAmount: number,
+): StaffBonusPart[] {
+  if (parts.length === 0 || poolAmount <= 0) return parts
+  const each = Math.floor(poolAmount / parts.length)
+  return parts.map((part) => ({
+    ...part,
+    amount: each,
+  }))
+}
+
+function cloneBonusPartStructure(part: StaffBonusPart): StaffBonusPart {
+  return {
+    id: part.id,
+    amount: 0,
+    percent: part.percent,
+    members: part.members?.map((member) => ({ ...member })),
+    subParts: part.subParts?.map((subPart) => cloneBonusPartStructure(subPart)),
+  }
+}
+
+/** Keep staff layout; drop stale rupee amounts so each month recalculates from its pool. */
+export function cloneBonusPlanStructure(settings: StaffBonusMonthSettings): StaffBonusMonthSettings {
+  return {
+    poolPercent: settings.poolPercent,
+    parts: settings.parts?.map((part) => cloneBonusPartStructure(part)),
+    remainderMembers: settings.remainderMembers?.map((member) => ({ ...member })),
+  }
+}
+
+export function normalizeBonusMonthPlanForSave(
+  plan: StaffBonusMonthSettings,
+  poolAmount: number,
+): StaffBonusMonthSettings {
+  const next: StaffBonusMonthSettings = {
+    poolPercent: plan.poolPercent,
+    collectedRounded: plan.collectedRounded,
+    remainderMembers:
+      plan.remainderMembers && plan.remainderMembers.length > 0 ? plan.remainderMembers : undefined,
+    parts:
+      plan.parts && plan.parts.length > 0
+        ? rebalanceTopLevelPartAmounts(plan.parts, poolAmount)
+        : undefined,
+  }
+  return next
+}
+
+export function bonusMonthHasStructure(settings: StaffBonusMonthSettings | undefined): boolean {
+  if (!settings) return false
+  return (
+    (settings.parts?.length ?? 0) > 0 ||
+    (settings.remainderMembers?.length ?? 0) > 0 ||
+    settings.poolPercent !== undefined
+  )
 }
