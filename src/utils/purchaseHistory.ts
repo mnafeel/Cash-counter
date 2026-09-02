@@ -1401,7 +1401,11 @@ export function buildPurchasePaymentHistoryRows(
   for (const item of items) {
     for (const event of buildPurchaseLedgerPaymentEvents(data, item)) {
       if (event.kind !== 'paid' || event.total <= 0) continue
-      if (!matchesCashDateFilter(event.at, dateFilter, selectedDate, rangeTo)) continue
+      const matchesDate =
+        dateFilter === 'monthPick'
+          ? !selectedDate || purchaseCreditMonthKey(event.at) === selectedDate
+          : matchesCashDateFilter(event.at, dateFilter, selectedDate, rangeTo)
+      if (!matchesDate) continue
       if (channel === 'cash' && event.cash <= 0) continue
       if (channel === 'bank' && event.bank <= 0) continue
       rows.push({

@@ -1648,7 +1648,7 @@ function purchasePaymentEventLabel(event: PurchaseLedgerPaymentEvent, creditPaym
 function buildPurchasePaymentCollections(
   data: AppData,
   item: PurchaseHistoryItem,
-): HistoryItem['paymentCollections'] {
+): NonNullable<HistoryItem['paymentCollections']> {
   return buildPurchaseLedgerPaymentEvents(data, item)
     .filter((event) => event.kind === 'paid' && event.total > 0)
     .map((event) => ({
