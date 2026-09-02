@@ -1513,6 +1513,50 @@
   line-height: 1.35;
 }
 
+.purchase-hist-item-detail-payments {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.purchase-hist-item-detail-payments-title {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.56rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cream-dim);
+}
+
+.purchase-hist-item-detail-payment-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.purchase-hist-item-detail-payment-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  font-size: 0.58rem;
+  line-height: 1.3;
+}
+
+.purchase-hist-item-detail-payment-row strong {
+  color: #e8b07a;
+  font-variant-numeric: tabular-nums;
+}
+
+.purchase-hist-item-detail-payment-row > span:last-child {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 .purchase-hist-bill-tag {
   margin-left: 6px;
   padding: 1px 5px;

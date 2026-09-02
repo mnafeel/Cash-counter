@@ -1,9 +1,9 @@
 import type { AppData, Expense, Loan, Sale } from '../types'
-import { expenseBillTag, isPurchaseExpense } from './expenseBillLabels'
+import { expenseBillTag, isPurchaseExpense, NO1_BILL_LABEL, NO2_BILL_LABEL } from './expenseBillLabels'
 import { formatDate, formatMoney, formatTimestamp } from './format'
 import { decorateLoan, loanRemainingAmount, loanSettlementEvents } from './loanLedger'
 import { normalExpensePaidChannels } from './normalExpenseHistory'
-import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, type PurchaseHistoryItem } from './purchaseHistory'
+import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, buildPurchaseLedgerPaymentEvents, type PurchaseHistoryItem, type PurchaseLedgerPaymentEvent } from './purchaseHistory'
 import { getSaleCustomerName } from './saleCustomerName'
 import { memoByDataRef } from './memoByDataRef'
 import {
@@ -751,8 +751,21 @@ export function matchesHistoryDateFilter(
     return false
   }
 
-  // Purchases: match payment / record day — not supplier bill date on the form.
+  // Purchases: match any payment day — not only the latest activity date.
   if (item.type === 'purchase') {
+    if (item.paymentCollections && item.paymentCollections.length > 0) {
+      if (
+        item.paymentCollections.some((collection) =>
+          isoMatchesHistoryDateFilter(collection.at, dateFilter, selectedDate),
+        )
+      ) {
+        return true
+      }
+      if (item.hasOpenCredit && item.billCreatedAt) {
+        return isoMatchesHistoryDateFilter(item.billCreatedAt, dateFilter, selectedDate)
+      }
+      return false
+    }
     return isoMatchesHistoryDateFilter(item.date, dateFilter, selectedDate)
   }
 
@@ -792,6 +805,13 @@ export function historyItemAmountForDateFilter(
     ) {
       return 0
     }
+  }
+
+  if (item.type === 'purchase' && item.paymentCollections && item.paymentCollections.length > 0) {
+    const dayTotal = item.paymentCollections
+      .filter((collection) => isoMatchesHistoryDateFilter(collection.at, dateFilter, selectedDate))
+      .reduce((sum, collection) => sum + collection.amount, 0)
+    if (dayTotal > 0) return dayTotal
   }
 
   return historyItemDisplayAmount(item, purchasePaidOnly)
@@ -1611,73 +1631,142 @@ function formatPurchaseHistorySub(item: PurchaseHistoryItem): string {
   return sub
 }
 
-function buildPurchaseReceiptLines(item: PurchaseHistoryItem): HistoryReceiptLine[] {
-  const lines: HistoryReceiptLine[] = [
-    {
-      label: 'Bill total',
-      amount: item.amount,
-      status: 'pending',
-      detail: item.payDetail,
-      createdAt: item.createdAt,
-      date: item.createdAt,
-    },
-  ]
-
-  if (item.paidAmount > 0) {
-    lines.push({
-      label: 'Paid',
-      amount: item.paidAmount,
-      status: 'paid',
-      detail: item.payDetail,
-      createdAt: item.createdAt,
-      paidAt: purchaseWasUpdated(item) ? item.updatedAt : item.createdAt,
-      date: purchaseWasUpdated(item) ? item.updatedAt : item.createdAt,
-    })
+function purchasePaymentEventLabel(event: PurchaseLedgerPaymentEvent, creditPaymentNumber: number): string {
+  if (event.kind === 'cheque-pending') {
+    return `${event.billLabel} · Cheque pending`
   }
-
-  if (item.hasOpenCredit && item.openCreditAmount) {
-    lines.push({
-      label: 'Credit balance',
-      amount: item.openCreditAmount,
-      status: 'pending',
-      detail: 'Supplier credit remaining',
-      createdAt: item.createdAt,
-      date: item.createdAt,
-    })
+  if (event.isCreditPaydown) {
+    const ord =
+      creditPaymentNumber === 1
+        ? 'Credit payment'
+        : `${ordinalWord(creditPaymentNumber - 1)} credit payment`
+    return `${ord} · ${event.billLabel}`
   }
-
-  return lines
+  return `Paid at purchase · ${event.billLabel}`
 }
 
-function buildPurchaseTimeline(item: PurchaseHistoryItem): HistoryReceiptEvent[] {
-  const events: HistoryReceiptEvent[] = [
-    {
-      label: 'Purchase',
-      date: item.createdAt,
-      amount: item.amount,
-      type: 'bill-created',
-    },
-  ]
+function buildPurchasePaymentCollections(
+  data: AppData,
+  item: PurchaseHistoryItem,
+): HistoryItem['paymentCollections'] {
+  return buildPurchaseLedgerPaymentEvents(data, item)
+    .filter((event) => event.kind === 'paid' && event.total > 0)
+    .map((event) => ({
+      at: event.at,
+      amount: event.total,
+      cash: event.cash,
+      bank: event.bank,
+      cheque: 0,
+    }))
+}
 
-  if (item.paidAmount > 0) {
-    events.push({
-      label: purchaseWasUpdated(item) ? 'Credit payment' : 'Paid at purchase',
-      date: purchaseWasUpdated(item) ? item.updatedAt : item.createdAt,
-      amount: item.paidAmount,
-      type: 'collected',
+function buildPurchaseStructuredReceipt(
+  data: AppData,
+  item: PurchaseHistoryItem,
+): { timeline: HistoryReceiptEvent[]; lines: HistoryReceiptLine[] } {
+  const drafts: ReceiptEventDraft[] = []
+  const ledgerEvents = buildPurchaseLedgerPaymentEvents(data, item)
+  const pendingAmount = Math.max(0, item.amount - item.paidAmount)
+
+  createReceiptDraft(drafts, RECEIPT_SEQ.BILL_CREATED, {
+    label:
+      item.billType === 'both'
+        ? `Purchase · ${item.billLabel}`
+        : `Purchase · ${item.billLabel}`,
+    date: item.createdAt,
+    amount: item.amount,
+    type: 'bill-created',
+    detail: item.billDate ? `Supplier bill ${formatDate(item.billDate)}` : formatDate(item.createdAt),
+  })
+
+  if (item.no1Amount > 0 && item.billType === 'both') {
+    createReceiptDraft(drafts, RECEIPT_SEQ.BILL_CREATED, {
+      label: `${NO1_BILL_LABEL} bill`,
+      date: item.createdAt,
+      amount: item.no1Amount,
+      type: 'bill-created',
+      detail: item.paidNo1Amount > 0 ? `Paid ${formatMoney(item.paidNo1Amount)}` : 'Pending',
     })
+  }
+  if (item.no2Amount > 0 && item.billType === 'both') {
+    createReceiptDraft(drafts, RECEIPT_SEQ.BILL_CREATED, {
+      label: `${NO2_BILL_LABEL} bill`,
+      date: item.createdAt,
+      amount: item.no2Amount,
+      type: 'bill-created',
+      detail: item.paidNo2Amount > 0 ? `Paid ${formatMoney(item.paidNo2Amount)}` : 'Pending',
+    })
+  }
+
+  let creditPaymentNumber = 0
+  for (const event of ledgerEvents) {
+    if (event.kind === 'cheque-pending') {
+      createReceiptDraft(drafts, RECEIPT_SEQ.CHEQUE_PENDING, {
+        label: purchasePaymentEventLabel(event, creditPaymentNumber),
+        date: event.at,
+        amount: event.total,
+        type: 'pending-created',
+        detail: `${event.methodDetail} · ${formatDate(event.at)}`,
+      })
+      continue
+    }
+
+    if (event.isCreditPaydown) creditPaymentNumber += 1
+    const prefix = purchasePaymentEventLabel(event, creditPaymentNumber)
+
+    if (event.cash > 0) {
+      createReceiptDraft(drafts, RECEIPT_SEQ.CASH_RECEIVED, {
+        label: `${prefix} · Cash`,
+        date: event.at,
+        amount: event.cash,
+        type: 'collected',
+        detail: `${event.methodDetail} · ${formatDate(event.at)}`,
+      })
+    }
+    if (event.bank > 0) {
+      createReceiptDraft(drafts, RECEIPT_SEQ.BANK_RECEIVED, {
+        label: `${prefix} · Bank`,
+        date: event.at,
+        amount: event.bank,
+        type: 'collected',
+        detail: `${event.methodDetail} · ${formatDate(event.at)}`,
+      })
+    }
   }
 
   if (item.hasOpenCredit && item.openCreditAmount) {
-    events.push({
-      label: 'Credit pending',
-      date: item.createdAt,
+    createReceiptDraft(drafts, RECEIPT_SEQ.CREDIT_BALANCE, {
+      label: 'Credit balance',
+      date: item.date,
       amount: item.openCreditAmount,
+      type: 'pending-created',
+      detail: 'Supplier credit remaining',
+    })
+  } else if (pendingAmount > 0.01) {
+    createReceiptDraft(drafts, RECEIPT_SEQ.REMAINING, {
+      label: 'Balance due',
+      date: item.date,
+      amount: pendingAmount,
       type: 'pending',
+      detail: formatDate(item.date),
     })
   }
 
-  return events
+  if (item.paidAmount > 0) {
+    appendTotalCollected(drafts, item.paidAmount, item.date)
+  }
+
+  const timeline = finalizeReceiptEvents(drafts)
+  const lines = structuredReceiptLines(drafts, item.createdAt)
+  return { timeline, lines }
+}
+
+function buildPurchaseReceiptLines(data: AppData, item: PurchaseHistoryItem): HistoryReceiptLine[] {
+  return buildPurchaseStructuredReceipt(data, item).lines
+}
+
+function buildPurchaseTimeline(data: AppData, item: PurchaseHistoryItem): HistoryReceiptEvent[] {
+  return buildPurchaseStructuredReceipt(data, item).timeline
 }
 
 export interface HistoryListPaymentPart {
@@ -1720,6 +1809,7 @@ function receiptLinePaymentMode(
     label === 'Cash' ||
     lower.includes('cash received') ||
     lower.includes('credit payment · cash') ||
+    lower.includes('paid at purchase') && lower.includes('· cash') ||
     lower.includes('split allocation · cash') ||
     lower.includes('split payment · cash')
   ) {
@@ -1729,6 +1819,7 @@ function receiptLinePaymentMode(
     label === 'Bank' ||
     lower.includes('bank received') ||
     lower.includes('credit payment · bank') ||
+    lower.includes('paid at purchase') && lower.includes('· bank') ||
     lower.includes('split allocation · bank') ||
     lower.includes('split payment · bank') ||
     lower.includes('cheque approved')
@@ -1859,6 +1950,45 @@ export function historyItemListPaymentTypeText(
 
     if (parts.length > 0) return parts.join(' · ')
     if (paymentFilter === 'cash' || paymentFilter === 'bank') return undefined
+  }
+
+  if (
+    item.type === 'purchase' &&
+    item.paymentCollections &&
+    item.paymentCollections.length > 0
+  ) {
+    const collections =
+      dateFilter === 'all'
+        ? item.paymentCollections.filter((c) => c.amount > 0)
+        : item.paymentCollections.filter(
+            (c) =>
+              c.amount > 0 && isoMatchesHistoryDateFilter(c.at, dateFilter, selectedDate),
+          )
+
+    if (collections.length > 1 || (dateFilter !== 'all' && collections.length === 1)) {
+      const dated = collections.flatMap((collection, index) => {
+        const ordinal =
+          collections.length > 1
+            ? `${index === 0 ? '1st' : index === 1 ? '2nd' : index === 2 ? '3rd' : `${index + 1}th`} `
+            : ''
+        const when =
+          dateFilter === 'all' ? ` · ${formatCollectionDayLabel(collection.at)}` : ''
+        const bits: string[] = []
+        if (collection.cash > 0) {
+          bits.push(`${ordinal}💵 ${formatMoney(collection.cash)}${when}`)
+        }
+        if (collection.bank + collection.cheque > 0) {
+          bits.push(
+            `${ordinal}🏦 ${formatMoney(collection.bank + collection.cheque)}${when}`,
+          )
+        }
+        if (bits.length === 0 && collection.amount > 0) {
+          bits.push(`${ordinal}🧾 ${formatMoney(collection.amount)}${when}`)
+        }
+        return bits
+      })
+      if (dated.length > 0) return dated.join(' · ')
+    }
   }
 
   // Multi-day cheque/credit collections: show each approval with cash/bank and date.
@@ -1995,6 +2125,15 @@ export function historyItemListSubtitle(
 }
 
 export function historyItemActivityLabel(item: HistoryItem): string {
+  if (item.type === 'purchase' && item.paymentCollections && item.paymentCollections.length > 0) {
+    const collections = item.paymentCollections.filter((c) => c.amount > 0)
+    if (collections.length === 1) {
+      return `Paid ${formatDate(collections[0].at)}`
+    }
+    if (collections.length > 1) {
+      return `Last paid ${formatDate(collections[collections.length - 1].at)}`
+    }
+  }
   if (item.type === 'sale' && item.paymentCollections && item.paymentCollections.length > 0) {
     const collections = item.paymentCollections.filter((c) => c.amount > 0)
     if (collections.length === 1) {
@@ -2056,6 +2195,14 @@ export function historyItemListDateLabel(
 
   if (item.billCreatedAt && (item.type === 'sale' || item.type === 'purchase')) {
     const created = formatTimestamp(item.billCreatedAt)
+    if (item.type === 'purchase' && item.paymentCollections && item.paymentCollections.length > 1) {
+      const parts = item.paymentCollections.map((collection, index) => {
+        const ordinal =
+          index === 0 ? '1st' : index === 1 ? '2nd' : index === 2 ? '3rd' : `${index + 1}th`
+        return `${ordinal} paid ${formatCollectionDayLabel(collection.at)}`
+      })
+      return `Created ${created} · ${parts.join(' · ')}`
+    }
     const activity = item.completedAt ?? item.date
     if (activity !== item.billCreatedAt) {
       const paidLabel =
@@ -2118,30 +2265,10 @@ function buildExpenseReceiptLines(expense: Expense): HistoryReceiptLine[] | unde
 }
 
 function buildPurchaseListReceiptLines(
+  data: AppData,
   item: PurchaseHistoryItem,
-  expense?: Expense,
-  paired?: Expense,
 ): HistoryReceiptLine[] {
-  const lines: HistoryReceiptLine[] = []
-
-  const addExpenseLines = (entry: Expense) => {
-    for (const line of buildExpenseReceiptLines(entry) ?? []) {
-      if (line.status === 'paid') lines.push(line)
-    }
-  }
-
-  if (expense) addExpenseLines(expense)
-  if (paired) addExpenseLines(paired)
-
-  if (item.hasOpenCredit && item.openCreditAmount) {
-    lines.push({
-      label: 'Credit balance',
-      amount: item.openCreditAmount,
-      status: 'pending',
-    })
-  }
-
-  return lines.length > 0 ? lines : buildPurchaseReceiptLines(item)
+  return buildPurchaseReceiptLines(data, item)
 }
 
 function buildLoanReceiptTimeline(loan: Loan): HistoryReceiptEvent[] {
@@ -2287,6 +2414,7 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
     const paired = expense?.pairedExpenseId
       ? data.expenses.find((e) => e.id === expense.pairedExpenseId)
       : undefined
+    const paymentCollections = buildPurchasePaymentCollections(data, item)
     const modeSet = new Set<HistoryPaymentMode>()
     if (expense) {
       for (const mode of purchaseExpensePaymentModes(expense)) modeSet.add(mode)
@@ -2303,6 +2431,15 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
     const paymentMode = paymentModes?.includes('credit')
       ? 'credit'
       : paymentModes?.[0]
+    const collectionBreakdown = paymentCollections.reduce(
+      (acc, row) => {
+        acc.cash += row.cash
+        acc.bank += row.bank
+        acc.cheque += row.cheque
+        return acc
+      },
+      { cash: 0, bank: 0, cheque: 0 },
+    )
 
     return {
       type: 'purchase' as const,
@@ -2315,8 +2452,13 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
       billCreatedAt: item.createdAt,
       completedAt: item.date,
       originalBillAmount: item.amount,
-      receiptLines: buildPurchaseListReceiptLines(item, expense, paired),
-      receiptTimeline: buildPurchaseTimeline(item),
+      receiptLines: buildPurchaseListReceiptLines(data, item),
+      receiptTimeline: buildPurchaseTimeline(data, item),
+      paymentCollections: paymentCollections.length > 0 ? paymentCollections : undefined,
+      collectionBreakdown:
+        collectionBreakdown.cash > 0 || collectionBreakdown.bank > 0
+          ? collectionBreakdown
+          : undefined,
       paymentMode,
       paymentModes,
       paySummary: formatPurchasePaySummary(item),

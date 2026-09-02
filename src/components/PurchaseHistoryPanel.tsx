@@ -15,6 +15,8 @@ import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
 import {
   buildPurchaseCreditItems,
   buildPurchaseHistoryItems,
+  buildPurchaseLedgerPaymentEvents,
+  buildPurchasePaymentHistoryRows,
   filterPurchaseHistoryItems,
   formatPurchaseCreditMonthLabel,
   groupPurchasesBySupplier,
@@ -149,10 +151,15 @@ export default function PurchaseHistoryPanel({
   }, [periodSupplierGroups, deferredSearch, selectedSupplierKey])
   const paymentHistoryItems = useMemo(
     () =>
-      [...dateFilteredItems]
-        .filter((item) => purchaseItemMatchesPayChannel(data, item, payChannel))
-        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-    [dateFilteredItems, data, payChannel],
+      buildPurchasePaymentHistoryRows(
+        data,
+        dateFilteredItems.filter((item) => item.paidAmount > 0),
+        dateFilter === 'range' ? 'range' : dateFilter,
+        dateFilter === 'range' ? rangeFrom : dateFilter === 'monthPick' ? selectedMonth : selectedDate,
+        rangeTo,
+        payChannel,
+      ),
+    [dateFilteredItems, data, dateFilter, selectedDate, selectedMonth, rangeFrom, rangeTo, payChannel],
   )
   const selectedSupplier = useMemo((): PurchaseSupplierGroup | null => {
     if (!selectedSupplierKey) return null
@@ -586,7 +593,8 @@ export default function PurchaseHistoryPanel({
     const expanded = expandedItemId === item.id
     const pendingAmount = Math.max(0, item.amount - item.paidAmount)
     const isFullyPaid = pendingAmount <= 0 && item.paidAmount > 0
-    const isPending = pendingAmount > 0 || item.hasOpenCredit
+    const isPending = pendingAmount > 0 || Boolean(item.hasOpenCredit)
+    const paymentEvents = buildPurchaseLedgerPaymentEvents(data, item)
     const itemTitle = item.description?.trim() || item.shopName || 'Purchase'
 
     return (
@@ -712,6 +720,27 @@ export default function PurchaseHistoryPanel({
                 <div className="purchase-hist-item-detail-row">
                   <span>{NO2_BILL_LABEL} paid</span>
                   <strong>{formatMoney(item.paidNo2Amount)}</strong>
+                </div>
+              ) : null}
+              {paymentEvents.length > 0 ? (
+                <div className="purchase-hist-item-detail-payments">
+                  <span className="purchase-hist-item-detail-payments-title">Payment history</span>
+                  <ul className="purchase-hist-item-detail-payment-list">
+                    {paymentEvents.map((event) => (
+                      <li key={event.id} className="purchase-hist-item-detail-payment-row">
+                        <span>{formatTimestamp(event.at)}</span>
+                        <strong>
+                          {event.kind === 'cheque-pending'
+                            ? `Cheque pending ${formatMoney(event.total)}`
+                            : `-${formatMoney(event.total)}`}
+                        </strong>
+                        <span>
+                          {event.billLabel} · {event.methodDetail}
+                          {event.isCreditPaydown ? ' · Credit payment' : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               ) : null}
             </div>
@@ -1116,17 +1145,17 @@ export default function PurchaseHistoryPanel({
             <section className="purchase-hist-payments" aria-label="Payment history">
               <h4 className="purchase-hist-payments-title">Payment history · {purchasePeriodLabel()}</h4>
               <ul className="purchase-hist-list purchase-hist-list--payments">
-                {paymentHistoryItems.map((item) => (
-                  <li key={`pay-${item.id}`} className="purchase-hist-payment-row">
+                {paymentHistoryItems.map((row) => (
+                  <li key={row.key} className="purchase-hist-payment-row">
                     <div className="purchase-hist-payment-main">
-                      <span className="purchase-hist-payment-shop">{item.shopName}</span>
-                      <span className="purchase-hist-payment-amount">-{formatMoney(item.paidAmount)}</span>
+                      <span className="purchase-hist-payment-shop">{row.item.shopName}</span>
+                      <span className="purchase-hist-payment-amount">-{formatMoney(row.event.total)}</span>
                     </div>
                     <span className="purchase-hist-payment-meta">
-                      {formatTimestamp(item.date)} · {NO1_BILL_LABEL} {formatMoney(item.paidNo1Amount)} ·{' '}
-                      {NO2_BILL_LABEL} {formatMoney(item.paidNo2Amount)} · {item.payLabel}
+                      {formatTimestamp(row.event.at)} · {row.event.billLabel}
+                      {row.event.isCreditPaydown ? ' · Credit payment' : ' · Paid at purchase'}
                     </span>
-                    <span className="purchase-hist-payment-detail">{item.payDetail}</span>
+                    <span className="purchase-hist-payment-detail">{row.event.methodDetail}</span>
                   </li>
                 ))}
               </ul>

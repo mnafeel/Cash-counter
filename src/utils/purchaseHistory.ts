@@ -1244,14 +1244,189 @@ export function sortPurchaseSupplierGroups(
   return sorted
 }
 
+export interface PurchaseLedgerPaymentEvent {
+  id: string
+  at: string
+  billNumber: 1 | 2
+  billLabel: string
+  cash: number
+  bank: number
+  chequePending: number
+  total: number
+  methodLabel: string
+  methodDetail: string
+  kind: 'paid' | 'cheque-pending'
+  /** True when this row pays down supplier credit (not the first purchase-day payment). */
+  isCreditPaydown: boolean
+}
+
+export interface PurchasePaymentHistoryRow {
+  key: string
+  item: PurchaseHistoryItem
+  event: PurchaseLedgerPaymentEvent
+}
+
+function formatPurchaseLedgerMethodDetail(cash: number, bank: number, chequePending = 0): string {
+  const parts: string[] = []
+  if (cash > 0) parts.push(`💵 ${PURCHASE_CASH_LABEL} ${formatMoney(cash)}`)
+  if (bank > 0) parts.push(`🏦 Bank ${formatMoney(bank)}`)
+  if (chequePending > 0) parts.push(`🧾 Cheque ${formatMoney(chequePending)} pending`)
+  return parts.join(' + ')
+}
+
+function formatPurchaseLedgerMethodLabel(cash: number, bank: number, chequePending = 0): string {
+  const parts: string[] = []
+  if (cash > 0) parts.push('Cash')
+  if (bank > 0) parts.push('Bank')
+  if (chequePending > 0) parts.push('Cheque pending')
+  return parts.join(' + ') || 'Paid'
+}
+
+function expenseBillNumber(expense: Expense): 1 | 2 {
+  if (expense.billNumber === 2) return 2
+  return isGstExpense(expense.name, expense.billNumber) ? 1 : 2
+}
+
+/** Each cash/bank/cheque outflow for a purchase history row, dated when money actually left. */
+export function buildPurchaseLedgerPaymentEvents(
+  data: AppData,
+  item: PurchaseHistoryItem,
+): PurchaseLedgerPaymentEvent[] {
+  const events: PurchaseLedgerPaymentEvent[] = []
+
+  for (const expense of purchaseExpensesForHistoryItems(data, [item])) {
+    const billNumber = expenseBillNumber(expense)
+    const billLabel = purchaseBillLabel(billNumber)
+    const rows = expense.creditPayments
+
+    if (rows && rows.length > 0) {
+      rows.forEach((row, index) => {
+        const cash = row.cash ?? 0
+        const bank = row.bank ?? 0
+        const cheque = row.cheque ?? 0
+        const approved = row.chequeApproved ?? false
+        const bankPaid = bank + (approved ? cheque : 0)
+        const chequePending = !approved && cheque > 0 ? cheque : 0
+        const paidTotal = cash + bankPaid
+        const isCreditPaydown = index > 0
+
+        if (paidTotal > 0) {
+          events.push({
+            id: `${expense.id}:${row.id}`,
+            at: row.at,
+            billNumber,
+            billLabel,
+            cash,
+            bank: bankPaid,
+            chequePending: 0,
+            total: paidTotal,
+            methodLabel: formatPurchaseLedgerMethodLabel(cash, bankPaid),
+            methodDetail: `${formatPurchaseLedgerMethodDetail(cash, bankPaid)} · ${billLabel}`,
+            kind: 'paid',
+            isCreditPaydown,
+          })
+        }
+
+        if (chequePending > 0) {
+          events.push({
+            id: `${expense.id}:${row.id}:cheque-pending`,
+            at: row.at,
+            billNumber,
+            billLabel,
+            cash: 0,
+            bank: 0,
+            chequePending,
+            total: chequePending,
+            methodLabel: 'Cheque pending',
+            methodDetail: `${formatPurchaseLedgerMethodDetail(0, 0, chequePending)} · ${billLabel}`,
+            kind: 'cheque-pending',
+            isCreditPaydown: false,
+          })
+        }
+      })
+      continue
+    }
+
+    for (const row of purchaseExpenseOutflowEvents(expense)) {
+      events.push({
+        id: `${expense.id}:${row.id}`,
+        at: row.at,
+        billNumber,
+        billLabel,
+        cash: row.cash,
+        bank: row.bank,
+        chequePending: 0,
+        total: row.cash + row.bank,
+        methodLabel: formatPurchaseLedgerMethodLabel(row.cash, row.bank),
+        methodDetail: `${formatPurchaseLedgerMethodDetail(row.cash, row.bank)} · ${billLabel}`,
+        kind: 'paid',
+        isCreditPaydown: false,
+      })
+    }
+
+    if (expense.payType === 'cheque' && !expense.chequeApproved) {
+      const paid = purchasePaidComponents(expense)
+      if (paid.cash + paid.bank <= 0 && paid.cheque > 0) {
+        events.push({
+          id: `${expense.id}:cheque-open`,
+          at: expense.createdAt,
+          billNumber,
+          billLabel,
+          cash: 0,
+          bank: 0,
+          chequePending: paid.cheque,
+          total: paid.cheque,
+          methodLabel: 'Cheque pending',
+          methodDetail: `${formatPurchaseLedgerMethodDetail(0, 0, paid.cheque)} · ${billLabel}`,
+          kind: 'cheque-pending',
+          isCreditPaydown: false,
+        })
+      }
+    }
+  }
+
+  return events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+}
+
+export function buildPurchasePaymentHistoryRows(
+  data: AppData,
+  items: PurchaseHistoryItem[],
+  dateFilter: PurchaseDateFilter | 'monthPick',
+  selectedDate: string,
+  rangeTo = '',
+  channel: 'all' | 'cash' | 'bank' = 'all',
+): PurchasePaymentHistoryRow[] {
+  const rows: PurchasePaymentHistoryRow[] = []
+
+  for (const item of items) {
+    for (const event of buildPurchaseLedgerPaymentEvents(data, item)) {
+      if (event.kind !== 'paid' || event.total <= 0) continue
+      if (!matchesCashDateFilter(event.at, dateFilter, selectedDate, rangeTo)) continue
+      if (channel === 'cash' && event.cash <= 0) continue
+      if (channel === 'bank' && event.bank <= 0) continue
+      rows.push({
+        key: `${item.id}:${event.id}`,
+        item,
+        event,
+      })
+    }
+  }
+
+  return rows.sort((a, b) => new Date(b.event.at).getTime() - new Date(a.event.at).getTime())
+}
+
 export function purchaseItemPaidChannel(
   data: AppData,
   item: PurchaseHistoryItem,
 ): { cash: number; bank: number } {
-  const expense = data.expenses.find((entry) => entry.id === item.id)
-  if (!expense) return { cash: 0, bank: 0 }
-  const paid = purchasePaidComponents(expense)
-  return { cash: paid.cash, bank: paid.bank + paid.cheque }
+  let cash = 0
+  let bank = 0
+  for (const expense of purchaseExpensesForHistoryItems(data, [item])) {
+    const paid = purchasePaidComponents(expense)
+    cash += paid.cash
+    bank += paid.bank + paid.cheque
+  }
+  return { cash, bank }
 }
 
 export function purchaseItemMatchesPayChannel(
