@@ -111,6 +111,8 @@ import { buildCashActivityItems } from '../utils/cashActivity'
 import { sealTodayDrawerOpenings } from '../utils/dayDrawerOpenings'
 import { buildHistoryItems } from '../utils/historyItems'
 import { buildPurchaseCreditItems, buildPurchaseHistoryItems } from '../utils/purchaseHistory'
+import { buildNormalExpenseHistoryItems } from '../utils/normalExpenseHistory'
+import { buildLoanOutflowHistoryItems } from '../utils/loanLedger'
 
 export const CashDataStoreContext = createContext<CashDataStore | null>(null)
 export const CashDerivedStoreContext = createContext<CashDerivedStore | null>(null)
@@ -1566,6 +1568,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       bankActivityItems: buildBankActivityItems(data),
       purchaseHistoryItems: buildPurchaseHistoryItems(data),
       purchaseCreditItems: buildPurchaseCreditItems(data),
+      normalExpenseHistoryItems: buildNormalExpenseHistoryItems(data),
+      loanOutflowHistoryItems: buildLoanOutflowHistoryItems(data),
     })
 
     const apply = () => derivedStore.setDerived(buildDerived())

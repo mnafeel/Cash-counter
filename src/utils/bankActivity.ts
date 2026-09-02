@@ -127,7 +127,7 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
     if (expense.kind === 'add') {
       items.push({
         id: `add-${expense.id}`,
-        label: 'Added to bank',
+        label: 'Not sale · credited to bank',
         amount: bankTotal,
         direction: 'in',
         date: expense.createdAt,
@@ -149,7 +149,7 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
   if (expense.kind === 'add') {
     items.push({
       id: `add-${expense.id}`,
-      label: 'Added to bank',
+      label: 'Not sale · credited to bank',
       amount: expense.amount,
       direction: 'in',
       date: expense.createdAt,

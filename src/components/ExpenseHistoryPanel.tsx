@@ -8,6 +8,9 @@ import {
   buildExpenseTimelineEntriesFromData,
   buildTransferExpenseTimelineEntries,
   expenseTimelineKindLabel,
+  expenseGrossTotal,
+  expenseHasLoanActivity,
+  expenseTotalAfterLoanSettlement,
   filterExpenseTimelineByPayChannel,
   summarizeExpenseTimeline,
   type ExpensePayChannelFilter,
@@ -301,11 +304,20 @@ export default function ExpenseHistoryPanel({
       <div className="purchase-hist-body">
         <div className="purchase-hist-summary-top">
           <div className="purchase-hist-summary-row purchase-hist-summary-row--total">
-            <span>Total · {periodLabel}</span>
-            <strong>
-              {formatMoney(summary.expenseTotal + summary.purchaseTotal + summary.loanTotal)}
-            </strong>
+            <span>Expense · {periodLabel}</span>
+            <strong>{formatMoney(expenseGrossTotal(summary))}</strong>
           </div>
+          {expenseHasLoanActivity(summary) ? (
+            <div className="expense-after-loan expense-after-loan--banner purchase-hist-after-loan">
+              <span className="expense-after-loan-gross">
+                Total {formatMoney(expenseGrossTotal(summary))}
+              </span>
+              <span className="expense-after-loan-label">After loan settlement</span>
+              <strong className="expense-after-loan-amount">
+                {formatMoney(expenseTotalAfterLoanSettlement(summary))}
+              </strong>
+            </div>
+          ) : null}
           <div className="purchase-hist-summary-row">
             <span>Normal expenses</span>
             <strong>{formatMoney(summary.expenseTotal)}</strong>
@@ -325,13 +337,50 @@ export default function ExpenseHistoryPanel({
             💵 Cash {formatMoney(summary.purchaseCash)} · 🏦 Bank {formatMoney(summary.purchaseBank)} ·{' '}
             {summary.purchaseCount} purchases · {NO1_EXPENSE_LABEL} {formatMoney(summary.no1Total)}
           </span>
+          {summary.loanGivenOriginalTotal > 0 ? (
+            <div className="purchase-hist-summary-row purchase-hist-summary-row--settled">
+              <span>Settled expense</span>
+              <strong>{formatMoney(summary.loanGivenSettledTotal)}</strong>
+            </div>
+          ) : null}
+          {summary.loanGivenOriginalTotal > 0 ? (
+            <span className="purchase-hist-summary-count">
+              Open {formatMoney(summary.loanGivenUnsettledTotal)} · After loan settlement{' '}
+              {formatMoney(expenseTotalAfterLoanSettlement(summary))}
+            </span>
+          ) : null}
           <div className="purchase-hist-summary-row">
-            <span>Loan out</span>
-            <strong>{formatMoney(summary.loanTotal)}</strong>
+            <span>Loan</span>
+            <strong>
+              {formatMoney(
+                summary.loanGivenOriginalTotal + summary.loanBorrowRepaidTotal > 0
+                  ? summary.loanGivenOriginalTotal + summary.loanBorrowRepaidTotal
+                  : summary.loanGivenOriginalTotal > 0
+                    ? summary.loanGivenOriginalTotal
+                    : summary.loanTotal,
+              )}
+            </strong>
           </div>
           <span className="purchase-hist-summary-count">
-            💵 Cash {formatMoney(summary.loanCash)} · 🏦 Bank {formatMoney(summary.loanBank)} ·{' '}
-            {summary.loanCount} items
+            {summary.loanGivenOriginalTotal > 0 ? (
+              <>
+                Given {formatMoney(summary.loanGivenOriginalTotal)} · Settled{' '}
+                {formatMoney(summary.loanGivenSettledTotal)} · Open{' '}
+                {formatMoney(summary.loanGivenUnsettledTotal)}
+                <br />
+              </>
+            ) : null}
+            {summary.loanBorrowRepaidTotal > 0 ? (
+              <>
+                Settlement {formatMoney(summary.loanBorrowRepaidTotal)}
+                <br />
+              </>
+            ) : null}
+            💵 Cash {formatMoney(summary.loanCash + summary.loanBorrowRepaidCash)} · 🏦 Bank{' '}
+            {formatMoney(summary.loanBank + summary.loanBorrowRepaidBank)} · {summary.loanCount} given
+            {summary.loanBorrowRepaidCount > 0
+              ? ` · ${summary.loanBorrowRepaidCount} repaid`
+              : ''}
           </span>
         </div>
 
@@ -366,11 +415,35 @@ export default function ExpenseHistoryPanel({
                         <span className="purchase-hist-item-label">
                           {timelineIcon(entry.kind)} {entry.title}
                         </span>
-                        <span className="purchase-hist-item-amount">-{formatMoney(entry.amount)}</span>
+                        {entry.kind === 'loan' &&
+                        entry.loanOutflowKind === 'given' &&
+                        entry.loanOriginalAmount != null ? (
+                          <span className="loan-given-amount-stack purchase-hist-loan-stack">
+                            <span className="loan-given-amount-stack-original">
+                              -{formatMoney(entry.loanOriginalAmount)}
+                            </span>
+                            <span className="loan-given-amount-stack-open">
+                              Open {formatMoney(entry.loanUnsettledAmount ?? 0)}
+                            </span>
+                          </span>
+                        ) : entry.kind === 'loan' && entry.loanOutflowKind === 'borrow-repaid' ? (
+                          <span className="purchase-hist-item-amount purchase-hist-item-amount--loan-repay">
+                            -{formatMoney(entry.amount)}
+                          </span>
+                        ) : (
+                          <span className="purchase-hist-item-amount">-{formatMoney(entry.amount)}</span>
+                        )}
                       </div>
                       <span className="purchase-hist-item-meta">
                         {expenseTimelineKindLabel(entry.kind)} · {entry.payLabel} · {formatDate(entry.date)}{' '}
                         {formatTime(entry.date)}
+                        {entry.kind === 'loan' &&
+                        entry.loanOutflowKind === 'given' &&
+                        entry.loanOriginalAmount != null
+                          ? ` · Settled ${formatMoney(entry.loanSettledAmount ?? 0)}`
+                          : entry.kind === 'loan' && entry.loanOutflowKind === 'borrow-repaid'
+                            ? ' · Loan settlement'
+                            : ''}
                       </span>
                     </div>
                   </button>
@@ -385,6 +458,24 @@ export default function ExpenseHistoryPanel({
                           <span>Details</span>
                           <strong>{entry.detail}</strong>
                         </div>
+                      ) : null}
+                      {entry.kind === 'loan' &&
+                      entry.loanOutflowKind === 'given' &&
+                      entry.loanOriginalAmount != null ? (
+                        <>
+                          <div className="purchase-hist-item-detail-row">
+                            <span>Original</span>
+                            <strong>{formatMoney(entry.loanOriginalAmount)}</strong>
+                          </div>
+                          <div className="purchase-hist-item-detail-row">
+                            <span>Settled</span>
+                            <strong>{formatMoney(entry.loanSettledAmount ?? 0)}</strong>
+                          </div>
+                          <div className="purchase-hist-item-detail-row purchase-hist-item-detail-row--open">
+                            <span>Open</span>
+                            <strong>{formatMoney(entry.loanUnsettledAmount ?? 0)}</strong>
+                          </div>
+                        </>
                       ) : null}
                       {entry.no1Amount && entry.no1Amount > 0 && entry.kind !== 'no1-purchase' ? (
                         <div className="purchase-hist-item-detail-row">

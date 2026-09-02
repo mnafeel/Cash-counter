@@ -360,6 +360,25 @@ export function purchaseExpenseOutflowEvents(
   ]
 }
 
+export interface PurchaseOutflowSource {
+  expense: Expense
+  events: Array<{ id: string; at: string; cash: number; bank: number }>
+}
+
+function buildPurchaseOutflowSourcesUncached(data: AppData): PurchaseOutflowSource[] {
+  const sources: PurchaseOutflowSource[] = []
+  for (const expense of data.expenses ?? []) {
+    if (!isPurchaseExpense(expense)) continue
+    if (expense.kind && expense.kind !== 'expense') continue
+    const events = purchaseExpenseOutflowEvents(expense)
+    if (events.length > 0) sources.push({ expense, events })
+  }
+  return sources
+}
+
+/** Cached purchase cash/bank outflow events — reused across report date presets. */
+export const buildPurchaseOutflowSources = memoByDataRef(buildPurchaseOutflowSourcesUncached)
+
 /** Cash / bank / approved cheque paid at purchase time — excludes credit portion. */
 export function purchasePaidAmount(expense: Expense): number {
   const { cash, bank, cheque } = purchasePaidComponents(expense)

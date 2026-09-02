@@ -2,6 +2,7 @@ import type { AppData, Expense } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import { formatMoney, formatTime } from './format'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
+import { memoByDataRef } from './memoByDataRef'
 import {
   expenseLinkedToStaff,
   formatSalaryMonthLabel,
@@ -110,7 +111,7 @@ function normalPayDetail(expense: Expense): string {
   return `💵 Cash ${formatMoney(parts.cash)}`
 }
 
-export function buildNormalExpenseHistoryItems(data: AppData): NormalExpenseHistoryItem[] {
+export function buildNormalExpenseHistoryItemsUncached(data: AppData): NormalExpenseHistoryItem[] {
   return data.expenses
     .filter((expense) => (!expense.kind || expense.kind === 'expense') && !isPurchaseExpense(expense))
     .map((expense) => {
@@ -130,6 +131,8 @@ export function buildNormalExpenseHistoryItems(data: AppData): NormalExpenseHist
     .filter((item) => item.amount > 0)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
+
+export const buildNormalExpenseHistoryItems = memoByDataRef(buildNormalExpenseHistoryItemsUncached)
 
 function isNormalExpenseRecord(expense: Expense): boolean {
   if (expense?.kind && expense.kind !== 'expense') return false

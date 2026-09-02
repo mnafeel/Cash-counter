@@ -27,6 +27,7 @@ import {
 import { saleCollectedAmount } from './salePayment'
 import { UNNAMED_CREDIT_CUSTOMER } from './customerLedger'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
+import { memoByDataRef } from './memoByDataRef'
 
 export type ReportTab = 'all' | 'sales' | 'purchase' | 'expense' | 'credit' | 'cheque'
 export type ReportDatePreset = CashDateFilter
@@ -95,14 +96,15 @@ function saleCreditAmount(sale: Sale): number {
   return sale.creditAmount ?? 0
 }
 
-function isSplitCreditParentWithOpenChild(sale: Sale, sales: Sale[]): boolean {
-  if (sale.status !== 'paid' || sale.payType !== 'split') return false
-  return sales.some(
-    (child) =>
-      child.parentSplitId === sale.id &&
-      child.status === 'pending' &&
-      (child.payType === 'credit' || child.pendingPayType === 'credit'),
-  )
+function splitCreditParentsWithOpenChild(sales: Sale[]): Set<string> {
+  const parents = new Set<string>()
+  for (const child of sales) {
+    if (!child.parentSplitId) continue
+    if (child.status !== 'pending') continue
+    if (child.payType !== 'credit' && child.pendingPayType !== 'credit') continue
+    parents.add(child.parentSplitId)
+  }
+  return parents
 }
 
 function saleCreditTotalBill(sale: Sale): number {
@@ -191,12 +193,13 @@ export function buildReportOverview(data: AppData): ReportOverview {
   }
 }
 
-export function buildCreditReportItems(data: AppData): CreditReportItem[] {
+export function buildCreditReportItemsUncached(data: AppData): CreditReportItem[] {
   const items: CreditReportItem[] = []
+  const splitParents = splitCreditParentsWithOpenChild(data.sales)
 
   for (const sale of data.sales) {
     if (!isSaleCredit(sale)) continue
-    if (isSplitCreditParentWithOpenChild(sale, data.sales)) continue
+    if (sale.status === 'paid' && sale.payType === 'split' && splitParents.has(sale.id)) continue
     const pending = saleCreditAmount(sale)
     const collected = saleCollectedAmount(sale)
     const totalBill = saleCreditTotalBill(sale)
@@ -242,7 +245,9 @@ export function buildCreditReportItems(data: AppData): CreditReportItem[] {
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
 
-export function buildChequeReportItems(data: AppData): ChequeReportItem[] {
+export const buildCreditReportItems = memoByDataRef(buildCreditReportItemsUncached)
+
+export function buildChequeReportItemsUncached(data: AppData): ChequeReportItem[] {
   const items: ChequeReportItem[] = []
 
   for (const sale of data.sales) {
@@ -283,6 +288,8 @@ export function buildChequeReportItems(data: AppData): ChequeReportItem[] {
 
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
+
+export const buildChequeReportItems = memoByDataRef(buildChequeReportItemsUncached)
 
 export function filterCreditReportItems(
   items: CreditReportItem[],

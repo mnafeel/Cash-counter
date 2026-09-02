@@ -919,7 +919,7 @@ export function historyItemCollectionBreakdownForDateFilter(
 
 export function getHistoryTypeLabel(type: HistoryItemType): string {
   if (type === 'sale') return 'Bill Collected'
-  if (type === 'deposit') return 'Money Added'
+  if (type === 'deposit') return 'Not sale · credited'
   if (type === 'transfer') return 'Transfer'
   if (type === 'purchase') return 'Purchase'
   if (type === 'loan') return 'Loan'

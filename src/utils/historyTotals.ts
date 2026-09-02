@@ -143,6 +143,6 @@ export function historyTotalsLabel(type: HistoryItemType): string {
   if (type === 'sale') return 'Bills'
   if (type === 'expense') return 'Expenses'
   if (type === 'purchase') return 'Purchases'
-  if (type === 'deposit') return 'Money added'
+  if (type === 'deposit') return 'Not sale · credited'
   return 'Transfer'
 }

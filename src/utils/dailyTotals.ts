@@ -21,6 +21,7 @@ import {
   buildLoanOutflowHistoryItems,
   summarizeLoanOutflows,
 } from './loanLedger'
+import { buildNotSaleInflowItems, summarizeNotSaleInflow } from './notSaleInflow'
 
 export interface DailyTotalsSummary {
   fromDate: string
@@ -49,7 +50,16 @@ export interface DailyTotalsSummary {
   loanOutflowCount: number
   moneyAddedTotal: number
   moneyAddedCount: number
-  /** sales collected + money added − expenses − purchases − loan outflows */
+  moneyAddedCash: number
+  moneyAddedBank: number
+  /** Cash added to counter/bank — not sales. */
+  notSaleCollectedTotal: number
+  notSaleCollectedCash: number
+  notSaleCollectedBank: number
+  notSaleCollectedCount: number
+  /** Sales collected + cash-in (not sale). */
+  totalCollected: number
+  /** sales collected + not sale − expenses − purchases − loan outflows */
   netInflow: number
 }
 
@@ -148,22 +158,20 @@ export function buildDailyTotals(
   )
   const loanOutflowTotals = summarizeLoanOutflows(loanOutflowItems)
 
-  const moneyAddedItems = data.expenses.filter(
-    (e) =>
-      e.kind === 'add' &&
-      isInDateRange(e.createdAt, fromDate, toDate),
-  )
-  const moneyAddedTotal = moneyAddedItems.reduce((sum, e) => sum + e.amount, 0)
+  const notSaleItems = buildNotSaleInflowItems(data, 'range', fromDate, toDate)
+  const notSaleTotals = summarizeNotSaleInflow(notSaleItems)
 
   const creditOverview = buildCreditOverview(data)
   const chequeOverview = buildChequeOverview(data)
 
   const netInflow =
     salesTotals.totalBills +
-    moneyAddedTotal -
+    notSaleTotals.total -
     expenseTotals.total -
     purchaseTotals.total -
-    loanOutflowTotals.total
+    loanOutflowTotals.cashOutflowTotal
+
+  const totalCollected = salesTotals.totalBills + notSaleTotals.total
 
   return {
     fromDate,
@@ -183,10 +191,17 @@ export function buildDailyTotals(
     purchaseCount: purchaseTotals.count,
     expenseTotal: expenseTotals.total,
     expenseCount: expenseTotals.count,
-    loanOutflowTotal: loanOutflowTotals.total,
+    loanOutflowTotal: loanOutflowTotals.cashOutflowTotal,
     loanOutflowCount: loanOutflowTotals.count,
-    moneyAddedTotal,
-    moneyAddedCount: moneyAddedItems.length,
+    moneyAddedTotal: notSaleTotals.total,
+    moneyAddedCount: notSaleTotals.count,
+    moneyAddedCash: notSaleTotals.cashTotal,
+    moneyAddedBank: notSaleTotals.bankTotal,
+    notSaleCollectedTotal: notSaleTotals.total,
+    notSaleCollectedCash: notSaleTotals.cashTotal,
+    notSaleCollectedBank: notSaleTotals.bankTotal,
+    notSaleCollectedCount: notSaleTotals.count,
+    totalCollected,
     netInflow,
   }
 }

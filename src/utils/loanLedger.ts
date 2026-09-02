@@ -1,6 +1,7 @@
 import type { AppData, Loan, LoanKind, LoanPaySource, LoanSettlementEvent, LoanStatus } from '../types'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
-import { formatDate } from './format'
+import { formatDate, formatMoney } from './format'
+import { memoByDataRef } from './memoByDataRef'
 
 export interface LoanOverview {
   receivableTotal: number
@@ -265,33 +266,69 @@ export function summarizeLoanReportItems(items: LoanListItem[]): LoanReportSumma
   }
 }
 
-/** Money that left the drawer as a loan (given) or loan repayment (returned). */
+/** Money that left the drawer as loan given, or repaying a loan taken (not an expense). */
 export interface LoanOutflowHistoryItem {
   id: string
+  loanId?: string
   amount: number
+  /** Full loan given on the original day — kept for history even after settlement. */
+  originalAmount?: number
+  /** Amount already collected / returned against this loan. */
+  settledAmount?: number
+  /** Remaining open balance on this loan. */
+  unsettledAmount?: number
   date: string
   name: string
-  kind: 'given' | 'returned'
+  kind: 'given' | 'borrow-repaid'
   paySource: LoanPaySource
   note?: string
 }
 
 export interface LoanOutflowSummary {
-  total: number
   count: number
   givenTotal: number
   givenCount: number
+  givenOriginalTotal: number
+  givenSettledTotal: number
+  givenUnsettledTotal: number
+  borrowRepaidTotal: number
+  borrowRepaidCount: number
+  /** Loan given original + borrow repaid — cash left drawer (net inflow only). */
+  cashOutflowTotal: number
+  /** Same as cashOutflowTotal — all loan-related cash out. */
+  total: number
+  /** @deprecated use borrowRepaidTotal */
   returnedTotal: number
+  /** @deprecated use borrowRepaidCount */
   returnedCount: number
 }
 
-export function buildLoanOutflowHistoryItems(data: AppData): LoanOutflowHistoryItem[] {
+export function formatLoanGivenSettlementDetail(item: LoanOutflowHistoryItem): string | undefined {
+  if (item.kind !== 'given') return undefined
+  const original = item.originalAmount ?? item.amount
+  const settled = item.settledAmount ?? 0
+  const unsettled = item.unsettledAmount ?? 0
+  return `Original ${formatMoney(original)} · Settled ${formatMoney(settled)} · Open ${formatMoney(unsettled)}`
+}
+
+export function formatLoanOutflowSummaryDetail(summary: LoanOutflowSummary): string | undefined {
+  if (summary.givenOriginalTotal <= 0) return undefined
+  return `Loan given ${formatMoney(summary.givenOriginalTotal)} · Settled ${formatMoney(summary.givenSettledTotal)} · Open ${formatMoney(summary.givenUnsettledTotal)}`
+}
+
+export function buildLoanOutflowHistoryItemsUncached(data: AppData): LoanOutflowHistoryItem[] {
   const items: LoanOutflowHistoryItem[] = []
   for (const loan of data.loans ?? []) {
     if (loan.kind === 'lend') {
+      const settled = loanPaidAmount(loan)
+      const unsettled = loanRemainingAmount(loan)
       items.push({
         id: `${loan.id}-give`,
+        loanId: loan.id,
         amount: loan.amount,
+        originalAmount: loan.amount,
+        settledAmount: settled,
+        unsettledAmount: unsettled,
         date: loan.createdAt,
         name: loan.personName,
         kind: 'given',
@@ -303,17 +340,21 @@ export function buildLoanOutflowHistoryItems(data: AppData): LoanOutflowHistoryI
     for (const [index, event] of loanSettlementEvents(loan).entries()) {
       items.push({
         id: `${loan.id}-return-${event.id ?? index}`,
+        loanId: loan.id,
         amount: event.amount,
         date: event.at,
         name: loan.personName,
-        kind: 'returned',
+        kind: 'borrow-repaid',
         paySource: event.paySource,
         note: loan.note,
       })
     }
+    // Loan taken: money in on createdAt — never an expense line.
   }
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
+
+export const buildLoanOutflowHistoryItems = memoByDataRef(buildLoanOutflowHistoryItemsUncached)
 
 export function filterLoanOutflowHistoryItems(
   items: LoanOutflowHistoryItem[],
@@ -332,19 +373,44 @@ export function summarizeLoanOutflows(items: LoanOutflowHistoryItem[]): LoanOutf
     count: 0,
     givenTotal: 0,
     givenCount: 0,
+    givenOriginalTotal: 0,
+    givenSettledTotal: 0,
+    givenUnsettledTotal: 0,
+    borrowRepaidTotal: 0,
+    borrowRepaidCount: 0,
+    cashOutflowTotal: 0,
     returnedTotal: 0,
     returnedCount: 0,
   }
   for (const item of items) {
-    summary.total += item.amount
     summary.count += 1
     if (item.kind === 'given') {
-      summary.givenTotal += item.amount
+      const original = item.originalAmount ?? item.amount
+      summary.givenTotal += original
       summary.givenCount += 1
+      summary.givenOriginalTotal += original
+      summary.givenSettledTotal += item.settledAmount ?? 0
+      summary.givenUnsettledTotal += item.unsettledAmount ?? 0
+      summary.cashOutflowTotal += original
+      summary.total += original
     } else {
+      summary.borrowRepaidTotal += item.amount
+      summary.borrowRepaidCount += 1
       summary.returnedTotal += item.amount
       summary.returnedCount += 1
+      summary.cashOutflowTotal += item.amount
+      summary.total += item.amount
     }
   }
   return summary
+}
+
+/** Expense total for loan given only — open balance after collections. */
+export function loanGivenExpenseEffectiveTotal(summary: LoanOutflowSummary): number {
+  return summary.givenUnsettledTotal
+}
+
+/** Gross loan-given expense in period (original amounts on loan day). */
+export function loanGivenExpenseGrossTotal(summary: LoanOutflowSummary): number {
+  return summary.givenOriginalTotal
 }

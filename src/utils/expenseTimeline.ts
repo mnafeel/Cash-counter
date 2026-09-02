@@ -1,6 +1,5 @@
 import {
   isGstExpense,
-  isPurchaseExpense,
   NO1_BILL_LABEL,
   NO1_EXPENSE_LABEL,
   purchaseBillLabel,
@@ -9,13 +8,15 @@ import {
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
 import { formatDate, formatMoney, formatTime } from './format'
 import type { AppData } from '../types'
-import { purchaseExpenseOutflowEvents } from './purchaseHistory'
-import type { LoanOutflowHistoryItem } from './loanLedger'
 import {
-  normalExpensePaidChannels,
-  type NormalExpenseHistoryItem,
-} from './normalExpenseHistory'
-import type { PurchaseHistoryItem } from './purchaseHistory'
+  buildPurchaseOutflowSources,
+  type PurchaseHistoryItem,
+} from './purchaseHistory'
+import {
+  formatLoanGivenSettlementDetail,
+  type LoanOutflowHistoryItem,
+} from './loanLedger'
+import type { NormalExpenseHistoryItem } from './normalExpenseHistory'
 
 export type ExpenseTimelineSort = 'time-desc' | 'time-asc'
 
@@ -35,6 +36,10 @@ export interface ExpenseTimelineEntry {
   bankAmount?: number
   no1Amount?: number
   billLabel?: string
+  loanOutflowKind?: 'given' | 'borrow-repaid'
+  loanOriginalAmount?: number
+  loanSettledAmount?: number
+  loanUnsettledAmount?: number
 }
 
 function purchaseTimelineKind(item: PurchaseHistoryItem): ExpenseTimelineKind {
@@ -74,14 +79,17 @@ export function buildLoanExpenseTimelineEntries(
   for (const item of loanItems) {
     if (!(item.amount > 0)) continue
     const fromBank = item.paySource === 'bank'
-    const kindLabel = item.kind === 'given' ? 'Loan given' : 'Loan repaid'
+    const kindLabel =
+      item.kind === 'given' ? 'Loan given' : 'Loan settlement'
+    const settlementDetail =
+      item.kind === 'given' ? formatLoanGivenSettlementDetail(item) : undefined
     entries.push({
       kind: 'loan',
       id: item.id,
       date: item.date,
       sortTime: new Date(item.date).getTime(),
       title: item.name?.trim() || kindLabel,
-      detail: item.note?.trim() || kindLabel,
+      detail: settlementDetail ?? item.note?.trim() ?? kindLabel,
       amount: item.amount,
       payLabel: fromBank ? 'Bank' : 'Cash',
       payDetail: fromBank
@@ -89,6 +97,14 @@ export function buildLoanExpenseTimelineEntries(
         : `💵 Cash · ${kindLabel} ${formatMoney(item.amount)}`,
       cashAmount: fromBank ? 0 : item.amount,
       bankAmount: fromBank ? item.amount : 0,
+      loanOutflowKind: item.kind,
+      ...(item.kind === 'given'
+        ? {
+            loanOriginalAmount: item.originalAmount ?? item.amount,
+            loanSettledAmount: item.settledAmount ?? 0,
+            loanUnsettledAmount: item.unsettledAmount ?? 0,
+          }
+        : {}),
     })
   }
   return sortExpenseTimelineEntries(entries, sort)
@@ -151,10 +167,22 @@ export function summarizeExpenseTimeline(entries: ExpenseTimelineEntry[]) {
           acc.transferCount += 1
         }
       } else if (entry.kind === 'loan') {
-        acc.loanTotal += entry.amount
-        acc.loanCount += 1
-        acc.loanCash += entry.cashAmount ?? 0
-        acc.loanBank += entry.bankAmount ?? 0
+        if (entry.loanOutflowKind === 'given') {
+          acc.loanTotal += entry.amount
+          acc.loanCount += 1
+          acc.loanCash += entry.cashAmount ?? 0
+          acc.loanBank += entry.bankAmount ?? 0
+          if (entry.loanOriginalAmount != null) {
+            acc.loanGivenOriginalTotal += entry.loanOriginalAmount
+            acc.loanGivenSettledTotal += entry.loanSettledAmount ?? 0
+            acc.loanGivenUnsettledTotal += entry.loanUnsettledAmount ?? 0
+          }
+        } else if (entry.loanOutflowKind === 'borrow-repaid') {
+          acc.loanBorrowRepaidTotal += entry.amount
+          acc.loanBorrowRepaidCount += 1
+          acc.loanBorrowRepaidCash += entry.cashAmount ?? 0
+          acc.loanBorrowRepaidBank += entry.bankAmount ?? 0
+        }
       } else if (entry.kind === 'no1-purchase') {
         acc.no1Total += entry.no1Amount ?? entry.amount
         acc.no1Count += 1
@@ -186,19 +214,52 @@ export function summarizeExpenseTimeline(entries: ExpenseTimelineEntry[]) {
       loanCount: 0,
       loanCash: 0,
       loanBank: 0,
+      loanGivenOriginalTotal: 0,
+      loanGivenSettledTotal: 0,
+      loanGivenUnsettledTotal: 0,
+      loanBorrowRepaidTotal: 0,
+      loanBorrowRepaidCount: 0,
+      loanBorrowRepaidCash: 0,
+      loanBorrowRepaidBank: 0,
       transferTotal: 0,
       transferCount: 0,
     },
   )
 }
 
+/** Expense after loan settlement — normal + purchase only (loan amounts excluded). */
+export function expenseTotalAfterLoanSettlement(
+  summary: ReturnType<typeof summarizeExpenseTimeline>,
+): number {
+  return summary.expenseTotal + summary.purchaseTotal
+}
+
+export type ExpenseTimelineSummary = ReturnType<typeof summarizeExpenseTimeline>
+
+/** Gross expense — normal + purchase + all loan outflows (given + repayments). */
+export function expenseGrossTotal(summary: ExpenseTimelineSummary): number {
+  return summary.expenseTotal + summary.purchaseTotal + expenseLoanCombinedTotal(summary)
+}
+
+/** All loan-related cash out — given (original) + borrow repayments. */
+export function expenseLoanCombinedTotal(summary: ExpenseTimelineSummary): number {
+  const loanGiven =
+    summary.loanGivenOriginalTotal > 0 ? summary.loanGivenOriginalTotal : summary.loanTotal
+  return loanGiven + summary.loanBorrowRepaidTotal
+}
+
+export function expenseHasLoanActivity(summary: ExpenseTimelineSummary): boolean {
+  return expenseLoanCombinedTotal(summary) > 0
+}
+
 function purchaseTimelineKindFromExpense(expense: { name: string; billNumber?: 1 | 2 }): ExpenseTimelineKind {
   return isGstExpense(expense.name, expense.billNumber) ? 'no1-purchase' : 'purchase'
 }
 
-function appendPurchaseOutflowEntries(
+function appendPurchaseOutflowEventEntries(
   entries: ExpenseTimelineEntry[],
   expense: AppData['expenses'][number],
+  events: Array<{ id: string; at: string; cash: number; bank: number }>,
   dateFilter: CashDateFilter,
   selectedDate: string,
   rangeTo: string,
@@ -213,7 +274,7 @@ function appendPurchaseOutflowEntries(
         : purchaseBillLabel(2)
   const kind = purchaseTimelineKindFromExpense(expense)
 
-  for (const event of purchaseExpenseOutflowEvents(expense)) {
+  for (const event of events) {
     if (!matchesCashDateFilter(event.at, dateFilter, selectedDate, rangeTo)) continue
     const paidOut = event.cash + event.bank
     if (!(paidOut > 0)) continue
@@ -252,21 +313,10 @@ export function buildExpenseTimelineEntriesFromData(
   selectedDate = '',
   rangeTo = '',
 ): ExpenseTimelineEntry[] {
-  const expenseById = new Map(
-    data.expenses
-      .filter((expense) => (!expense.kind || expense.kind === 'expense') && !isPurchaseExpense(expense))
-      .map((expense) => [expense.id, expense]),
-  )
-
   const entries: ExpenseTimelineEntry[] = []
 
   for (const item of normalItems) {
-    const expense = expenseById.get(item.id)
-    const parts = expense
-      ? normalExpensePaidChannels(expense)
-      : { cash: item.cashAmount, bank: item.bankAmount }
-    const paidOut = parts.cash + parts.bank
-    if (!(paidOut > 0)) continue
+    if (!(item.amount > 0)) continue
     entries.push({
       kind: 'expense',
       id: item.id,
@@ -274,19 +324,23 @@ export function buildExpenseTimelineEntriesFromData(
       sortTime: new Date(item.date).getTime(),
       title: item.name,
       detail: item.payLabel,
-      amount: paidOut,
+      amount: item.amount,
       payLabel: item.payLabel,
       payDetail: item.payDetail,
-      cashAmount: parts.cash,
-      bankAmount: parts.bank,
+      cashAmount: item.cashAmount,
+      bankAmount: item.bankAmount,
     })
   }
 
-  // Per-bill purchase outflows on the day money left — unpaid credit never appears here.
-  for (const expense of data.expenses ?? []) {
-    if (!isPurchaseExpense(expense)) continue
-    if (expense.kind && expense.kind !== 'expense') continue
-    appendPurchaseOutflowEntries(entries, expense, dateFilter, selectedDate, rangeTo)
+  for (const source of buildPurchaseOutflowSources(data)) {
+    appendPurchaseOutflowEventEntries(
+      entries,
+      source.expense,
+      source.events,
+      dateFilter,
+      selectedDate,
+      rangeTo,
+    )
   }
 
   entries.push(...buildLoanExpenseTimelineEntries(loanItems, sort))
@@ -319,31 +373,19 @@ export function summarizePeriodExpenseChannels(
   selectedDate = '',
   rangeTo = '',
 ): PeriodExpenseChannelSummary {
-  const expenseById = new Map(
-    data.expenses
-      .filter((expense) => (!expense.kind || expense.kind === 'expense') && !isPurchaseExpense(expense))
-      .map((expense) => [expense.id, expense]),
-  )
-
   let cash = 0
   let bank = 0
   let count = 0
 
   for (const item of normalItems) {
-    const expense = expenseById.get(item.id)
-    const parts = expense
-      ? normalExpensePaidChannels(expense)
-      : { cash: item.cashAmount, bank: item.bankAmount }
-    if (!(parts.cash > 0 || parts.bank > 0)) continue
-    cash += parts.cash
-    bank += parts.bank
+    if (!(item.cashAmount > 0 || item.bankAmount > 0)) continue
+    cash += item.cashAmount
+    bank += item.bankAmount
     count += 1
   }
 
-  for (const expense of data.expenses ?? []) {
-    if (!isPurchaseExpense(expense)) continue
-    if (expense.kind && expense.kind !== 'expense') continue
-    for (const event of purchaseExpenseOutflowEvents(expense)) {
+  for (const source of buildPurchaseOutflowSources(data)) {
+    for (const event of source.events) {
       if (!matchesCashDateFilter(event.at, dateFilter, selectedDate, rangeTo)) continue
       if (!(event.cash > 0 || event.bank > 0)) continue
       cash += event.cash
@@ -353,7 +395,7 @@ export function summarizePeriodExpenseChannels(
   }
 
   for (const item of loanItems) {
-    if (item.kind !== 'given') continue
+    if (item.kind !== 'given' && item.kind !== 'borrow-repaid') continue
     if (item.paySource === 'bank') bank += item.amount
     else cash += item.amount
     count += 1

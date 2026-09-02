@@ -1,5 +1,7 @@
 import type { CashActivityItem } from './cashActivity'
 import type { HistoryItem } from './historyItems'
+import type { LoanOutflowHistoryItem } from './loanLedger'
+import type { NormalExpenseHistoryItem } from './normalExpenseHistory'
 import type { PurchaseCreditItem, PurchaseHistoryItem } from './purchaseHistory'
 
 export type CashDerivedSnapshot = {
@@ -8,6 +10,8 @@ export type CashDerivedSnapshot = {
   bankActivityItems: CashActivityItem[]
   purchaseHistoryItems: PurchaseHistoryItem[]
   purchaseCreditItems: PurchaseCreditItem[]
+  normalExpenseHistoryItems: NormalExpenseHistoryItem[]
+  loanOutflowHistoryItems: LoanOutflowHistoryItem[]
 }
 
 export type CashDerivedStore = {
@@ -24,6 +28,8 @@ export function createCashDerivedStore(): CashDerivedStore & {
     bankActivityItems: [],
     purchaseHistoryItems: [],
     purchaseCreditItems: [],
+    normalExpenseHistoryItems: [],
+    loanOutflowHistoryItems: [],
   }
   const listeners = new Set<() => void>()
   return {
@@ -38,7 +44,9 @@ export function createCashDerivedStore(): CashDerivedStore & {
         next.cashActivityItems === snapshot.cashActivityItems &&
         next.bankActivityItems === snapshot.bankActivityItems &&
         next.purchaseHistoryItems === snapshot.purchaseHistoryItems &&
-        next.purchaseCreditItems === snapshot.purchaseCreditItems
+        next.purchaseCreditItems === snapshot.purchaseCreditItems &&
+        next.normalExpenseHistoryItems === snapshot.normalExpenseHistoryItems &&
+        next.loanOutflowHistoryItems === snapshot.loanOutflowHistoryItems
       ) {
         return
       }

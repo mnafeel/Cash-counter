@@ -254,7 +254,7 @@ function pushExpenseItems(items: CashActivityItem[], expense: Expense) {
     if (expense.kind === 'add') {
       items.push({
         id: `add-${expense.id}`,
-        label: 'Added to drawer',
+        label: 'Not sale · credited to drawer',
         amount: cash,
         direction: 'in',
         date: expense.createdAt,

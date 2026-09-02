@@ -808,11 +808,13 @@ function Expenses({ active }: { active: boolean }) {
         onConfirm={confirmStaffUnlink}
       />
 
-      <ExpenseHistoryPanel
-        open={showExpenseHistory}
-        onClose={() => setShowExpenseHistory(false)}
-        data={data}
-      />
+      {showExpenseHistory ? (
+        <ExpenseHistoryPanel
+          open={showExpenseHistory}
+          onClose={() => setShowExpenseHistory(false)}
+          data={data}
+        />
+      ) : null}
     </div>
   )
 }

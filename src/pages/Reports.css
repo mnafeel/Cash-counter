@@ -31,12 +31,15 @@
 }
 
 .reports-top {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow: hidden;
+  min-height: 0;
+  max-height: min(52%, 360px);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .reports-toolbar {
@@ -940,6 +943,179 @@
   color: var(--warning, #f5c542);
 }
 
+.reports-summary--overview-wide {
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+}
+
+.reports-summary--not-sale-detail {
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+}
+
+.reports-item-amount--not-sale {
+  font-size: clamp(0.82rem, calc(var(--app-height, 800px) * 0.022), 1rem);
+}
+
+.reports-not-sale-date strong {
+  color: var(--cream);
+  font-size: 0.62rem;
+}
+
+.reports-item--not-sale-detail {
+  border-left: 3px solid #5b9fd4;
+}
+
+.expense-after-loan {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.expense-after-loan--card {
+  margin: 2px 0;
+}
+
+.expense-after-loan--banner {
+  margin: 6px 0 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(125, 223, 138, 0.45);
+  background: rgba(125, 223, 138, 0.1);
+}
+
+.expense-after-loan-gross {
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-decoration: line-through;
+  opacity: 0.85;
+}
+
+.expense-after-loan-label {
+  font-size: 0.48rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--success, #7ddf8a);
+}
+
+.expense-after-loan-amount {
+  font-size: clamp(0.92rem, calc(var(--app-height, 800px) * 0.028), 1.2rem);
+  font-weight: 900;
+  color: var(--success, #7ddf8a);
+  line-height: 1.1;
+}
+
+.expense-after-loan--card .expense-after-loan-amount {
+  font-size: clamp(0.82rem, calc(var(--app-height, 800px) * 0.024), 1.05rem);
+}
+
+.reports-expense-breakdown {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.reports-expense-breakdown-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.reports-expense-breakdown-row span {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+}
+
+.reports-expense-breakdown-row strong {
+  font-size: clamp(0.82rem, calc(var(--app-height, 800px) * 0.024), 1rem);
+  font-weight: 900;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.reports-expense-breakdown-row--total strong {
+  color: var(--warning, #f5c542);
+}
+
+.reports-expense-breakdown-row--settled strong {
+  color: var(--success, #7ddf8a);
+}
+
+.reports-expense-breakdown-row--after {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border);
+}
+
+.reports-expense-breakdown-row--after strong {
+  color: var(--success, #7ddf8a);
+}
+
+.reports-expense-breakdown-row--loan {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.reports-expense-breakdown-meta {
+  margin: 2px 0 6px;
+  font-size: 0.52rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--cream-dim);
+}
+
+.loan-given-amount-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+}
+
+.loan-given-amount-stack-original {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  opacity: 0.8;
+}
+
+.loan-given-amount-stack-open {
+  font-size: clamp(0.78rem, calc(var(--app-height, 800px) * 0.022), 0.95rem);
+  font-weight: 900;
+  color: var(--warning, #f5c542);
+  line-height: 1.1;
+}
+
+.reports-item--loan-given {
+  border-left: 3px solid rgba(245, 197, 66, 0.55);
+}
+
+.reports-item--loan-borrow-repaid {
+  border-left: 3px solid rgba(91, 159, 212, 0.55);
+}
+
+.reports-item-amount--loan-repay {
+  color: #5b9fd4;
+  font-size: clamp(0.72rem, calc(var(--app-height, 800px) * 0.02), 0.88rem);
+}
+
+.reports-summary-card--not-sale strong {
+  color: #5b9fd4;
+}
+
+.reports-summary-card--collected strong {
+  color: var(--accent, #7eb8ff);
+}
+
+.reports-item-amount--in {
+  color: var(--success, #45a06e);
+}
+
 .reports-summary--all {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -981,6 +1157,24 @@
   font-size: clamp(0.78rem, calc(var(--app-height, 800px) * 0.02), 0.92rem);
   color: var(--cream);
   white-space: nowrap;
+}
+
+.reports-section-head--tap {
+  width: 100%;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.reports-section-head--tap:hover,
+.reports-section-head--tap:focus-visible {
+  border-color: var(--cream-dim);
+}
+
+.reports-section-head-chevron {
+  font-size: 0.72rem;
+  color: var(--cream-dim);
+  flex-shrink: 0;
 }
 
 .reports-section-note {

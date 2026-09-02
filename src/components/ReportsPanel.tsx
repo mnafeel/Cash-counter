@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AppData } from '../types'
 import { usePageEscape } from '../hooks/usePageEscape'
+import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { formatDate, formatMoney, formatTime } from '../utils/format'
 import {
+  buildSalesBillList,
   formatCollectedSalesBreakdown,
+  summarizeSalesBillRows,
   toInputDate,
   isOldCreditChequeClearedRow,
   type ReportSort,
   type SaleDateMode,
   type SalesBillRow,
+  type SalesBillSummary,
 } from '../utils/salesReport'
 import {
   buildChequeReportItems,
@@ -39,11 +43,16 @@ import {
   buildExpenseTimelineEntriesFromData,
   buildTransferExpenseTimelineEntries,
   expenseTimelineKindLabel,
+  expenseGrossTotal,
+  expenseHasLoanActivity,
+  expenseLoanCombinedTotal,
+  expenseTotalAfterLoanSettlement,
   filterExpenseTimelineByPayChannel,
   summarizeExpenseTimeline,
   type ExpensePayChannelFilter,
   type ExpenseTimelineEntry,
   type ExpenseTimelineSort,
+  type ExpenseTimelineSummary,
 } from '../utils/expenseTimeline'
 import {
   buildPurchaseHistoryItems,
@@ -76,6 +85,12 @@ import {
   getReminderAlertSettings,
 } from '../utils/billReminders'
 import type { BillReminderItem } from '../utils/billReminders'
+import {
+  buildNotSaleInflowItems,
+  notSaleInflowKindLabel,
+  summarizeNotSaleInflow,
+  type NotSaleInflowItem,
+} from '../utils/notSaleInflow'
 import '../pages/Reports.css'
 
 export type ReportSection =
@@ -84,9 +99,25 @@ export type ReportSection =
   | 'purchase'
   | 'expense'
   | 'expense-report'
+  | 'not-sale'
   | 'credit'
   | 'cheque'
   | 'loan'
+
+const EMPTY_SALES_BILLS: SalesBillRow[] = []
+const EMPTY_SALES_TOTALS: SalesBillSummary = {
+  billCount: 0,
+  totalBills: 0,
+  billTotal: 0,
+  withCreditSales: 0,
+  withCreditCollected: 0,
+  oldCreditChequeCollected: 0,
+  cashTotal: 0,
+  bankTotal: 0,
+  chequeTotal: 0,
+  creditPending: 0,
+  chequePending: 0,
+}
 
 const DATE_PRESETS: { id: ReportDatePreset; label: string }[] = [
   { id: 'today', label: 'Today' },
@@ -222,7 +253,11 @@ export default function ReportsPanel({
   const [selectedExpenseNameKey, setSelectedExpenseNameKey] = useState<string | null>(null)
   const [expensePayChannel, setExpensePayChannel] = useState<ExpensePayChannelFilter>('all')
   const [expenseTimelineSort, setExpenseTimelineSort] = useState<ExpenseTimelineSort>('time-desc')
-  const [expenseNameSearch, setExpenseNameSearch] = useState('')
+  const {
+    value: expenseNameSearch,
+    setValue: setExpenseNameSearch,
+    deferredValue: deferredExpenseNameSearch,
+  } = useDeferredSearch()
   const [expandedReportKey, setExpandedReportKey] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
 
@@ -243,37 +278,65 @@ export default function ReportsPanel({
     }
   }, [open, initialPreset, initialSection, initialSelectedDate])
 
-  const salesBills = useMemo(
+  const isOverview = activeSection === 'all'
+  const needsSales = isOverview || activeSection === 'sales'
+  const needsExpense =
+    isOverview || activeSection === 'expense' || activeSection === 'expense-report'
+  const needsPurchase = isOverview || activeSection === 'purchase'
+  const needsCredit = isOverview || activeSection === 'credit'
+  const needsCheque = isOverview || activeSection === 'cheque'
+  const needsLoan = isOverview || activeSection === 'loan'
+  const needsNotSale = isOverview || activeSection === 'not-sale'
+
+  const salesFilter = useMemo(
     () =>
-      salesBillsForPreset(data, datePreset, selectedDate, salesSort, rangeTo, salesDateMode),
-    [data, datePreset, selectedDate, salesSort, rangeTo, salesDateMode],
+      needsSales
+        ? salesFilterForPreset(datePreset, selectedDate, rangeTo, salesDateMode)
+        : undefined,
+    [needsSales, datePreset, selectedDate, rangeTo, salesDateMode],
+  )
+  const salesBills = useMemo(
+    () => (salesFilter ? buildSalesBillList(data, salesSort, salesFilter) : EMPTY_SALES_BILLS),
+    [data, salesFilter, salesSort, needsSales],
   )
   const salesTotals = useMemo(
-    () =>
-      salesSummaryForPreset(data, datePreset, selectedDate, rangeTo, salesDateMode),
-    [data, datePreset, selectedDate, rangeTo, salesDateMode],
+    () => (salesFilter ? summarizeSalesBillRows(salesBills, salesFilter) : EMPTY_SALES_TOTALS),
+    [salesBills, salesFilter, needsSales],
   )
-  const overviewSalesTotals = useMemo(
-    () => salesSummaryForPreset(data, datePreset, selectedDate, rangeTo, 'collected'),
-    [data, datePreset, selectedDate, rangeTo],
+  const overviewSalesFilter = useMemo(
+    () =>
+      needsSales || needsNotSale
+        ? salesFilterForPreset(datePreset, selectedDate, rangeTo, 'collected')
+        : undefined,
+    [needsSales, needsNotSale, datePreset, selectedDate, rangeTo],
   )
   const overviewSalesBills = useMemo(
-    () => salesBillsForPreset(data, datePreset, selectedDate, 'date-desc', rangeTo, 'collected'),
-    [data, datePreset, selectedDate, rangeTo],
+    () =>
+      overviewSalesFilter
+        ? buildSalesBillList(data, 'date-desc', overviewSalesFilter)
+        : EMPTY_SALES_BILLS,
+    [data, overviewSalesFilter, needsSales, needsNotSale],
+  )
+  const overviewSalesTotals = useMemo(
+    () =>
+      overviewSalesFilter
+        ? summarizeSalesBillRows(overviewSalesBills, overviewSalesFilter)
+        : EMPTY_SALES_TOTALS,
+    [overviewSalesBills, overviewSalesFilter, needsSales, needsNotSale],
   )
   const showSameDaySalesBox = isSingleDaySalesPreset(datePreset, selectedDate, rangeTo)
   const sameDaySales = useMemo(
     () =>
-      showSameDaySalesBox
+      needsSales && showSameDaySalesBox
         ? salesSameDaySummaryForPreset(data, datePreset, selectedDate, rangeTo)
         : null,
-    [data, datePreset, selectedDate, rangeTo, showSameDaySalesBox],
+    [data, datePreset, selectedDate, rangeTo, showSameDaySalesBox, needsSales],
   )
   const sameDaySalesLabel = sameDaySalesCollectedLabel(datePreset, selectedDate, rangeTo)
 
   const sameDaySalesBills = useMemo(
     () =>
-      showSameDaySalesBox
+      needsSales && showSameDaySalesBox
         ? salesBillsForPreset(
             data,
             datePreset,
@@ -284,7 +347,7 @@ export default function ReportsPanel({
             { sameDayCreatedAndPaid: true },
           )
         : [],
-    [data, datePreset, selectedDate, salesSort, rangeTo, showSameDaySalesBox],
+    [data, datePreset, selectedDate, salesSort, rangeTo, showSameDaySalesBox, needsSales],
   )
 
   const withCreditSalesBills = useMemo(() => {
@@ -325,9 +388,10 @@ export default function ReportsPanel({
   }
 
   const purchaseItems = useMemo(() => {
+    if (!needsPurchase && !needsExpense) return []
     const items = buildPurchaseHistoryItems(data)
     return filterPurchaseHistoryItems(items, datePreset, selectedDate, rangeTo)
-  }, [data, datePreset, selectedDate, rangeTo])
+  }, [data, datePreset, selectedDate, rangeTo, needsPurchase, needsExpense])
   const purchaseTotals = useMemo(() => summarizePurchases(purchaseItems), [purchaseItems])
   const purchaseSupplierGroups = useMemo(
     () => groupPurchasesBySupplier(purchaseItems),
@@ -339,9 +403,10 @@ export default function ReportsPanel({
   }, [selectedPurchaseSupplierKey, purchaseSupplierGroups])
 
   const expenseItems = useMemo(() => {
+    if (!needsExpense) return []
     const items = buildNormalExpenseHistoryItems(data)
     return filterNormalExpenseHistoryItems(items, datePreset, selectedDate, rangeTo)
-  }, [data, datePreset, selectedDate, rangeTo])
+  }, [data, datePreset, selectedDate, rangeTo, needsExpense])
   const channelExpenseItems = useMemo(
     () => filterNormalExpensesByPayChannel(expenseItems, expensePayChannel),
     [expenseItems, expensePayChannel],
@@ -363,10 +428,10 @@ export default function ReportsPanel({
     [channelExpenseItems],
   )
   const filteredExpenseNameGroups = useMemo(() => {
-    const q = expenseNameSearch.trim().toLowerCase()
+    const q = deferredExpenseNameSearch.trim().toLowerCase()
     if (!q) return expenseNameGroups
     return expenseNameGroups.filter((group) => group.name.toLowerCase().includes(q))
-  }, [expenseNameGroups, expenseNameSearch])
+  }, [expenseNameGroups, deferredExpenseNameSearch])
   const selectedExpenseNameGroup = useMemo(() => {
     if (!selectedExpenseNameKey) return null
     return expenseNameGroups.find((group) => group.nameKey === selectedExpenseNameKey) ?? null
@@ -375,21 +440,31 @@ export default function ReportsPanel({
     if (!selectedExpenseNameGroup) return null
     return analyzeExpenseNameGroup(selectedExpenseNameGroup, expenseTotals.total)
   }, [selectedExpenseNameGroup, expenseTotals.total])
+  const allLoanOutflowItems = useMemo(
+    () => (needsExpense || needsLoan ? buildLoanOutflowHistoryItems(data) : []),
+    [data, needsExpense, needsLoan],
+  )
   const loanOutflowItems = useMemo(() => {
-    const items = buildLoanOutflowHistoryItems(data)
-    const dated = filterLoanOutflowHistoryItems(items, datePreset, selectedDate, rangeTo)
+    if (!needsExpense) return []
+    const dated = filterLoanOutflowHistoryItems(
+      allLoanOutflowItems,
+      datePreset,
+      selectedDate,
+      rangeTo,
+    )
     if (expensePayChannel === 'all') return dated
     return dated.filter((item) =>
       expensePayChannel === 'cash' ? item.paySource !== 'bank' : item.paySource === 'bank',
     )
-  }, [data, datePreset, selectedDate, rangeTo, expensePayChannel])
+  }, [allLoanOutflowItems, datePreset, selectedDate, rangeTo, expensePayChannel, needsExpense])
   const loanOutflowTotals = useMemo(
     () => summarizeLoanOutflows(loanOutflowItems),
     [loanOutflowItems],
   )
   const expenseTimeline = useMemo(() => {
+    if (!needsExpense) return []
     const allLoans = filterLoanOutflowHistoryItems(
-      buildLoanOutflowHistoryItems(data),
+      allLoanOutflowItems,
       datePreset,
       selectedDate,
       rangeTo,
@@ -404,19 +479,28 @@ export default function ReportsPanel({
       selectedDate,
       rangeTo,
     )
-  }, [data, expenseItems, purchaseItems, datePreset, selectedDate, rangeTo, expenseTimelineSort])
+  }, [
+    data,
+    expenseItems,
+    purchaseItems,
+    allLoanOutflowItems,
+    datePreset,
+    selectedDate,
+    rangeTo,
+    expenseTimelineSort,
+    needsExpense,
+  ])
   const expenseTimelineSummary = useMemo(
     () => summarizeExpenseTimeline(expenseTimeline),
     [expenseTimeline],
   )
-  const combinedExpenseTotal =
-    expenseTimelineSummary.expenseTotal +
-    expenseTimelineSummary.purchaseTotal +
-    expenseTimelineSummary.loanTotal
-  const analyzedExpenseTotal = expenseTotals.total + loanOutflowTotals.total
+  const combinedExpenseTotal = expenseGrossTotal(expenseTimelineSummary)
+  const analyzedExpenseTotal =
+    expenseTotals.total + loanOutflowTotals.givenOriginalTotal + loanOutflowTotals.borrowRepaidTotal
+  const analyzedExpenseAfterLoan = expenseTotals.total
 
   const filteredExpenseTimeline = useMemo(() => {
-    const q = expenseNameSearch.trim().toLowerCase()
+    const q = deferredExpenseNameSearch.trim().toLowerCase()
     const searched = !q
       ? expenseTimeline
       : expenseTimeline.filter((entry) => {
@@ -455,7 +539,7 @@ export default function ReportsPanel({
     return merged
   }, [
     expenseTimeline,
-    expenseNameSearch,
+    deferredExpenseNameSearch,
     expensePayChannel,
     data,
     datePreset,
@@ -469,6 +553,7 @@ export default function ReportsPanel({
   )
 
   const creditItems = useMemo(() => {
+    if (!needsCredit) return []
     const items = buildCreditReportItems(data)
     const filtered = filterCreditReportItems(items, datePreset, selectedDate, rangeTo)
     return [...filtered].sort((a, b) => {
@@ -483,23 +568,26 @@ export default function ReportsPanel({
       }
       return new Date(b.date).getTime() - new Date(a.date).getTime()
     })
-  }, [data, datePreset, selectedDate, rangeTo, creditSort])
+  }, [data, datePreset, selectedDate, rangeTo, creditSort, needsCredit])
   const creditTotals = useMemo(() => summarizeCreditItems(creditItems), [creditItems])
 
   const chequeItems = useMemo(() => {
+    if (!needsCheque) return []
     const items = buildChequeReportItems(data)
     return filterChequeReportItems(items, datePreset, selectedDate, rangeTo)
-  }, [data, datePreset, selectedDate, rangeTo])
+  }, [data, datePreset, selectedDate, rangeTo, needsCheque])
   const chequeTotals = useMemo(() => summarizeChequeItems(chequeItems), [chequeItems])
 
   const creditChequeOpenTotal = creditTotals.pendingTotal + chequeTotals.pendingTotal
   const showSection = (section: Exclude<ReportSection, 'all'>) => {
     if (section === 'expense-report') return activeSection === 'expense-report'
     if (section === 'expense') return activeSection === 'expense' || activeSection === 'all'
+    if (section === 'not-sale') return activeSection === 'not-sale' || activeSection === 'all'
     return activeSection === section || activeSection === 'all'
   }
 
   const loanItems = useMemo(() => {
+    if (!needsLoan) return []
     const items = filterLoanReportItems(
       buildLoanReportItems(data),
       datePreset,
@@ -511,8 +599,29 @@ export default function ReportsPanel({
       const tb = new Date(b.createdAt).getTime()
       return loanSort === 'date-asc' ? ta - tb : tb - ta
     })
-  }, [data, datePreset, selectedDate, rangeTo, loanSort])
+  }, [data, datePreset, selectedDate, rangeTo, loanSort, needsLoan])
   const loanTotals = useMemo(() => summarizeLoanReportItems(loanItems), [loanItems])
+
+  const notSaleInflowItems = useMemo(
+    () =>
+      needsNotSale ? buildNotSaleInflowItems(data, datePreset, selectedDate, rangeTo) : [],
+    [data, datePreset, selectedDate, rangeTo, needsNotSale],
+  )
+  const notSaleInflowTotals = useMemo(
+    () => summarizeNotSaleInflow(notSaleInflowItems),
+    [notSaleInflowItems],
+  )
+  const overviewSalesChannelTotals = useMemo(() => {
+    let cash = 0
+    let bank = 0
+    for (const row of overviewSalesBills) {
+      cash += row.cashTotal
+      bank += row.bankTotal + row.chequeTotal
+    }
+    return { cash, bank }
+  }, [overviewSalesBills])
+  const totalCollectedWithNotSale =
+    overviewSalesTotals.totalBills + notSaleInflowTotals.total
 
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
@@ -551,8 +660,14 @@ export default function ReportsPanel({
       bodyRef.current?.scrollTo({ top: 0 })
       return
     }
+    if (!focusSection && activeSection !== 'all') {
+      setActiveSection('all')
+      setExpandedReportKey(null)
+      bodyRef.current?.scrollTo({ top: 0 })
+      return
+    }
     onClose()
-  }, [selectedExpenseNameKey, selectedPurchaseSupplierKey, onClose])
+  }, [selectedExpenseNameKey, selectedPurchaseSupplierKey, activeSection, focusSection, onClose])
 
   usePageEscape(handleReportsBack, open)
 
@@ -564,6 +679,11 @@ export default function ReportsPanel({
     setExpensePayChannel('all')
     setExpenseTimelineSort('time-desc')
     setExpandedReportKey(null)
+    if (section === 'sales') {
+      setExpandedSalesPanel('collected')
+    } else {
+      setExpandedSalesPanel(null)
+    }
     bodyRef.current?.scrollTo({ top: 0 })
   }
 
@@ -605,7 +725,9 @@ export default function ReportsPanel({
                   ? 'Back to expense names'
                   : selectedPurchaseSupplierKey
                     ? 'Back to suppliers'
-                    : 'Back'
+                    : !focusSection && activeSection !== 'all'
+                      ? 'Back to all reports'
+                      : 'Back'
               }
             />
           }
@@ -622,7 +744,9 @@ export default function ReportsPanel({
                     : focusSection
                       ? activeSection === 'expense-report'
                         ? '📤 Expense Report'
-                        : SECTION_TABS.find((tab) => tab.id === visibleSection)?.label ?? 'Report'
+                        : activeSection === 'not-sale'
+                          ? '📥 Not sale · cash in'
+                          : SECTION_TABS.find((tab) => tab.id === visibleSection)?.label ?? 'Report'
                       : 'Reports'}
               </h1>
               <p className="reports-sub">{periodLabel}</p>
@@ -759,21 +883,94 @@ export default function ReportsPanel({
             )}
 
             {activeSection === 'all' ? (
-              <div className="reports-summary reports-summary--all reports-summary--overview">
-                <div className="reports-summary-card reports-summary-card--orange">
+              <div className="reports-summary reports-summary--all reports-summary--overview reports-summary--overview-wide">
+                <button
+                  type="button"
+                  className="reports-summary-card reports-summary-card--orange reports-summary-card--expandable"
+                  onClick={() => selectSection('expense')}
+                >
                   <span>Total expense</span>
-                  <strong>{formatMoney(combinedExpenseTotal)}</strong>
+                  {expenseHasLoanActivity(expenseTimelineSummary) ? (
+                    <ExpenseAfterLoanSummary
+                      grossTotal={combinedExpenseTotal}
+                      afterTotal={expenseTotalAfterLoanSettlement(expenseTimelineSummary)}
+                      variant="card"
+                    />
+                  ) : (
+                    <strong>{formatMoney(combinedExpenseTotal)}</strong>
+                  )}
                   <small>
                     Normal {formatMoney(expenseTimelineSummary.expenseTotal)} · Purchase{' '}
-                    {formatMoney(expenseTimelineSummary.purchaseTotal)} · Loan{' '}
-                    {formatMoney(expenseTimelineSummary.loanTotal)}
+                    {formatMoney(expenseTimelineSummary.purchaseTotal)}
+                    {expenseTimelineSummary.loanGivenOriginalTotal > 0 ? (
+                      <>
+                        {' '}
+                        · Loan given {formatMoney(expenseTimelineSummary.loanGivenOriginalTotal)}
+                      </>
+                    ) : expenseTimelineSummary.loanTotal > 0 ? (
+                      <> · Loan {formatMoney(expenseTimelineSummary.loanTotal)}</>
+                    ) : null}
+                    {expenseTimelineSummary.loanBorrowRepaidTotal > 0 ? (
+                      <>
+                        {expenseTimelineSummary.loanGivenOriginalTotal > 0 ||
+                        expenseTimelineSummary.loanTotal > 0
+                          ? ' ·'
+                          : ' '}
+                        Settlement {formatMoney(expenseTimelineSummary.loanBorrowRepaidTotal)}
+                      </>
+                    ) : null}
+                    {expenseTimelineSummary.loanGivenOriginalTotal > 0 ? (
+                      <>
+                        <br />
+                        Settled expense {formatMoney(expenseTimelineSummary.loanGivenSettledTotal)} · Open{' '}
+                        {formatMoney(expenseTimelineSummary.loanGivenUnsettledTotal)}
+                      </>
+                    ) : null}
                   </small>
-                </div>
-                <div className="reports-summary-card reports-summary-card--green">
+                  <span className="reports-summary-card-chevron" aria-hidden="true">
+                    ▸
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="reports-summary-card reports-summary-card--green reports-summary-card--expandable"
+                  onClick={() => selectSection('sales')}
+                >
                   <span>Total sales</span>
                   <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
                   <small>
                     {overviewSalesTotals.billCount} bill{overviewSalesTotals.billCount === 1 ? '' : 's'} collected
+                    <br />
+                    💵 {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
+                    {formatMoney(overviewSalesChannelTotals.bank)}
+                  </small>
+                  <span className="reports-summary-card-chevron" aria-hidden="true">
+                    ▸
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="reports-summary-card reports-summary-card--not-sale reports-summary-card--expandable"
+                  onClick={() => selectSection('not-sale')}
+                >
+                  <span>Not sale · cash in</span>
+                  <strong>{formatMoney(notSaleInflowTotals.total)}</strong>
+                  <small>
+                    {notSaleInflowTotals.count} item{notSaleInflowTotals.count === 1 ? '' : 's'}
+                    <br />
+                    💵 Counter {formatMoney(notSaleInflowTotals.cashTotal)} · 🏦 Bank{' '}
+                    {formatMoney(notSaleInflowTotals.bankTotal)}
+                  </small>
+                  <span className="reports-summary-card-chevron" aria-hidden="true">
+                    ▸
+                  </span>
+                </button>
+                <div className="reports-summary-card reports-summary-card--collected">
+                  <span>Sales + not sale</span>
+                  <strong>{formatMoney(totalCollectedWithNotSale)}</strong>
+                  <small>
+                    Sales {formatMoney(overviewSalesTotals.totalBills)} + Not sale{' '}
+                    {formatMoney(notSaleInflowTotals.total)}
                   </small>
                 </div>
                 <div className="reports-summary-card">
@@ -832,6 +1029,17 @@ export default function ReportsPanel({
 
             {activeSection !== 'sales' && activeSection !== 'all' ? (
               <div className="reports-summary reports-summary--single">
+                {activeSection === 'not-sale' && (
+                  <div className="reports-summary-card reports-summary-card--not-sale">
+                    <span>Not sale · cash in</span>
+                    <strong>{formatMoney(notSaleInflowTotals.total)}</strong>
+                    <small>
+                      {notSaleInflowTotals.count} item{notSaleInflowTotals.count === 1 ? '' : 's'} · 💵 Counter{' '}
+                      {formatMoney(notSaleInflowTotals.cashTotal)} · 🏦 Bank{' '}
+                      {formatMoney(notSaleInflowTotals.bankTotal)}
+                    </small>
+                  </div>
+                )}
                 {activeSection === 'credit' && (
                   <div className="reports-summary-card">
                     <span>Credit open</span>
@@ -854,26 +1062,50 @@ export default function ReportsPanel({
                 {activeSection === 'expense' && (
                   <div className="reports-summary-card reports-summary-card--orange">
                     <span>Expense</span>
-                    <strong>
-                      {formatMoney(
-                        filteredExpenseTimelineSummary.expenseTotal +
-                          filteredExpenseTimelineSummary.purchaseTotal +
-                          filteredExpenseTimelineSummary.loanTotal,
-                      )}
-                    </strong>
+                    {filteredExpenseTimelineSummary.loanGivenOriginalTotal > 0 ||
+                    filteredExpenseTimelineSummary.loanBorrowRepaidTotal > 0 ? (
+                      <ExpenseAfterLoanSummary
+                        grossTotal={expenseGrossTotal(filteredExpenseTimelineSummary)}
+                        afterTotal={expenseTotalAfterLoanSettlement(filteredExpenseTimelineSummary)}
+                        variant="card"
+                      />
+                    ) : (
+                      <strong>{formatMoney(expenseGrossTotal(filteredExpenseTimelineSummary))}</strong>
+                    )}
                     <small>
                       {filteredExpenseTimeline.length} items · chronological
                       {expensePayChannel !== 'all' ? ` · ${expensePayChannel}` : ''}
+                      {expenseHasLoanActivity(filteredExpenseTimelineSummary) ? (
+                        <>
+                          <br />
+                          After loan settlement{' '}
+                          {formatMoney(expenseTotalAfterLoanSettlement(filteredExpenseTimelineSummary))}
+                        </>
+                      ) : null}
                     </small>
                   </div>
                 )}
                 {activeSection === 'expense-report' && (
                   <div className="reports-summary-card reports-summary-card--orange">
                     <span>Expense Report</span>
-                    <strong>{formatMoney(analyzedExpenseTotal)}</strong>
+                    {loanOutflowTotals.givenOriginalTotal > 0 ||
+                    loanOutflowTotals.borrowRepaidTotal > 0 ? (
+                      <ExpenseAfterLoanSummary
+                        grossTotal={analyzedExpenseTotal}
+                        afterTotal={analyzedExpenseAfterLoan}
+                        variant="card"
+                      />
+                    ) : (
+                      <strong>{formatMoney(analyzedExpenseTotal)}</strong>
+                    )}
                     <small>
-                      Names {formatMoney(expenseTotals.total)} · Loan{' '}
-                      {formatMoney(loanOutflowTotals.total)}
+                      Names {formatMoney(expenseTotals.total)}
+                      {loanOutflowTotals.givenOriginalTotal > 0
+                        ? ` · Loan given ${formatMoney(loanOutflowTotals.givenOriginalTotal)} · Settled ${formatMoney(loanOutflowTotals.givenSettledTotal)} · Open ${formatMoney(loanOutflowTotals.givenUnsettledTotal)}`
+                        : ''}
+                      {loanOutflowTotals.borrowRepaidTotal > 0
+                        ? ` · Settlement ${formatMoney(loanOutflowTotals.borrowRepaidTotal)}`
+                        : ''}
                       {expensePayChannel !== 'all' ? ` · ${expensePayChannel}` : ''}
                     </small>
                   </div>
@@ -921,10 +1153,11 @@ export default function ReportsPanel({
           {showSection('sales') && !showSalesCollectedAccordion && (
             <>
               {activeSection === 'all' ? (
-                <div className="reports-section-head">
-                  <h2>💰 Sales</h2>
-                  <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
-                </div>
+                <ReportsSectionHead
+                  title="💰 Sales"
+                  amount={formatMoney(overviewSalesTotals.totalBills)}
+                  onOpen={() => selectSection('sales')}
+                />
               ) : null}
             <section className="reports-section">
               <p className="reports-list-meta">
@@ -933,6 +1166,13 @@ export default function ReportsPanel({
                 {activeSection === 'all' || salesDateMode === 'collected'
                   ? ' · by collected date'
                   : ' · by bill date'}
+                {activeSection === 'all' ? (
+                  <>
+                    {' '}
+                    · 💵 {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
+                    {formatMoney(overviewSalesChannelTotals.bank)}
+                  </>
+                ) : null}
               </p>
               {(activeSection === 'all' ? overviewSalesBills : salesBills).length === 0 ? (
                 <p className="reports-empty">No sales for this period.</p>
@@ -970,16 +1210,58 @@ export default function ReportsPanel({
                 </ul>
               )}
             </section>
+
+            {activeSection === 'all' ? (
+              <>
+                <ReportsSectionHead
+                  title="📥 Not sale · cash in"
+                  amount={formatMoney(notSaleInflowTotals.total)}
+                  onOpen={() => selectSection('not-sale')}
+                />
+                <section className="reports-section">
+                  <p className="reports-list-meta">
+                    {notSaleInflowItems.length} item{notSaleInflowItems.length === 1 ? '' : 's'} · not
+                    sales · 💵 {formatMoney(notSaleInflowTotals.cashTotal)} · 🏦{' '}
+                    {formatMoney(notSaleInflowTotals.bankTotal)}
+                  </p>
+                  {notSaleInflowItems.length === 0 ? (
+                    <p className="reports-empty">No not-sale credits for this period.</p>
+                  ) : (
+                    <ul className="reports-list">
+                      {notSaleInflowItems.slice(0, 8).map((row, index) => (
+                        <NotSaleInflowReportRow key={row.id} row={row} index={index + 1} />
+                      ))}
+                    </ul>
+                  )}
+                  {notSaleInflowItems.length > 0 ? (
+                    <button
+                      type="button"
+                      className="reports-supplier-btn reports-expense-open-btn"
+                      onClick={() => selectSection('not-sale')}
+                    >
+                      <div className="reports-item-meta">View all not sale credits →</div>
+                    </button>
+                  ) : null}
+                </section>
+              </>
+            ) : null}
             </>
           )}
+
+          {activeSection === 'not-sale' ? (
+            <section className="reports-section">
+              <NotSaleInflowSection items={notSaleInflowItems} totals={notSaleInflowTotals} />
+            </section>
+          ) : null}
 
           {showSection('purchase') && (
             <>
               {activeSection === 'all' ? (
-                <div className="reports-section-head">
-                  <h2>🛒 Purchase</h2>
-                  <strong>{formatMoney(purchaseTotals.total)}</strong>
-                </div>
+                <ReportsSectionHead
+                  title="🛒 Purchase"
+                  amount={formatMoney(purchaseTotals.total)}
+                  onOpen={() => selectSection('purchase')}
+                />
               ) : null}
             <section className="reports-section">
               {activeSection === 'all' || !selectedPurchaseSupplier ? (
@@ -1053,10 +1335,11 @@ export default function ReportsPanel({
           {showSection('expense') && (
             <>
               {activeSection === 'all' ? (
-                <div className="reports-section-head">
-                  <h2>📤 Expense</h2>
-                  <strong>{formatMoney(combinedExpenseTotal)}</strong>
-                </div>
+                <ReportsSectionHead
+                  title="📤 Expense"
+                  amount={formatMoney(combinedExpenseTotal)}
+                  onOpen={() => selectSection('expense')}
+                />
               ) : null}
               <section className="reports-section">
                 {(activeSection === 'expense' || activeSection === 'all') && (
@@ -1110,17 +1393,15 @@ export default function ReportsPanel({
                         ) : null}
                       </>
                     ) : null}
-                    <p className="reports-list-meta">
-                      {filteredExpenseTimeline.length} transaction
-                      {filteredExpenseTimeline.length === 1 ? '' : 's'} · order by time · Normal{' '}
-                      {formatMoney(filteredExpenseTimelineSummary.expenseTotal)}
-                      {filteredExpenseTimelineSummary.purchaseTotal > 0
-                        ? ` · Purchase ${formatMoney(filteredExpenseTimelineSummary.purchaseTotal)}`
-                        : ''}
-                      {filteredExpenseTimelineSummary.loanTotal > 0
-                        ? ` · Loan ${formatMoney(filteredExpenseTimelineSummary.loanTotal)}`
-                        : ''}
-                    </p>
+                    {activeSection === 'expense' || activeSection === 'all' ? (
+                      <ExpenseReportSummaryBreakdown
+                        summary={filteredExpenseTimelineSummary}
+                        itemCount={
+                          activeSection === 'expense' ? filteredExpenseTimeline.length : undefined
+                        }
+                        channelLabel={expensePayChannel !== 'all' ? expensePayChannel : undefined}
+                      />
+                    ) : null}
                     {filteredExpenseTimeline.length === 0 ? (
                       <p className="reports-empty">No expenses for this period.</p>
                     ) : (
@@ -1546,6 +1827,176 @@ function SalesBillList({
         </ul>
       )}
     </div>
+  )
+}
+
+function ExpenseReportSummaryBreakdown({
+  summary,
+  itemCount,
+  channelLabel,
+}: {
+  summary: ExpenseTimelineSummary
+  itemCount?: number
+  channelLabel?: string
+}) {
+  const gross = expenseGrossTotal(summary)
+  const after = expenseTotalAfterLoanSettlement(summary)
+  const loanCombined = expenseLoanCombinedTotal(summary)
+  const loanCombinedCash = summary.loanCash + summary.loanBorrowRepaidCash
+  const loanCombinedBank = summary.loanBank + summary.loanBorrowRepaidBank
+  const hasLoanGiven = summary.loanGivenOriginalTotal > 0 || summary.loanTotal > 0
+  const hasLoanActivity = expenseHasLoanActivity(summary)
+
+  return (
+    <div className="reports-expense-breakdown">
+      <div className="reports-expense-breakdown-row reports-expense-breakdown-row--total">
+        <span>Expense</span>
+        <strong>{formatMoney(gross)}</strong>
+      </div>
+      <p className="reports-expense-breakdown-meta">
+        Normal {formatMoney(summary.expenseTotal)}
+        {summary.purchaseTotal > 0 ? ` · Purchase ${formatMoney(summary.purchaseTotal)}` : ''}
+        {hasLoanGiven ? ` · Loan given ${formatMoney(summary.loanGivenOriginalTotal || summary.loanTotal)}` : ''}
+        {summary.loanBorrowRepaidTotal > 0
+          ? ` · Settlement ${formatMoney(summary.loanBorrowRepaidTotal)}`
+          : ''}
+        {itemCount != null ? ` · ${itemCount} items` : ''}
+        {channelLabel ? ` · ${channelLabel}` : ''}
+      </p>
+
+      {hasLoanGiven && summary.loanGivenSettledTotal > 0 ? (
+        <>
+          <div className="reports-expense-breakdown-row reports-expense-breakdown-row--settled">
+            <span>Settled expense</span>
+            <strong>{formatMoney(summary.loanGivenSettledTotal)}</strong>
+          </div>
+          <p className="reports-expense-breakdown-meta">
+            Collected back on loans · Open {formatMoney(summary.loanGivenUnsettledTotal)}
+          </p>
+        </>
+      ) : null}
+
+      {hasLoanActivity ? (
+        <div className="reports-expense-breakdown-row reports-expense-breakdown-row--after">
+          <span>After loan settlement</span>
+          <strong>{formatMoney(after)}</strong>
+        </div>
+      ) : null}
+
+      {hasLoanActivity ? (
+        <>
+          <div className="reports-expense-breakdown-row reports-expense-breakdown-row--loan">
+            <span>Loan</span>
+            <strong>{formatMoney(loanCombined)}</strong>
+          </div>
+          <p className="reports-expense-breakdown-meta">
+            {hasLoanGiven
+              ? `Given ${formatMoney(summary.loanGivenOriginalTotal || summary.loanTotal)}`
+              : null}
+            {summary.loanBorrowRepaidTotal > 0
+              ? `${hasLoanGiven ? ' · ' : ''}Settlement ${formatMoney(summary.loanBorrowRepaidTotal)}`
+              : null}
+            <br />
+            💵 Cash {formatMoney(loanCombinedCash)} · 🏦 Bank {formatMoney(loanCombinedBank)}
+          </p>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function ExpenseAfterLoanSummary({
+  grossTotal,
+  afterTotal,
+  variant = 'card',
+}: {
+  grossTotal: number
+  afterTotal: number
+  variant?: 'card' | 'inline' | 'banner'
+}) {
+  return (
+    <div className={`expense-after-loan expense-after-loan--${variant}`}>
+      <span className="expense-after-loan-gross">Total {formatMoney(grossTotal)}</span>
+      <span className="expense-after-loan-label">After loan settlement</span>
+      <strong className="expense-after-loan-amount">{formatMoney(afterTotal)}</strong>
+    </div>
+  )
+}
+
+function LoanGivenAmountStack({ original, open }: { original: number; open: number }) {
+  return (
+    <div className="loan-given-amount-stack">
+      <span className="loan-given-amount-stack-original">-{formatMoney(original)}</span>
+      <span className="loan-given-amount-stack-open">Open {formatMoney(open)}</span>
+    </div>
+  )
+}
+
+function NotSaleInflowSection({
+  items,
+  totals,
+}: {
+  items: NotSaleInflowItem[]
+  totals: ReturnType<typeof summarizeNotSaleInflow>
+}) {
+  return (
+    <>
+      <div className="reports-summary reports-summary--not-sale-detail">
+        <div className="reports-summary-card reports-summary-card--not-sale">
+          <span>Total cash in</span>
+          <strong>{formatMoney(totals.total)}</strong>
+          <small>{totals.count} add{totals.count === 1 ? '' : 's'} · not sales</small>
+        </div>
+        <div className="reports-summary-card">
+          <span>Cash in · counter</span>
+          <strong>{formatMoney(totals.cashTotal)}</strong>
+        </div>
+        <div className="reports-summary-card">
+          <span>Cash in · bank</span>
+          <strong>{formatMoney(totals.bankTotal)}</strong>
+        </div>
+      </div>
+      <p className="reports-list-meta">
+        {items.length} cash-in{items.length === 1 ? '' : 's'} · by date received · Add to Counter / Bank only
+      </p>
+      {items.length === 0 ? (
+        <p className="reports-empty">No not-sale credits for this period.</p>
+      ) : (
+        <ul className="reports-list">
+          {items.map((row, index) => (
+            <NotSaleInflowReportRow key={row.id} row={row} index={index + 1} detailed />
+          ))}
+        </ul>
+      )}
+    </>
+  )
+}
+
+function ReportsSectionHead({
+  title,
+  amount,
+  onOpen,
+}: {
+  title: string
+  amount: string
+  onOpen?: () => void
+}) {
+  if (!onOpen) {
+    return (
+      <div className="reports-section-head">
+        <h2>{title}</h2>
+        <strong>{amount}</strong>
+      </div>
+    )
+  }
+  return (
+    <button type="button" className="reports-section-head reports-section-head--tap" onClick={onOpen}>
+      <h2>{title}</h2>
+      <strong>{amount}</strong>
+      <span className="reports-section-head-chevron" aria-hidden="true">
+        →
+      </span>
+    </button>
   )
 }
 
@@ -2009,6 +2460,47 @@ function PurchaseReportRow({
   )
 }
 
+function NotSaleInflowReportRow({
+  row,
+  index,
+  detailed = false,
+}: {
+  row: NotSaleInflowItem
+  index: number
+  detailed?: boolean
+}) {
+  return (
+    <li className={`reports-item ${detailed ? 'reports-item--not-sale-detail' : ''}`}>
+      <div className="reports-item-head">
+        <span className="reports-item-title">{row.name}</span>
+        <span className="reports-item-amount reports-item-amount--in reports-item-amount--not-sale">
+          +{formatMoney(row.amount)}
+        </span>
+      </div>
+      <div className="reports-item-meta">
+        #{index} · {notSaleInflowKindLabel(row)} · {row.payLabel}
+      </div>
+      <div className="reports-item-meta reports-item-meta--detail reports-not-sale-date">
+        <strong>{formatDate(row.date)}</strong> {formatTime(row.date)}
+        {detailed ? (
+          <>
+            {' '}
+            · Received on this date · 💵 {formatMoney(row.cashAmount)} · 🏦{' '}
+            {formatMoney(row.bankAmount)}
+          </>
+        ) : null}
+      </div>
+      {detailed ? (
+        <div className="reports-item-meta reports-item-meta--detail">{row.detail}</div>
+      ) : (
+        <div className="reports-item-meta reports-item-meta--detail">
+          {row.detail} · 💵 {formatMoney(row.cashAmount)} · 🏦 {formatMoney(row.bankAmount)}
+        </div>
+      )}
+    </li>
+  )
+}
+
 function ExpenseTimelineReportRow({
   entry,
   index,
@@ -2020,19 +2512,43 @@ function ExpenseTimelineReportRow({
   expanded: boolean
   onToggle: () => void
 }) {
+  const isLoanGiven =
+    entry.kind === 'loan' &&
+    entry.loanOutflowKind === 'given' &&
+    entry.loanOriginalAmount != null
+  const isBorrowRepaid = entry.kind === 'loan' && entry.loanOutflowKind === 'borrow-repaid'
   return (
     <li
-      className={`reports-item reports-item--tap ${expanded ? 'reports-item--expanded' : ''}`}
+      className={`reports-item reports-item--tap ${expanded ? 'reports-item--expanded' : ''} ${isLoanGiven ? 'reports-item--loan-given' : ''} ${isBorrowRepaid ? 'reports-item--loan-borrow-repaid' : ''}`}
       data-report-key={`expense-tl:${entry.kind}:${entry.id}`}
     >
       <button type="button" className="reports-item-btn" onClick={onToggle}>
         <div className="reports-item-head">
           <span className="reports-item-title">{entry.title}</span>
-          <span className="reports-item-amount">-{formatMoney(entry.amount)}</span>
+          {isLoanGiven ? (
+            <LoanGivenAmountStack
+              original={entry.loanOriginalAmount ?? entry.amount}
+              open={entry.loanUnsettledAmount ?? 0}
+            />
+          ) : isBorrowRepaid ? (
+            <span className="reports-item-amount reports-item-amount--loan-repay">
+              -{formatMoney(entry.amount)}
+            </span>
+          ) : (
+            <span className="reports-item-amount">-{formatMoney(entry.amount)}</span>
+          )}
         </div>
         <div className="reports-item-meta">
           #{index} · {expenseTimelineKindLabel(entry.kind)} · {entry.payLabel} ·{' '}
           {formatDate(entry.date)} {formatTime(entry.date)}
+          {isLoanGiven ? (
+            <>
+              {' '}
+              · Settled {formatMoney(entry.loanSettledAmount ?? 0)}
+            </>
+          ) : isBorrowRepaid ? (
+            <> · Loan settlement</>
+          ) : null}
         </div>
       </button>
       {expanded ? (
@@ -2042,6 +2558,13 @@ function ExpenseTimelineReportRow({
             { label: 'Type', value: expenseTimelineKindLabel(entry.kind) },
             { label: 'Date', value: `${formatDate(entry.date)} ${formatTime(entry.date)}` },
             { label: 'Amount', value: formatMoney(entry.amount) },
+            ...(isLoanGiven
+              ? [
+                  { label: 'Original', value: formatMoney(entry.loanOriginalAmount ?? entry.amount) },
+                  { label: 'Settled', value: formatMoney(entry.loanSettledAmount ?? 0) },
+                  { label: 'Open', value: formatMoney(entry.loanUnsettledAmount ?? 0) },
+                ]
+              : []),
             { label: 'Payment', value: entry.payDetail },
             ...(entry.detail ? [{ label: 'Details', value: entry.detail }] : []),
           ]}
@@ -2105,11 +2628,13 @@ function LoanOutflowReportRow({
   expanded: boolean
   onToggle: () => void
 }) {
-  const kindLabel = row.kind === 'given' ? 'Loan given' : 'Loan returned'
+  const kindLabel = row.kind === 'given' ? 'Loan given' : 'Loan settlement'
   const payLabel = row.paySource === 'bank' ? '🏦 Bank' : '💵 Cash'
+  const isLoanGiven = row.kind === 'given'
+  const isBorrowRepaid = row.kind === 'borrow-repaid'
   return (
     <li
-      className={`reports-item reports-item--tap ${expanded ? 'reports-item--expanded' : ''}`}
+      className={`reports-item reports-item--tap ${expanded ? 'reports-item--expanded' : ''} ${isLoanGiven ? 'reports-item--loan-given' : ''} ${isBorrowRepaid ? 'reports-item--loan-borrow-repaid' : ''}`}
       data-report-key={`loan-out:${row.id}`}
     >
       <button type="button" className="reports-item-btn" onClick={onToggle}>
@@ -2117,10 +2642,23 @@ function LoanOutflowReportRow({
           <span className="reports-item-title">
             Loan #{index} · {row.name}
           </span>
-          <span className="reports-item-amount">{formatMoney(row.amount)}</span>
+          {isLoanGiven ? (
+            <LoanGivenAmountStack
+              original={row.originalAmount ?? row.amount}
+              open={row.unsettledAmount ?? 0}
+            />
+          ) : isBorrowRepaid ? (
+            <span className="reports-item-amount reports-item-amount--loan-repay">
+              -{formatMoney(row.amount)}
+            </span>
+          ) : (
+            <span className="reports-item-amount">{formatMoney(row.amount)}</span>
+          )}
         </div>
         <div className="reports-item-meta">
           {formatDate(row.date)} · {kindLabel} · {payLabel}
+          {isLoanGiven ? ` · Settled ${formatMoney(row.settledAmount ?? 0)}` : ''}
+          {isBorrowRepaid ? ' · Settlement' : ''}
         </div>
       </button>
       {expanded ? (
@@ -2129,6 +2667,16 @@ function LoanOutflowReportRow({
             { label: 'Name', value: row.name },
             { label: 'Date', value: formatDate(row.date) },
             { label: 'Amount', value: formatMoney(row.amount) },
+            ...(row.kind === 'given'
+              ? [
+                  {
+                    label: 'Original',
+                    value: formatMoney(row.originalAmount ?? row.amount),
+                  },
+                  { label: 'Settled', value: formatMoney(row.settledAmount ?? 0) },
+                  { label: 'Open', value: formatMoney(row.unsettledAmount ?? 0) },
+                ]
+              : []),
             { label: 'Type', value: kindLabel },
             { label: 'Payment', value: payLabel },
             ...(row.note ? [{ label: 'Note', value: row.note }] : []),

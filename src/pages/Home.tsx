@@ -46,7 +46,6 @@ import {
   NO2_BILL_LABEL,
 } from '../utils/expenseBillLabels'
 import {
-  buildNormalExpenseHistoryItems,
   filterNormalExpenseHistoryItems,
   summarizeNormalExpenses,
 } from '../utils/normalExpenseHistory'
@@ -56,7 +55,6 @@ import {
   summarizePurchases,
 } from '../utils/purchaseHistory'
 import {
-  buildLoanOutflowHistoryItems,
   filterLoanOutflowHistoryItems,
   summarizeLoanOutflows,
 } from '../utils/loanLedger'
@@ -311,9 +309,12 @@ function Home({ active }: { active: boolean }) {
     [workData, homeDayPreset, homeDayDate],
   )
   const periodExpenseItems = useMemo(() => {
-    const items = buildNormalExpenseHistoryItems(workData)
-    return filterNormalExpenseHistoryItems(items, homeDayPreset, homeDayDate)
-  }, [workData, homeDayPreset, homeDayDate])
+    return filterNormalExpenseHistoryItems(
+      derived.normalExpenseHistoryItems,
+      homeDayPreset,
+      homeDayDate,
+    )
+  }, [derived.normalExpenseHistoryItems, homeDayPreset, homeDayDate])
   const periodExpenseSummary = useMemo(
     () => summarizeNormalExpenses(periodExpenseItems),
     [periodExpenseItems],
@@ -331,9 +332,12 @@ function Home({ active }: { active: boolean }) {
     [periodPurchaseItems],
   )
   const periodLoanOutflowItems = useMemo(() => {
-    const items = buildLoanOutflowHistoryItems(workData)
-    return filterLoanOutflowHistoryItems(items, homeDayPreset, homeDayDate)
-  }, [workData, homeDayPreset, homeDayDate])
+    return filterLoanOutflowHistoryItems(
+      derived.loanOutflowHistoryItems,
+      homeDayPreset,
+      homeDayDate,
+    )
+  }, [derived.loanOutflowHistoryItems, homeDayPreset, homeDayDate])
   const periodLoanOutflowSummary = useMemo(
     () => summarizeLoanOutflows(periodLoanOutflowItems),
     [periodLoanOutflowItems],
@@ -569,8 +573,8 @@ function Home({ active }: { active: boolean }) {
       ? 'Cash → Bank Transfer'
       : 'Bank → Cash Transfer'
     : addTarget === 'bank'
-      ? 'Add to Bank'
-      : 'Add to Counter'
+      ? 'Add to Bank (not sale)'
+      : 'Add to Counter (not sale)'
 
   const panelAmountLabel = transferDirection ? 'Transfer Amount' : 'Amount to Add'
 
@@ -898,8 +902,11 @@ function Home({ active }: { active: boolean }) {
               {periodPurchasePaidSummary.count} paid
             </span>
             <span className="stat-meta stat-meta--breakdown">
-              + Loan {formatMoney(periodLoanOutflowSummary.total)} ·{' '}
-              {periodLoanOutflowSummary.count} items
+              + Loan given {formatMoney(periodLoanOutflowSummary.givenOriginalTotal)}
+              {periodLoanOutflowSummary.borrowRepaidTotal > 0
+                ? ` · Settlement ${formatMoney(periodLoanOutflowSummary.borrowRepaidTotal)}`
+                : ''}{' '}
+              · {periodLoanOutflowSummary.givenCount + periodLoanOutflowSummary.borrowRepaidCount} items
             </span>
           </div>
           <button
@@ -929,12 +936,12 @@ function Home({ active }: { active: boolean }) {
             <span className="stat-label">Net inflow</span>
             <span className="stat-value">{formatMoney(periodDailyTotals.netInflow)}</span>
             <span className="stat-meta stat-meta--breakdown">
-              💵 {formatMoney(periodDailyTotals.cashCollected)} · 🏦{' '}
-              {formatMoney(periodDailyTotals.bankCollected)}
+              Sales {formatMoney(periodDailyTotals.salesCollected)} · Cash in{' '}
+              {formatMoney(periodDailyTotals.notSaleCollectedTotal)}
             </span>
             <span className="stat-meta">
-              Credit+Cheque {formatMoney(periodDailyTotals.creditChequeAddedCombined)} · Added{' '}
-              {formatMoney(periodDailyTotals.moneyAddedTotal)}
+              Total collected {formatMoney(periodDailyTotals.totalCollected)} · Credit+Cheque{' '}
+              {formatMoney(periodDailyTotals.creditChequeAddedCombined)}
             </span>
           </button>
         </div>
