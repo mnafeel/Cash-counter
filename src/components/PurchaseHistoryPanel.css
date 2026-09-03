@@ -1323,8 +1323,13 @@
 }
 
 .purchase-hist-summary-row strong {
-  font-size: 0.9rem;
+  font-size: clamp(0.95rem, calc(var(--app-height, 800px) * 0.028), 1.15rem);
+  font-weight: 900;
   color: var(--cream);
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .purchase-hist-summary-row--no1 {
@@ -2657,7 +2662,9 @@ html[data-screen='phone'] .purchase-hist-item-actions {
 .expense-after-loan {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  min-width: 0;
+  overflow: visible;
 }
 
 .expense-after-loan--banner {
@@ -2668,15 +2675,19 @@ html[data-screen='phone'] .purchase-hist-item-actions {
 }
 
 .expense-after-loan-gross {
-  font-size: 0.58rem;
-  font-weight: 700;
+  font-size: clamp(0.78rem, calc(var(--app-height, 800px) * 0.023), 1rem);
+  font-weight: 800;
   color: var(--cream-dim);
   text-decoration: line-through;
-  opacity: 0.85;
+  opacity: 0.9;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .expense-after-loan-label {
-  font-size: 0.5rem;
+  font-size: 0.54rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -2684,10 +2695,13 @@ html[data-screen='phone'] .purchase-hist-item-actions {
 }
 
 .expense-after-loan-amount {
-  font-size: clamp(0.95rem, calc(var(--app-height, 800px) * 0.028), 1.2rem);
+  font-size: clamp(1rem, calc(var(--app-height, 800px) * 0.03), 1.3rem);
   font-weight: 900;
   color: var(--success, #7ddf8a);
-  line-height: 1.1;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .loan-given-amount-stack {

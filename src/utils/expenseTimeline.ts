@@ -227,11 +227,17 @@ export function summarizeExpenseTimeline(entries: ExpenseTimelineEntry[]) {
   )
 }
 
-/** Expense after loan settlement — normal + purchase only (loan amounts excluded). */
-export function expenseTotalAfterLoanSettlement(
-  summary: ReturnType<typeof summarizeExpenseTimeline>,
-): number {
-  return summary.expenseTotal + summary.purchaseTotal
+/** Open loan-given balance still counted as expense exposure (drops to zero when collected). */
+export function expenseOpenLoanGivenTotal(summary: ExpenseTimelineSummary): number {
+  return summary.loanGivenOriginalTotal > 0 ? summary.loanGivenUnsettledTotal : summary.loanTotal
+}
+
+/**
+ * After loan settlement — normal + purchase + open loan given.
+ * Borrow repayments stay in gross expense only; settled loan given no longer counts here.
+ */
+export function expenseTotalAfterLoanSettlement(summary: ExpenseTimelineSummary): number {
+  return summary.expenseTotal + summary.purchaseTotal + expenseOpenLoanGivenTotal(summary)
 }
 
 export type ExpenseTimelineSummary = ReturnType<typeof summarizeExpenseTimeline>

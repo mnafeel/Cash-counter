@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import type { AppData } from '../types'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { NO1_EXPENSE_LABEL } from '../utils/expenseBillLabels'
@@ -27,6 +27,14 @@ import {
 } from '../utils/loanLedger'
 import { buildPurchaseHistoryItems, filterPurchaseHistoryItems } from '../utils/purchaseHistory'
 import { toInputDate } from '../utils/salesReport'
+import {
+  collectAppDataMonthDates,
+  currentMonthKey,
+  defaultMonthPickerKey,
+  listMonthPickerOptions,
+  monthKeyFromIso,
+  monthRangeFromKey,
+} from '../utils/monthPicker'
 import './PurchaseHistoryPanel.css'
 
 interface ExpenseHistoryPanelProps {
@@ -70,6 +78,7 @@ export default function ExpenseHistoryPanel({
   const embedded = variant === 'embedded'
   const [rangeFrom, setRangeFrom] = useState(() => toInputDate())
   const [rangeTo, setRangeTo] = useState(() => toInputDate())
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey)
   const [sort, setSort] = useState<ExpenseTimelineSort>('time-desc')
   const [payChannel, setPayChannel] = useState<ExpensePayChannelFilter>('all')
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
@@ -150,6 +159,16 @@ export default function ExpenseHistoryPanel({
   }, [timeline, deferredSearch, payChannel, data, rangeFrom, rangeTo, sort])
   const summary = useMemo(() => summarizeExpenseTimeline(filteredTimeline), [filteredTimeline])
   const periodLabel = expensePeriodLabel(rangeFrom, rangeTo)
+  const monthOptions = useMemo(
+    () => listMonthPickerOptions(collectAppDataMonthDates(data)),
+    [data],
+  )
+
+  useEffect(() => {
+    if (!open && !embedded) return
+    if (monthOptions.length === 0) return
+    setSelectedMonth((prev) => defaultMonthPickerKey(monthOptions, prev))
+  }, [open, embedded, monthOptions])
 
   if (!open && !embedded) return null
 
@@ -166,13 +185,25 @@ export default function ExpenseHistoryPanel({
 
   function setToday() {
     const today = toInputDate()
+    const todayMonth = monthKeyFromIso(today)
+    if (monthOptions.some((option) => option.key === todayMonth)) {
+      setSelectedMonth(todayMonth)
+    }
     setPreset(today, today)
+  }
+
+  function setMonthPick(monthKey: string) {
+    const range = monthRangeFromKey(monthKey)
+    if (!range) return
+    setSelectedMonth(monthKey)
+    setPreset(range.fromDate, range.toDate)
   }
 
   function setYesterday() {
     const y = new Date()
     y.setDate(y.getDate() - 1)
     const d = toInputDate(y)
+    setSelectedMonth(monthKeyFromIso(d))
     setPreset(d, d)
   }
 
@@ -180,6 +211,7 @@ export default function ExpenseHistoryPanel({
     const today = toInputDate()
     const start = new Date()
     start.setDate(start.getDate() - 6)
+    setSelectedMonth(currentMonthKey())
     setPreset(toInputDate(start), today)
   }
 
@@ -207,6 +239,10 @@ export default function ExpenseHistoryPanel({
     y.setDate(y.getDate() - 1)
     return toInputDate(y)
   })()
+  const monthRangeActive =
+    selectedMonth.length > 0 &&
+    rangeFrom === monthRangeFromKey(selectedMonth)?.fromDate &&
+    rangeTo === monthRangeFromKey(selectedMonth)?.toDate
 
   const panelContent = (
     <div className={`purchase-hist-panel ${embedded ? 'purchase-hist-panel--embedded' : ''}`}>
@@ -229,7 +265,10 @@ export default function ExpenseHistoryPanel({
                 type="date"
                 className="purchase-hist-date-input purchase-hist-date-input--active"
                 value={rangeFrom}
-                onChange={(e) => setRangeFrom(e.target.value)}
+                onChange={(e) => {
+                  setRangeFrom(e.target.value)
+                  setSelectedMonth('')
+                }}
                 aria-label="Expense from date"
               />
             </label>
@@ -239,7 +278,10 @@ export default function ExpenseHistoryPanel({
                 type="date"
                 className="purchase-hist-date-input purchase-hist-date-input--active"
                 value={rangeTo}
-                onChange={(e) => setRangeTo(e.target.value)}
+                onChange={(e) => {
+                  setRangeTo(e.target.value)
+                  setSelectedMonth('')
+                }}
                 aria-label="Expense to date"
               />
             </label>
@@ -252,6 +294,28 @@ export default function ExpenseHistoryPanel({
             >
               Today
             </button>
+            <label
+              className={`purchase-hist-date-pick purchase-hist-date-pick--month ${monthRangeActive ? 'purchase-hist-date-pick--active' : ''}`}
+            >
+              <span>Month</span>
+              <select
+                className="purchase-hist-month-select"
+                value={selectedMonth}
+                onChange={(e) => setMonthPick(e.target.value)}
+                disabled={monthOptions.length === 0}
+                aria-label="Pick month for expense history"
+              >
+                {monthOptions.length === 0 ? (
+                  <option value="">No data yet</option>
+                ) : (
+                  monthOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))
+                )}
+              </select>
+            </label>
             <button
               type="button"
               className={`purchase-hist-date-chip ${rangeFrom === yesterday && rangeTo === yesterday ? 'purchase-hist-date-chip--active' : ''}`}
@@ -309,9 +373,11 @@ export default function ExpenseHistoryPanel({
           </div>
           {expenseHasLoanActivity(summary) ? (
             <div className="expense-after-loan expense-after-loan--banner purchase-hist-after-loan">
-              <span className="expense-after-loan-gross">
-                Total {formatMoney(expenseGrossTotal(summary))}
-              </span>
+              {expenseGrossTotal(summary) !== expenseTotalAfterLoanSettlement(summary) ? (
+                <span className="expense-after-loan-gross">
+                  {formatMoney(expenseGrossTotal(summary))}
+                </span>
+              ) : null}
               <span className="expense-after-loan-label">After loan settlement</span>
               <strong className="expense-after-loan-amount">
                 {formatMoney(expenseTotalAfterLoanSettlement(summary))}
@@ -345,8 +411,12 @@ export default function ExpenseHistoryPanel({
           ) : null}
           {summary.loanGivenOriginalTotal > 0 ? (
             <span className="purchase-hist-summary-count">
-              Open {formatMoney(summary.loanGivenUnsettledTotal)} · After loan settlement{' '}
-              {formatMoney(expenseTotalAfterLoanSettlement(summary))}
+              Open {formatMoney(summary.loanGivenUnsettledTotal)}
+              {summary.loanBorrowRepaidTotal > 0 ? ' · Borrow repayments in expense only' : ''}
+            </span>
+          ) : summary.loanBorrowRepaidTotal > 0 ? (
+            <span className="purchase-hist-summary-count">
+              Borrow repayments in expense only · not in after loan settlement
             </span>
           ) : null}
           <div className="purchase-hist-summary-row">

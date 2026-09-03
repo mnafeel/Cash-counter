@@ -670,6 +670,41 @@
   cursor: pointer;
 }
 
+.reports-date-pick--month {
+  min-height: 26px;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--brown-dark);
+}
+
+.reports-date-pick--active {
+  background: var(--surface-2);
+  border-color: var(--cream-dim);
+}
+
+.reports-date-pick--month span {
+  color: var(--cream-dim);
+}
+
+.reports-date-pick--active span {
+  color: var(--cream);
+}
+
+.reports-month-select {
+  min-width: 118px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--cream);
+  font-size: 0.58rem;
+  font-weight: 700;
+  outline: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
 .reports-pay-channel-bar {
   display: flex;
   flex-wrap: wrap;
@@ -971,7 +1006,9 @@
 .expense-after-loan {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  min-width: 0;
+  overflow: visible;
 }
 
 .expense-after-loan--card {
@@ -987,15 +1024,19 @@
 }
 
 .expense-after-loan-gross {
-  font-size: 0.52rem;
-  font-weight: 700;
+  font-size: clamp(0.74rem, calc(var(--app-height, 800px) * 0.022), 0.95rem);
+  font-weight: 800;
   color: var(--cream-dim);
   text-decoration: line-through;
-  opacity: 0.85;
+  opacity: 0.9;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .expense-after-loan-label {
-  font-size: 0.48rem;
+  font-size: 0.52rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1003,14 +1044,31 @@
 }
 
 .expense-after-loan-amount {
-  font-size: clamp(0.92rem, calc(var(--app-height, 800px) * 0.028), 1.2rem);
+  font-size: clamp(0.98rem, calc(var(--app-height, 800px) * 0.03), 1.28rem);
   font-weight: 900;
   color: var(--success, #7ddf8a);
-  line-height: 1.1;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: unset;
+}
+
+.expense-after-loan--card .expense-after-loan-gross {
+  font-size: clamp(0.7rem, calc(var(--app-height, 800px) * 0.021), 0.9rem);
 }
 
 .expense-after-loan--card .expense-after-loan-amount {
-  font-size: clamp(0.82rem, calc(var(--app-height, 800px) * 0.024), 1.05rem);
+  font-size: clamp(0.9rem, calc(var(--app-height, 800px) * 0.027), 1.15rem);
+}
+
+.reports-summary-card .expense-after-loan {
+  overflow: visible;
+}
+
+.reports-summary-card .expense-after-loan-gross,
+.reports-summary-card .expense-after-loan-amount {
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .reports-expense-breakdown {
@@ -1035,10 +1093,13 @@
 }
 
 .reports-expense-breakdown-row strong {
-  font-size: clamp(0.82rem, calc(var(--app-height, 800px) * 0.024), 1rem);
+  font-size: clamp(0.9rem, calc(var(--app-height, 800px) * 0.027), 1.12rem);
   font-weight: 900;
   color: var(--text);
-  line-height: 1.1;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .reports-expense-breakdown-row--total strong {

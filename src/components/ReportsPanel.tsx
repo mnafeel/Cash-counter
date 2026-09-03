@@ -91,6 +91,7 @@ import {
   summarizeNotSaleInflow,
   type NotSaleInflowItem,
 } from '../utils/notSaleInflow'
+import { collectAppDataMonthDates, currentMonthKey, defaultMonthPickerKey, listMonthPickerOptions } from '../utils/monthPicker'
 import '../pages/Reports.css'
 
 export type ReportSection =
@@ -123,7 +124,6 @@ const DATE_PRESETS: { id: ReportDatePreset; label: string }[] = [
   { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
   { id: 'week', label: 'Week' },
-  { id: 'month', label: 'Month' },
   { id: 'all', label: 'All' },
 ]
 
@@ -240,6 +240,7 @@ export default function ReportsPanel({
 }: ReportsPanelProps) {
   const [datePreset, setDatePreset] = useState<ReportDatePreset>(initialPreset)
   const [selectedDate, setSelectedDate] = useState(toInputDate())
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey)
   const [rangeTo, setRangeTo] = useState(toInputDate())
   const [activeSection, setActiveSection] = useState<ReportSection>(
     focusSection ? (initialSection ?? 'sales') : 'all',
@@ -263,7 +264,16 @@ export default function ReportsPanel({
 
   useEffect(() => {
     if (!open) return
-    setDatePreset(initialPreset)
+    if (initialPreset === 'monthPick' || initialPreset === 'month') {
+      setDatePreset('monthPick')
+      setSelectedMonth(
+        initialSelectedDate && initialSelectedDate.length === 7
+          ? initialSelectedDate
+          : currentMonthKey(),
+      )
+    } else {
+      setDatePreset(initialPreset)
+    }
     if (initialSection) setActiveSection(initialSection)
     else if (!focusSection) setActiveSection('all')
     if (initialPreset === 'date' && initialSelectedDate) {
@@ -276,7 +286,16 @@ export default function ReportsPanel({
     } else {
       setExpandedSalesPanel(null)
     }
-  }, [open, initialPreset, initialSection, initialSelectedDate])
+  }, [open, initialPreset, initialSection, initialSelectedDate, focusSection])
+
+  const filterDateArg = datePreset === 'monthPick' ? selectedMonth : selectedDate
+
+  const monthOptions = useMemo(() => listMonthPickerOptions(collectAppDataMonthDates(data)), [data])
+
+  useEffect(() => {
+    if (monthOptions.length === 0) return
+    setSelectedMonth((prev) => defaultMonthPickerKey(monthOptions, prev))
+  }, [monthOptions])
 
   const isOverview = activeSection === 'all'
   const needsSales = isOverview || activeSection === 'sales'
@@ -292,9 +311,9 @@ export default function ReportsPanel({
   const salesFilter = useMemo(
     () =>
       needsSales
-        ? salesFilterForPreset(datePreset, selectedDate, rangeTo, salesDateMode)
+        ? salesFilterForPreset(datePreset, filterDateArg, rangeTo, salesDateMode)
         : undefined,
-    [needsSales, datePreset, selectedDate, rangeTo, salesDateMode],
+    [needsSales, datePreset, filterDateArg, rangeTo, salesDateMode],
   )
   const salesBills = useMemo(
     () => (needsSales ? buildSalesBillList(data, salesSort, salesFilter) : EMPTY_SALES_BILLS),
@@ -307,9 +326,9 @@ export default function ReportsPanel({
   const overviewSalesFilter = useMemo(
     () =>
       needsOverviewSales
-        ? salesFilterForPreset(datePreset, selectedDate, rangeTo, 'collected')
+        ? salesFilterForPreset(datePreset, filterDateArg, rangeTo, 'collected')
         : undefined,
-    [needsOverviewSales, datePreset, selectedDate, rangeTo],
+    [needsOverviewSales, datePreset, filterDateArg, rangeTo],
   )
   const overviewSalesBills = useMemo(
     () =>
@@ -325,15 +344,15 @@ export default function ReportsPanel({
         : EMPTY_SALES_TOTALS,
     [overviewSalesBills, overviewSalesFilter, needsOverviewSales],
   )
-  const showSameDaySalesBox = isSingleDaySalesPreset(datePreset, selectedDate, rangeTo)
+  const showSameDaySalesBox = isSingleDaySalesPreset(datePreset, filterDateArg, rangeTo)
   const sameDaySales = useMemo(
     () =>
       needsSales && showSameDaySalesBox
-        ? salesSameDaySummaryForPreset(data, datePreset, selectedDate, rangeTo)
+        ? salesSameDaySummaryForPreset(data, datePreset, filterDateArg, rangeTo)
         : null,
-    [data, datePreset, selectedDate, rangeTo, showSameDaySalesBox, needsSales],
+    [data, datePreset, filterDateArg, rangeTo, showSameDaySalesBox, needsSales],
   )
-  const sameDaySalesLabel = sameDaySalesCollectedLabel(datePreset, selectedDate, rangeTo)
+  const sameDaySalesLabel = sameDaySalesCollectedLabel(datePreset, filterDateArg, rangeTo)
 
   const sameDaySalesBills = useMemo(
     () =>
@@ -341,29 +360,29 @@ export default function ReportsPanel({
         ? salesBillsForPreset(
             data,
             datePreset,
-            selectedDate,
+            filterDateArg,
             salesSort,
             rangeTo,
             'collected',
             { sameDayCreatedAndPaid: true },
           )
         : [],
-    [data, datePreset, selectedDate, salesSort, rangeTo, showSameDaySalesBox, needsSales],
+    [data, datePreset, filterDateArg, salesSort, rangeTo, showSameDaySalesBox, needsSales],
   )
 
   const withCreditSalesBills = useMemo(() => {
-    const filter = salesFilterForPreset(datePreset, selectedDate, rangeTo, salesDateMode)
+    const filter = salesFilterForPreset(datePreset, filterDateArg, rangeTo, salesDateMode)
     return salesBills.filter((row) =>
       isPeriodWithCreditSaleRow(row, salesDateMode, filter?.fromDate, filter?.toDate),
     )
-  }, [salesBills, datePreset, selectedDate, rangeTo, salesDateMode])
+  }, [salesBills, datePreset, filterDateArg, rangeTo, salesDateMode])
 
   const oldCreditChequeBills = useMemo(() => {
-    const filter = salesFilterForPreset(datePreset, selectedDate, rangeTo, salesDateMode)
+    const filter = salesFilterForPreset(datePreset, filterDateArg, rangeTo, salesDateMode)
     return salesBills.filter((row) =>
       isOldCreditChequeClearedTodayRow(row, salesDateMode, filter?.fromDate, filter?.toDate),
     )
-  }, [salesBills, datePreset, selectedDate, rangeTo, salesDateMode])
+  }, [salesBills, datePreset, filterDateArg, rangeTo, salesDateMode])
 
   const showSalesCollectedAccordion =
     activeSection === 'sales' && salesDateMode === 'collected'
@@ -374,7 +393,7 @@ export default function ReportsPanel({
     } else {
       setExpandedSalesPanel(null)
     }
-  }, [datePreset, selectedDate, rangeTo, salesDateMode, activeSection])
+  }, [datePreset, filterDateArg, rangeTo, salesDateMode, activeSection])
 
   function toggleSalesPanel(panel: SalesExpandPanel) {
     setExpandedSalesPanel((current) => {
@@ -391,8 +410,8 @@ export default function ReportsPanel({
   const purchaseItems = useMemo(() => {
     if (!needsPurchase && !needsExpense) return []
     const items = buildPurchaseHistoryItems(data)
-    return filterPurchaseHistoryItems(items, datePreset, selectedDate, rangeTo)
-  }, [data, datePreset, selectedDate, rangeTo, needsPurchase, needsExpense])
+    return filterPurchaseHistoryItems(items, datePreset, filterDateArg, rangeTo)
+  }, [data, datePreset, filterDateArg, rangeTo, needsPurchase, needsExpense])
   const purchaseTotals = useMemo(() => summarizePurchases(purchaseItems), [purchaseItems])
   const purchaseSupplierGroups = useMemo(
     () => groupPurchasesBySupplier(purchaseItems),
@@ -406,8 +425,8 @@ export default function ReportsPanel({
   const expenseItems = useMemo(() => {
     if (!needsExpense) return []
     const items = buildNormalExpenseHistoryItems(data)
-    return filterNormalExpenseHistoryItems(items, datePreset, selectedDate, rangeTo)
-  }, [data, datePreset, selectedDate, rangeTo, needsExpense])
+    return filterNormalExpenseHistoryItems(items, datePreset, filterDateArg, rangeTo)
+  }, [data, datePreset, filterDateArg, rangeTo, needsExpense])
   const channelExpenseItems = useMemo(
     () => filterNormalExpensesByPayChannel(expenseItems, expensePayChannel),
     [expenseItems, expensePayChannel],
@@ -450,14 +469,14 @@ export default function ReportsPanel({
     const dated = filterLoanOutflowHistoryItems(
       allLoanOutflowItems,
       datePreset,
-      selectedDate,
+      filterDateArg,
       rangeTo,
     )
     if (expensePayChannel === 'all') return dated
     return dated.filter((item) =>
       expensePayChannel === 'cash' ? item.paySource !== 'bank' : item.paySource === 'bank',
     )
-  }, [allLoanOutflowItems, datePreset, selectedDate, rangeTo, expensePayChannel, needsExpense])
+  }, [allLoanOutflowItems, datePreset, filterDateArg, rangeTo, expensePayChannel, needsExpense])
   const loanOutflowTotals = useMemo(
     () => summarizeLoanOutflows(loanOutflowItems),
     [loanOutflowItems],
@@ -467,7 +486,7 @@ export default function ReportsPanel({
     const allLoans = filterLoanOutflowHistoryItems(
       allLoanOutflowItems,
       datePreset,
-      selectedDate,
+      filterDateArg,
       rangeTo,
     )
     return buildExpenseTimelineEntriesFromData(
@@ -477,7 +496,7 @@ export default function ReportsPanel({
       expenseTimelineSort,
       allLoans,
       datePreset,
-      selectedDate,
+      filterDateArg,
       rangeTo,
     )
   }, [
@@ -486,7 +505,7 @@ export default function ReportsPanel({
     purchaseItems,
     allLoanOutflowItems,
     datePreset,
-    selectedDate,
+    filterDateArg,
     rangeTo,
     expenseTimelineSort,
     needsExpense,
@@ -498,7 +517,8 @@ export default function ReportsPanel({
   const combinedExpenseTotal = expenseGrossTotal(expenseTimelineSummary)
   const analyzedExpenseTotal =
     expenseTotals.total + loanOutflowTotals.givenOriginalTotal + loanOutflowTotals.borrowRepaidTotal
-  const analyzedExpenseAfterLoan = expenseTotals.total
+  const analyzedExpenseAfterLoan =
+    expenseTotals.total + loanOutflowTotals.givenUnsettledTotal
 
   const filteredExpenseTimeline = useMemo(() => {
     const q = deferredExpenseNameSearch.trim().toLowerCase()
@@ -518,7 +538,7 @@ export default function ReportsPanel({
       data,
       expensePayChannel,
       datePreset,
-      selectedDate,
+      filterDateArg,
       rangeTo,
       expenseTimelineSort,
     )
@@ -544,7 +564,7 @@ export default function ReportsPanel({
     expensePayChannel,
     data,
     datePreset,
-    selectedDate,
+    filterDateArg,
     rangeTo,
     expenseTimelineSort,
   ])
@@ -556,7 +576,7 @@ export default function ReportsPanel({
   const creditItems = useMemo(() => {
     if (!needsCredit) return []
     const items = buildCreditReportItems(data)
-    const filtered = filterCreditReportItems(items, datePreset, selectedDate, rangeTo)
+    const filtered = filterCreditReportItems(items, datePreset, filterDateArg, rangeTo)
     return [...filtered].sort((a, b) => {
       if (creditSort === 'date-asc') {
         return new Date(a.date).getTime() - new Date(b.date).getTime()
@@ -569,14 +589,14 @@ export default function ReportsPanel({
       }
       return new Date(b.date).getTime() - new Date(a.date).getTime()
     })
-  }, [data, datePreset, selectedDate, rangeTo, creditSort, needsCredit])
+  }, [data, datePreset, filterDateArg, rangeTo, creditSort, needsCredit])
   const creditTotals = useMemo(() => summarizeCreditItems(creditItems), [creditItems])
 
   const chequeItems = useMemo(() => {
     if (!needsCheque) return []
     const items = buildChequeReportItems(data)
-    return filterChequeReportItems(items, datePreset, selectedDate, rangeTo)
-  }, [data, datePreset, selectedDate, rangeTo, needsCheque])
+    return filterChequeReportItems(items, datePreset, filterDateArg, rangeTo)
+  }, [data, datePreset, filterDateArg, rangeTo, needsCheque])
   const chequeTotals = useMemo(() => summarizeChequeItems(chequeItems), [chequeItems])
 
   const creditChequeOpenTotal = creditTotals.pendingTotal + chequeTotals.pendingTotal
@@ -592,7 +612,7 @@ export default function ReportsPanel({
     const items = filterLoanReportItems(
       buildLoanReportItems(data),
       datePreset,
-      selectedDate,
+      filterDateArg,
       rangeTo,
     )
     return [...items].sort((a, b) => {
@@ -600,13 +620,13 @@ export default function ReportsPanel({
       const tb = new Date(b.createdAt).getTime()
       return loanSort === 'date-asc' ? ta - tb : tb - ta
     })
-  }, [data, datePreset, selectedDate, rangeTo, loanSort, needsLoan])
+  }, [data, datePreset, filterDateArg, rangeTo, loanSort, needsLoan])
   const loanTotals = useMemo(() => summarizeLoanReportItems(loanItems), [loanItems])
 
   const notSaleInflowItems = useMemo(
     () =>
-      needsNotSale ? buildNotSaleInflowItems(data, datePreset, selectedDate, rangeTo) : [],
-    [data, datePreset, selectedDate, rangeTo, needsNotSale],
+      needsNotSale ? buildNotSaleInflowItems(data, datePreset, filterDateArg, rangeTo) : [],
+    [data, datePreset, filterDateArg, rangeTo, needsNotSale],
   )
   const notSaleInflowTotals = useMemo(
     () => summarizeNotSaleInflow(notSaleInflowItems),
@@ -632,7 +652,7 @@ export default function ReportsPanel({
   const scheduledCreditReminders = useMemo(() => buildCreditBillReminders(data), [data])
   const scheduledChequeReminders = useMemo(() => buildChequeBillReminders(data), [data])
 
-  const periodLabel = formatReportPresetLabel(datePreset, selectedDate, rangeTo)
+  const periodLabel = formatReportPresetLabel(datePreset, filterDateArg, rangeTo)
   const showAllSections = !focusSection
   const visibleSection = focusSection ? activeSection : activeSection
 
@@ -704,15 +724,6 @@ export default function ReportsPanel({
 
   if (!open) return null
 
-  function setYesterdayToTodayRange() {
-    const today = toInputDate()
-    const y = new Date()
-    y.setDate(y.getDate() - 1)
-    setSelectedDate(toInputDate(y))
-    setRangeTo(today)
-    setDatePreset('range')
-  }
-
   return (
     <Portal>
     <div className="reports-overlay" role="dialog" aria-modal="true" aria-label="Reports">
@@ -780,9 +791,31 @@ export default function ReportsPanel({
               >
                 Range
               </button>
-              <button type="button" className="reports-date-chip" onClick={setYesterdayToTodayRange}>
-                2 Days
-              </button>
+              <label
+                className={`reports-date-pick reports-date-pick--month ${datePreset === 'monthPick' ? 'reports-date-pick--active' : ''}`}
+              >
+                <span>Month</span>
+                <select
+                  className="reports-month-select"
+                  value={selectedMonth}
+                  onChange={(e) => {
+                    setSelectedMonth(e.target.value)
+                    setDatePreset('monthPick')
+                  }}
+                  disabled={monthOptions.length === 0}
+                  aria-label="Pick month for report"
+                >
+                  {monthOptions.length === 0 ? (
+                    <option value="">No data yet</option>
+                  ) : (
+                    monthOptions.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
             </div>
 
             {datePreset === 'date' ? (
@@ -1111,13 +1144,6 @@ export default function ReportsPanel({
                     <small>
                       {filteredExpenseTimeline.length} items · chronological
                       {expensePayChannel !== 'all' ? ` · ${expensePayChannel}` : ''}
-                      {expenseHasLoanActivity(filteredExpenseTimelineSummary) ? (
-                        <>
-                          <br />
-                          After loan settlement{' '}
-                          {formatMoney(expenseTotalAfterLoanSettlement(filteredExpenseTimelineSummary))}
-                        </>
-                      ) : null}
                     </small>
                   </div>
                 )}
@@ -1919,10 +1945,21 @@ function ExpenseReportSummaryBreakdown({
       ) : null}
 
       {hasLoanActivity ? (
-        <div className="reports-expense-breakdown-row reports-expense-breakdown-row--after">
-          <span>After loan settlement</span>
-          <strong>{formatMoney(after)}</strong>
-        </div>
+        <>
+          <div className="reports-expense-breakdown-row reports-expense-breakdown-row--after">
+            <span>After loan settlement</span>
+            <strong>{formatMoney(after)}</strong>
+          </div>
+          <p className="reports-expense-breakdown-meta">
+            Normal + purchase
+            {hasLoanGiven && summary.loanGivenUnsettledTotal > 0
+              ? ` · Open loan given ${formatMoney(summary.loanGivenUnsettledTotal)}`
+              : hasLoanGiven
+                ? ' · Loan given settled'
+                : ''}
+            {summary.loanBorrowRepaidTotal > 0 ? ' · Borrow repayments excluded' : ''}
+          </p>
+        </>
       ) : null}
 
       {hasLoanActivity ? (
@@ -1956,9 +1993,12 @@ function ExpenseAfterLoanSummary({
   afterTotal: number
   variant?: 'card' | 'inline' | 'banner'
 }) {
+  const differs = grossTotal !== afterTotal
   return (
     <div className={`expense-after-loan expense-after-loan--${variant}`}>
-      <span className="expense-after-loan-gross">Total {formatMoney(grossTotal)}</span>
+      {differs ? (
+        <span className="expense-after-loan-gross">{formatMoney(grossTotal)}</span>
+      ) : null}
       <span className="expense-after-loan-label">After loan settlement</span>
       <strong className="expense-after-loan-amount">{formatMoney(afterTotal)}</strong>
     </div>

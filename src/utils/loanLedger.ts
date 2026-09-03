@@ -405,7 +405,7 @@ export function summarizeLoanOutflows(items: LoanOutflowHistoryItem[]): LoanOutf
   return summary
 }
 
-/** Expense total for loan given only — open balance after collections. */
+/** Open loan-given amount for after-loan-settlement totals (zero when fully collected). */
 export function loanGivenExpenseEffectiveTotal(summary: LoanOutflowSummary): number {
   return summary.givenUnsettledTotal
 }

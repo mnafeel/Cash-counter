@@ -6,7 +6,15 @@ import { getSalePaymentEvents, saleCollectionTimestamp, sanitizeSplitParentChild
 import { saleCashCollected, saleBankCollected, saleChequeToBankCollected, toInputDate } from './salesReport'
 import { memoByDataRef } from './memoByDataRef'
 
-export type CashDateFilter = 'all' | 'today' | 'yesterday' | 'week' | 'month' | 'date' | 'range'
+export type CashDateFilter =
+  | 'all'
+  | 'today'
+  | 'yesterday'
+  | 'week'
+  | 'month'
+  | 'monthPick'
+  | 'date'
+  | 'range'
 
 export interface CashActivityItem {
   id: string
@@ -52,6 +60,14 @@ export function matchesCashDateFilter(
 
   if (dateFilter === 'month') {
     return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+  }
+
+  if (dateFilter === 'monthPick') {
+    if (!selectedDate) return true
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return false
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    return key === selectedDate
   }
 
   if (dateFilter === 'date') {
@@ -111,6 +127,12 @@ export function getCashPeriodStartMs(
 
   if (dateFilter === 'month') {
     return new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0).getTime()
+  }
+
+  if (dateFilter === 'monthPick' && selectedDate) {
+    const [y, m] = selectedDate.split('-').map(Number)
+    if (!y || !m) return null
+    return new Date(y, m - 1, 1, 0, 0, 0, 0).getTime()
   }
 
   if (dateFilter === 'date') {

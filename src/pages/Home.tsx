@@ -1030,7 +1030,7 @@ function Home({ active }: { active: boolean }) {
           <button
             type="button"
             className="home-tool-btn"
-            onClick={() => openReports('month', 'expense-report')}
+            onClick={() => openReports('monthPick', 'expense-report')}
           >
             📤 Expense Report
           </button>

@@ -20,7 +20,6 @@ import {
   filterPurchaseHistoryItems,
   formatPurchaseCreditMonthLabel,
   groupPurchasesBySupplier,
-  listPurchaseHistoryMonthOptions,
   matchesPurchaseHistorySearch,
   purchaseItemMatchesPayChannel,
   purchaseSupplierBillDateDiffers,
@@ -35,6 +34,7 @@ import {
   type SupplierPurchaseFileSummary,
 } from '../utils/purchaseHistory'
 import { toInputDate } from '../utils/salesReport'
+import { currentMonthKey, defaultMonthPickerKey, listMonthPickerOptions } from '../utils/monthPicker'
 import PurchaseCreditPanel, { type PurchaseCreditPanelHandle } from './PurchaseCreditPanel'
 import './PurchaseHistoryPanel.css'
 import Portal from './Portal'
@@ -45,7 +45,6 @@ const DATE_OPTIONS: { id: PurchaseDateFilter | 'range'; label: string }[] = [
   { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
   { id: 'week', label: 'Week' },
-  { id: 'month', label: 'Month' },
   { id: 'range', label: 'Range' },
 ]
 
@@ -100,13 +99,21 @@ export default function PurchaseHistoryPanel({
 
   useEffect(() => {
     if (!open) return
-    setDateFilter('all')
+    setDateFilter('today')
     setSelectedDate('')
-    setSelectedMonth('')
+    setSelectedMonth(currentMonthKey())
   }, [open])
 
   const allItems = useMemo(() => buildPurchaseHistoryItems(data), [data])
-  const monthOptions = useMemo(() => listPurchaseHistoryMonthOptions(allItems), [allItems])
+  const monthOptions = useMemo(
+    () => listMonthPickerOptions(allItems.map((item) => item.date)),
+    [allItems],
+  )
+
+  useEffect(() => {
+    if (!open || monthOptions.length === 0) return
+    setSelectedMonth((prev) => defaultMonthPickerKey(monthOptions, prev))
+  }, [open, monthOptions])
   const purchaseCreditItems = useMemo(() => buildPurchaseCreditItems(data), [data])
   const purchaseCreditTotal = useMemo(
     () => purchaseCreditItems.reduce((sum, item) => sum + item.amount, 0),
@@ -887,7 +894,6 @@ export default function PurchaseHistoryPanel({
                 onClick={() => {
                   setDateFilter(opt.id)
                   setSelectedDate('')
-                  setSelectedMonth('')
                 }}
               >
                 {opt.label}
@@ -899,26 +905,24 @@ export default function PurchaseHistoryPanel({
               <span>Month</span>
               <select
                 className="purchase-hist-month-select"
-                value={dateFilter === 'monthPick' ? selectedMonth : ''}
+                value={selectedMonth}
                 onChange={(e) => {
-                  const value = e.target.value
-                  if (!value) {
-                    setSelectedMonth('')
-                    setDateFilter('all')
-                    return
-                  }
-                  setSelectedMonth(value)
+                  setSelectedMonth(e.target.value)
                   setDateFilter('monthPick')
                   setSelectedDate('')
                 }}
+                disabled={monthOptions.length === 0}
                 aria-label="Pick month for purchase history"
               >
-                <option value="">All months</option>
-                {monthOptions.map((option) => (
-                  <option key={option.key} value={option.key}>
-                    {option.label}
-                  </option>
-                ))}
+                {monthOptions.length === 0 ? (
+                  <option value="">No purchases yet</option>
+                ) : (
+                  monthOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))
+                )}
               </select>
             </label>
             <label

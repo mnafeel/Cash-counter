@@ -27,6 +27,7 @@ import {
 import { saleCollectedAmount } from './salePayment'
 import { UNNAMED_CREDIT_CUSTOMER } from './customerLedger'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
+import { formatMonthKeyLabel, monthRangeFromKey } from './monthPicker'
 import { memoByDataRef } from './memoByDataRef'
 
 export type ReportTab = 'all' | 'sales' | 'purchase' | 'expense' | 'credit' | 'cheque'
@@ -460,6 +461,10 @@ export function presetToSalesFilter(
     return { fromDate: toInputDate(start), toDate: today }
   }
   if (preset === 'month') return monthFilter()
+  if (preset === 'monthPick' && selectedDate) {
+    const range = monthRangeFromKey(selectedDate)
+    if (range) return { fromDate: range.fromDate, toDate: range.toDate }
+  }
   if (preset === 'date' && selectedDate) return { fromDate: selectedDate, toDate: selectedDate }
   if (preset === 'range' && selectedDate && rangeTo) {
     const from = selectedDate <= rangeTo ? selectedDate : rangeTo
@@ -478,6 +483,7 @@ export function formatReportPresetLabel(
   if (preset === 'yesterday') return 'Yesterday'
   if (preset === 'week') return 'This Week'
   if (preset === 'month') return 'This Month'
+  if (preset === 'monthPick' && selectedDate) return formatMonthKeyLabel(selectedDate)
   if (preset === 'date' && selectedDate) return formatDate(selectedDate)
   if (preset === 'range' && selectedDate && rangeTo) {
     const from = selectedDate <= rangeTo ? selectedDate : rangeTo
