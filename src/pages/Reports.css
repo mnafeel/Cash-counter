@@ -943,6 +943,10 @@
   color: var(--warning, #f5c542);
 }
 
+.reports-summary--not-sale-head {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
 .reports-summary--overview-wide {
   grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
 }

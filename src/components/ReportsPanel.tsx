@@ -280,6 +280,7 @@ export default function ReportsPanel({
 
   const isOverview = activeSection === 'all'
   const needsSales = isOverview || activeSection === 'sales'
+  const needsOverviewSales = needsSales || activeSection === 'not-sale'
   const needsExpense =
     isOverview || activeSection === 'expense' || activeSection === 'expense-report'
   const needsPurchase = isOverview || activeSection === 'purchase'
@@ -296,33 +297,33 @@ export default function ReportsPanel({
     [needsSales, datePreset, selectedDate, rangeTo, salesDateMode],
   )
   const salesBills = useMemo(
-    () => (salesFilter ? buildSalesBillList(data, salesSort, salesFilter) : EMPTY_SALES_BILLS),
+    () => (needsSales ? buildSalesBillList(data, salesSort, salesFilter) : EMPTY_SALES_BILLS),
     [data, salesFilter, salesSort, needsSales],
   )
   const salesTotals = useMemo(
-    () => (salesFilter ? summarizeSalesBillRows(salesBills, salesFilter) : EMPTY_SALES_TOTALS),
+    () => (needsSales ? summarizeSalesBillRows(salesBills, salesFilter) : EMPTY_SALES_TOTALS),
     [salesBills, salesFilter, needsSales],
   )
   const overviewSalesFilter = useMemo(
     () =>
-      needsSales || needsNotSale
+      needsOverviewSales
         ? salesFilterForPreset(datePreset, selectedDate, rangeTo, 'collected')
         : undefined,
-    [needsSales, needsNotSale, datePreset, selectedDate, rangeTo],
+    [needsOverviewSales, datePreset, selectedDate, rangeTo],
   )
   const overviewSalesBills = useMemo(
     () =>
-      overviewSalesFilter
+      needsOverviewSales
         ? buildSalesBillList(data, 'date-desc', overviewSalesFilter)
         : EMPTY_SALES_BILLS,
-    [data, overviewSalesFilter, needsSales, needsNotSale],
+    [data, overviewSalesFilter, needsOverviewSales],
   )
   const overviewSalesTotals = useMemo(
     () =>
-      overviewSalesFilter
+      needsOverviewSales
         ? summarizeSalesBillRows(overviewSalesBills, overviewSalesFilter)
         : EMPTY_SALES_TOTALS,
-    [overviewSalesBills, overviewSalesFilter, needsSales, needsNotSale],
+    [overviewSalesBills, overviewSalesFilter, needsOverviewSales],
   )
   const showSameDaySalesBox = isSingleDaySalesPreset(datePreset, selectedDate, rangeTo)
   const sameDaySales = useMemo(
@@ -886,6 +887,23 @@ export default function ReportsPanel({
               <div className="reports-summary reports-summary--all reports-summary--overview reports-summary--overview-wide">
                 <button
                   type="button"
+                  className="reports-summary-card reports-summary-card--green reports-summary-card--expandable"
+                  onClick={() => selectSection('sales')}
+                >
+                  <span>Total sales</span>
+                  <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
+                  <small>
+                    {overviewSalesTotals.billCount} bill{overviewSalesTotals.billCount === 1 ? '' : 's'} collected
+                    <br />
+                    💵 {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
+                    {formatMoney(overviewSalesChannelTotals.bank)}
+                  </small>
+                  <span className="reports-summary-card-chevron" aria-hidden="true">
+                    ▸
+                  </span>
+                </button>
+                <button
+                  type="button"
                   className="reports-summary-card reports-summary-card--orange reports-summary-card--expandable"
                   onClick={() => selectSection('expense')}
                 >
@@ -933,23 +951,6 @@ export default function ReportsPanel({
                 </button>
                 <button
                   type="button"
-                  className="reports-summary-card reports-summary-card--green reports-summary-card--expandable"
-                  onClick={() => selectSection('sales')}
-                >
-                  <span>Total sales</span>
-                  <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
-                  <small>
-                    {overviewSalesTotals.billCount} bill{overviewSalesTotals.billCount === 1 ? '' : 's'} collected
-                    <br />
-                    💵 {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
-                    {formatMoney(overviewSalesChannelTotals.bank)}
-                  </small>
-                  <span className="reports-summary-card-chevron" aria-hidden="true">
-                    ▸
-                  </span>
-                </button>
-                <button
-                  type="button"
                   className="reports-summary-card reports-summary-card--not-sale reports-summary-card--expandable"
                   onClick={() => selectSection('not-sale')}
                 >
@@ -979,6 +980,19 @@ export default function ReportsPanel({
                   <small>
                     Credit {formatMoney(creditTotals.pendingTotal)} · Cheque{' '}
                     {formatMoney(chequeTotals.pendingTotal)}
+                  </small>
+                </div>
+              </div>
+            ) : null}
+
+            {activeSection === 'sales' && salesDateMode === 'collected' ? (
+              <div className="reports-summary reports-summary--single">
+                <div className="reports-summary-card reports-summary-card--green">
+                  <span>Total sales</span>
+                  <strong>{formatMoney(salesTotals.totalBills)}</strong>
+                  <small>
+                    {salesTotals.billCount} bill{salesTotals.billCount === 1 ? '' : 's'} collected ·{' '}
+                    {formatCollectedSalesBreakdown(salesTotals.cashTotal, salesTotals.bankTotal)}
                   </small>
                 </div>
               </div>
@@ -1028,17 +1042,39 @@ export default function ReportsPanel({
             ) : null}
 
             {activeSection !== 'sales' && activeSection !== 'all' ? (
-              <div className="reports-summary reports-summary--single">
+              <div
+                className={`reports-summary reports-summary--single ${activeSection === 'not-sale' ? 'reports-summary--not-sale-head' : ''}`}
+              >
                 {activeSection === 'not-sale' && (
-                  <div className="reports-summary-card reports-summary-card--not-sale">
-                    <span>Not sale · cash in</span>
-                    <strong>{formatMoney(notSaleInflowTotals.total)}</strong>
-                    <small>
-                      {notSaleInflowTotals.count} item{notSaleInflowTotals.count === 1 ? '' : 's'} · 💵 Counter{' '}
-                      {formatMoney(notSaleInflowTotals.cashTotal)} · 🏦 Bank{' '}
-                      {formatMoney(notSaleInflowTotals.bankTotal)}
-                    </small>
-                  </div>
+                  <>
+                    <div className="reports-summary-card reports-summary-card--green">
+                      <span>Total sales</span>
+                      <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
+                      <small>
+                        {overviewSalesTotals.billCount} bill
+                        {overviewSalesTotals.billCount === 1 ? '' : 's'} collected · 💵{' '}
+                        {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
+                        {formatMoney(overviewSalesChannelTotals.bank)}
+                      </small>
+                    </div>
+                    <div className="reports-summary-card reports-summary-card--not-sale">
+                      <span>Not sale · cash in</span>
+                      <strong>{formatMoney(notSaleInflowTotals.total)}</strong>
+                      <small>
+                        {notSaleInflowTotals.count} item{notSaleInflowTotals.count === 1 ? '' : 's'} · 💵 Counter{' '}
+                        {formatMoney(notSaleInflowTotals.cashTotal)} · 🏦 Bank{' '}
+                        {formatMoney(notSaleInflowTotals.bankTotal)}
+                      </small>
+                    </div>
+                    <div className="reports-summary-card reports-summary-card--collected">
+                      <span>Sales + not sale</span>
+                      <strong>{formatMoney(totalCollectedWithNotSale)}</strong>
+                      <small>
+                        Sales {formatMoney(overviewSalesTotals.totalBills)} + Not sale{' '}
+                        {formatMoney(notSaleInflowTotals.total)}
+                      </small>
+                    </div>
+                  </>
                 )}
                 {activeSection === 'credit' && (
                   <div className="reports-summary-card">
@@ -1250,7 +1286,13 @@ export default function ReportsPanel({
 
           {activeSection === 'not-sale' ? (
             <section className="reports-section">
-              <NotSaleInflowSection items={notSaleInflowItems} totals={notSaleInflowTotals} />
+              <NotSaleInflowSection
+                items={notSaleInflowItems}
+                totals={notSaleInflowTotals}
+                salesTotal={overviewSalesTotals.totalBills}
+                salesBillCount={overviewSalesTotals.billCount}
+                totalWithNotSale={totalCollectedWithNotSale}
+              />
             </section>
           ) : null}
 
@@ -1935,17 +1977,37 @@ function LoanGivenAmountStack({ original, open }: { original: number; open: numb
 function NotSaleInflowSection({
   items,
   totals,
+  salesTotal,
+  salesBillCount,
+  totalWithNotSale,
 }: {
   items: NotSaleInflowItem[]
   totals: ReturnType<typeof summarizeNotSaleInflow>
+  salesTotal: number
+  salesBillCount: number
+  totalWithNotSale: number
 }) {
   return (
     <>
       <div className="reports-summary reports-summary--not-sale-detail">
+        <div className="reports-summary-card reports-summary-card--green">
+          <span>Total sales</span>
+          <strong>{formatMoney(salesTotal)}</strong>
+          <small>
+            {salesBillCount} bill{salesBillCount === 1 ? '' : 's'} collected · bill payments only
+          </small>
+        </div>
         <div className="reports-summary-card reports-summary-card--not-sale">
-          <span>Total cash in</span>
+          <span>Not sale · cash in</span>
           <strong>{formatMoney(totals.total)}</strong>
           <small>{totals.count} add{totals.count === 1 ? '' : 's'} · not sales</small>
+        </div>
+        <div className="reports-summary-card reports-summary-card--collected">
+          <span>Sales + not sale</span>
+          <strong>{formatMoney(totalWithNotSale)}</strong>
+          <small>
+            Sales {formatMoney(salesTotal)} + Not sale {formatMoney(totals.total)}
+          </small>
         </div>
         <div className="reports-summary-card">
           <span>Cash in · counter</span>
@@ -2035,7 +2097,7 @@ function SalesCollectedSummaryCards({
         <span>Sales collected</span>
         <strong>{formatMoney(salesTotals.totalBills)}</strong>
         <small>
-          {salesTotals.billCount} bills ·{' '}
+          {salesTotals.billCount} bills · tap to list ·{' '}
           {formatCollectedSalesBreakdown(salesTotals.cashTotal, salesTotals.bankTotal)}
         </small>
         <span className="reports-summary-card-chevron" aria-hidden="true">

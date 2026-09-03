@@ -365,7 +365,7 @@ export function salesFilterForPreset(
   const sameDayCreatedAndPaid =
     options?.sameDayCreatedAndPaid === true && dateMode === 'collected' && Boolean(base)
   if (!base) {
-    return dateMode === 'collected' ? undefined : { dateMode }
+    return { dateMode }
   }
   return {
     ...base,
