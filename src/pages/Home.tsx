@@ -17,6 +17,7 @@ import type { ExpensePayType, TransferDirection } from '../types'
 import {
   getHistoryTypeLabel,
   matchesHistorySearch,
+  resolveLoanIdFromHistoryItemId,
   type HistoryFilter,
   type HistoryItemType,
 } from '../utils/historyItems'
@@ -147,6 +148,15 @@ function Home({ active }: { active: boolean }) {
     reset: resetDeleteRecordSearch,
   } = useDeferredSearch()
   const [deleteRecordFilter, setDeleteRecordFilter] = useState<HistoryFilter>('all')
+  const [pendingDeleteRecord, setPendingDeleteRecord] = useState<{
+    type: HistoryItemType
+    id: string
+    groupSaleIds?: string[]
+    amount: number
+    name?: string
+    sub: string
+    date: string
+  } | null>(null)
   const [showCashHistory, setShowCashHistory] = useState(false)
   const {
     value: cashHistorySearch,
@@ -197,6 +207,7 @@ function Home({ active }: { active: boolean }) {
   const resetHomeUi = useCallback(() => {
     resetDeleteRecordSearch()
     setDeleteRecordFilter('all')
+    setPendingDeleteRecord(null)
     setShowDeleteRecords(false)
     resetCashHistorySearch()
     setCashDateFilter('today')
@@ -445,15 +456,47 @@ function Home({ active }: { active: boolean }) {
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }, [deleteRecordBaseItems, deferredDeleteRecordSearch])
 
+  function requestDeleteRecord(item: {
+    type: HistoryItemType
+    id: string
+    groupSaleIds?: string[]
+    amount: number
+    name?: string
+    sub: string
+    date: string
+  }) {
+    setPendingDeleteRecord(item)
+  }
+
+  function cancelDeleteRecord() {
+    setPendingDeleteRecord(null)
+  }
+
+  function confirmDeleteRecord() {
+    if (!pendingDeleteRecord) return
+    handleDeleteRecord(
+      pendingDeleteRecord.type,
+      pendingDeleteRecord.id,
+      pendingDeleteRecord.groupSaleIds,
+    )
+    setPendingDeleteRecord(null)
+  }
+
   function handleDeleteRecord(
     type: HistoryItemType,
     id: string,
     groupSaleIds?: string[],
   ) {
-    if (!confirm('Delete this record? Balances will be updated.')) return
-    if (type === 'sale') removeSale(id, groupSaleIds)
-    else if (type === 'loan' || (data.loans ?? []).some((loan) => loan.id === id)) removeLoan(id)
-    else removeExpense(id)
+    if (type === 'sale') {
+      removeSale(id, groupSaleIds)
+      return
+    }
+    const loanId = resolveLoanIdFromHistoryItemId(id, data.loans ?? [])
+    if (type === 'loan' || loanId) {
+      removeLoan(loanId ?? id)
+      return
+    }
+    removeExpense(id)
   }
 
   function tryUnlock(nextPin: string) {
@@ -1054,6 +1097,7 @@ function Home({ active }: { active: boolean }) {
               closePanel()
               setDeleteRecordSearch('')
               setDeleteRecordFilter('all')
+              setPendingDeleteRecord(null)
               setShowDeleteRecords(true)
             }}
           >
@@ -1266,7 +1310,10 @@ function Home({ active }: { active: boolean }) {
               <button
                 type="button"
                 className="home-add-close"
-                onClick={() => setShowDeleteRecords(false)}
+                onClick={() => {
+                  setPendingDeleteRecord(null)
+                  setShowDeleteRecords(false)
+                }}
                 aria-label="Close"
               >
                 ✕
@@ -1305,6 +1352,39 @@ function Home({ active }: { active: boolean }) {
               ))}
             </div>
 
+            {pendingDeleteRecord ? (
+              <div className="home-delete-confirm" role="alertdialog" aria-labelledby="home-delete-confirm-title">
+                <p id="home-delete-confirm-title" className="home-delete-confirm-title">
+                  Confirm delete
+                </p>
+                <div className="home-delete-confirm-row">
+                  <span>Type</span>
+                  <strong>{getHistoryTypeLabel(pendingDeleteRecord.type)}</strong>
+                </div>
+                <div className="home-delete-confirm-row home-delete-confirm-row--amount">
+                  <span>Amount</span>
+                  <strong>{formatMoney(pendingDeleteRecord.amount)}</strong>
+                </div>
+                <p className="home-delete-confirm-meta">
+                  {pendingDeleteRecord.name ? `${pendingDeleteRecord.name} · ` : ''}
+                  {pendingDeleteRecord.sub} · {formatDate(pendingDeleteRecord.date)}
+                </p>
+                <p className="home-delete-confirm-note">Balances will be updated after delete.</p>
+                <div className="home-delete-confirm-actions">
+                  <button type="button" className="btn btn-secondary" onClick={cancelDeleteRecord}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary home-delete-confirm-btn"
+                    onClick={confirmDeleteRecord}
+                  >
+                    Confirm delete
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {recordsForDelete.length === 0 ? (
               <p className="home-delete-empty">No records found.</p>
             ) : (
@@ -1323,9 +1403,19 @@ function Home({ active }: { active: boolean }) {
                     </div>
                     <button
                       type="button"
-                      className="home-delete-btn"
-                      onClick={() => handleDeleteRecord(item.type, item.id, item.groupSaleIds)}
-                      aria-label="Delete record"
+                      className={`home-delete-btn${pendingDeleteRecord?.id === item.id ? ' home-delete-btn--active' : ''}`}
+                      onClick={() =>
+                        requestDeleteRecord({
+                          type: item.type,
+                          id: item.id,
+                          groupSaleIds: item.groupSaleIds,
+                          amount: item.amount,
+                          name: item.name,
+                          sub: item.sub,
+                          date: item.date,
+                        })
+                      }
+                      aria-label={`Delete ${getHistoryTypeLabel(item.type)} ${formatMoney(item.amount)}`}
                     >
                       ✕
                     </button>

@@ -446,7 +446,15 @@ export function mergeCloudAppData(local: AppData, remote: AppData): AppData {
       ...(normalizedLocal.customerReminders ?? {}),
     },
     dayBalances: mergeDayBalances(normalizedLocal.dayBalances, normalizedRemote.dayBalances),
-    trash: mergeTrash(normalizedLocal.trash, normalizedRemote.trash),
+    trashPurgedKeys: mergeTrashPurgedKeys(
+      normalizedLocal.trashPurgedKeys,
+      normalizedRemote.trashPurgedKeys,
+    ),
+    trash: mergeTrash(
+      normalizedLocal.trash,
+      normalizedRemote.trash,
+      mergeTrashPurgedKeys(normalizedLocal.trashPurgedKeys, normalizedRemote.trashPurgedKeys),
+    ),
   })
 }
 
@@ -547,13 +555,51 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
         ? undefined
         : Math.max(0, Math.min(100, Number(parsed.staffCommissionDefaultPercent) || 0)),
     staffBonusMonthSettings: normalizeStaffBonusMonthSettings(parsed.staffBonusMonthSettings),
-    trash: normalizeTrash(parsed.trash),
+    trash: normalizeTrash(parsed.trash, normalizeTrashPurgedKeys(parsed.trashPurgedKeys)),
+    trashPurgedKeys: normalizeTrashPurgedKeys(parsed.trashPurgedKeys),
   }
 }
 
 const TRASH_CAP = 200
+const TRASH_PURGED_CAP = 500
 
-function normalizeTrash(raw: unknown): TrashedRecord[] {
+function trashRecordKey(kind: TrashKind, id: string): string {
+  return `${kind}:${id}`
+}
+
+function normalizeTrashPurgedKeys(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const out: string[] = []
+  for (const key of raw) {
+    if (typeof key !== 'string' || !key.includes(':')) continue
+    const [kind] = key.split(':')
+    if (kind !== 'sale' && kind !== 'expense' && kind !== 'loan') continue
+    if (!out.includes(key)) out.push(key)
+  }
+  return out.slice(-TRASH_PURGED_CAP)
+}
+
+function mergeTrashPurgedKeys(local?: string[], remote?: string[]): string[] {
+  const set = new Set<string>([...(remote ?? []), ...(local ?? [])])
+  return [...set].slice(-TRASH_PURGED_CAP)
+}
+
+function markTrashPurged(data: AppData, keys: string[]): AppData {
+  if (keys.length === 0) return data
+  const trashPurgedKeys = [...new Set([...(data.trashPurgedKeys ?? []), ...keys])].slice(
+    -TRASH_PURGED_CAP,
+  )
+  return { ...data, trashPurgedKeys }
+}
+
+function clearTrashPurgedKey(data: AppData, key: string): AppData {
+  const trashPurgedKeys = (data.trashPurgedKeys ?? []).filter((row) => row !== key)
+  if (trashPurgedKeys.length === (data.trashPurgedKeys ?? []).length) return data
+  return { ...data, trashPurgedKeys }
+}
+
+function normalizeTrash(raw: unknown, purgedKeys?: string[]): TrashedRecord[] {
+  const purged = new Set(purgedKeys ?? [])
   if (!Array.isArray(raw)) return []
   const out: TrashedRecord[] = []
   for (const row of raw) {
@@ -561,6 +607,7 @@ function normalizeTrash(raw: unknown): TrashedRecord[] {
     const entry = row as Partial<TrashedRecord>
     if (!entry.id || !entry.kind || !entry.snapshot || !entry.deletedAt) continue
     if (entry.kind !== 'sale' && entry.kind !== 'expense' && entry.kind !== 'loan') continue
+    if (purged.has(trashRecordKey(entry.kind, entry.id))) continue
     out.push({
       id: entry.id,
       kind: entry.kind,
@@ -576,26 +623,44 @@ function normalizeTrash(raw: unknown): TrashedRecord[] {
   return out.slice(-TRASH_CAP)
 }
 
-function mergeTrash(local?: TrashedRecord[], remote?: TrashedRecord[]): TrashedRecord[] {
+function mergeTrash(
+  local?: TrashedRecord[],
+  remote?: TrashedRecord[],
+  purgedKeys?: string[],
+): TrashedRecord[] {
+  const purged = new Set(purgedKeys ?? [])
   const map = new Map<string, TrashedRecord>()
-  for (const row of remote ?? []) map.set(`${row.kind}:${row.id}`, row)
+  for (const row of remote ?? []) {
+    const key = trashRecordKey(row.kind, row.id)
+    if (!purged.has(key)) map.set(key, row)
+  }
   for (const row of local ?? []) {
-    const key = `${row.kind}:${row.id}`
+    const key = trashRecordKey(row.kind, row.id)
+    if (purged.has(key)) {
+      map.delete(key)
+      continue
+    }
     const other = map.get(key)
     if (!other || new Date(row.deletedAt).getTime() >= new Date(other.deletedAt).getTime()) {
       map.set(key, row)
     }
   }
   return [...map.values()]
+    .filter((row) => !purged.has(trashRecordKey(row.kind, row.id)))
     .sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime())
     .slice(0, TRASH_CAP)
 }
 
 function pushTrash(data: AppData, entry: TrashedRecord): AppData {
-  const without = (data.trash ?? []).filter(
+  const key = trashRecordKey(entry.kind, entry.id)
+  const withoutPurged =
+    (data.trashPurgedKeys ?? []).includes(key)
+      ? { ...data, trashPurgedKeys: (data.trashPurgedKeys ?? []).filter((row) => row !== key) }
+      : data
+  const without = (withoutPurged.trash ?? []).filter(
     (row) => !(row.kind === entry.kind && row.id === entry.id),
   )
-  return { ...data, trash: [...without, entry].slice(-TRASH_CAP) }
+  return { ...withoutPurged, trash: [...without, entry].slice(-TRASH_CAP) }
 }
 
 function normalizeStaffSalaryAdvance(raw: Partial<StaffSalaryAdvance>): StaffSalaryAdvance {
@@ -1628,12 +1693,13 @@ export function setOpeningBalance(data: AppData, amount: number): AppData {
 export function restoreTrashRecord(data: AppData, kind: TrashKind, id: string): AppData {
   const entry = (data.trash ?? []).find((row) => row.kind === kind && row.id === id)
   if (!entry) return data
+  let nextBase = clearTrashPurgedKey(data, trashRecordKey(kind, id))
 
   if (kind === 'expense') {
     const expense = entry.snapshot as Expense
     if (data.expenses.some((row) => row.id === expense.id)) return data
     const next = {
-      ...data,
+      ...nextBase,
       expenses: [expense, ...data.expenses],
       trash: (data.trash ?? []).filter((row) => !(row.kind === kind && row.id === id)),
     }
@@ -1645,7 +1711,7 @@ export function restoreTrashRecord(data: AppData, kind: TrashKind, id: string): 
     const loan = entry.snapshot as Loan
     if ((data.loans ?? []).some((row) => row.id === loan.id)) return data
     const next = {
-      ...data,
+      ...nextBase,
       loans: [loan, ...(data.loans ?? [])],
       trash: (data.trash ?? []).filter((row) => !(row.kind === kind && row.id === id)),
     }
@@ -1668,8 +1734,12 @@ export function restoreTrashRecord(data: AppData, kind: TrashKind, id: string): 
   const existing = new Set(data.sales.map((row) => row.id))
   const fresh = rows.filter((row) => !existing.has(row.id))
   if (fresh.length === 0) return data
+  const cleared = ids.reduce(
+    (acc, saleId) => clearTrashPurgedKey(acc, trashRecordKey('sale', saleId)),
+    nextBase,
+  )
   const next = {
-    ...data,
+    ...cleared,
     sales: [...fresh, ...data.sales],
     trash: trashPool.filter((row) => !(row.kind === 'sale' && ids.includes(row.id))),
   }
@@ -1680,20 +1750,25 @@ export function restoreTrashRecord(data: AppData, kind: TrashKind, id: string): 
 export function purgeTrashRecord(data: AppData, kind: TrashKind, id: string): AppData {
   const entry = (data.trash ?? []).find((row) => row.kind === kind && row.id === id)
   if (!entry) return data
+  const purgeKeys = [trashRecordKey(kind, id)]
+  if (kind === 'sale' && entry.relatedSaleIds?.length) {
+    for (const saleId of entry.relatedSaleIds) purgeKeys.push(trashRecordKey('sale', saleId))
+  }
   let trash = (data.trash ?? []).filter((row) => !(row.kind === kind && row.id === id))
   if (kind === 'sale' && entry.relatedSaleIds?.length) {
     trash = trash.filter(
       (row) => !(row.kind === 'sale' && entry.relatedSaleIds!.includes(row.id)),
     )
   }
-  const next = { ...data, trash }
+  const next = markTrashPurged({ ...data, trash }, purgeKeys)
   saveData(next, { cloudImmediate: true })
   return next
 }
 
 export function emptyTrash(data: AppData): AppData {
   if (!(data.trash ?? []).length) return data
-  const next = { ...data, trash: [] }
+  const purgeKeys = (data.trash ?? []).map((row) => trashRecordKey(row.kind, row.id))
+  const next = markTrashPurged({ ...data, trash: [] }, purgeKeys)
   saveData(next, { cloudImmediate: true })
   return next
 }
@@ -1756,17 +1831,33 @@ export function deleteSale(
 export function deleteExpense(data: AppData, id: string): AppData {
   const expense = data.expenses.find((e) => e.id === id)
   if (!expense) return data
-  const trashed = pushTrash(data, {
-    id: expense.id,
-    kind: 'expense',
-    deletedAt: new Date().toISOString(),
-    label: isPurchaseExpense(expense)
-      ? stripExpenseBillSuffix(expense.name)
-      : expense.name.trim() || 'Expense',
-    amount: expense.amount,
-    snapshot: expense,
-  })
-  const next = { ...trashed, expenses: data.expenses.filter((e) => e.id !== id) }
+
+  const idsToRemove = new Set<string>([id])
+  if (expense.pairedExpenseId) idsToRemove.add(expense.pairedExpenseId)
+  for (const row of data.expenses) {
+    if (row.pairedExpenseId === id) idsToRemove.add(row.id)
+  }
+
+  let trashed = data
+  for (const expenseId of idsToRemove) {
+    const row = data.expenses.find((e) => e.id === expenseId)
+    if (!row) continue
+    trashed = pushTrash(trashed, {
+      id: row.id,
+      kind: 'expense',
+      deletedAt: new Date().toISOString(),
+      label: isPurchaseExpense(row)
+        ? stripExpenseBillSuffix(row.name)
+        : row.name.trim() || 'Expense',
+      amount: row.amount,
+      snapshot: row,
+    })
+  }
+
+  const next = {
+    ...trashed,
+    expenses: data.expenses.filter((e) => !idsToRemove.has(e.id)),
+  }
   saveData(next, { cloudImmediate: true })
   return next
 }

@@ -296,6 +296,8 @@ export interface AppData {
   staffBonusMonthSettings?: Record<string, StaffBonusMonthSettings>
   /** Recently deleted records — restore from Settings. */
   trash?: TrashedRecord[]
+  /** Permanently purged recycle-bin keys (`kind:id`) — survives cloud merge. */
+  trashPurgedKeys?: string[]
 }
 
 export type TrashKind = 'sale' | 'expense' | 'loan'

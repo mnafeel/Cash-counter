@@ -770,6 +770,87 @@ html[data-screen='desktop'] .home-pin-digit {
   font-size: 0.85rem;
 }
 
+.home-delete-btn--active {
+  background: rgba(139, 58, 58, 0.45);
+  box-shadow: 0 0 0 2px rgba(255, 120, 120, 0.35);
+}
+
+.home-delete-confirm {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--danger-border);
+  background: rgba(139, 58, 58, 0.12);
+}
+
+.home-delete-confirm-title {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--danger-text);
+}
+
+.home-delete-confirm-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.home-delete-confirm-row span {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+}
+
+.home-delete-confirm-row strong {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.home-delete-confirm-row--amount strong {
+  font-size: 1rem;
+  color: var(--danger-text);
+}
+
+.home-delete-confirm-meta {
+  margin: 4px 0 0;
+  font-size: 0.65rem;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.home-delete-confirm-note {
+  margin: 6px 0 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+}
+
+.home-delete-confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.home-delete-confirm-actions .btn {
+  flex: 1;
+  min-height: 40px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.home-delete-confirm-btn {
+  background: rgba(139, 58, 58, 0.85);
+  border-color: var(--danger-border);
+}
+
 .home-panel-available {
   margin: 0;
   font-size: 0.72rem;

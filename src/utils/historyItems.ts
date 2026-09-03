@@ -2689,3 +2689,13 @@ export function matchesHistoryPaymentFilter(
   const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
   return modes.includes(paymentFilter)
 }
+
+/** Map a loan history row id (`loanId-give`, `loanId-settle-0`, …) to the underlying loan id. */
+export function resolveLoanIdFromHistoryItemId(id: string, loans: Loan[] = []): string | null {
+  if (loans.some((loan) => loan.id === id)) return id
+  const giveTake = id.match(/^(.+)-(give|take)$/)
+  if (giveTake && loans.some((loan) => loan.id === giveTake[1])) return giveTake[1]
+  const settle = id.match(/^(.+)-settle-\d+$/)
+  if (settle && loans.some((loan) => loan.id === settle[1])) return settle[1]
+  return null
+}
