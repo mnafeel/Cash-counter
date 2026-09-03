@@ -47,6 +47,9 @@ import {
   expenseHasLoanActivity,
   expenseLoanCombinedTotal,
   expenseTotalAfterLoanSettlement,
+  expenseTotalIfLoansFullyClosed,
+  buildReportNetSummary,
+  type ReportNetSummary,
   filterExpenseTimelineByPayChannel,
   summarizeExpenseTimeline,
   type ExpensePayChannelFilter,
@@ -517,8 +520,6 @@ export default function ReportsPanel({
   const combinedExpenseTotal = expenseGrossTotal(expenseTimelineSummary)
   const analyzedExpenseTotal =
     expenseTotals.total + loanOutflowTotals.givenOriginalTotal + loanOutflowTotals.borrowRepaidTotal
-  const analyzedExpenseAfterLoan =
-    expenseTotals.total + loanOutflowTotals.givenUnsettledTotal
 
   const filteredExpenseTimeline = useMemo(() => {
     const q = deferredExpenseNameSearch.trim().toLowerCase()
@@ -571,6 +572,14 @@ export default function ReportsPanel({
   const filteredExpenseTimelineSummary = useMemo(
     () => summarizeExpenseTimeline(filteredExpenseTimeline),
     [filteredExpenseTimeline],
+  )
+  const expenseChannelFilteredTimeline = useMemo(
+    () => filterExpenseTimelineByPayChannel(expenseTimeline, expensePayChannel),
+    [expenseTimeline, expensePayChannel],
+  )
+  const expenseChannelTimelineSummary = useMemo(
+    () => summarizeExpenseTimeline(expenseChannelFilteredTimeline),
+    [expenseChannelFilteredTimeline],
   )
 
   const creditItems = useMemo(() => {
@@ -643,6 +652,10 @@ export default function ReportsPanel({
   }, [overviewSalesBills])
   const totalCollectedWithNotSale =
     overviewSalesTotals.totalBills + notSaleInflowTotals.total
+  const overviewReportNet = useMemo(
+    () => buildReportNetSummary(totalCollectedWithNotSale, expenseTimelineSummary),
+    [totalCollectedWithNotSale, expenseTimelineSummary],
+  )
 
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
   const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
@@ -923,7 +936,7 @@ export default function ReportsPanel({
                   className="reports-summary-card reports-summary-card--green reports-summary-card--expandable"
                   onClick={() => selectSection('sales')}
                 >
-                  <span>Total sales</span>
+                  <span>Sales collected</span>
                   <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
                   <small>
                     {overviewSalesTotals.billCount} bill{overviewSalesTotals.billCount === 1 ? '' : 's'} collected
@@ -945,6 +958,7 @@ export default function ReportsPanel({
                     <ExpenseAfterLoanSummary
                       grossTotal={combinedExpenseTotal}
                       afterTotal={expenseTotalAfterLoanSettlement(expenseTimelineSummary)}
+                      closedTotal={expenseTotalIfLoansFullyClosed(expenseTimelineSummary)}
                       variant="card"
                     />
                   ) : (
@@ -1015,19 +1029,7 @@ export default function ReportsPanel({
                     {formatMoney(chequeTotals.pendingTotal)}
                   </small>
                 </div>
-              </div>
-            ) : null}
-
-            {activeSection === 'sales' && salesDateMode === 'collected' ? (
-              <div className="reports-summary reports-summary--single">
-                <div className="reports-summary-card reports-summary-card--green">
-                  <span>Total sales</span>
-                  <strong>{formatMoney(salesTotals.totalBills)}</strong>
-                  <small>
-                    {salesTotals.billCount} bill{salesTotals.billCount === 1 ? '' : 's'} collected ·{' '}
-                    {formatCollectedSalesBreakdown(salesTotals.cashTotal, salesTotals.bankTotal)}
-                  </small>
-                </div>
+                <ReportsNetSummaryCard net={overviewReportNet} />
               </div>
             ) : null}
 
@@ -1081,7 +1083,7 @@ export default function ReportsPanel({
                 {activeSection === 'not-sale' && (
                   <>
                     <div className="reports-summary-card reports-summary-card--green">
-                      <span>Total sales</span>
+                      <span>Sales collected</span>
                       <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
                       <small>
                         {overviewSalesTotals.billCount} bill
@@ -1136,6 +1138,7 @@ export default function ReportsPanel({
                       <ExpenseAfterLoanSummary
                         grossTotal={expenseGrossTotal(filteredExpenseTimelineSummary)}
                         afterTotal={expenseTotalAfterLoanSettlement(filteredExpenseTimelineSummary)}
+                        closedTotal={expenseTotalIfLoansFullyClosed(filteredExpenseTimelineSummary)}
                         variant="card"
                       />
                     ) : (
@@ -1154,7 +1157,8 @@ export default function ReportsPanel({
                     loanOutflowTotals.borrowRepaidTotal > 0 ? (
                       <ExpenseAfterLoanSummary
                         grossTotal={analyzedExpenseTotal}
-                        afterTotal={analyzedExpenseAfterLoan}
+                        afterTotal={expenseTotalAfterLoanSettlement(expenseChannelTimelineSummary)}
+                        closedTotal={expenseTotalIfLoansFullyClosed(expenseChannelTimelineSummary)}
                         variant="card"
                       />
                     ) : (
@@ -1533,6 +1537,10 @@ export default function ReportsPanel({
 
                 {!selectedExpenseNameGroup ? (
                   <>
+                    <ExpenseReportSummaryBreakdown
+                      summary={expenseChannelTimelineSummary}
+                      channelLabel={expensePayChannel !== 'all' ? expensePayChannel : undefined}
+                    />
                     <p className="reports-list-meta">
                       {filteredExpenseNameGroups.length} name
                       {filteredExpenseNameGroups.length === 1 ? '' : 's'} ·{' '}
@@ -1909,6 +1917,7 @@ function ExpenseReportSummaryBreakdown({
 }) {
   const gross = expenseGrossTotal(summary)
   const after = expenseTotalAfterLoanSettlement(summary)
+  const closed = expenseTotalIfLoansFullyClosed(summary)
   const loanCombined = expenseLoanCombinedTotal(summary)
   const loanCombinedCash = summary.loanCash + summary.loanBorrowRepaidCash
   const loanCombinedBank = summary.loanBank + summary.loanBorrowRepaidBank
@@ -1948,7 +1957,14 @@ function ExpenseReportSummaryBreakdown({
         <>
           <div className="reports-expense-breakdown-row reports-expense-breakdown-row--after">
             <span>After loan settlement</span>
-            <strong>{formatMoney(after)}</strong>
+            <div className="reports-expense-breakdown-after-dual">
+              <strong>{formatMoney(after)}</strong>
+              {closed !== after ? (
+                <span className="reports-expense-breakdown-closed" title="If all loans closed">
+                  {formatMoney(closed)}
+                </span>
+              ) : null}
+            </div>
           </div>
           <p className="reports-expense-breakdown-meta">
             Normal + purchase
@@ -1958,6 +1974,7 @@ function ExpenseReportSummaryBreakdown({
                 ? ' · Loan given settled'
                 : ''}
             {summary.loanBorrowRepaidTotal > 0 ? ' · Borrow repayments excluded' : ''}
+            {closed !== after ? ' · Right: if loans fully closed' : ''}
           </p>
         </>
       ) : null}
@@ -1987,29 +2004,104 @@ function ExpenseReportSummaryBreakdown({
 function ExpenseAfterLoanSummary({
   grossTotal,
   afterTotal,
+  closedTotal,
   variant = 'card',
 }: {
   grossTotal: number
   afterTotal: number
+  closedTotal?: number
   variant?: 'card' | 'inline' | 'banner'
 }) {
   const differs = grossTotal !== afterTotal
+  const showClosed = closedTotal != null && closedTotal !== afterTotal
   return (
     <div className={`expense-after-loan expense-after-loan--${variant}`}>
       {differs ? (
         <span className="expense-after-loan-gross">{formatMoney(grossTotal)}</span>
       ) : null}
-      <span className="expense-after-loan-label">After loan settlement</span>
-      <strong className="expense-after-loan-amount">{formatMoney(afterTotal)}</strong>
+      <div className={`expense-after-loan-dual${showClosed ? ' expense-after-loan-dual--split' : ''}`}>
+        <div className="expense-after-loan-col expense-after-loan-col--main">
+          <span className="expense-after-loan-label">After loan settlement</span>
+          <strong className="expense-after-loan-amount">{formatMoney(afterTotal)}</strong>
+        </div>
+        {showClosed ? (
+          <div className="expense-after-loan-col expense-after-loan-col--closed">
+            <span className="expense-after-loan-label">If loans closed</span>
+            <strong className="expense-after-loan-amount expense-after-loan-amount--closed">
+              {formatMoney(closedTotal)}
+            </strong>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }
 
-function LoanGivenAmountStack({ original, open }: { original: number; open: number }) {
+function ReportsNetSummaryCard({ net }: { net: ReportNetSummary }) {
+  return (
+    <div className="reports-summary-card reports-summary-card--net">
+      <span>Net</span>
+      <ReportsNetSummaryInline net={net} />
+    </div>
+  )
+}
+
+function ReportsNetSummaryInline({ net }: { net: ReportNetSummary }) {
+  const showClosed = net.openLoanGiven > 0 || net.netCurrent !== net.netIfLoansFullyClosed
+  return (
+    <div className={`reports-net-dual${showClosed ? ' reports-net-dual--split' : ''}`}>
+      <div className="reports-net-col reports-net-col--current">
+        <span className="reports-net-label">After loan settlement</span>
+        <strong className={net.netCurrent < 0 ? 'reports-net-negative' : undefined}>
+          {formatMoney(net.netCurrent)}
+        </strong>
+        <small>
+          In {formatMoney(net.inflowTotal)} − Exp {formatMoney(net.afterLoanSettlement)}
+        </small>
+      </div>
+      {showClosed ? (
+        <div className="reports-net-col reports-net-col--closed">
+          <span className="reports-net-label">If loans closed</span>
+          <strong className={net.netIfLoansFullyClosed < 0 ? 'reports-net-negative' : undefined}>
+            {formatMoney(net.netIfLoansFullyClosed)}
+          </strong>
+          <small>
+            {net.openLoanGiven > 0
+              ? `+${formatMoney(net.openLoanGiven)} recoverable`
+              : 'All loans settled'}
+          </small>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function LoanGivenAmountStack({
+  original,
+  open,
+  settled = 0,
+}: {
+  original: number
+  open: number
+  settled?: number
+}) {
+  const afterLoan = open
+  const primaryLabel = open > 0 ? 'Open' : settled > 0 ? 'Settled' : 'Open'
+  const primaryAmount = open > 0 ? open : settled > 0 ? settled : 0
+  const showAfter = settled > 0
   return (
     <div className="loan-given-amount-stack">
       <span className="loan-given-amount-stack-original">-{formatMoney(original)}</span>
-      <span className="loan-given-amount-stack-open">Open {formatMoney(open)}</span>
+      <div className={`loan-given-amount-stack-row${showAfter ? ' loan-given-amount-stack-row--split' : ''}`}>
+        <span className="loan-given-amount-stack-primary">
+          {primaryLabel} {formatMoney(primaryAmount)}
+        </span>
+        {showAfter ? (
+          <span className="loan-given-amount-stack-after" title="After loan settlement">
+            {formatMoney(afterLoan)}
+          </span>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -2031,7 +2123,7 @@ function NotSaleInflowSection({
     <>
       <div className="reports-summary reports-summary--not-sale-detail">
         <div className="reports-summary-card reports-summary-card--green">
-          <span>Total sales</span>
+          <span>Sales collected</span>
           <strong>{formatMoney(salesTotal)}</strong>
           <small>
             {salesBillCount} bill{salesBillCount === 1 ? '' : 's'} collected · bill payments only
@@ -2631,6 +2723,7 @@ function ExpenseTimelineReportRow({
             <LoanGivenAmountStack
               original={entry.loanOriginalAmount ?? entry.amount}
               open={entry.loanUnsettledAmount ?? 0}
+              settled={entry.loanSettledAmount ?? 0}
             />
           ) : isBorrowRepaid ? (
             <span className="reports-item-amount reports-item-amount--loan-repay">
@@ -2748,6 +2841,7 @@ function LoanOutflowReportRow({
             <LoanGivenAmountStack
               original={row.originalAmount ?? row.amount}
               open={row.unsettledAmount ?? 0}
+              settled={row.settledAmount ?? 0}
             />
           ) : isBorrowRepaid ? (
             <span className="reports-item-amount reports-item-amount--loan-repay">

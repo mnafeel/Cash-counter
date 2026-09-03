@@ -240,6 +240,36 @@ export function expenseTotalAfterLoanSettlement(summary: ExpenseTimelineSummary)
   return summary.expenseTotal + summary.purchaseTotal + expenseOpenLoanGivenTotal(summary)
 }
 
+/** Expense if all loan given is collected — normal + purchase only. */
+export function expenseTotalIfLoansFullyClosed(summary: ExpenseTimelineSummary): number {
+  return summary.expenseTotal + summary.purchaseTotal
+}
+
+export interface ReportNetSummary {
+  inflowTotal: number
+  afterLoanSettlement: number
+  openLoanGiven: number
+  netCurrent: number
+  netIfLoansFullyClosed: number
+}
+
+/** Net = money in − expense after loan settlement; closed variant assumes open loans are recovered. */
+export function buildReportNetSummary(
+  inflowTotal: number,
+  summary: ExpenseTimelineSummary,
+): ReportNetSummary {
+  const afterLoanSettlement = expenseTotalAfterLoanSettlement(summary)
+  const openLoanGiven = expenseOpenLoanGivenTotal(summary)
+  const closedExpense = expenseTotalIfLoansFullyClosed(summary)
+  return {
+    inflowTotal,
+    afterLoanSettlement,
+    openLoanGiven,
+    netCurrent: inflowTotal - afterLoanSettlement,
+    netIfLoansFullyClosed: inflowTotal - closedExpense,
+  }
+}
+
 export type ExpenseTimelineSummary = ReturnType<typeof summarizeExpenseTimeline>
 
 /** Gross expense — normal + purchase + all loan outflows (given + repayments). */

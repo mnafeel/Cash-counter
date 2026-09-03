@@ -11,6 +11,7 @@ import {
   expenseGrossTotal,
   expenseHasLoanActivity,
   expenseTotalAfterLoanSettlement,
+  expenseTotalIfLoansFullyClosed,
   filterExpenseTimelineByPayChannel,
   summarizeExpenseTimeline,
   type ExpensePayChannelFilter,
@@ -378,10 +379,30 @@ export default function ExpenseHistoryPanel({
                   {formatMoney(expenseGrossTotal(summary))}
                 </span>
               ) : null}
-              <span className="expense-after-loan-label">After loan settlement</span>
-              <strong className="expense-after-loan-amount">
-                {formatMoney(expenseTotalAfterLoanSettlement(summary))}
-              </strong>
+              <div
+                className={`expense-after-loan-dual${
+                  expenseTotalIfLoansFullyClosed(summary) !==
+                  expenseTotalAfterLoanSettlement(summary)
+                    ? ' expense-after-loan-dual--split'
+                    : ''
+                }`}
+              >
+                <div className="expense-after-loan-col expense-after-loan-col--main">
+                  <span className="expense-after-loan-label">After loan settlement</span>
+                  <strong className="expense-after-loan-amount">
+                    {formatMoney(expenseTotalAfterLoanSettlement(summary))}
+                  </strong>
+                </div>
+                {expenseTotalIfLoansFullyClosed(summary) !==
+                expenseTotalAfterLoanSettlement(summary) ? (
+                  <div className="expense-after-loan-col expense-after-loan-col--closed">
+                    <span className="expense-after-loan-label">If loans closed</span>
+                    <strong className="expense-after-loan-amount expense-after-loan-amount--closed">
+                      {formatMoney(expenseTotalIfLoansFullyClosed(summary))}
+                    </strong>
+                  </div>
+                ) : null}
+              </div>
             </div>
           ) : null}
           <div className="purchase-hist-summary-row">
@@ -492,9 +513,29 @@ export default function ExpenseHistoryPanel({
                             <span className="loan-given-amount-stack-original">
                               -{formatMoney(entry.loanOriginalAmount)}
                             </span>
-                            <span className="loan-given-amount-stack-open">
-                              Open {formatMoney(entry.loanUnsettledAmount ?? 0)}
-                            </span>
+                            <div
+                              className={`loan-given-amount-stack-row${
+                                (entry.loanSettledAmount ?? 0) > 0
+                                  ? ' loan-given-amount-stack-row--split'
+                                  : ''
+                              }`}
+                            >
+                              <span className="loan-given-amount-stack-primary">
+                                {(entry.loanUnsettledAmount ?? 0) > 0
+                                  ? `Open ${formatMoney(entry.loanUnsettledAmount ?? 0)}`
+                                  : (entry.loanSettledAmount ?? 0) > 0
+                                    ? `Settled ${formatMoney(entry.loanSettledAmount ?? 0)}`
+                                    : `Open ${formatMoney(0)}`}
+                              </span>
+                              {(entry.loanSettledAmount ?? 0) > 0 ? (
+                                <span
+                                  className="loan-given-amount-stack-after"
+                                  title="After loan settlement"
+                                >
+                                  {formatMoney(entry.loanUnsettledAmount ?? 0)}
+                                </span>
+                              ) : null}
+                            </div>
                           </span>
                         ) : entry.kind === 'loan' && entry.loanOutflowKind === 'borrow-repaid' ? (
                           <span className="purchase-hist-item-amount purchase-hist-item-amount--loan-repay">

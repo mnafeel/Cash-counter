@@ -2726,6 +2726,73 @@ html[data-screen='phone'] .purchase-hist-item-actions {
   line-height: 1.1;
 }
 
+.loan-given-amount-stack-open {
+  font-size: clamp(0.78rem, calc(var(--app-height, 800px) * 0.022), 0.95rem);
+  font-weight: 900;
+  color: var(--warning, #f5c542);
+  line-height: 1.1;
+}
+
+.loan-given-amount-stack-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.loan-given-amount-stack-row--split {
+  justify-content: flex-end;
+}
+
+.loan-given-amount-stack-primary {
+  font-size: clamp(0.78rem, calc(var(--app-height, 800px) * 0.022), 0.95rem);
+  font-weight: 900;
+  color: var(--warning, #f5c542);
+  line-height: 1.1;
+}
+
+.loan-given-amount-stack-after {
+  font-size: clamp(0.62rem, calc(var(--app-height, 800px) * 0.017), 0.78rem);
+  font-weight: 800;
+  color: var(--success, #7ddf8a);
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.expense-after-loan-amount--closed {
+  font-size: clamp(0.72rem, calc(var(--app-height, 800px) * 0.021), 0.92rem);
+  color: var(--accent, #7eb8ff);
+}
+
+.expense-after-loan-dual {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.expense-after-loan-dual--split {
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.expense-after-loan-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.expense-after-loan-col--closed {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.expense-after-loan-col--closed .expense-after-loan-label {
+  color: var(--accent, #7eb8ff);
+  opacity: 0.85;
+}
+
 .purchase-hist-item-detail-row--open strong {
   font-size: clamp(0.88rem, calc(var(--app-height, 800px) * 0.024), 1.05rem);
   font-weight: 900;
