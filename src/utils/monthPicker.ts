@@ -36,7 +36,6 @@ export function monthRangeFromKey(monthKey: string): { fromDate: string; toDate:
   const year = Number(yearText)
   const month = Number(monthText)
   if (!year || !month) return null
-  const start = new Date(year, month - 1, 1)
   const end = new Date(year, month, 0)
   const pad = (n: number) => String(n).padStart(2, '0')
   return {
@@ -71,8 +70,8 @@ export function collectAppDataMonthDates(data: AppData): string[] {
   for (const expense of data.expenses ?? []) {
     dates.push(expense.createdAt)
     if (expense.updatedAt) dates.push(expense.updatedAt)
-    for (const event of expense.paymentEvents ?? []) {
-      dates.push(event.at)
+    for (const payment of expense.creditPayments ?? []) {
+      dates.push(payment.at)
     }
   }
   for (const loan of data.loans ?? []) {
