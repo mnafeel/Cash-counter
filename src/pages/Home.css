@@ -9,9 +9,21 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: none;
-  background: var(--bg);
+  background: var(--bg-gradient);
   scrollbar-color: var(--border) var(--bg);
   scrollbar-width: thin;
+}
+
+.home--dashboard {
+  gap: 8px;
+}
+
+.home-dashboard-title {
+  margin: 0 0 4px;
+  font-size: clamp(0.95rem, 3.5vw, 1.15rem);
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: var(--accent);
 }
 
 .home-section {
@@ -64,8 +76,12 @@
   gap: 6px;
 }
 
+.home-access-grid--wide {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .home-access-btn {
-  min-height: 56px;
+  min-height: 58px;
   padding: 8px 6px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
@@ -79,6 +95,8 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
 
 .home-access-icon {
@@ -106,6 +124,21 @@
 .home-access-btn--staff {
   border-color: rgba(126, 200, 227, 0.35);
   background: linear-gradient(165deg, rgba(126, 200, 227, 0.1) 0%, var(--surface) 100%);
+}
+
+.home-access-btn--counter {
+  border-color: rgba(125, 223, 138, 0.45);
+  background: linear-gradient(165deg, rgba(125, 223, 138, 0.14) 0%, var(--surface) 100%);
+}
+
+.home-access-btn--expense {
+  border-color: rgba(255, 180, 120, 0.4);
+  background: linear-gradient(165deg, rgba(255, 180, 120, 0.12) 0%, var(--surface) 100%);
+}
+
+.home-access-btn--history {
+  border-color: rgba(196, 160, 255, 0.35);
+  background: linear-gradient(165deg, rgba(196, 160, 255, 0.1) 0%, var(--surface) 100%);
 }
 
 .home-access-btn:active {
@@ -207,7 +240,7 @@
 .home-collect-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px;
+  gap: 6px;
 }
 
 .home-collect-actions {
@@ -866,12 +899,40 @@ html[data-screen='desktop'] .home-pin-digit {
 }
 
 .home-balance-card {
+  position: relative;
+  overflow: hidden;
   background: linear-gradient(145deg, var(--surface) 0%, var(--surface-2) 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
-  text-align: center;
+  text-align: left;
   box-shadow: var(--shadow);
+}
+
+.home-balance-card-content {
+  position: relative;
+  z-index: 1;
+}
+
+.home-balance-card--account {
+  border-color: rgba(232, 201, 160, 0.5);
+  background: linear-gradient(135deg, rgba(232, 201, 160, 0.14) 0%, var(--surface) 50%, var(--surface-2) 100%);
+  margin-bottom: 2px;
+}
+
+.home-balance-card--cash {
+  border-color: rgba(125, 223, 138, 0.42);
+  background: linear-gradient(135deg, rgba(125, 223, 138, 0.1) 0%, var(--surface) 55%, var(--surface-2) 100%);
+}
+
+.home-balance-card--bank {
+  border-color: rgba(126, 184, 255, 0.42);
+  background: linear-gradient(135deg, rgba(126, 184, 255, 0.1) 0%, var(--surface) 55%, var(--surface-2) 100%);
+}
+
+.home-cash-period-summary--account {
+  margin-top: 6px;
+  justify-content: flex-start;
 }
 
 .home-balance-head {
@@ -1382,14 +1443,19 @@ html[data-screen='desktop'] .home-pin-digit {
   background: rgba(255, 212, 143, 0.12);
 }
 
+.home-balance-card--bank {
+  border-color: rgba(126, 184, 255, 0.42);
+}
+
 .stat-card {
-  background: var(--surface);
+  background: linear-gradient(145deg, var(--surface) 0%, var(--surface-2) 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.2);
 }
 
 .stat-card--action {
@@ -1417,8 +1483,52 @@ html[data-screen='desktop'] .home-pin-digit {
   color: var(--cream);
 }
 
-.stat-value--green,
+.stat-value--green {
+  color: #7ddf8a;
+}
+
 .stat-value--orange {
+  color: #ffb86b;
+}
+
+.stat-card--sales {
+  border-color: rgba(94, 234, 212, 0.45);
+  background: linear-gradient(145deg, rgba(94, 234, 212, 0.18) 0%, rgba(125, 223, 138, 0.08) 45%, var(--surface) 100%);
+}
+
+.stat-card--visual {
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stat-card-flow svg {
+  width: 70%;
+}
+
+.stat-card--expense {
+  border-color: rgba(255, 180, 120, 0.45);
+  background: linear-gradient(145deg, rgba(255, 180, 120, 0.14) 0%, var(--surface) 100%);
+}
+
+.stat-card--purchase {
+  border-color: rgba(255, 212, 143, 0.4);
+  background: linear-gradient(145deg, rgba(255, 212, 143, 0.12) 0%, var(--surface) 100%);
+}
+
+.stat-card--net {
+  border-color: rgba(232, 201, 160, 0.45);
+  background: linear-gradient(145deg, rgba(232, 201, 160, 0.12) 0%, var(--surface) 100%);
+}
+
+.home-section--sales .stat-label {
   color: var(--cream);
 }
 

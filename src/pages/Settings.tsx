@@ -1418,7 +1418,7 @@ export default function Settings() {
                 compact
               />
               <AmountDisplay
-                label="New Home PIN"
+                label="New Dashboard PIN"
                 value={pinStr ? '•'.repeat(pinStr.length) : ''}
                 active={activeField === 'pin'}
                 onSelect={() => setActiveField('pin')}

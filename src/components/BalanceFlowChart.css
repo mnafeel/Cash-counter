@@ -1,0 +1,55 @@
+.balance-flow-chart {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  border-radius: inherit;
+  opacity: 0.95;
+}
+
+.balance-flow-chart svg {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 58%;
+  height: 100%;
+  min-height: 52px;
+}
+
+.balance-flow-chart-line {
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.balance-flow-chart--cash {
+  color: #7ddf8a;
+}
+
+.balance-flow-chart--cash .balance-flow-chart-line {
+  stroke: #7ddf8a;
+}
+
+.balance-flow-chart--bank {
+  color: #7eb8ff;
+}
+
+.balance-flow-chart--bank .balance-flow-chart-line {
+  stroke: #7eb8ff;
+}
+
+.balance-flow-chart--account {
+  color: #e8c9a0;
+}
+
+.balance-flow-chart--account .balance-flow-chart-line {
+  stroke: #e8c9a0;
+}
+
+.balance-flow-chart--sales {
+  color: #5eead4;
+}
+
+.balance-flow-chart--sales .balance-flow-chart-line {
+  stroke: #5eead4;
+}

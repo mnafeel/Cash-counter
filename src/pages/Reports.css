@@ -936,14 +936,25 @@
 }
 
 .reports-summary-card {
-  padding: 6px 8px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: linear-gradient(145deg, var(--surface) 0%, var(--surface-2) 100%);
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+}
+
+.reports-summary-card--green {
+  border-color: rgba(125, 223, 138, 0.45);
+  background: linear-gradient(145deg, rgba(125, 223, 138, 0.16) 0%, rgba(94, 234, 212, 0.08) 40%, var(--surface) 100%);
+}
+
+.reports-summary-card--orange {
+  border-color: rgba(245, 197, 66, 0.4);
+  background: linear-gradient(145deg, rgba(245, 197, 66, 0.12) 0%, var(--surface) 100%);
 }
 
 .reports-summary-card span {

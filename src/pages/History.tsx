@@ -665,7 +665,7 @@ function History({ active }: { active: boolean }) {
           variant="embedded"
           data={data}
           onClose={closePurchaseHistory}
-          embeddedBackLabel="Home"
+          embeddedBackLabel="Dashboard"
           embeddedActionLabel="Open Purchase"
         />
       </div>

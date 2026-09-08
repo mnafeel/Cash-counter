@@ -129,6 +129,12 @@
   --pending-bg: #4a4060;
   --pending-bg-active: #5c5080;
   --shadow: 0 10px 40px rgba(0, 0, 0, 0.65);
+  --chart-cash: #7ddf8a;
+  --chart-bank: #7eb8ff;
+  --chart-sales: #5eead4;
+  --chart-expense: #ffb86b;
+  --radius: 14px;
+  --radius-sm: 12px;
 }
 
 :root {

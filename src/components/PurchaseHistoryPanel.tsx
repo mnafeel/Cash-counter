@@ -72,7 +72,7 @@ export default function PurchaseHistoryPanel({
   data,
   variant = 'modal',
   onUpdateBill,
-  embeddedBackLabel = 'Home',
+  embeddedBackLabel = 'Dashboard',
   embeddedActionLabel = 'Open Purchase',
 }: PurchaseHistoryPanelProps) {
   const navigate = useNavigate()
@@ -1179,7 +1179,7 @@ export default function PurchaseHistoryPanel({
           </button>
           {!fullscreen && !embedded ? (
             <button type="button" className="purchase-hist-home" onClick={handleGoHome}>
-              🏠 Home
+              📊 Dashboard
             </button>
           ) : embedded ? (
             <button

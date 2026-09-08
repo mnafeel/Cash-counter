@@ -14,7 +14,7 @@ import { openTimingLabelForPath, startOpenTiming, finishOpenTiming } from '../ut
 import './Layout.css'
 
 const navItems = [
-  { to: '/', label: 'Home', icon: '🏠' },
+  { to: '/', label: 'Dashboard', icon: '📊' },
   { to: '/counter', label: 'Counter', icon: '💵' },
   { to: '/expenses', label: 'Expenses', icon: '📤' },
   { to: '/history', label: 'History', icon: '📋' },

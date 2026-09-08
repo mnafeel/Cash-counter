@@ -49,7 +49,7 @@ export function getOpenTimingMs(label: string): number | undefined {
 }
 
 const ROUTE_LABELS: Record<string, string> = {
-  '/': 'Home',
+  '/': 'Dashboard',
   '/counter': 'Counter',
   '/expenses': 'Expenses',
   '/history': 'History',

@@ -69,6 +69,8 @@ import AnalyzePanel from '../components/AnalyzePanel'
 import CustomerDashboard, { type CustomerListFilter } from '../components/CustomerDashboard'
 import CreditDashboard, { type CreditListFilter } from '../components/CreditDashboard'
 import ChequeDashboard, { type ChequeListFilter } from '../components/ChequeDashboard'
+import BalanceFlowChart from '../components/BalanceFlowChart'
+import { buildBalanceFlowSeries } from '../utils/balanceFlowSeries'
 import { buildCreditOverview } from '../utils/customerLedger'
 import { buildChequeOverview } from '../utils/chequeLedger'
 import {
@@ -194,7 +196,7 @@ function Home({ active }: { active: boolean }) {
   const [homeExpenseChannel, setHomeExpenseChannel] = useState<ExpensePayChannelFilter>('all')
   const noteInputRef = useRef<HTMLInputElement>(null)
 
-  useOpenTiming('Home', active, false)
+  useOpenTiming('Dashboard', active, false)
   useOpenTiming('Reports', showReports)
   useOpenTiming('Analyze', showAnalyze)
   useOpenTiming('Customers', showCustomers)
@@ -421,6 +423,60 @@ function Home({ active }: { active: boolean }) {
   )
   const bankActivityItems = bankPeriod.items
   const bankActivitySummary = bankPeriod.summary
+  const cashOpeningToday = cashPeriod.opening
+  const bankOpeningToday = bankPeriod.opening
+  const cashClosingPeriod = cashPeriod.closing
+  const bankClosingPeriod = bankPeriod.closing
+
+  const accountTodayCash = useMemo(
+    () =>
+      summarizeCashActivityForPeriod(allCashActivityItems, data, balance, 'today', ''),
+    [allCashActivityItems, data, balance],
+  )
+  const accountTodayBank = useMemo(
+    () =>
+      summarizeBankActivityForPeriod(allBankActivityItems, data, bankBalance, 'today', ''),
+    [allBankActivityItems, data, bankBalance],
+  )
+  const cashFlowSeries = useMemo(
+    () =>
+      buildBalanceFlowSeries(
+        cashOpeningToday,
+        cashActivityItems.map((item) => ({
+          date: item.date,
+          amount: item.amount,
+          direction: item.direction,
+        })),
+      ),
+    [cashOpeningToday, cashActivityItems],
+  )
+  const bankFlowSeries = useMemo(
+    () =>
+      buildBalanceFlowSeries(
+        bankOpeningToday,
+        bankActivityItems.map((item) => ({
+          date: item.date,
+          amount: item.amount,
+          direction: item.direction,
+        })),
+      ),
+    [bankOpeningToday, bankActivityItems],
+  )
+  const accountFlowSeries = useMemo(() => {
+    const opening = accountTodayCash.opening + accountTodayBank.opening
+    const items = [...accountTodayCash.items, ...accountTodayBank.items].map((item) => ({
+      date: item.date,
+      amount: item.amount,
+      direction: item.direction,
+    }))
+    return buildBalanceFlowSeries(opening, items)
+  }, [accountTodayCash.items, accountTodayCash.opening, accountTodayBank.items, accountTodayBank.opening])
+  const salesFlowSeries = useMemo(() => {
+    const total = salesSummary.totalBills
+    const steps = 28
+    return Array.from({ length: steps }, (_, index) => (total * (index + 1)) / steps)
+  }, [salesSummary.totalBills])
+  const accountTotalBalance = balance + bankBalance
 
   const filteredBankActivityItems = useMemo(() => {
     const q = deferredBankHistorySearch.trim().toLowerCase()
@@ -432,11 +488,6 @@ function Home({ active }: { active: boolean }) {
       return false
     })
   }, [bankActivityItems, deferredBankHistorySearch])
-
-  const cashOpeningToday = cashPeriod.opening
-  const bankOpeningToday = bankPeriod.opening
-  const cashClosingPeriod = cashPeriod.closing
-  const bankClosingPeriod = bankPeriod.closing
 
   const cashPeriodStart = cashOpeningToday
   const bankPeriodStart = bankOpeningToday
@@ -659,39 +710,74 @@ function Home({ active }: { active: boolean }) {
   }
 
   return (
-    <div className="home">
-      <section className="home-access" aria-label="Quick access">
-        <div className="home-access-grid">
+    <div className="home home--dashboard">
+      <section className="home-access" aria-label="Dashboard quick access">
+        <h2 className="home-dashboard-title">Dashboard</h2>
+        <div className="home-access-grid home-access-grid--wide">
           <button
             type="button"
             className="home-access-btn home-access-btn--reports"
             onClick={() => openReports('today')}
           >
-            <span className="home-access-icon" aria-hidden="true">
-              📊
-            </span>
+            <span className="home-access-icon" aria-hidden="true">📊</span>
             <span className="home-access-label">Reports</span>
           </button>
+          <button
+            type="button"
+            className="home-access-btn home-access-btn--counter"
+            onClick={() => navigate('/counter')}
+          >
+            <span className="home-access-icon" aria-hidden="true">💵</span>
+            <span className="home-access-label">Counter</span>
+          </button>
+          <button
+            type="button"
+            className="home-access-btn home-access-btn--expense"
+            onClick={() => navigate('/expenses')}
+          >
+            <span className="home-access-icon" aria-hidden="true">📤</span>
+            <span className="home-access-label">Expenses</span>
+          </button>
           <Link to="/loan" className="home-access-btn home-access-btn--loan">
-            <span className="home-access-icon" aria-hidden="true">
-              🤝
-            </span>
+            <span className="home-access-icon" aria-hidden="true">🤝</span>
             <span className="home-access-label">Loan</span>
           </Link>
           <Link to="/staff" className="home-access-btn home-access-btn--staff">
-            <span className="home-access-icon" aria-hidden="true">
-              👥
-            </span>
+            <span className="home-access-icon" aria-hidden="true">👥</span>
             <span className="home-access-label">Staff</span>
           </Link>
+          <button
+            type="button"
+            className="home-access-btn home-access-btn--history"
+            onClick={() => navigate('/history')}
+          >
+            <span className="home-access-icon" aria-hidden="true">📋</span>
+            <span className="home-access-label">History</span>
+          </button>
         </div>
       </section>
 
       <section className="home-section home-section--balances" aria-label="Balances">
         <h2 className="home-section-title">Balances</h2>
         <div className="home-balances">
+        <div className="home-balance-card home-balance-card--account">
+          <BalanceFlowChart series={accountFlowSeries} tone="account" />
+          <div className="home-balance-card-content">
+            <div className="home-balance-head">
+              <p className="home-hero-label">✨ Account balance</p>
+            </div>
+            <BigAmount label="" value={accountTotalBalance} variant="primary" size="lg" />
+            <p className="home-cash-period-summary home-cash-period-summary--account">
+              <span>💵 Cash {formatMoney(balance)}</span>
+              <span>🏦 Bank {formatMoney(bankBalance)}</span>
+              <span>Today net {formatMoney(accountTodayCash.summary.net + accountTodayBank.summary.net)}</span>
+            </p>
+          </div>
+        </div>
         <div className="home-balance-row">
-          <div className="home-balance-card">
+          <div className="home-balance-card home-balance-card--cash">
+            <BalanceFlowChart series={cashFlowSeries} tone="cash" />
+            <div className="home-balance-card-content">
             <div className="home-balance-head">
               <p className="home-hero-label">💵 Cash in Drawer</p>
               <div className="home-balance-actions">
@@ -749,8 +835,11 @@ function Home({ active }: { active: boolean }) {
               <span>Net {formatMoney(cashActivitySummary.net)}</span>
               <span>{cashActivitySummary.count} items</span>
             </p>
+            </div>
           </div>
           <div className="home-balance-card home-balance-card--bank">
+            <BalanceFlowChart series={bankFlowSeries} tone="bank" />
+            <div className="home-balance-card-content">
             <div className="home-balance-head">
               <p className="home-hero-label">🏦 Bank Balance</p>
               <div className="home-balance-actions">
@@ -808,6 +897,7 @@ function Home({ active }: { active: boolean }) {
               <span>Net {formatMoney(bankActivitySummary.net)}</span>
               <span>{bankActivitySummary.count} items</span>
             </p>
+            </div>
           </div>
         </div>
 
@@ -830,9 +920,9 @@ function Home({ active }: { active: boolean }) {
         </div>
       </section>
 
-      <section className="home-section" aria-label="Day summary">
+      <section className="home-section home-section--sales" aria-label="Day summary">
         <div className="home-section-head">
-          <h2 className="home-section-title">{homePeriodLabel}</h2>
+          <h2 className="home-section-title">Sales collection · {homePeriodLabel}</h2>
           <div
             className="home-cash-dates home-cash-dates--section"
             role="group"
@@ -866,9 +956,11 @@ function Home({ active }: { active: boolean }) {
         <div className="home-today-grid">
           <button
             type="button"
-            className="stat-card stat-card--action stat-card--sales"
+            className="stat-card stat-card--action stat-card--sales stat-card--visual"
             onClick={() => openHomeDayReports('sales')}
           >
+            <BalanceFlowChart series={salesFlowSeries} tone="sales" className="stat-card-flow" />
+            <div className="stat-card-body">
             <span className="stat-label">Sales collected</span>
             <span className="stat-value stat-value--green">
               {formatMoney(salesSummary.totalBills)}
@@ -889,11 +981,12 @@ function Home({ active }: { active: boolean }) {
                 ? ` · Old pending ${formatMoney(salesSummary.oldCreditChequeCollected)}`
                 : ''}
             </span>
+            </div>
           </button>
           <div
             role="button"
             tabIndex={0}
-            className="stat-card stat-card--action"
+            className="stat-card stat-card--action stat-card--expense"
             onClick={() => openHomeDayReports('expense')}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -954,8 +1047,7 @@ function Home({ active }: { active: boolean }) {
           </div>
           <button
             type="button"
-            className="stat-card stat-card--action"
-            onClick={() => openHomeDayReports('purchase')}
+            className="stat-card stat-card--action stat-card--purchase"
           >
             <span className="stat-label">Purchases</span>
             <span className="stat-value stat-value--orange">
@@ -973,7 +1065,7 @@ function Home({ active }: { active: boolean }) {
           </button>
           <button
             type="button"
-            className="stat-card stat-card--action"
+            className="stat-card stat-card--action stat-card--net"
             onClick={() => openHomeDayReports()}
           >
             <span className="stat-label">Net inflow</span>

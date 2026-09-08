@@ -40,8 +40,12 @@
 
 .expenses-page-head {
   flex-shrink: 0;
-  padding: 2px 0 0;
+  padding: 8px 10px;
   text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, rgba(255, 180, 120, 0.12) 0%, var(--surface) 55%, var(--surface-2) 100%);
+  box-shadow: var(--shadow);
 }
 
 .expenses-page-title {
@@ -73,6 +77,11 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--border) var(--bg);
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(165deg, var(--surface) 0%, var(--surface-2) 100%);
+  box-shadow: var(--shadow);
 }
 
 .expenses-top {

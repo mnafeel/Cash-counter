@@ -10,6 +10,20 @@
   overflow: hidden;
   box-sizing: border-box;
   position: relative;
+  background: linear-gradient(165deg, rgba(125, 223, 138, 0.05) 0%, var(--bg) 40%, var(--bg-gradient) 100%);
+}
+
+.counter-page::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #7ddf8a, #e8c9a0, #7eb8ff);
+  opacity: 0.8;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .counter-return-corner {
@@ -90,6 +104,10 @@
   flex-direction: column;
   gap: 3px;
   overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(165deg, rgba(232, 201, 160, 0.06) 0%, var(--surface) 40%, var(--surface-2) 100%);
+  box-shadow: var(--shadow);
 }
 
 .counter-top,
