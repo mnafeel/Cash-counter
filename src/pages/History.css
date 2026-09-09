@@ -19,6 +19,102 @@
   padding-bottom: 8px;
 }
 
+.history-flow-fold {
+  padding: 0 8px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.history-trend-details {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.history-trend-details[open] {
+  margin-bottom: 4px;
+}
+
+.history-trend-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 6px 10px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-muted, var(--cream-dim));
+  position: relative;
+  z-index: 1;
+}
+
+.history-trend-summary::-webkit-details-marker {
+  display: none;
+}
+
+.history-flow-panel--compact {
+  position: relative;
+  margin: 0;
+  height: 76px;
+  min-height: 76px;
+  max-height: 76px;
+  overflow: hidden;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+.history-date-chips {
+  padding: 0 8px 4px;
+  flex-shrink: 0;
+}
+
+.history-header-hints {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .history-header-hints {
+    display: block;
+  }
+}
+
+.history-flow-panel__chart {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.history-flow-panel__chart .balance-flow-chart--blend {
+  inset: 4% -2% -6% 16%;
+  opacity: 0.92;
+}
+
+.history-flow-panel__copy {
+  position: relative;
+  z-index: 1;
+  padding: 10px 12px;
+}
+
+.history-flow-panel__label {
+  display: block;
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, var(--cream-dim));
+}
+
+.history-flow-panel__value {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--text, var(--cream));
+}
+
 .history-header {
   flex-shrink: 0;
   display: flex;
@@ -96,18 +192,15 @@
 
 .history-toolbar-primary {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-areas:
-    'search search'
-    'type payment';
-  gap: 6px;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.82fr) minmax(0, 0.82fr);
+  grid-template-areas: 'search type payment';
+  gap: 4px;
   width: 100%;
 }
 
 .history-toolbar-primary--no-payment {
-  grid-template-areas:
-    'search search'
-    'type type';
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  grid-template-areas: 'search type';
 }
 
 .history-toolbar-secondary {
@@ -134,11 +227,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  min-height: 34px;
+  gap: 8px;
+  min-height: 30px;
   width: auto;
-  margin: 2px 8px 0;
-  padding: 6px 10px;
+  margin: 0 8px;
+  padding: 4px 8px;
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -311,7 +404,7 @@
 
 .history-filter-label,
 .history-toolbar-label {
-  font-size: 0.52rem;
+  font-size: 0.48rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -329,9 +422,9 @@
 .history-date-input {
   width: 100%;
   min-width: 0;
-  min-height: 38px;
-  padding: 0 10px;
-  font-size: 0.72rem;
+  min-height: 30px;
+  padding: 0 8px;
+  font-size: 0.66rem;
   font-weight: 700;
   line-height: 1.2;
   color: var(--cream);
@@ -388,11 +481,22 @@
   gap: 6px;
 }
 
-.history-summary--grid,
+.history-summary--grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 3px;
+  margin-bottom: 4px;
+}
+
 .history-summary--full {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+}
+
+.history-summary-item {
+  padding: 6px 8px;
+  min-height: 0;
 }
 
 .history-summary-sub {
@@ -411,9 +515,9 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 2px;
-  min-height: 52px;
-  padding: 7px 10px;
+  gap: 1px;
+  min-height: 40px;
+  padding: 4px 6px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-left: 3px solid var(--cream);
@@ -438,7 +542,7 @@
 }
 
 .history-summary-label {
-  font-size: 0.56rem;
+  font-size: 0.48rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -450,7 +554,7 @@
 }
 
 .history-summary-value {
-  font-size: 0.92rem;
+  font-size: 0.72rem;
   font-weight: 800;
   line-height: 1.15;
   color: var(--cream);

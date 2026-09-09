@@ -18,6 +18,7 @@ import {
   isPendingCreditSale,
 } from '../storage/database'
 import { saleCollectedAmount } from '../utils/salePayment'
+import BalanceFlowChart from '../components/BalanceFlowChart'
 import {
   getHistoryPaymentLabel,
   getHistoryPaymentSortKey,
@@ -149,14 +150,11 @@ function History({ active }: { active: boolean }) {
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [receiptItem, setReceiptItem] = useState<HistoryItem | null>(null)
-  const [purchaseCreditListOpen, setPurchaseCreditListOpen] = useState(false)
-  const [highlightedPurchaseCreditIndex, setHighlightedPurchaseCreditIndex] = useState(-1)
   const [billEditMode, setBillEditMode] = useState(() => readBillEditMode())
   const [showPurchaseHistory, setShowPurchaseHistory] = useState(false)
   const [purchaseOnlyMode, setPurchaseOnlyMode] = useState(false)
   const [purchasePanelSession, setPurchasePanelSession] = useState(0)
   const editInputRef = useRef<HTMLInputElement>(null)
-  const purchaseCreditBarRef = useRef<HTMLDivElement>(null)
 
   useOpenTiming('History', active, false)
   useOpenTiming('Purchase History', showPurchaseHistory)
@@ -177,17 +175,6 @@ function History({ active }: { active: boolean }) {
   }, [navigate])
 
   useEffect(() => {
-    if (!purchaseCreditListOpen) return
-    function handlePointerDown(event: PointerEvent) {
-      if (purchaseCreditBarRef.current?.contains(event.target as Node)) return
-      setPurchaseCreditListOpen(false)
-      setHighlightedPurchaseCreditIndex(-1)
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [purchaseCreditListOpen])
-
-  useEffect(() => {
     function onBillEditModeChange(event: Event) {
       const detail = (event as CustomEvent<boolean>).detail
       if (typeof detail === 'boolean') setBillEditMode(detail)
@@ -201,18 +188,13 @@ function History({ active }: { active: boolean }) {
       setReceiptItem(null)
       return
     }
-    if (purchaseCreditListOpen) {
-      setPurchaseCreditListOpen(false)
-      setHighlightedPurchaseCreditIndex(-1)
-      return
-    }
     if (editingKey) {
       setEditingKey(null)
       setEditValue('')
       return
     }
     goBack()
-  }, [goBack, receiptItem, purchaseCreditListOpen, editingKey])
+  }, [goBack, receiptItem, editingKey])
 
   const resetHistoryUi = useCallback(() => {
     resetSearch()
@@ -224,8 +206,6 @@ function History({ active }: { active: boolean }) {
     setEditingKey(null)
     setEditValue('')
     setReceiptItem(null)
-    setPurchaseCreditListOpen(false)
-    setHighlightedPurchaseCreditIndex(-1)
 
     // Keep purchase-history mode when opened from Home (query/state) — do not wipe it on tab enter.
     const params = new URLSearchParams(location.search)
@@ -244,11 +224,6 @@ function History({ active }: { active: boolean }) {
   usePageEscape(handlePageBack, routeActive && !purchaseOnlyMode)
 
   const allItems = derived.historyItems
-  const purchaseCreditItems = derived.purchaseCreditItems
-  const purchaseCreditTotal = useMemo(
-    () => purchaseCreditItems.reduce((sum, item) => sum + item.amount, 0),
-    [purchaseCreditItems],
-  )
 
   function sortItems(list: HistoryItem[], purchasePaidDisplay: boolean): HistoryItem[] {
     return [...list].sort((a, b) => {
@@ -326,6 +301,25 @@ function History({ active }: { active: boolean }) {
     () => purchaseItems.reduce((sum, item) => sum + (item.paidAmount ?? 0), 0),
     [purchaseItems],
   )
+
+  const historyFlowSeries = useMemo(() => {
+    if (normalItems.length === 0) {
+      return Array.from({ length: 12 }, () => 0)
+    }
+    const sorted = [...normalItems].sort((a, b) => historyItemSortTime(a) - historyItemSortTime(b))
+    let running = 0
+    const values: number[] = [0]
+    for (const item of sorted) {
+      if (item.type === 'transfer') continue
+      const delta =
+        item.type === 'expense' || item.type === 'purchase' || item.type === 'loan'
+          ? -Math.abs(item.amount)
+          : Math.abs(item.amount)
+      running += delta
+      values.push(running)
+    }
+    return values.length >= 4 ? values : [0, ...values, running]
+  }, [normalItems])
 
   const typeTotals = useMemo(() => {
     const totals: Record<HistoryItemType, { sum: number; count: number }> = {
@@ -468,18 +462,8 @@ function History({ active }: { active: boolean }) {
   }
 
   function openPurchaseCreditUpdate(expenseId: string) {
-    setPurchaseCreditListOpen(false)
     setReceiptItem(null)
     navigate(`/purchase?edit=${encodeURIComponent(expenseId)}`)
-  }
-
-  function togglePurchaseCreditList() {
-    setPurchaseCreditListOpen((open) => {
-      const next = !open
-      if (next && purchaseCreditItems.length > 0) setHighlightedPurchaseCreditIndex(0)
-      else setHighlightedPurchaseCreditIndex(-1)
-      return next
-    })
   }
 
   function renderHistoryList(
@@ -694,6 +678,42 @@ function History({ active }: { active: boolean }) {
         </p>
       </header>
 
+      <div className="history-flow-fold">
+        <details className="history-trend-details">
+          <summary className="history-trend-summary">
+            Activity trend · {normalItems.length} records · Sales {formatMoney(typeTotals.sale.sum)}
+          </summary>
+          <div className="history-flow-panel app-surface history-flow-panel--compact">
+            <div className="history-flow-panel__chart" aria-hidden="true">
+              <BalanceFlowChart series={historyFlowSeries} tone="sales" blend />
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div className="history-date-chips app-chip-bar" role="group" aria-label="Date filter">
+        {DATE_FILTER_OPTIONS.filter((o) => o.id !== 'date').map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            className={`app-date-chip ${dateFilter === opt.id ? 'app-date-chip--active' : ''}`}
+            onClick={() => {
+              setDateFilter(opt.id)
+              if (opt.id !== 'date') setSelectedDate('')
+            }}
+          >
+            {opt.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          className={`app-date-chip ${dateFilter === 'date' ? 'app-date-chip--active' : ''}`}
+          onClick={() => setDateFilter('date')}
+        >
+          Pick date
+        </button>
+      </div>
+
       <div className="history-toolbar">
         <div
           className={`history-toolbar-primary${showPaymentFilters ? '' : ' history-toolbar-primary--no-payment'}`}
@@ -706,9 +726,7 @@ function History({ active }: { active: boolean }) {
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value)
-                setPurchaseCreditListOpen(false)
               }}
-              onFocus={() => setPurchaseCreditListOpen(false)}
               placeholder={searchHint}
               autoComplete="off"
             />
@@ -722,7 +740,6 @@ function History({ active }: { active: boolean }) {
               onChange={(e) => {
                 const next = e.target.value as HistoryFilter
                 setFilter(next)
-                setPurchaseCreditListOpen(false)
                 if (next === 'transfer') {
                   setPaymentFilter('all')
                 } else if (next !== 'all' && next !== 'sale') {
@@ -748,7 +765,6 @@ function History({ active }: { active: boolean }) {
                 value={paymentFilter}
                 onChange={(e) => {
                   setPaymentFilter(e.target.value as HistoryPaymentFilter)
-                  setPurchaseCreditListOpen(false)
                 }}
                 aria-label="Filter by payment mode"
               >
@@ -770,7 +786,6 @@ function History({ active }: { active: boolean }) {
               value={sort}
               onChange={(e) => {
                 setSort(e.target.value as HistorySort)
-                setPurchaseCreditListOpen(false)
               }}
               aria-label="Sort records"
             >
@@ -790,7 +805,6 @@ function History({ active }: { active: boolean }) {
               onChange={(e) => {
                 const next = e.target.value as DateFilter
                 setDateFilter(next)
-                setPurchaseCreditListOpen(false)
                 if (next !== 'date') setSelectedDate('')
               }}
               aria-label="Filter by date"
@@ -812,7 +826,6 @@ function History({ active }: { active: boolean }) {
             max={new Date().toISOString().slice(0, 10)}
             onChange={(e) => {
               setSelectedDate(e.target.value)
-              setPurchaseCreditListOpen(false)
             }}
             aria-label="Pick a date"
           />
@@ -829,7 +842,6 @@ function History({ active }: { active: boolean }) {
           checked={showPurchaseHistory}
           onChange={(e) => {
             setShowPurchaseHistory(e.target.checked)
-            setPurchaseCreditListOpen(false)
           }}
           aria-label="Include paid purchases in time order"
         />
@@ -838,71 +850,6 @@ function History({ active }: { active: boolean }) {
 
       <div className="history-scroll">
         <section className="history-section">
-          {purchaseCreditItems.length > 0 ? (
-            <div className="history-purchase-credit-bar" ref={purchaseCreditBarRef}>
-              <button
-                type="button"
-                className="history-purchase-credit-open"
-                onClick={togglePurchaseCreditList}
-              >
-                <span>💳 Purchase Credits ({purchaseCreditItems.length})</span>
-                <span className="history-purchase-credit-open-meta">
-                  <span className="history-purchase-credit-open-total">
-                    {formatMoney(purchaseCreditTotal)}
-                  </span>
-                  <span className="history-purchase-credit-open-caret">
-                    {purchaseCreditListOpen ? '▲' : '▼'}
-                  </span>
-                </span>
-              </button>
-              {purchaseCreditListOpen ? (
-                <ul className="history-purchase-credit-list" role="listbox">
-                  {purchaseCreditItems.map((credit, index) => (
-                    <li key={credit.id} className="history-purchase-credit-row">
-                      <button
-                        type="button"
-                        className={`history-purchase-credit-item ${index === highlightedPurchaseCreditIndex ? 'history-purchase-credit-item--active' : ''}`}
-                        onMouseEnter={() => setHighlightedPurchaseCreditIndex(index)}
-                        onClick={() => openPurchaseCreditUpdate(credit.id)}
-                      >
-                        <span className="history-purchase-credit-item-top">
-                          {credit.shopName ? (
-                            <span className="history-purchase-credit-item-name">{credit.shopName}</span>
-                          ) : (
-                            <span className="history-purchase-credit-item-name">Supplier</span>
-                          )}
-                          <span className="history-purchase-credit-item-amount">
-                            Paid {formatMoney(credit.paidAmount)} · Credit{' '}
-                            {formatMoney(credit.amount)}
-                          </span>
-                        </span>
-                        <span className="history-purchase-credit-item-types">
-                          <span className="history-purchase-credit-type-chip">{credit.billLabel}</span>
-                          <span className="history-purchase-credit-type-chip history-purchase-credit-type-chip--pay">
-                            {credit.payLabel}
-                          </span>
-                        </span>
-                        {credit.description ? (
-                          <span className="history-purchase-credit-item-desc">{credit.description}</span>
-                        ) : null}
-                        <span className="history-purchase-credit-item-date">
-                          Updated · {formatTimestamp(credit.date)}
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className="history-purchase-credit-update"
-                        onClick={() => openPurchaseCreditUpdate(credit.id)}
-                      >
-                        Credit Update
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          ) : null}
-
           {summaryTypes.length > 0 ? (
             <div className="history-summary history-summary--grid">
               {summaryTypes.map((t) => (

@@ -9,6 +9,7 @@ import {
 } from 'react'
 import type {
   AppData,
+  AppTheme,
   ExpenseKind,
   ExpensePayType,
   LoanPaySource,
@@ -70,6 +71,7 @@ import {
   saveData,
   scheduleSalePaymentEventsMigration,
   setHomePin,
+  setTheme,
   setOpeningBalance,
   setOpeningBankBalance,
   setLoanReminder,
@@ -247,6 +249,7 @@ interface CashContextValue {
   updateOpeningBalance: (amount: number) => void
   updateOpeningBankBalance: (amount: number) => void
   updateHomePin: (pin: string) => void
+  setAppTheme: (theme: AppTheme) => void
   removeSale: (id: string, relatedSaleIds?: string[]) => void
   removeExpense: (id: string) => void
   removeLoan: (id: string) => void
@@ -533,8 +536,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const lockHome = useCallback(() => setHomeUnlocked(false), [])
 
   useEffect(() => {
-    applyTheme()
-  }, [])
+    applyTheme(data.theme)
+  }, [data.theme])
 
   useEffect(() => {
     scheduleSalePaymentEventsMigration(loadData())
@@ -924,6 +927,11 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const updateHomePin = useCallback((pin: string) => {
     setData((prev) => setHomePin(prev, pin))
+  }, [])
+
+  const setAppTheme = useCallback((theme: AppTheme) => {
+    setData((prev) => setTheme(prev, theme))
+    applyTheme(theme)
   }, [])
 
   const updateOpeningBalance = useCallback((amount: number) => {
@@ -1602,6 +1610,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
+      setAppTheme,
       removeSale,
       removeExpense,
       removeLoan,
@@ -1675,6 +1684,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
+      setAppTheme,
       removeSale,
       removeExpense,
       removeLoan,

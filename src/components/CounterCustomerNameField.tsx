@@ -167,7 +167,7 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
     return (
       <div
         ref={customerRootRef}
-        className={`counter-customer ${focused ? 'counter-customer--focused' : ''}`}
+        className={`counter-customer ${focused ? 'counter-customer--focused' : ''} ${draft.trim() ? 'counter-customer--has-name' : ''}`}
       >
         <div className="counter-customer-row">
           <label className="counter-customer-label" htmlFor="customer-name">

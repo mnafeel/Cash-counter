@@ -18,6 +18,11 @@ const navItems = [
   { to: '/counter', label: 'Counter', icon: '💵' },
   { to: '/expenses', label: 'Expenses', icon: '📤' },
   { to: '/history', label: 'History', icon: '📋' },
+  { to: '/reports', label: 'Reports', icon: '📈' },
+  { to: '/purchase', label: 'Purchase', icon: '🛒' },
+  { to: '/loan', label: 'Loan', icon: '🤝' },
+  { to: '/staff', label: 'Staff', icon: '👥' },
+  { to: '/settings', label: 'Settings', icon: '⚙️' },
 ] as const
 
 function getNavIndex(pathname: string): number {
@@ -41,6 +46,7 @@ export default function Layout() {
   const mainTab = getMainTabKey(location.pathname)
   const showMainTabs = isMainTabPath(location.pathname)
   const [visibleTab, setVisibleTab] = useState<MainTabKey | null>(mainTab)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   useEffect(() => {
     if (mainTab) setVisibleTab(mainTab)
@@ -56,12 +62,13 @@ export default function Layout() {
     })
   }, [])
 
-  function navigateMainTab(to: string) {
+  function navigateNav(to: string) {
     const tab = getMainTabKey(to)
     const item = navItems.find((entry) => entry.to === to)
     if (item) startOpenTiming(item.label)
     if (tab) setVisibleTab(tab)
     startTransition(() => navigate(to))
+    setSidebarOpen(false)
   }
 
   useEffect(() => {
@@ -71,6 +78,10 @@ export default function Layout() {
   }, [location.pathname, mainTab])
 
   useEffect(() => {
+    setSidebarOpen(false)
+  }, [location.pathname])
+
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
       if (e.code !== 'KeyQ') return
@@ -78,7 +89,7 @@ export default function Layout() {
       e.preventDefault()
       const idx = getNavIndex(location.pathname)
       const next = navItems[(idx + 1) % navItems.length]
-      navigateMainTab(next.to)
+      navigateNav(next.to)
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -93,44 +104,96 @@ export default function Layout() {
       : location.pathname
 
   const activeNavLabel = useMemo(() => {
-    if (!showMainTabs) return openTimingLabelForPath(location.pathname)
+    if (!showMainTabs) {
+      const item = navItems.find((entry) => isNavActive(location.pathname, entry.to))
+      return item?.label ?? openTimingLabelForPath(location.pathname)
+    }
     const item = navItems.find((entry) => isNavActive(navActivePath, entry.to))
     return item?.label ?? null
   }, [showMainTabs, navActivePath, location.pathname])
 
+  const logoUrl = `${import.meta.env.BASE_URL}logo.png`
+
   return (
-    <div className="layout layout--fit">
-      <header className="header header--compact">
-        <div className="header-top">
-          <img
-            src={`${import.meta.env.BASE_URL}logo.png`}
-            alt="Shalimar Fashions"
-            className="app-logo"
-          />
+    <div className={`layout layout--sidebar${sidebarOpen ? ' layout--sidebar-open' : ''}`}>
+      <button
+        type="button"
+        className="sidebar-backdrop"
+        aria-label="Close menu"
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      <aside className="app-sidebar" aria-label="Main navigation">
+        <div className="sidebar-brand">
+          <img src={logoUrl} alt="Shalimar Fashions" className="sidebar-logo" />
+          <div className="sidebar-brand-text">
+            <span className="sidebar-brand-name">Shalimar Fashions</span>
+            <span className="sidebar-brand-tag">Cash Counter</span>
+          </div>
         </div>
-        <nav className="nav">
+
+        <nav className="sidebar-nav">
           {navItems.map((item) => (
             <button
               key={item.to}
               type="button"
-              className={`nav-link ${isNavActive(navActivePath, item.to) ? 'active' : ''}`}
-              onClick={() => navigateMainTab(item.to)}
+              className={`sidebar-nav-link ${isNavActive(navActivePath, item.to) || (!showMainTabs && isNavActive(location.pathname, item.to)) ? 'sidebar-nav-link--active' : ''}`}
+              onClick={() => navigateNav(item.to)}
             >
-              <span className="nav-icon">{item.icon}</span>
-              <span className="nav-label">{item.label}</span>
+              <span className="sidebar-nav-icon" aria-hidden="true">{item.icon}</span>
+              <span className="sidebar-nav-label">{item.label}</span>
             </button>
           ))}
-          <span className="nav-shortcut-hint" aria-hidden="true">
-            Alt+Q
-          </span>
         </nav>
-      </header>
-      <main className="main main--fit">
-        {showMainTabs ? <MainTabs activeTab={displayTab} /> : null}
-        <TabPanel hidden={showMainTabs}>
-          <Outlet />
-        </TabPanel>
-      </main>
+
+        <p className="sidebar-hint" aria-hidden="true">Alt+Q · next section</p>
+      </aside>
+
+      <div className="layout-shell">
+        <header className="app-topbar">
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-expanded={sidebarOpen}
+            aria-label="Open menu"
+            onClick={() => setSidebarOpen((open) => !open)}
+          >
+            <span className="sidebar-toggle-bar" />
+            <span className="sidebar-toggle-bar" />
+            <span className="sidebar-toggle-bar" />
+          </button>
+          <div className="topbar-title-wrap">
+            <span className="topbar-eyebrow">Shalimar Fashions</span>
+            <span className="topbar-title">{activeNavLabel ?? 'Dashboard'}</span>
+          </div>
+          <div className="topbar-quick-access" aria-label="Quick access">
+            <button
+              type="button"
+              className={`topbar-quick-btn ${isNavActive(navActivePath, '/counter') ? 'topbar-quick-btn--active' : ''}`}
+              onClick={() => navigateNav('/counter')}
+            >
+              <span aria-hidden="true">💵</span>
+              Counter
+            </button>
+            <button
+              type="button"
+              className={`topbar-quick-btn ${isNavActive(navActivePath, '/expenses') ? 'topbar-quick-btn--active' : ''}`}
+              onClick={() => navigateNav('/expenses')}
+            >
+              <span aria-hidden="true">📤</span>
+              Expenses
+            </button>
+          </div>
+        </header>
+
+        <main className="main main--fit">
+          {showMainTabs ? <MainTabs activeTab={displayTab} /> : null}
+          <TabPanel hidden={showMainTabs}>
+            <Outlet />
+          </TabPanel>
+        </main>
+      </div>
+
       <ReminderAlertsNotifier />
       <CloudStatusNotifier />
       <OpenTimingNotifier

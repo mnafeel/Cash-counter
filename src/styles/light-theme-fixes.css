@@ -1,0 +1,269 @@
+[data-theme='light'] .purchase-hist-side-credit-btn,
+[data-theme='light'] .history-purchase-credit-update {
+  color: #7c4a12;
+  background: rgba(184, 134, 11, 0.14);
+  border-color: rgba(184, 134, 11, 0.45);
+}
+
+[data-theme='light'] .purchase-hist-side-credit-btn:hover,
+[data-theme='light'] .purchase-hist-side-credit-btn:active,
+[data-theme='light'] .history-purchase-credit-update:hover,
+[data-theme='light'] .history-purchase-credit-update:active {
+  color: #5c370d;
+  background: rgba(184, 134, 11, 0.24);
+}
+
+[data-theme='light'] .history-purchase-credit-type-chip {
+  color: #7c4a12;
+  background: rgba(184, 134, 11, 0.1);
+}
+
+[data-theme='light'] .history-purchase-credit-type-chip--pay {
+  color: #166534;
+  background: rgba(22, 163, 74, 0.12);
+  border-color: rgba(22, 163, 74, 0.35);
+}
+
+[data-theme='light'] .customer-filter-chip {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .customer-filter-chip--active {
+  background: var(--surface);
+  color: var(--accent-dark, #8b6914);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+[data-theme='light'] .customer-list-btn {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .customer-total-banner span,
+[data-theme='light'] .customer-summary-card span {
+  color: var(--text-muted);
+}
+
+[data-theme='light'] .customer-total-banner strong,
+[data-theme='light'] .customer-summary-card strong {
+  color: var(--text);
+}
+
+[data-theme='light'] .counter-return-strip {
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+
+[data-theme='light'] .counter-return-strip em {
+  color: var(--text-muted);
+}
+
+[data-theme='light'] .counter-readonly-value,
+[data-theme='light'] .counter-page .amount-display--compact .amount-display-value {
+  color: var(--text);
+}
+
+[data-theme='light'] .counter-actions .btn-cheque.btn-saved,
+[data-theme='light'] .counter-actions .btn-pending.btn-saved,
+[data-theme='light'] .counter-actions .btn-credit.btn-saved {
+  background: var(--accent) !important;
+  color: var(--text-on-accent, #fff) !important;
+}
+
+[data-theme='light'] .reports-section-head h2,
+[data-theme='light'] .reports-section-head strong {
+  color: var(--text);
+}
+
+[data-theme='light'] .reports-summary-card span {
+  color: var(--text-muted);
+}
+
+[data-theme='light'] .reports-summary-card strong {
+  color: var(--text);
+}
+
+/* Native checkboxes — clear checked and unchecked states */
+[data-theme='light'] input[type='checkbox'] {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 2px solid #a8a29e;
+  border-radius: 4px;
+  background: #ffffff;
+  cursor: pointer;
+  position: relative;
+  vertical-align: middle;
+}
+
+[data-theme='light'] input[type='checkbox']:checked {
+  background: var(--success, #059669);
+  border-color: var(--success, #059669);
+}
+
+[data-theme='light'] input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+[data-theme='light'] input[type='checkbox']:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
+
+[data-theme='light'] .history-paid-toggle-label,
+[data-theme='light'] .settings-bill-edit-toggle-label,
+[data-theme='light'] .settings-cheque-cancel-meta strong,
+[data-theme='light'] .settings-cheque-cancel-amount {
+  color: var(--text);
+}
+
+[data-theme='light'] .history-paid-toggle {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .history-paid-toggle:has(input:checked) {
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+}
+
+[data-theme='light'] .history-paid-toggle:has(input:checked) .history-paid-toggle-label {
+  color: var(--success-text, #047857);
+}
+
+[data-theme='light'] .settings-bill-edit-toggle {
+  background: var(--surface);
+}
+
+[data-theme='light'] .settings-bill-edit-toggle-track {
+  background: #e7e5e4;
+  border-color: #d6d3d1;
+}
+
+[data-theme='light'] .settings-bill-edit-toggle-track::after {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme='light'] .settings-bill-edit-toggle-switch input:checked + .settings-bill-edit-toggle-track {
+  background: color-mix(in srgb, var(--success) 35%, #fff);
+  border-color: var(--success-border, #10b981);
+}
+
+[data-theme='light'] .settings-bill-edit-toggle-switch input:checked + .settings-bill-edit-toggle-track::after {
+  background: #fff;
+}
+
+[data-theme='light'] .settings-cheque-cancel-btn--danger {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+[data-theme='light'] .settings-cheque-cancel-btn--danger:hover,
+[data-theme='light'] .settings-cheque-cancel-btn--danger:active {
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #991b1b;
+}
+
+[data-theme='light'] .settings-cheque-cancel-item,
+[data-theme='light'] .settings-bill-edit-launch,
+[data-theme='light'] .settings-cheque-cancel {
+  background: var(--surface);
+  color: var(--text);
+}
+
+[data-theme='light'] .settings-cheque-cancel-sub,
+[data-theme='light'] .settings-cheque-cancel-empty,
+[data-theme='light'] .settings-cheque-cancel-head p {
+  color: var(--text-muted);
+}
+
+[data-theme='light'] .numpad-key {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9), 0 2px 6px rgba(28, 25, 23, 0.06);
+}
+
+[data-theme='light'] .numpad-key:active {
+  background: var(--surface-2);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+[data-theme='light'] .numpad-key--enter {
+  background: linear-gradient(180deg, #d4a84b 0%, #b8860b 100%);
+  border-color: #b8860b;
+  color: #fff;
+}
+
+[data-theme='light'] .number-keyboard-hint {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .counter-customer-input {
+  background: #fff;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .counter-customer--has-name {
+  border-color: color-mix(in srgb, var(--accent-cash) 35%, var(--border));
+  background: linear-gradient(180deg, #fffbeb 0%, #fff 100%);
+}
+
+[data-theme='light'] .counter-customer--has-name .counter-customer-input {
+  color: #92400e;
+  background: transparent;
+  border-color: color-mix(in srgb, var(--accent-cash) 30%, var(--border));
+}
+
+[data-theme='light'] .balance-flow-chart--blend {
+  opacity: 1;
+  filter: saturate(1.2) contrast(1.15);
+}
+
+[data-theme='light'] .balance-flow-chart--blend .balance-flow-chart-line {
+  stroke-width: 3px;
+}
+
+[data-theme='light'] .balance-flow-chart--blend .balance-flow-chart-line--glow {
+  opacity: 0.35;
+}
+
+[data-theme='light'] .history-select,
+[data-theme='light'] .history-payment-select,
+[data-theme='light'] .history-search {
+  background: #fff;
+  color: var(--text);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .history-summary-item {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .history-summary-label {
+  color: var(--text-muted);
+}
+
+[data-theme='light'] .history-summary-value {
+  color: var(--text);
+}

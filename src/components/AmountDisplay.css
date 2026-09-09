@@ -121,6 +121,21 @@
   color: #9bc98a;
 }
 
+.amount-display--customer-paid .amount-display-value {
+  color: var(--accent-cash, #e8b84a);
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 18px var(--accent-glow-cash, rgba(232, 184, 74, 0.35));
+}
+
+.amount-display--customer-paid.amount-display--active {
+  border-color: color-mix(in srgb, var(--accent-cash) 55%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent-cash) 40%, transparent),
+    0 6px 20px var(--accent-glow-cash, rgba(232, 184, 74, 0.28)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
 html[data-screen='tablet'] .amount-display--compact .amount-display-value {
   font-size: clamp(0.8rem, calc(var(--app-height, 900px) * 0.026), 1.2rem);
 }

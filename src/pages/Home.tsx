@@ -1,5 +1,5 @@
 import { memo, startTransition, useEffect, useMemo, useRef, useState, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import type { AppData } from '../types'
 import AmountDisplay from '../components/AmountDisplay'
 import BigAmount from '../components/BigAmount'
@@ -194,6 +194,7 @@ function Home({ active }: { active: boolean }) {
   const [homeDayFilter, setHomeDayFilter] = useState<HomeDayFilter>('today')
   const [homeSelectedDate, setHomeSelectedDate] = useState('')
   const [homeExpenseChannel, setHomeExpenseChannel] = useState<ExpensePayChannelFilter>('all')
+  const [openBillsOpen, setOpenBillsOpen] = useState(false)
   const noteInputRef = useRef<HTMLInputElement>(null)
 
   useOpenTiming('Dashboard', active, false)
@@ -234,13 +235,6 @@ function Home({ active }: { active: boolean }) {
   ])
 
   useResetOnTabEnter(active, resetHomeUi)
-
-  function openPurchaseHistory() {
-    navigate(
-      { pathname: '/history', search: '?purchases=1' },
-      { state: { showPurchaseHistory: true } },
-    )
-  }
 
   function openReports(
     preset: ReportDatePreset = 'today',
@@ -711,255 +705,245 @@ function Home({ active }: { active: boolean }) {
 
   return (
     <div className="home home--dashboard">
-      <section className="home-access" aria-label="Dashboard quick access">
-        <h2 className="home-dashboard-title">Dashboard</h2>
-        <div className="home-access-grid home-access-grid--wide">
-          <button
-            type="button"
-            className="home-access-btn home-access-btn--reports"
-            onClick={() => openReports('today')}
-          >
-            <span className="home-access-icon" aria-hidden="true">📊</span>
-            <span className="home-access-label">Reports</span>
-          </button>
-          <button
-            type="button"
-            className="home-access-btn home-access-btn--counter"
-            onClick={() => navigate('/counter')}
-          >
-            <span className="home-access-icon" aria-hidden="true">💵</span>
-            <span className="home-access-label">Counter</span>
-          </button>
-          <button
-            type="button"
-            className="home-access-btn home-access-btn--expense"
-            onClick={() => navigate('/expenses')}
-          >
-            <span className="home-access-icon" aria-hidden="true">📤</span>
-            <span className="home-access-label">Expenses</span>
-          </button>
-          <Link to="/loan" className="home-access-btn home-access-btn--loan">
-            <span className="home-access-icon" aria-hidden="true">🤝</span>
-            <span className="home-access-label">Loan</span>
-          </Link>
-          <Link to="/staff" className="home-access-btn home-access-btn--staff">
-            <span className="home-access-icon" aria-hidden="true">👥</span>
-            <span className="home-access-label">Staff</span>
-          </Link>
-          <button
-            type="button"
-            className="home-access-btn home-access-btn--history"
-            onClick={() => navigate('/history')}
-          >
-            <span className="home-access-icon" aria-hidden="true">📋</span>
-            <span className="home-access-label">History</span>
-          </button>
+      <section className="home-hero-banner" aria-label="Shalimar Fashions dashboard">
+        <div className="home-hero-brand">
+          <img
+            src={`${import.meta.env.BASE_URL}logo.png`}
+            alt=""
+            className="home-hero-logo"
+            aria-hidden="true"
+          />
+          <div className="home-hero-copy">
+            <h1 className="home-hero-title">Shalimar Fashions</h1>
+            <p className="home-hero-sub">Business dashboard · {homePeriodLabel}</p>
+          </div>
         </div>
+        <button type="button" className="home-hero-reports" onClick={() => openReports('today')}>
+          <span aria-hidden="true">📊</span>
+          Open reports
+        </button>
       </section>
 
       <section className="home-section home-section--balances" aria-label="Balances">
-        <h2 className="home-section-title">Balances</h2>
-        <div className="home-balances">
-        <div className="home-balance-card home-balance-card--account">
-          <BalanceFlowChart series={accountFlowSeries} tone="account" />
-          <div className="home-balance-card-content">
-            <div className="home-balance-head">
-              <p className="home-hero-label">✨ Account balance</p>
+        <div className="home-balance-hub">
+          <div className="home-balance-hub__hero home-balance-hub__hero--account">
+            <div className="home-balance-hub__chart" aria-hidden="true">
+              <BalanceFlowChart series={accountFlowSeries} tone="account" blend />
             </div>
-            <BigAmount label="" value={accountTotalBalance} variant="primary" size="lg" />
-            <p className="home-cash-period-summary home-cash-period-summary--account">
-              <span>💵 Cash {formatMoney(balance)}</span>
-              <span>🏦 Bank {formatMoney(bankBalance)}</span>
-              <span>Today net {formatMoney(accountTodayCash.summary.net + accountTodayBank.summary.net)}</span>
-            </p>
-          </div>
-        </div>
-        <div className="home-balance-row">
-          <div className="home-balance-card home-balance-card--cash">
-            <BalanceFlowChart series={cashFlowSeries} tone="cash" />
-            <div className="home-balance-card-content">
-            <div className="home-balance-head">
-              <p className="home-hero-label">💵 Cash in Drawer</p>
-              <div className="home-balance-actions">
-                <button
-                  type="button"
-                  className="home-cash-history-btn"
-                  onClick={() => setShowCashHistory(true)}
-                >
-                  History
-                </button>
-                <button type="button" className="home-add-btn" onClick={() => openAdd('cash')}>
-                  + Add
-                </button>
-              </div>
-            </div>
-            <BigAmount label="" value={balance} variant="primary" size="lg" />
-            <div className="home-cash-dates">
-              {BALANCE_DATE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className={`home-cash-date-chip ${cashDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
-                  onClick={() => {
-                    setCashDateFilter(opt.id)
-                    setCashSelectedDate('')
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-              <input
-                type="date"
-                className={`home-cash-date-input ${cashDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
-                value={cashSelectedDate}
-                onChange={(e) => {
-                  setCashSelectedDate(e.target.value)
-                  if (e.target.value) setCashDateFilter('date')
-                }}
-                aria-label="Pick date for cash history"
-              />
-            </div>
-            <div className="home-balance-day">
-              <p className="home-balance-last">
-                {cashOpeningLabel(cashDateFilter)}{' '}
-                <strong>{formatMoney(cashOpeningToday)}</strong>
+            <div className="home-balance-hub__hero-body">
+              <span className="home-balance-label">Account balance</span>
+              <BigAmount label="" value={accountTotalBalance} variant="primary" size="lg" />
+              <p className="home-balance-hub__split-meta">
+                <span className="home-balance-hub__pill home-balance-hub__pill--cash">
+                  Cash {formatMoney(balance)}
+                </span>
+                <span className="home-balance-hub__pill home-balance-hub__pill--bank">
+                  Bank {formatMoney(bankBalance)}
+                </span>
               </p>
-              <p className="home-balance-last home-balance-last--close">
-                {cashClosingLabel(cashDateFilter)}{' '}
-                <strong>{formatMoney(cashClosingPeriod)}</strong>
+              <p className="home-balance-hub__net-today">
+                Today net{' '}
+                {formatMoney(accountTodayCash.summary.net + accountTodayBank.summary.net)}
               </p>
-            </div>
-            <p className="home-cash-period-summary">
-              <span>In {formatMoney(cashActivitySummary.cashIn)}</span>
-              <span>Out {formatMoney(cashActivitySummary.cashOut)}</span>
-              <span>Net {formatMoney(cashActivitySummary.net)}</span>
-              <span>{cashActivitySummary.count} items</span>
-            </p>
             </div>
           </div>
-          <div className="home-balance-card home-balance-card--bank">
-            <BalanceFlowChart series={bankFlowSeries} tone="bank" />
-            <div className="home-balance-card-content">
-            <div className="home-balance-head">
-              <p className="home-hero-label">🏦 Bank Balance</p>
-              <div className="home-balance-actions">
-                <button
-                  type="button"
-                  className="home-cash-history-btn"
-                  onClick={() => setShowBankHistory(true)}
-                >
-                  History
-                </button>
-                <button type="button" className="home-add-btn" onClick={() => openAdd('bank')}>
-                  + Add
-                </button>
-              </div>
-            </div>
-            <BigAmount label="" value={bankBalance} variant="primary" size="lg" />
-            <div className="home-cash-dates">
-              {BALANCE_DATE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  className={`home-cash-date-chip ${bankDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
-                  onClick={() => {
-                    setBankDateFilter(opt.id)
-                    setBankSelectedDate('')
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-              <input
-                type="date"
-                className={`home-cash-date-input ${bankDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
-                value={bankSelectedDate}
-                onChange={(e) => {
-                  setBankSelectedDate(e.target.value)
-                  if (e.target.value) setBankDateFilter('date')
-                }}
-                aria-label="Pick date for bank history"
-              />
-            </div>
-            <div className="home-balance-day">
-              <p className="home-balance-last">
-                {bankOpeningLabel(bankDateFilter)}{' '}
-                <strong>{formatMoney(bankOpeningToday)}</strong>
-              </p>
-              <p className="home-balance-last home-balance-last--close">
-                {bankClosingLabel(bankDateFilter)}{' '}
-                <strong>{formatMoney(bankClosingPeriod)}</strong>
-              </p>
-            </div>
-            <p className="home-cash-period-summary">
-              <span>In {formatMoney(bankActivitySummary.bankIn)}</span>
-              <span>Out {formatMoney(bankActivitySummary.bankOut)}</span>
-              <span>Net {formatMoney(bankActivitySummary.net)}</span>
-              <span>{bankActivitySummary.count} items</span>
-            </p>
-            </div>
-          </div>
-        </div>
 
-        <div className="home-transfers home-transfers--pair">
-          <button
-            type="button"
-            className="home-transfer-btn"
-            onClick={() => openTransfer('cash-to-bank')}
-          >
-            💵 → 🏦 Cash to Bank
-          </button>
-          <button
-            type="button"
-            className="home-transfer-btn"
-            onClick={() => openTransfer('bank-to-cash')}
-          >
-            🏦 → 💵 Bank to Cash
-          </button>
-        </div>
+          <div className="home-balance-hub__lanes">
+            <div className="home-balance-hub__lane home-balance-hub__lane--cash">
+              <div className="home-balance-hub__chart" aria-hidden="true">
+                <BalanceFlowChart series={cashFlowSeries} tone="cash" blend />
+              </div>
+              <div className="home-balance-hub__lane-body">
+                <div className="home-balance-head">
+                  <span className="home-balance-label">Cash in drawer</span>
+                  <div className="home-balance-actions">
+                    <button
+                      type="button"
+                      className="home-cash-history-btn"
+                      onClick={() => setShowCashHistory(true)}
+                    >
+                      History
+                    </button>
+                    <button type="button" className="home-add-btn" onClick={() => openAdd('cash')}>
+                      + Add
+                    </button>
+                  </div>
+                </div>
+                <BigAmount label="" value={balance} variant="primary" size="lg" />
+                <div className="home-cash-dates">
+                  {BALANCE_DATE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`home-cash-date-chip ${cashDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                      onClick={() => {
+                        setCashDateFilter(opt.id)
+                        setCashSelectedDate('')
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                  <input
+                    type="date"
+                    className={`home-cash-date-input ${cashDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+                    value={cashSelectedDate}
+                    onChange={(e) => {
+                      setCashSelectedDate(e.target.value)
+                      if (e.target.value) setCashDateFilter('date')
+                    }}
+                    aria-label="Pick date for cash history"
+                  />
+                </div>
+                <div className="home-balance-day home-balance-day--compact">
+                  <p className="home-balance-last">
+                    {cashOpeningLabel(cashDateFilter)}{' '}
+                    <strong>{formatMoney(cashOpeningToday)}</strong>
+                  </p>
+                  <p className="home-balance-last home-balance-last--close">
+                    {cashClosingLabel(cashDateFilter)}{' '}
+                    <strong>{formatMoney(cashClosingPeriod)}</strong>
+                  </p>
+                </div>
+                <p className="home-cash-period-summary">
+                  <span>In {formatMoney(cashActivitySummary.cashIn)}</span>
+                  <span>Out {formatMoney(cashActivitySummary.cashOut)}</span>
+                  <span>Net {formatMoney(cashActivitySummary.net)}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="home-balance-hub__lane home-balance-hub__lane--bank">
+              <div className="home-balance-hub__chart" aria-hidden="true">
+                <BalanceFlowChart series={bankFlowSeries} tone="bank" blend />
+              </div>
+              <div className="home-balance-hub__lane-body">
+                <div className="home-balance-head">
+                  <span className="home-balance-label">Bank balance</span>
+                  <div className="home-balance-actions">
+                    <button
+                      type="button"
+                      className="home-cash-history-btn"
+                      onClick={() => setShowBankHistory(true)}
+                    >
+                      History
+                    </button>
+                    <button type="button" className="home-add-btn" onClick={() => openAdd('bank')}>
+                      + Add
+                    </button>
+                  </div>
+                </div>
+                <BigAmount label="" value={bankBalance} variant="primary" size="lg" />
+                <div className="home-cash-dates">
+                  {BALANCE_DATE_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`home-cash-date-chip ${bankDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                      onClick={() => {
+                        setBankDateFilter(opt.id)
+                        setBankSelectedDate('')
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                  <input
+                    type="date"
+                    className={`home-cash-date-input ${bankDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+                    value={bankSelectedDate}
+                    onChange={(e) => {
+                      setBankSelectedDate(e.target.value)
+                      if (e.target.value) setBankDateFilter('date')
+                    }}
+                    aria-label="Pick date for bank history"
+                  />
+                </div>
+                <div className="home-balance-day home-balance-day--compact">
+                  <p className="home-balance-last">
+                    {bankOpeningLabel(bankDateFilter)}{' '}
+                    <strong>{formatMoney(bankOpeningToday)}</strong>
+                  </p>
+                  <p className="home-balance-last home-balance-last--close">
+                    {bankClosingLabel(bankDateFilter)}{' '}
+                    <strong>{formatMoney(bankClosingPeriod)}</strong>
+                  </p>
+                </div>
+                <p className="home-cash-period-summary">
+                  <span>In {formatMoney(bankActivitySummary.bankIn)}</span>
+                  <span>Out {formatMoney(bankActivitySummary.bankOut)}</span>
+                  <span>Net {formatMoney(bankActivitySummary.net)}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="home-balance-hub__transfers home-transfers home-transfers--pair">
+            <button
+              type="button"
+              className="home-transfer-btn home-transfer-btn--3d home-transfer-btn--to-bank"
+              onClick={() => openTransfer('cash-to-bank')}
+            >
+              <span className="home-transfer-btn__icon" aria-hidden="true">💵</span>
+              <span className="home-transfer-btn__label">Cash to Bank</span>
+              <span className="home-transfer-btn__arrow" aria-hidden="true">→</span>
+            </button>
+            <button
+              type="button"
+              className="home-transfer-btn home-transfer-btn--3d home-transfer-btn--to-cash"
+              onClick={() => openTransfer('bank-to-cash')}
+            >
+              <span className="home-transfer-btn__icon" aria-hidden="true">🏦</span>
+              <span className="home-transfer-btn__label">Bank to Cash</span>
+              <span className="home-transfer-btn__arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
         </div>
       </section>
 
-      <section className="home-section home-section--sales" aria-label="Day summary">
-        <div className="home-section-head">
-          <h2 className="home-section-title">Sales collection · {homePeriodLabel}</h2>
-          <div
-            className="home-cash-dates home-cash-dates--section"
-            role="group"
-            aria-label="Day filter"
-          >
-            {HOME_DAY_OPTIONS.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                className={`home-cash-date-chip ${homeDayFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
-                onClick={() => {
-                  setHomeDayFilter(opt.id)
-                  setHomeSelectedDate('')
+      <section className="home-section home-section--metrics" aria-label="Day summary">
+        <div className="home-metrics-hub">
+          <div className="home-metrics-hub__head">
+            <h2 className="home-section-title">Today&apos;s overview · {homePeriodLabel}</h2>
+            <div
+              className="home-cash-dates home-cash-dates--section"
+              role="group"
+              aria-label="Day filter"
+            >
+              {HOME_DAY_OPTIONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  className={`home-cash-date-chip ${homeDayFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                  onClick={() => {
+                    setHomeDayFilter(opt.id)
+                    setHomeSelectedDate('')
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+              <input
+                type="date"
+                className={`home-cash-date-input ${homeDayFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+                value={homeSelectedDate}
+                onChange={(e) => {
+                  setHomeSelectedDate(e.target.value)
+                  if (e.target.value) setHomeDayFilter('date')
                 }}
-              >
-                {opt.label}
-              </button>
-            ))}
-            <input
-              type="date"
-              className={`home-cash-date-input ${homeDayFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
-              value={homeSelectedDate}
-              onChange={(e) => {
-                setHomeSelectedDate(e.target.value)
-                if (e.target.value) setHomeDayFilter('date')
-              }}
-              aria-label="Pick day for summary"
-            />
+                aria-label="Pick day for summary"
+              />
+            </div>
           </div>
-        </div>
-        <div className="home-today-grid">
+          <div className="home-metrics-hub__grid">
           <button
             type="button"
-            className="stat-card stat-card--action stat-card--sales stat-card--visual"
+            className="stat-card stat-card--action stat-card--sales stat-card--visual stat-card--metric"
             onClick={() => openHomeDayReports('sales')}
           >
-            <BalanceFlowChart series={salesFlowSeries} tone="sales" className="stat-card-flow" />
+            <div className="stat-card-bg" aria-hidden="true">
+              <BalanceFlowChart series={salesFlowSeries} tone="sales" blend />
+            </div>
             <div className="stat-card-body">
             <span className="stat-label">Sales collected</span>
             <span className="stat-value stat-value--green">
@@ -971,22 +955,15 @@ function Home({ active }: { active: boolean }) {
                 salesSummary.bankTotal,
               )}
             </span>
-            <span className="stat-meta">
-              {salesSummary.billCount} bills · Sales collected{' '}
-              {formatMoney(salesSummary.totalBills)} · Credit{' '}
-              {formatMoney(salesSummary.creditPending)} · Cheque{' '}
-              {formatMoney(salesSummary.chequePending)} · Total{' '}
-              {formatMoney(salesSummary.withCreditSales)}
-              {salesSummary.oldCreditChequeCollected > 0
-                ? ` · Old pending ${formatMoney(salesSummary.oldCreditChequeCollected)}`
-                : ''}
+            <span className="stat-meta stat-meta--compact">
+              {salesSummary.billCount} bills
             </span>
             </div>
           </button>
           <div
             role="button"
             tabIndex={0}
-            className="stat-card stat-card--action stat-card--expense"
+            className="stat-card stat-card--action stat-card--expense stat-card--metric"
             onClick={() => openHomeDayReports('expense')}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -1047,10 +1024,11 @@ function Home({ active }: { active: boolean }) {
           </div>
           <button
             type="button"
-            className="stat-card stat-card--action stat-card--purchase"
+            className="stat-card stat-card--action stat-card--purchase stat-card--metric"
+            onClick={() => navigate('/purchase')}
           >
             <span className="stat-label">Purchases</span>
-            <span className="stat-value stat-value--orange">
+            <span className="stat-value stat-value--purchase">
               {formatMoney(periodPurchaseSummary.total)}
             </span>
             <span className="stat-meta stat-meta--breakdown">
@@ -1062,10 +1040,11 @@ function Home({ active }: { active: boolean }) {
             ) : (
               <span className="stat-meta">{periodPurchaseItems.length} items</span>
             )}
+            <span className="stat-meta stat-meta--link">Tap to open purchase · History in Reports</span>
           </button>
           <button
             type="button"
-            className="stat-card stat-card--action stat-card--net"
+            className="stat-card stat-card--action stat-card--net stat-card--metric"
             onClick={() => openHomeDayReports()}
           >
             <span className="stat-label">Net inflow</span>
@@ -1079,36 +1058,28 @@ function Home({ active }: { active: boolean }) {
               {formatMoney(periodDailyTotals.creditChequeAddedCombined)}
             </span>
           </button>
+          </div>
         </div>
       </section>
 
-      <section className="home-purchases" aria-label="Purchase">
-        <div className="home-purchases-head">
-          <p className="home-purchases-label">Purchase</p>
-          <span className="home-purchases-total">
-            {formatMoney(periodPurchaseSummary.total)} · {homePeriodLabel}
+      <section className="home-section home-section--collect" aria-label="Collect open bills">
+        <button
+          type="button"
+          className="home-collect-toggle"
+          onClick={() => setOpenBillsOpen((open) => !open)}
+          aria-expanded={openBillsOpen}
+        >
+          <span className="home-collect-toggle__title">Open credit &amp; cheques</span>
+          <span className="home-collect-toggle__summary">
+            Credit {formatMoney(creditOverview.totalPending)} · Cheque{' '}
+            {formatMoney(chequeOverview.totalPending)}
           </span>
-        </div>
-        <div className="home-purchases-row">
-          <button
-            type="button"
-            className="home-purchase-btn home-purchase-btn--open"
-            onClick={() => navigate('/purchase')}
-          >
-            🛒 Open Purchase
-          </button>
-          <button
-            type="button"
-            className="home-purchase-btn home-purchase-btn--history"
-            onClick={openPurchaseHistory}
-          >
-            📋 Purchase History
-          </button>
-        </div>
-      </section>
-
-      <section className="home-section" aria-label="Collect open bills">
-        <h2 className="home-section-title">Collect · open bills</h2>
+          <span className="home-collect-toggle__chevron" aria-hidden="true">
+            {openBillsOpen ? '▾' : '▸'}
+          </span>
+        </button>
+        {openBillsOpen && (
+        <div className="home-collect-panel">
         <div className="home-collect-grid">
           <button
             type="button"
@@ -1143,31 +1114,23 @@ function Home({ active }: { active: boolean }) {
             </span>
           </button>
         </div>
-        <div className="home-collect-actions">
-          <button type="button" className="home-tool-btn home-tool-btn--credit" onClick={() => openCredits('credit')}>
-            💳 Credit Dashboard
-          </button>
-          <button type="button" className="home-tool-btn home-tool-btn--cheque" onClick={() => openCheques('cheque')}>
-            🧾 Cheque Dashboard
-          </button>
+        <p className="home-collect-hint">Tap a card to open the credit or cheque dashboard and collect.</p>
         </div>
+        )}
       </section>
 
       <section className="home-section" aria-label="More tools">
-        <h2 className="home-section-title">More</h2>
+        <h2 className="home-section-title">Tools</h2>
         <div className="home-tools-grid">
-          <button type="button" className="home-tool-btn" onClick={() => openCustomers('all')}>
-            👤 Customers
-          </button>
-          <Link to="/history" className="home-tool-btn home-tool-btn--link">
-            🕘 History
-          </Link>
           <button
             type="button"
             className="home-tool-btn"
-            onClick={() => openReports('monthPick', 'expense-report')}
+            onClick={() => navigate('/history?purchases=1')}
           >
-            📤 Expense Report
+            🛒 Purchase history
+          </button>
+          <button type="button" className="home-tool-btn" onClick={() => openCustomers('all')}>
+            👤 Customers
           </button>
           <button
             type="button"
@@ -1179,9 +1142,6 @@ function Home({ active }: { active: boolean }) {
           >
             📊 Analyze
           </button>
-          <Link to="/settings" className="home-tool-btn home-tool-btn--link">
-            ⚙️ Settings
-          </Link>
           <button
             type="button"
             className="home-tool-btn home-tool-btn--muted"

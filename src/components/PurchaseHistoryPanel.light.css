@@ -1,0 +1,54 @@
+[data-theme='light'] .purchase-hist-panel,
+[data-theme='light'] .purchase-hist-overlay--embedded .purchase-hist-panel {
+  background: var(--surface);
+  color: var(--text);
+}
+
+[data-theme='light'] .purchase-hist-supplier-btn,
+[data-theme='light'] .purchase-hist-item,
+[data-theme='light'] .purchase-hist-payment-row,
+[data-theme='light'] .purchase-hist-pay-block {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+[data-theme='light'] .purchase-hist-supplier-name,
+[data-theme='light'] .purchase-hist-payment-shop,
+[data-theme='light'] .purchase-hist-payment-amount,
+[data-theme='light'] .purchase-hist-pay-row strong,
+[data-theme='light'] .purchase-hist-item-amount {
+  color: var(--text);
+}
+
+[data-theme='light'] .purchase-hist-payment-meta,
+[data-theme='light'] .purchase-hist-payment-detail,
+[data-theme='light'] .purchase-hist-pay-row,
+[data-theme='light'] .purchase-hist-suppliers-hint,
+[data-theme='light'] .purchase-hist-pay-block h4 {
+  color: var(--text-muted);
+}
+
+[data-theme='light'] .purchase-hist-date-chip,
+[data-theme='light'] .purchase-hist-date-pick {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .purchase-hist-date-chip--active,
+[data-theme='light'] .purchase-hist-date-pick--active {
+  background: var(--surface);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+[data-theme='light'] .purchase-hist-toolbar {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .purchase-hist-summary-card {
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+  box-shadow: var(--shadow);
+}

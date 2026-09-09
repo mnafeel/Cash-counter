@@ -8,11 +8,13 @@ import { flushLocalBackupSnapshot, queueLocalBackupSnapshot } from './storage/lo
 import { startFolderDailyBackupScheduler } from './storage/folderBackup'
 import { flushSaveData, loadData } from './storage/database'
 import { applyTheme } from './utils/theme'
+import './styles/app-surfaces.css'
 import './index.css'
+import './styles/light-theme-fixes.css'
 import App from './App.tsx'
 
 applyDeviceSize()
-applyTheme()
+applyTheme(loadData().theme)
 initReminderNotificationSound()
 
 createRoot(document.getElementById('root')!).render(

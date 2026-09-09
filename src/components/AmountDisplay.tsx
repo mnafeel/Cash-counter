@@ -20,6 +20,8 @@ interface AmountDisplayProps {
   remainingKind?: 'credit' | 'cheque'
   /** Override remaining line text (e.g. "July 2026 remaining"). Amount is appended. */
   remainingCaption?: string
+  /** Emphasize customer-paid / tendered amounts on Counter. */
+  highlightPaid?: boolean
 }
 
 export default function AmountDisplay({
@@ -38,6 +40,7 @@ export default function AmountDisplay({
   remainingAmount,
   remainingKind = 'credit',
   remainingCaption,
+  highlightPaid,
 }: AmountDisplayProps) {
   const display = value ? formatMoney(parseAmount(value)) : '0'
   const remainingLabel = remainingKind === 'cheque' ? 'Cheque' : 'Credit'
@@ -61,6 +64,7 @@ export default function AmountDisplay({
     priorPendingAmount && priorPendingAmount > 0 ? 'amount-display--has-prior-pending' : '',
     priorCreditPaidAmount && priorCreditPaidAmount > 0 ? 'amount-display--has-prior-paid' : '',
     remainingAmount != null && remainingAmount >= 0 ? 'amount-display--has-remaining' : '',
+    highlightPaid ? 'amount-display--customer-paid' : '',
   ]
     .filter(Boolean)
     .join(' ')

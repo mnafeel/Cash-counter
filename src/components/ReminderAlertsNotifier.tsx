@@ -21,6 +21,31 @@ import './ReminderAlertsNotifier.css'
 
 const MAX_VISIBLE = 3
 const DISMISSED_STORAGE_KEY = 'cash-counter-dismissed-reminder-alerts'
+const SOUND_PLAYED_STORAGE_KEY = 'cash-counter-reminder-sound-played'
+
+function readLastSoundPlayedAt(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(SOUND_PLAYED_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    const next: Record<string, number> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof key === 'string' && typeof value === 'number') next[key] = value
+    }
+    return next
+  } catch {
+    return {}
+  }
+}
+
+function writeLastSoundPlayedAt(map: Record<string, number>) {
+  try {
+    localStorage.setItem(SOUND_PLAYED_STORAGE_KEY, JSON.stringify(map))
+  } catch {
+    // ignore quota errors
+  }
+}
 
 type UnifiedReminderAlert = {
   dismissKey: string
@@ -120,7 +145,8 @@ export default function ReminderAlertsNotifier() {
   const [shownAtByKey, setShownAtByKey] = useState<Record<string, number>>({})
   const [soundPlaying, setSoundPlaying] = useState(false)
   const prevAlertStateRef = useRef<Record<string, { visible: boolean; due: boolean }>>({})
-  const soundSessionKeyRef = useRef('')
+  const lastSoundPlayedRef = useRef<Record<string, number>>(readLastSoundPlayedAt())
+  const hasSyncedAlertsRef = useRef(false)
 
   useEffect(() => {
     setSoundPlaying(isReminderSoundPlaying())
@@ -166,11 +192,20 @@ export default function ReminderAlertsNotifier() {
   }, [visibleAlertKeys, visibleActiveAlerts])
 
   useEffect(() => {
-    if (!alertSettings.notificationSoundEnabled || visibleActiveAlerts.length === 0) {
+    if (!alertSettings.notificationSoundEnabled) {
       stopReminderNotificationSound()
       return
     }
 
+    const dueAlerts = visibleActiveAlerts.filter((item) => item.isDue || item.isOverdue)
+    if (dueAlerts.length === 0) {
+      stopReminderNotificationSound()
+      prevAlertStateRef.current = {}
+      return
+    }
+
+    const nowMs = Date.now()
+    const repeatMs = Math.max(1, alertSettings.notificationSoundRepeatSeconds) * 1000
     let shouldPlay = false
     const nextState: Record<string, { visible: boolean; due: boolean }> = {}
 
@@ -179,24 +214,34 @@ export default function ReminderAlertsNotifier() {
       const prev = prevAlertStateRef.current[item.dismissKey]
       nextState[item.dismissKey] = { visible: true, due }
 
-      if (!prev?.visible) shouldPlay = true
-      else if (due && !prev.due) shouldPlay = true
+      if (!due) continue
+      if (!hasSyncedAlertsRef.current) continue
+
+      const lastPlayed = lastSoundPlayedRef.current[item.dismissKey] ?? 0
+      if (!prev?.due) {
+        if (nowMs - lastPlayed >= repeatMs) shouldPlay = true
+      } else if (alertSettings.notificationSoundMode !== 'once' && nowMs - lastPlayed >= repeatMs) {
+        shouldPlay = true
+      }
     }
 
     prevAlertStateRef.current = nextState
+    hasSyncedAlertsRef.current = true
 
-    const sessionKey = visibleActiveAlerts.map((item) => item.dismissKey).sort().join('|')
+    if (!shouldPlay) return
+
+    for (const item of dueAlerts) {
+      lastSoundPlayedRef.current[item.dismissKey] = nowMs
+    }
+    writeLastSoundPlayedAt(lastSoundPlayedRef.current)
+
+    const useUrgent = dueAlerts.some((item) => item.soundStyle === 'urgent' || item.isOverdue)
+    const style = useUrgent ? 'urgent' : 'normal'
     const mode = alertSettings.notificationSoundMode
-
-    if (shouldPlay || (mode !== 'once' && soundSessionKeyRef.current !== sessionKey)) {
-      soundSessionKeyRef.current = sessionKey
-      const useUrgent = visibleActiveAlerts.some((item) => item.soundStyle === 'urgent' || item.isOverdue)
-      const style = useUrgent ? 'urgent' : 'normal'
-      if (mode === 'once') {
-        void playReminderNotificationSound(style)
-      } else {
-        void startAlertReminderSound(style, mode, alertSettings.notificationSoundRepeatSeconds)
-      }
+    if (mode === 'once') {
+      void playReminderNotificationSound(style)
+    } else {
+      void startAlertReminderSound(style, mode, alertSettings.notificationSoundRepeatSeconds)
     }
 
     if (mode === 'once') {

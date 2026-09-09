@@ -73,6 +73,37 @@
   gap: 6px;
 }
 
+.settings-general-subtabs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: 2px 0 4px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+.settings-general-subtab {
+  min-height: 28px;
+  padding: 4px 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted, var(--cream-dim));
+  font-size: 0.58rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.settings-general-subtab--active {
+  color: var(--text, var(--cream));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--surface-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
 .settings-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -131,8 +162,10 @@
 .settings-theme {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
+  margin-top: 10px;
+  padding: 10px 12px;
 }
 
 .settings-theme-label {
@@ -141,6 +174,14 @@
   color: var(--cream-dim);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.settings-theme-hint {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  line-height: 1.35;
 }
 
 .settings-theme-row {
@@ -953,8 +994,15 @@ html[data-screen='tablet'] .settings-info {
 }
 
 .settings-cheque-cancel-btn--danger {
-  border-color: color-mix(in srgb, #c45c5c 55%, var(--border));
-  color: #f0b4b4;
+  background: color-mix(in srgb, var(--danger) 14%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  color: var(--danger-text, #fecaca);
+}
+
+.settings-cheque-cancel-btn--danger:hover,
+.settings-cheque-cancel-btn--danger:active {
+  background: color-mix(in srgb, var(--danger) 22%, var(--surface));
+  border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
 }
 
 .settings-cheque-cancel-status {

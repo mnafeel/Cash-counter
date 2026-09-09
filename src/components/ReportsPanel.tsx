@@ -65,6 +65,7 @@ import {
 } from '../utils/purchaseHistory'
 import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
 import Portal from './Portal'
+import BalanceFlowChart from './BalanceFlowChart'
 import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
 import type { CreditReportItem, ChequeReportItem } from '../utils/reportsHub'
 import { buildCreditOverview } from '../utils/customerLedger'
@@ -255,6 +256,8 @@ export default function ReportsPanel({
   const [expandedSalesPanel, setExpandedSalesPanel] = useState<SalesExpandPanel | null>('collected')
   const [selectedPurchaseSupplierKey, setSelectedPurchaseSupplierKey] = useState<string | null>(null)
   const [selectedExpenseNameKey, setSelectedExpenseNameKey] = useState<string | null>(null)
+  const [selectedSalesCustomer, setSelectedSalesCustomer] = useState<string | null>(null)
+  const [showAdvancedDates, setShowAdvancedDates] = useState(false)
   const [expensePayChannel, setExpensePayChannel] = useState<ExpensePayChannelFilter>('all')
   const [expenseTimelineSort, setExpenseTimelineSort] = useState<ExpenseTimelineSort>('time-desc')
   const {
@@ -264,6 +267,10 @@ export default function ReportsPanel({
   } = useDeferredSearch()
   const [expandedReportKey, setExpandedReportKey] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    setSelectedSalesCustomer(null)
+  }, [activeSection, datePreset, selectedDate, rangeTo, selectedMonth])
 
   useEffect(() => {
     if (!open) return
@@ -347,6 +354,24 @@ export default function ReportsPanel({
         : EMPTY_SALES_TOTALS,
     [overviewSalesBills, overviewSalesFilter, needsOverviewSales],
   )
+  const salesRowsForView = useMemo(
+    () => (activeSection === 'all' ? overviewSalesBills : salesBills),
+    [activeSection, overviewSalesBills, salesBills],
+  )
+  const salesTotalsForView = useMemo(
+    () => (activeSection === 'all' ? overviewSalesTotals : salesTotals),
+    [activeSection, overviewSalesTotals, salesTotals],
+  )
+  const salesUseCollected = activeSection === 'all' || salesDateMode === 'collected'
+  const salesByCustomer = useMemo(
+    () => groupSalesByCustomer(salesRowsForView, salesUseCollected),
+    [salesRowsForView, salesUseCollected],
+  )
+  const selectedCustomerSales = useMemo(() => {
+    if (!selectedSalesCustomer) return []
+    const group = salesByCustomer.find((g) => g.key === selectedSalesCustomer)
+    return group?.rows ?? []
+  }, [salesByCustomer, selectedSalesCustomer])
   const showSameDaySalesBox = isSingleDaySalesPreset(datePreset, filterDateArg, rangeTo)
   const sameDaySales = useMemo(
     () =>
@@ -658,6 +683,11 @@ export default function ReportsPanel({
   )
 
   const creditOverview = useMemo(() => buildCreditOverview(data), [data])
+  const creditFlowSeries = useMemo(() => {
+    const amounts = creditOverview.customers.map((c) => c.pendingAmount)
+    if (amounts.length < 2) return amounts.length === 1 ? [0, amounts[0]] : [0, 0, 0]
+    return amounts.slice(0, 24)
+  }, [creditOverview.customers])
   const chequeOverview = useMemo(() => buildChequeOverview(data), [data])
   const alertSettings = useMemo(() => getReminderAlertSettings(data), [data])
   const activeCreditAlerts = useMemo(() => buildActiveCreditReminders(data), [data])
@@ -778,58 +808,73 @@ export default function ReportsPanel({
             </div>
           </header>
 
-          <div className="reports-toolbar">
-            <div className="reports-date-bar">
+          <div className="reports-toolbar app-surface">
+            <div className="reports-date-bar app-chip-bar">
               {DATE_PRESETS.map((preset) => (
                 <button
                   key={preset.id}
                   type="button"
-                  className={`reports-date-chip ${datePreset === preset.id ? 'reports-date-chip--active' : ''}`}
-                  onClick={() => setDatePreset(preset.id)}
+                  className={`app-date-chip ${datePreset === preset.id ? 'app-date-chip--active' : ''}`}
+                  onClick={() => {
+                    setDatePreset(preset.id)
+                    setShowAdvancedDates(false)
+                  }}
                 >
                   {preset.label}
                 </button>
               ))}
               <button
                 type="button"
-                className={`reports-date-chip ${datePreset === 'date' ? 'reports-date-chip--active' : ''}`}
-                onClick={() => setDatePreset('date')}
+                className={`app-date-chip app-date-chip--ghost ${showAdvancedDates || datePreset === 'date' || datePreset === 'range' || datePreset === 'monthPick' ? 'app-date-chip--active' : ''}`}
+                onClick={() => setShowAdvancedDates((v) => !v)}
               >
-                Pick
+                More dates
               </button>
-              <button
-                type="button"
-                className={`reports-date-chip ${datePreset === 'range' ? 'reports-date-chip--active' : ''}`}
-                onClick={() => setDatePreset('range')}
-              >
-                Range
-              </button>
-              <label
-                className={`reports-date-pick reports-date-pick--month ${datePreset === 'monthPick' ? 'reports-date-pick--active' : ''}`}
-              >
-                <span>Month</span>
-                <select
-                  className="reports-month-select"
-                  value={selectedMonth}
-                  onChange={(e) => {
-                    setSelectedMonth(e.target.value)
-                    setDatePreset('monthPick')
-                  }}
-                  disabled={monthOptions.length === 0}
-                  aria-label="Pick month for report"
-                >
-                  {monthOptions.length === 0 ? (
-                    <option value="">No data yet</option>
-                  ) : (
-                    monthOptions.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.label}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
             </div>
+
+            {showAdvancedDates || datePreset === 'date' || datePreset === 'range' || datePreset === 'monthPick' ? (
+              <div className="reports-date-advanced">
+                <button
+                  type="button"
+                  className={`app-date-chip ${datePreset === 'date' ? 'app-date-chip--active' : ''}`}
+                  onClick={() => setDatePreset('date')}
+                >
+                  Pick day
+                </button>
+                <button
+                  type="button"
+                  className={`app-date-chip ${datePreset === 'range' ? 'app-date-chip--active' : ''}`}
+                  onClick={() => setDatePreset('range')}
+                >
+                  Range
+                </button>
+                <label
+                  className={`reports-date-pick reports-date-pick--month ${datePreset === 'monthPick' ? 'reports-date-pick--active' : ''}`}
+                >
+                  <span>Month</span>
+                  <select
+                    className="reports-month-select"
+                    value={selectedMonth}
+                    onChange={(e) => {
+                      setSelectedMonth(e.target.value)
+                      setDatePreset('monthPick')
+                    }}
+                    disabled={monthOptions.length === 0}
+                    aria-label="Pick month for report"
+                  >
+                    {monthOptions.length === 0 ? (
+                      <option value="">No data yet</option>
+                    ) : (
+                      monthOptions.map((option) => (
+                        <option key={option.key} value={option.key}>
+                          {option.label}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+              </div>
+            ) : null}
 
             {datePreset === 'date' ? (
               <label className="reports-date-pick">
@@ -930,29 +975,16 @@ export default function ReportsPanel({
             )}
 
             {activeSection === 'all' ? (
-              <div className="reports-summary reports-summary--all reports-summary--overview reports-summary--overview-wide">
-                <button
-                  type="button"
-                  className="reports-summary-card reports-summary-card--green reports-summary-card--expandable"
-                  onClick={() => selectSection('sales')}
-                >
+              <div className="reports-summary reports-summary--all reports-summary--overview reports-summary--overview-stats">
+                <div className="reports-summary-card reports-summary-card--green reports-summary-card--stat">
                   <span>Sales collected</span>
                   <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
                   <small>
-                    {overviewSalesTotals.billCount} bill{overviewSalesTotals.billCount === 1 ? '' : 's'} collected
-                    <br />
-                    💵 {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
+                    {overviewSalesTotals.billCount} bills · 💵 {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
                     {formatMoney(overviewSalesChannelTotals.bank)}
                   </small>
-                  <span className="reports-summary-card-chevron" aria-hidden="true">
-                    ▸
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="reports-summary-card reports-summary-card--orange reports-summary-card--expandable"
-                  onClick={() => selectSection('expense')}
-                >
+                </div>
+                <div className="reports-summary-card reports-summary-card--orange reports-summary-card--stat">
                   <span>Total expense</span>
                   {expenseHasLoanActivity(expenseTimelineSummary) ? (
                     <ExpenseAfterLoanSummary
@@ -967,52 +999,16 @@ export default function ReportsPanel({
                   <small>
                     Normal {formatMoney(expenseTimelineSummary.expenseTotal)} · Purchase{' '}
                     {formatMoney(expenseTimelineSummary.purchaseTotal)}
-                    {expenseTimelineSummary.loanGivenOriginalTotal > 0 ? (
-                      <>
-                        {' '}
-                        · Loan given {formatMoney(expenseTimelineSummary.loanGivenOriginalTotal)}
-                      </>
-                    ) : expenseTimelineSummary.loanTotal > 0 ? (
-                      <> · Loan {formatMoney(expenseTimelineSummary.loanTotal)}</>
-                    ) : null}
-                    {expenseTimelineSummary.loanBorrowRepaidTotal > 0 ? (
-                      <>
-                        {expenseTimelineSummary.loanGivenOriginalTotal > 0 ||
-                        expenseTimelineSummary.loanTotal > 0
-                          ? ' ·'
-                          : ' '}
-                        Settlement {formatMoney(expenseTimelineSummary.loanBorrowRepaidTotal)}
-                      </>
-                    ) : null}
-                    {expenseTimelineSummary.loanGivenOriginalTotal > 0 ? (
-                      <>
-                        <br />
-                        Settled expense {formatMoney(expenseTimelineSummary.loanGivenSettledTotal)} · Open{' '}
-                        {formatMoney(expenseTimelineSummary.loanGivenUnsettledTotal)}
-                      </>
-                    ) : null}
                   </small>
-                  <span className="reports-summary-card-chevron" aria-hidden="true">
-                    ▸
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="reports-summary-card reports-summary-card--not-sale reports-summary-card--expandable"
-                  onClick={() => selectSection('not-sale')}
-                >
-                  <span>Not sale · cash in</span>
+                </div>
+                <div className="reports-summary-card reports-summary-card--not-sale reports-summary-card--stat">
+                  <span>Not sale</span>
                   <strong>{formatMoney(notSaleInflowTotals.total)}</strong>
                   <small>
-                    {notSaleInflowTotals.count} item{notSaleInflowTotals.count === 1 ? '' : 's'}
-                    <br />
-                    💵 Counter {formatMoney(notSaleInflowTotals.cashTotal)} · 🏦 Bank{' '}
+                    {notSaleInflowTotals.count} items · 💵 {formatMoney(notSaleInflowTotals.cashTotal)} · 🏦{' '}
                     {formatMoney(notSaleInflowTotals.bankTotal)}
                   </small>
-                  <span className="reports-summary-card-chevron" aria-hidden="true">
-                    ▸
-                  </span>
-                </button>
+                </div>
                 <div className="reports-summary-card reports-summary-card--collected">
                   <span>Sales + not sale</span>
                   <strong>{formatMoney(totalCollectedWithNotSale)}</strong>
@@ -1224,40 +1220,82 @@ export default function ReportsPanel({
                   amount={formatMoney(overviewSalesTotals.totalBills)}
                   onOpen={() => selectSection('sales')}
                 />
-              ) : null}
+              ) : (
             <section className="reports-section">
+              {activeSection === 'sales' ? (
+                <div className="reports-sales-hero app-surface">
+                  <span className="reports-sales-hero__label">Sales collected</span>
+                  <strong className="reports-sales-hero__value">
+                    {formatMoney(salesTotalsForView.totalBills)}
+                  </strong>
+                  <p className="reports-sales-hero__meta">
+                    {salesTotalsForView.billCount} bills · Bill total{' '}
+                    {formatMoney(salesTotalsForView.billTotal)} · 💵{' '}
+                    {formatMoney(salesTotalsForView.cashTotal)} · 🏦{' '}
+                    {formatMoney(salesTotalsForView.bankTotal)}
+                  </p>
+                  {salesTotalsForView.creditPending > 0 || salesTotalsForView.chequePending > 0 ? (
+                    <p className="reports-sales-hero__meta">
+                      Credit pending {formatMoney(salesTotalsForView.creditPending)} · Cheque pending{' '}
+                      {formatMoney(salesTotalsForView.chequePending)}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {activeSection === 'sales' && selectedSalesCustomer ? (
+                <button
+                  type="button"
+                  className="reports-customer-back"
+                  onClick={() => setSelectedSalesCustomer(null)}
+                >
+                  ← All customers
+                </button>
+              ) : null}
+
               <p className="reports-list-meta">
-                {(activeSection === 'all' ? overviewSalesBills : salesBills).length} sale
-                {(activeSection === 'all' ? overviewSalesBills : salesBills).length === 1 ? '' : 's'}
-                {activeSection === 'all' || salesDateMode === 'collected'
-                  ? ' · by collected date'
-                  : ' · by bill date'}
-                {activeSection === 'all' ? (
-                  <>
-                    {' '}
-                    · 💵 {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
-                    {formatMoney(overviewSalesChannelTotals.bank)}
-                  </>
-                ) : null}
+                {selectedSalesCustomer
+                  ? `${selectedCustomerSales.length} bill${selectedCustomerSales.length === 1 ? '' : 's'}`
+                  : `${salesByCustomer.length} customer${salesByCustomer.length === 1 ? '' : 's'}`}
+                {salesDateMode === 'collected' ? ' · by collected date' : ' · by bill date'}
               </p>
-              {(activeSection === 'all' ? overviewSalesBills : salesBills).length === 0 ? (
+
+              {salesRowsForView.length === 0 ? (
                 <p className="reports-empty">No sales for this period.</p>
+              ) : !selectedSalesCustomer ? (
+                <ul className="reports-list reports-list--customers">
+                  {salesByCustomer.map((group) => (
+                    <li key={group.key}>
+                      <button
+                        type="button"
+                        className="reports-customer-row"
+                        onClick={() => setSelectedSalesCustomer(group.key)}
+                      >
+                        <span className="reports-customer-row__name">{group.name}</span>
+                        <span className="reports-customer-row__meta">
+                          {group.count} bill{group.count === 1 ? '' : 's'}
+                        </span>
+                        <span className="reports-customer-row__amount">
+                          {formatMoney(group.total)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               ) : (
                 <ul className="reports-list">
-                  {(activeSection === 'all' ? overviewSalesBills : salesBills).map((row) => (
-                    <li key={row.id} className="reports-item">
+                  {(selectedSalesCustomer ? selectedCustomerSales : salesRowsForView).map((row) => (
+                    <li key={row.id} className="reports-item app-receipt-card">
                       <div className="reports-item-head">
                         <span className="reports-item-title">{row.customerName || 'Sale'}</span>
                         <span className="reports-item-amount">
                           {formatMoney(
-                            activeSection === 'all' || salesDateMode === 'collected'
-                              ? row.collectedTotal
-                              : row.billAmount,
+                            salesUseCollected ? row.collectedTotal : row.billAmount,
                           )}
                         </span>
                       </div>
                       <div className="reports-item-meta">
-                        {activeSection !== 'all' && salesDateMode === 'created' ? (
+                        {salesDateMode === 'created' ? (
                           <>
                             Created {row.createdDateLabel} · Bill {formatMoney(row.billAmount)} ·{' '}
                             {formatCollectedSalesBreakdown(row.cashTotal, row.bankTotal)}
@@ -1276,43 +1314,17 @@ export default function ReportsPanel({
                 </ul>
               )}
             </section>
-
-            {activeSection === 'all' ? (
-              <>
-                <ReportsSectionHead
-                  title="📥 Not sale · cash in"
-                  amount={formatMoney(notSaleInflowTotals.total)}
-                  onOpen={() => selectSection('not-sale')}
-                />
-                <section className="reports-section">
-                  <p className="reports-list-meta">
-                    {notSaleInflowItems.length} item{notSaleInflowItems.length === 1 ? '' : 's'} · not
-                    sales · 💵 {formatMoney(notSaleInflowTotals.cashTotal)} · 🏦{' '}
-                    {formatMoney(notSaleInflowTotals.bankTotal)}
-                  </p>
-                  {notSaleInflowItems.length === 0 ? (
-                    <p className="reports-empty">No not-sale credits for this period.</p>
-                  ) : (
-                    <ul className="reports-list">
-                      {notSaleInflowItems.slice(0, 8).map((row, index) => (
-                        <NotSaleInflowReportRow key={row.id} row={row} index={index + 1} />
-                      ))}
-                    </ul>
-                  )}
-                  {notSaleInflowItems.length > 0 ? (
-                    <button
-                      type="button"
-                      className="reports-supplier-btn reports-expense-open-btn"
-                      onClick={() => selectSection('not-sale')}
-                    >
-                      <div className="reports-item-meta">View all not sale credits →</div>
-                    </button>
-                  ) : null}
-                </section>
-              </>
-            ) : null}
+              )}
             </>
           )}
+
+          {activeSection === 'all' && showSection('not-sale') ? (
+            <ReportsSectionHead
+              title="📥 Not sale · cash in"
+              amount={formatMoney(notSaleInflowTotals.total)}
+              onOpen={() => selectSection('not-sale')}
+            />
+          ) : null}
 
           {activeSection === 'not-sale' ? (
             <section className="reports-section">
@@ -1334,9 +1346,9 @@ export default function ReportsPanel({
                   amount={formatMoney(purchaseTotals.total)}
                   onOpen={() => selectSection('purchase')}
                 />
-              ) : null}
+              ) : (
             <section className="reports-section">
-              {activeSection === 'all' || !selectedPurchaseSupplier ? (
+              {!selectedPurchaseSupplier ? (
                 <>
                   <p className="reports-list-meta">
                     {purchaseSupplierGroups.length} supplier
@@ -1353,9 +1365,6 @@ export default function ReportsPanel({
                             type="button"
                             className="reports-supplier-btn"
                             onClick={() => {
-                              if (activeSection === 'all') {
-                                setActiveSection('purchase')
-                              }
                               setSelectedPurchaseSupplierKey(group.shopKey)
                               setExpandedReportKey(null)
                               bodyRef.current?.scrollTo({ top: 0 })
@@ -1401,6 +1410,7 @@ export default function ReportsPanel({
                 </>
               )}
             </section>
+              )}
             </>
           )}
 
@@ -1412,100 +1422,77 @@ export default function ReportsPanel({
                   amount={formatMoney(combinedExpenseTotal)}
                   onOpen={() => selectSection('expense')}
                 />
-              ) : null}
+              ) : (
               <section className="reports-section">
-                {(activeSection === 'expense' || activeSection === 'all') && (
-                  <>
-                    {activeSection === 'expense' ? (
-                      <>
-                        <div className="reports-pay-channel-bar" role="group" aria-label="Expense payment channel">
-                          {(
-                            [
-                              { id: 'all' as const, label: 'All' },
-                              { id: 'cash' as const, label: '💵 Cash' },
-                              { id: 'bank' as const, label: '🏦 Bank' },
-                            ] as const
-                          ).map((opt) => (
-                            <button
-                              key={opt.id}
-                              type="button"
-                              className={`reports-date-chip ${expensePayChannel === opt.id ? 'reports-date-chip--active' : ''}`}
-                              onClick={() => setExpensePayChannel(opt.id)}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="reports-pay-channel-bar" role="group" aria-label="Expense sort">
-                          <button
-                            type="button"
-                            className={`reports-date-chip ${expenseTimelineSort === 'time-desc' ? 'reports-date-chip--active' : ''}`}
-                            onClick={() => setExpenseTimelineSort('time-desc')}
-                          >
-                            Latest first
-                          </button>
-                          <button
-                            type="button"
-                            className={`reports-date-chip ${expenseTimelineSort === 'time-asc' ? 'reports-date-chip--active' : ''}`}
-                            onClick={() => setExpenseTimelineSort('time-asc')}
-                          >
-                            Oldest first
-                          </button>
-                        </div>
-                        {filteredExpenseTimeline.length > 4 ? (
-                          <input
-                            type="search"
-                            className="reports-inline-search"
-                            value={expenseNameSearch}
-                            onChange={(e) => setExpenseNameSearch(e.target.value)}
-                            placeholder="Search expense…"
-                            autoComplete="off"
-                            aria-label="Search expenses"
-                          />
-                        ) : null}
-                      </>
-                    ) : null}
-                    {activeSection === 'expense' || activeSection === 'all' ? (
-                      <ExpenseReportSummaryBreakdown
-                        summary={filteredExpenseTimelineSummary}
-                        itemCount={
-                          activeSection === 'expense' ? filteredExpenseTimeline.length : undefined
+                <div className="reports-pay-channel-bar" role="group" aria-label="Expense payment channel">
+                  {(
+                    [
+                      { id: 'all' as const, label: 'All' },
+                      { id: 'cash' as const, label: '💵 Cash' },
+                      { id: 'bank' as const, label: '🏦 Bank' },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      className={`reports-date-chip ${expensePayChannel === opt.id ? 'reports-date-chip--active' : ''}`}
+                      onClick={() => setExpensePayChannel(opt.id)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="reports-pay-channel-bar" role="group" aria-label="Expense sort">
+                  <button
+                    type="button"
+                    className={`reports-date-chip ${expenseTimelineSort === 'time-desc' ? 'reports-date-chip--active' : ''}`}
+                    onClick={() => setExpenseTimelineSort('time-desc')}
+                  >
+                    Latest first
+                  </button>
+                  <button
+                    type="button"
+                    className={`reports-date-chip ${expenseTimelineSort === 'time-asc' ? 'reports-date-chip--active' : ''}`}
+                    onClick={() => setExpenseTimelineSort('time-asc')}
+                  >
+                    Oldest first
+                  </button>
+                </div>
+                {filteredExpenseTimeline.length > 4 ? (
+                  <input
+                    type="search"
+                    className="reports-inline-search"
+                    value={expenseNameSearch}
+                    onChange={(e) => setExpenseNameSearch(e.target.value)}
+                    placeholder="Search expense…"
+                    autoComplete="off"
+                    aria-label="Search expenses"
+                  />
+                ) : null}
+                <ExpenseReportSummaryBreakdown
+                  summary={filteredExpenseTimelineSummary}
+                  itemCount={filteredExpenseTimeline.length}
+                  channelLabel={expensePayChannel !== 'all' ? expensePayChannel : undefined}
+                />
+                {filteredExpenseTimeline.length === 0 ? (
+                  <p className="reports-empty">No expenses for this period.</p>
+                ) : (
+                  <ul className="reports-list">
+                    {filteredExpenseTimeline.map((entry, index) => (
+                      <ExpenseTimelineReportRow
+                        key={`${entry.kind}:${entry.id}`}
+                        entry={entry}
+                        index={index + 1}
+                        expanded={expandedReportKey === `expense-tl:${entry.kind}:${entry.id}`}
+                        onToggle={() =>
+                          toggleReportExpand(`expense-tl:${entry.kind}:${entry.id}`)
                         }
-                        channelLabel={expensePayChannel !== 'all' ? expensePayChannel : undefined}
                       />
-                    ) : null}
-                    {filteredExpenseTimeline.length === 0 ? (
-                      <p className="reports-empty">No expenses for this period.</p>
-                    ) : (
-                      <ul className="reports-list">
-                        {(activeSection === 'all'
-                          ? filteredExpenseTimeline.slice(0, 8)
-                          : filteredExpenseTimeline
-                        ).map((entry, index) => (
-                          <ExpenseTimelineReportRow
-                            key={`${entry.kind}:${entry.id}`}
-                            entry={entry}
-                            index={index + 1}
-                            expanded={expandedReportKey === `expense-tl:${entry.kind}:${entry.id}`}
-                            onToggle={() =>
-                              toggleReportExpand(`expense-tl:${entry.kind}:${entry.id}`)
-                            }
-                          />
-                        ))}
-                      </ul>
-                    )}
-                    {activeSection === 'all' && filteredExpenseTimeline.length > 8 ? (
-                      <button
-                        type="button"
-                        className="reports-supplier-btn reports-expense-open-btn"
-                        onClick={() => setActiveSection('expense')}
-                      >
-                        <div className="reports-item-meta">View all expenses in order →</div>
-                      </button>
-                    ) : null}
-                  </>
+                    ))}
+                  </ul>
                 )}
               </section>
+              )}
             </>
           )}
 
@@ -1733,22 +1720,34 @@ export default function ReportsPanel({
                 </details>
               ) : null}
               {activeSection === 'all' ? (
-                <div className="reports-section-head">
-                  <h2>💳 Credit</h2>
-                  <strong>{formatMoney(creditTotals.pendingTotal)}</strong>
-                </div>
+                <ReportsSectionHead
+                  title="💳 Credit"
+                  amount={formatMoney(creditTotals.pendingTotal)}
+                  onOpen={() => selectSection('credit')}
+                />
               ) : (
-                <div className="reports-dues-actions">
+                <div className="reports-credit-hero app-surface">
+                  <div className="reports-credit-hero__chart" aria-hidden="true">
+                    <BalanceFlowChart series={creditFlowSeries} tone="account" blend />
+                  </div>
+                  <div className="reports-credit-hero__body">
+                    <span className="reports-credit-hero__label">Open credit</span>
+                    <strong>{formatMoney(creditOverview.totalPending)}</strong>
+                    <p className="reports-credit-hero__meta">
+                      {creditOverview.customerCount} customers · {creditOverview.openBillCount} bills
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    className="reports-dues-pdf-btn"
+                    className="reports-dues-pdf-btn reports-dues-pdf-btn--inline"
                     disabled={creditOverview.openBillCount === 0}
                     onClick={() => printCreditDuesReport(data)}
                   >
-                    PDF / Print all credit dues ({formatMoney(creditOverview.totalPending)})
+                    PDF / Print
                   </button>
                 </div>
               )}
+              {activeSection !== 'all' ? (
               <section className="reports-section">
                 <p className="reports-list-meta">
                   {creditItems.length} credit record{creditItems.length === 1 ? '' : 's'} · tap for details
@@ -1769,6 +1768,7 @@ export default function ReportsPanel({
                   </ul>
                 )}
               </section>
+              ) : null}
             </>
           )}
 
@@ -1793,10 +1793,11 @@ export default function ReportsPanel({
                 </details>
               ) : null}
               {activeSection === 'all' ? (
-                <div className="reports-section-head">
-                  <h2>🧾 Cheque</h2>
-                  <strong>{formatMoney(chequeTotals.pendingTotal)}</strong>
-                </div>
+                <ReportsSectionHead
+                  title="🧾 Cheque"
+                  amount={formatMoney(chequeTotals.pendingTotal)}
+                  onOpen={() => selectSection('cheque')}
+                />
               ) : (
                 <div className="reports-dues-actions">
                   <button
@@ -1809,6 +1810,7 @@ export default function ReportsPanel({
                   </button>
                 </div>
               )}
+              {activeSection !== 'all' ? (
               <section className="reports-section">
                 <p className="reports-list-meta">
                   {chequeItems.length} cheque{chequeItems.length === 1 ? '' : 's'} · tap for full breakdown
@@ -1828,17 +1830,19 @@ export default function ReportsPanel({
                   </ul>
                 )}
               </section>
+              ) : null}
             </>
           )}
 
           {showSection('loan') && (
             <>
               {activeSection === 'all' ? (
-                <div className="reports-section-head">
-                  <h2>🤝 Loan</h2>
-                  <strong>{formatMoney(loanTotals.pendingTotal)}</strong>
-                </div>
-              ) : null}
+                <ReportsSectionHead
+                  title="🤝 Loan"
+                  amount={formatMoney(loanTotals.pendingTotal)}
+                  onOpen={() => selectSection('loan')}
+                />
+              ) : (
             <section className="reports-section">
               <p className="reports-list-meta">
                 {loanItems.length} loan{loanItems.length === 1 ? '' : 's'} · tap for full details
@@ -1859,6 +1863,7 @@ export default function ReportsPanel({
                 </ul>
               )}
             </section>
+              )}
             </>
           )}
         </div>
@@ -1866,6 +1871,27 @@ export default function ReportsPanel({
     </div>
     </Portal>
   )
+}
+
+function groupSalesByCustomer(rows: SalesBillRow[], useCollected: boolean) {
+  const map = new Map<
+    string,
+    { key: string; name: string; total: number; count: number; rows: SalesBillRow[] }
+  >()
+  for (const row of rows) {
+    const name = row.customerName?.trim() || 'Walk-in'
+    const key = name.toLowerCase()
+    const amount = useCollected ? row.collectedTotal : row.billAmount
+    const existing = map.get(key)
+    if (existing) {
+      existing.total += amount
+      existing.count += 1
+      existing.rows.push(row)
+    } else {
+      map.set(key, { key, name, total: amount, count: 1, rows: [row] })
+    }
+  }
+  return [...map.values()].sort((a, b) => b.total - a.total)
 }
 
 function SalesBillList({
@@ -2239,7 +2265,7 @@ function SalesCollectedSummaryCards({
 
       <button
         type="button"
-        className={`reports-summary-card reports-summary-card--compact reports-summary-card--expandable ${
+        className={`reports-summary-card reports-summary-card--compact reports-summary-card--expandable reports-summary-card--with-credit ${
           expanded === 'withCredit' ? 'reports-summary-card--active' : ''
         }`}
         aria-expanded={expanded === 'withCredit'}
@@ -2247,11 +2273,12 @@ function SalesCollectedSummaryCards({
       >
         <span>With credit/cheque sale</span>
         <strong>{formatMoney(salesTotals.withCreditSales)}</strong>
-        <small>
-          Sales collected {formatMoney(salesTotals.totalBills)} · Credit{' '}
-          {formatMoney(salesTotals.creditPending)} · Cheque{' '}
-          {formatMoney(salesTotals.chequePending)} · Total{' '}
-          {formatMoney(salesTotals.withCreditSales)}
+        <small className="reports-summary-card-lines">
+          <span>Collected {formatMoney(salesTotals.totalBills)}</span>
+          <span>
+            Credit {formatMoney(salesTotals.creditPending)} · Cheque{' '}
+            {formatMoney(salesTotals.chequePending)}
+          </span>
         </small>
         <span className="reports-summary-card-chevron" aria-hidden="true">
           {expanded === 'withCredit' ? '▾' : '▸'}

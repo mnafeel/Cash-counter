@@ -37,6 +37,7 @@ import { toInputDate } from '../utils/salesReport'
 import { currentMonthKey, defaultMonthPickerKey, listMonthPickerOptions } from '../utils/monthPicker'
 import PurchaseCreditPanel, { type PurchaseCreditPanelHandle } from './PurchaseCreditPanel'
 import './PurchaseHistoryPanel.css'
+import './PurchaseHistoryPanel.light.css'
 import Portal from './Portal'
 import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
 

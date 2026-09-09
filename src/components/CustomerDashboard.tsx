@@ -360,7 +360,8 @@ function CustomerDetail({
 
   return (
     <>
-      <div className="customer-detail-head">
+      <div className="customer-detail-head app-profile-hero">
+        <div className="app-profile-hero__body">
         {editingName ? (
           <form
             className="customer-rename-form"
@@ -414,6 +415,7 @@ function CustomerDetail({
             : ''}{' '}
           · Last visit {summary.lastPurchaseLabel}
         </p>
+        </div>
       </div>
 
       <div className="customer-summary-grid">

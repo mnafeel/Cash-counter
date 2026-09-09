@@ -193,8 +193,6 @@ function Counter({ active }: { active: boolean }) {
     collectCreditPayment,
     collectChequePayment,
     editPaidSalePayment,
-    setBillReminder,
-    updateReminderAlertSettings,
     applySaleReturn,
     cancelSaleReturn,
   } = useCashActions()
@@ -3648,7 +3646,7 @@ function Counter({ active }: { active: boolean }) {
                   <em>Original</em>
                   {formatMoney(returnGrossDisplay)}
                 </span>
-                <span>
+                <span className="counter-return-strip__paid">
                   <em>Paid</em>
                   {formatMoney(paidSoFarDisplay)}
                 </span>
@@ -3744,6 +3742,7 @@ function Counter({ active }: { active: boolean }) {
                   setActiveField('give')
                 }}
                 compact
+                highlightPaid={parseAmount(giveStr) > 0}
               />
             ) : (
               <div className="counter-readonly counter-readonly--na">
@@ -4389,8 +4388,6 @@ function Counter({ active }: { active: boolean }) {
           allSales={data.sales}
           data={data}
           onSelect={selectPendingBill}
-          onSetReminder={setBillReminder}
-          onSaveAlertSettings={updateReminderAlertSettings}
           focused={pendingSectionFocus}
           highlightedBillId={
             highlightedPendingIndex != null

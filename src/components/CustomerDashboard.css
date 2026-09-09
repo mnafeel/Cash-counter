@@ -210,6 +210,17 @@
   gap: 4px;
 }
 
+.customer-detail-head.app-profile-hero {
+  margin-bottom: 8px;
+}
+
+.customer-detail-head.app-profile-hero h2 {
+  margin: 0;
+  font-size: clamp(1rem, 3.5vw, 1.2rem);
+  font-weight: 900;
+  color: var(--text, var(--cream));
+}
+
 .customer-summary-card {
   padding: 6px 8px;
   border-radius: var(--radius-sm);
@@ -218,6 +229,9 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 4px 14px rgba(0, 0, 0, 0.18);
 }
 
 .customer-summary-card span {
@@ -668,6 +682,15 @@ html[data-screen='phone'] .customer-filter-chip {
   display: flex;
   align-items: center;
   padding: 0 0 0 8px;
+}
+
+.customer-credit-bill-check input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--success, #22c55e);
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .customer-credit-bill-check--inline {

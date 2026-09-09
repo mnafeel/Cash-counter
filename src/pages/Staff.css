@@ -137,7 +137,7 @@
   gap: 6px;
   position: sticky;
   top: 0;
-  z-index: 1400;
+  z-index: 20;
   padding-bottom: 4px;
   background: var(--bg);
 }

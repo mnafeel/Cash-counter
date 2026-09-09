@@ -1,0 +1,7 @@
+.date-filter-bar {
+  width: 100%;
+}
+
+.date-filter-bar .app-date-chip {
+  flex: 0 1 auto;
+}

@@ -40,9 +40,9 @@
   line-height: 1;
   overflow: hidden;
   border-radius: var(--radius-sm);
-  background: var(--brown);
+  background: var(--surface-2, var(--brown));
   border: 2px solid var(--border);
-  color: var(--cream);
+  color: var(--text, var(--cream));
   font-size: clamp(0.72rem, 8.5cqh, 2rem);
   font-weight: 700;
   transition: transform 0.1s, background 0.15s, border-color 0.15s;

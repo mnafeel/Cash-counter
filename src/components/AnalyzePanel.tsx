@@ -265,7 +265,7 @@ export default function AnalyzePanel({ open, onClose, data }: AnalyzePanelProps)
             </div>
           </header>
 
-          <div className="analyze-toolbar">
+          <div className="analyze-toolbar app-surface">
             <div className="analyze-date-bar">
               {ANALYZE_DATE_PRESETS.map((preset) => (
                 <button

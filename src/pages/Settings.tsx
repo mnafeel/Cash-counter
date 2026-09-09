@@ -114,6 +114,7 @@ const WebsiteApiSettings = lazy(() => import('../components/WebsiteApiSettings')
 
 type SettingsField = 'openingCash' | 'openingBank' | 'pin' | 'pinConfirm'
 type SettingsTab = 'general' | 'tally' | 'pinelabs' | 'cloud' | 'website'
+type GeneralSubTab = 'basics' | 'reports' | 'credit' | 'cheque' | 'data'
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'general', label: 'General' },
@@ -121,6 +122,14 @@ const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'pinelabs', label: 'Pine Labs' },
   { id: 'cloud', label: 'Cloud' },
   { id: 'website', label: 'Website API' },
+]
+
+const GENERAL_SUB_TABS: { id: GeneralSubTab; label: string }[] = [
+  { id: 'basics', label: 'Basics' },
+  { id: 'reports', label: 'Reports' },
+  { id: 'credit', label: 'Credit' },
+  { id: 'cheque', label: 'Cheque' },
+  { id: 'data', label: 'Data' },
 ]
 
 type BillEditFilter = 'all' | 'pending' | 'paid'
@@ -224,10 +233,12 @@ export default function Settings() {
     restoreTrashRecord,
     purgeTrashRecord,
     emptyTrash,
+    setAppTheme,
   } = useCash()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab] = useState<SettingsTab>('general')
+  const [generalSubTab, setGeneralSubTab] = useState<GeneralSubTab>('basics')
   const [openingStr, setOpeningStr] = useState(String(data.openingBalance))
   const [openingBankStr, setOpeningBankStr] = useState(String(data.openingBankBalance ?? 0))
   const [pinStr, setPinStr] = useState('')
@@ -316,7 +327,7 @@ export default function Settings() {
               ? websiteScrollRef.current
               : cloudScrollRef.current
     scrollEl?.scrollTo(0, 0)
-  }, [tab])
+  }, [tab, generalSubTab])
 
   useEffect(() => {
     billEditListRef.current?.scrollTo(0, 0)
@@ -1398,6 +1409,23 @@ export default function Settings() {
         {tab === 'general' && (
           <div className="settings-general">
             <div className="settings-scroll" ref={generalScrollRef}>
+            <div className="settings-general-subtabs" role="tablist" aria-label="General sections">
+              {GENERAL_SUB_TABS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={generalSubTab === item.id}
+                  className={`settings-general-subtab ${generalSubTab === item.id ? 'settings-general-subtab--active' : ''}`}
+                  onClick={() => setGeneralSubTab(item.id)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+
+            {generalSubTab === 'basics' ? (
+            <>
             <div className="settings-header">
               <h2>General</h2>
               <p>Opening balances & home PIN</p>
@@ -1443,6 +1471,65 @@ export default function Settings() {
               </div>
             </div>
 
+            <section className="settings-theme app-surface" aria-label="Appearance">
+              <span className="settings-theme-label">Theme</span>
+              <p className="settings-theme-hint">
+                Saved with your data and synced to cloud so this device always uses your choice.
+              </p>
+              <div className="settings-theme-row">
+                <button
+                  type="button"
+                  className={`settings-theme-btn settings-theme-btn--premium ${(data.theme ?? 'premium') === 'premium' ? 'settings-theme-btn--active' : ''}`}
+                  onClick={() => setAppTheme('premium')}
+                >
+                  Dark
+                </button>
+                <button
+                  type="button"
+                  className={`settings-theme-btn settings-theme-btn--light ${data.theme === 'light' ? 'settings-theme-btn--active' : ''}`}
+                  onClick={() => setAppTheme('light')}
+                >
+                  Light
+                </button>
+              </div>
+            </section>
+
+            <section className="settings-bill-edit-launch">
+              <div className="settings-bill-edit-head">
+                <h3>Edit bills</h3>
+                <p>
+                  Turn on edit mode for date and bill changes. Open bills on Cash Counter for amount,
+                  paid, and payment type.
+                </p>
+              </div>
+              <label className="settings-bill-edit-toggle">
+                <span className="settings-bill-edit-toggle-label">Bill edit mode</span>
+                <span className="settings-bill-edit-toggle-switch">
+                  <input
+                    type="checkbox"
+                    checked={billEditMode}
+                    onChange={toggleBillEditMode}
+                    aria-label="Bill edit mode"
+                  />
+                  <span className="settings-bill-edit-toggle-track" aria-hidden="true" />
+                </span>
+              </label>
+              <button
+                type="button"
+                className="btn btn-primary settings-bill-edit-open-btn"
+                onClick={() => setBillEditOpen(true)}
+              >
+                Open bill list ({billEditCount})
+              </button>
+              {billEditStatus && !billEditOpen ? (
+                <p className="settings-bill-edit-status">{billEditStatus}</p>
+              ) : null}
+            </section>
+            </>
+            ) : null}
+
+            {generalSubTab === 'reports' ? (
+            <>
             <section className="settings-history-report settings-daily-report">
               <div className="settings-daily-report-compact-head">
                 <h3>Daily reports</h3>
@@ -1621,7 +1708,11 @@ export default function Settings() {
                 <p className="settings-history-report-status">{historyReportStatus}</p>
               ) : null}
             </section>
+            </>
+            ) : null}
 
+            {generalSubTab === 'data' ? (
+            <>
             <section className="settings-history-report settings-data-backup">
               <div className="settings-history-report-head">
                 <h3>Data backup</h3>
@@ -1764,39 +1855,11 @@ export default function Settings() {
                 <p className="settings-history-report-status">{dataBackupStatus}</p>
               ) : null}
             </section>
+            </>
+            ) : null}
 
-            <section className="settings-bill-edit-launch">
-              <div className="settings-bill-edit-head">
-                <h3>Edit bills</h3>
-                <p>
-                  Turn on edit mode for date and bill changes. Open bills on Cash Counter for amount,
-                  paid, and payment type.
-                </p>
-              </div>
-              <label className="settings-bill-edit-toggle">
-                <span className="settings-bill-edit-toggle-label">Bill edit mode</span>
-                <span className="settings-bill-edit-toggle-switch">
-                  <input
-                    type="checkbox"
-                    checked={billEditMode}
-                    onChange={toggleBillEditMode}
-                    aria-label="Bill edit mode"
-                  />
-                  <span className="settings-bill-edit-toggle-track" aria-hidden="true" />
-                </span>
-              </label>
-              <button
-                type="button"
-                className="btn btn-primary settings-bill-edit-open-btn"
-                onClick={() => setBillEditOpen(true)}
-              >
-                Open bill list ({billEditCount})
-              </button>
-              {billEditStatus && !billEditOpen ? (
-                <p className="settings-bill-edit-status">{billEditStatus}</p>
-              ) : null}
-            </section>
-
+            {generalSubTab === 'credit' ? (
+            <>
             <section className="settings-cheque-cancel settings-credit-cancel">
               <div className="settings-cheque-cancel-head">
                 <h3>Credit & cheque admin</h3>
@@ -2048,6 +2111,25 @@ export default function Settings() {
                 </ul>
               )}
             </section>
+            </>
+            ) : null}
+
+            {generalSubTab === 'cheque' ? (
+            <>
+            <section className="settings-cheque-cancel settings-credit-cancel">
+              <div className="settings-cheque-cancel-head">
+                <h3>Cheque admin</h3>
+                <p>Search customers, then manage pending and approved cheques below.</p>
+              </div>
+              <input
+                type="search"
+                className="settings-credit-admin-search"
+                value={creditAdminSearch}
+                onChange={(e) => setCreditAdminSearch(e.target.value)}
+                placeholder="Search customer name…"
+                autoComplete="off"
+              />
+            </section>
 
             <section className="settings-cheque-cancel settings-pending-cheque">
               <div className="settings-cheque-cancel-head">
@@ -2258,7 +2340,11 @@ export default function Settings() {
                 <p className="settings-cheque-cancel-status">{chequeCancelStatus}</p>
               ) : null}
             </section>
+            </>
+            ) : null}
 
+            {generalSubTab === 'data' ? (
+            <>
             <section className="settings-cheque-cancel settings-trash-bin">
               <div className="settings-cheque-cancel-head">
                 <h3>Recycle bin</h3>
@@ -2327,6 +2413,8 @@ export default function Settings() {
               )}
               {trashStatus ? <p className="settings-cheque-cancel-status">{trashStatus}</p> : null}
             </section>
+            </>
+            ) : null}
             </div>
 
             {pinError && <p className="settings-pin-error">{pinError}</p>}
