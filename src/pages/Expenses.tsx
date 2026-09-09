@@ -1,10 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useCashActions } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
 import { PageBackButton, PageCorners } from '../components/PageCorners'
-import ExpenseHistoryPanel from '../components/ExpenseHistoryPanel'
 import StaffSalaryUnlinkConfirm from '../components/StaffSalaryUnlinkConfirm'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { usePageEscape } from '../hooks/usePageEscape'
@@ -71,7 +71,6 @@ function Expenses({ active }: { active: boolean }) {
   const [unlinkConfirmOpen, setUnlinkConfirmOpen] = useState(false)
   const [staffSalaryMonth, setStaffSalaryMonth] = useState(currentSalaryMonth())
   const salaryMonthOptions = useMemo(() => listSalaryMonthPickerOptions(), [])
-  const [showExpenseHistory, setShowExpenseHistory] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const paySectionRef = useRef<HTMLDivElement>(null)
   const activeNameSuggestionRef = useRef<HTMLButtonElement>(null)
@@ -82,7 +81,7 @@ function Expenses({ active }: { active: boolean }) {
   const staffPanelRef = useRef<HTMLDivElement>(null)
 
   useOpenTiming('Expenses', active, false)
-  useOpenTiming('Expense History', showExpenseHistory)
+  const navigate = useNavigate()
 
   const splitMode = payType === 'split'
 
@@ -215,7 +214,6 @@ function Expenses({ active }: { active: boolean }) {
     setHighlightedNameIndex(-1)
     setAmountDropdownOpen(false)
     setHighlightedAmountIndex(-1)
-    setShowExpenseHistory(false)
   }, [])
 
   useResetOnTabEnter(active, resetExpenseForm)
@@ -453,14 +451,10 @@ function Expenses({ active }: { active: boolean }) {
   }
 
   function handlePageBack() {
-    if (showExpenseHistory) {
-      setShowExpenseHistory(false)
-      return
-    }
     goBack()
   }
 
-  usePageEscape(handlePageBack, routeActive && !showExpenseHistory)
+  usePageEscape(handlePageBack, routeActive)
 
   return (
     <div className="expenses-page page-shell">
@@ -470,7 +464,7 @@ function Expenses({ active }: { active: boolean }) {
           <button
             type="button"
             className="expenses-corner-btn"
-            onClick={() => setShowExpenseHistory(true)}
+            onClick={() => navigate('/history')}
             aria-label="Expense history"
           >
             <span className="expenses-corner-btn-icon" aria-hidden="true">
@@ -808,13 +802,6 @@ function Expenses({ active }: { active: boolean }) {
         onConfirm={confirmStaffUnlink}
       />
 
-      {showExpenseHistory ? (
-        <ExpenseHistoryPanel
-          open={showExpenseHistory}
-          onClose={() => setShowExpenseHistory(false)}
-          data={data}
-        />
-      ) : null}
     </div>
   )
 }

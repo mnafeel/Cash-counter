@@ -112,7 +112,13 @@ import './Settings.css'
 
 const WebsiteApiSettings = lazy(() => import('../components/WebsiteApiSettings'))
 
-type SettingsField = 'openingCash' | 'openingBank' | 'pin' | 'pinConfirm'
+type SettingsField =
+  | 'openingCash'
+  | 'openingBank'
+  | 'pin'
+  | 'pinConfirm'
+  | 'accessPin'
+  | 'accessPinConfirm'
 type SettingsTab = 'general' | 'tally' | 'pinelabs' | 'cloud' | 'website'
 type GeneralSubTab = 'basics' | 'reports' | 'credit' | 'cheque' | 'data'
 
@@ -210,6 +216,7 @@ export default function Settings() {
     updateOpeningBalance,
     updateOpeningBankBalance,
     updateHomePin,
+    updateAccessPin,
     replaceAllData,
     hydrateData,
     resetAllData,
@@ -243,6 +250,8 @@ export default function Settings() {
   const [openingBankStr, setOpeningBankStr] = useState(String(data.openingBankBalance ?? 0))
   const [pinStr, setPinStr] = useState('')
   const [pinConfirmStr, setPinConfirmStr] = useState('')
+  const [accessPinStr, setAccessPinStr] = useState('')
+  const [accessPinConfirmStr, setAccessPinConfirmStr] = useState('')
   const [activeField, setActiveField] = useState<SettingsField>('openingCash')
   const [saved, setSaved] = useState(false)
   const [pinError, setPinError] = useState('')
@@ -561,19 +570,27 @@ export default function Settings() {
     if (activeField === 'openingCash') return openingStr
     if (activeField === 'openingBank') return openingBankStr
     if (activeField === 'pin') return pinStr
-    return pinConfirmStr
+    if (activeField === 'pinConfirm') return pinConfirmStr
+    if (activeField === 'accessPin') return accessPinStr
+    return accessPinConfirmStr
   }
 
   function setActiveValue(next: string) {
     if (activeField === 'openingCash') setOpeningStr(next)
     else if (activeField === 'openingBank') setOpeningBankStr(next)
     else if (activeField === 'pin') setPinStr(next)
-    else setPinConfirmStr(next)
+    else if (activeField === 'pinConfirm') setPinConfirmStr(next)
+    else if (activeField === 'accessPin') setAccessPinStr(next)
+    else setAccessPinConfirmStr(next)
   }
 
   function handleNumpad(action: NumpadAction) {
     if (tab !== 'general' || action === 'enter') return
-    const isPinField = activeField === 'pin' || activeField === 'pinConfirm'
+    const isPinField =
+      activeField === 'pin' ||
+      activeField === 'pinConfirm' ||
+      activeField === 'accessPin' ||
+      activeField === 'accessPinConfirm'
     const prev = activeValue()
     const next = isPinField ? applyPinAction(prev, action) : applyNumpadAction(prev, action)
     if (isPinField && next.length > 4) return
@@ -1059,20 +1076,33 @@ export default function Settings() {
     setPinError('')
     if (pinStr || pinConfirmStr) {
       if (pinStr.length !== 4 || pinConfirmStr.length !== 4) {
-        setPinError('PIN must be exactly 4 digits.')
+        setPinError('Dashboard PIN must be exactly 4 digits.')
         return
       }
       if (pinStr !== pinConfirmStr) {
-        setPinError('PINs do not match.')
+        setPinError('Dashboard PINs do not match.')
         return
       }
       updateHomePin(pinStr)
+    }
+    if (accessPinStr || accessPinConfirmStr) {
+      if (accessPinStr.length !== 4 || accessPinConfirmStr.length !== 4) {
+        setPinError('Secure areas PIN must be exactly 4 digits.')
+        return
+      }
+      if (accessPinStr !== accessPinConfirmStr) {
+        setPinError('Secure areas PINs do not match.')
+        return
+      }
+      updateAccessPin(accessPinStr)
     }
     updateOpeningBalance(opening)
     updateOpeningBankBalance(openingBank)
     setSaved(true)
     setPinStr('')
     setPinConfirmStr('')
+    setAccessPinStr('')
+    setAccessPinConfirmStr('')
     setTimeout(() => setSaved(false), 1200)
   }
 
@@ -1428,7 +1458,7 @@ export default function Settings() {
             <>
             <div className="settings-header">
               <h2>General</h2>
-              <p>Opening balances & home PIN</p>
+              <p>Opening balances & security PINs</p>
             </div>
             <div className="settings-fields">
               <AmountDisplay
@@ -1453,13 +1483,31 @@ export default function Settings() {
                 compact
               />
               <AmountDisplay
-                label="Confirm PIN"
+                label="Confirm dashboard PIN"
                 value={pinConfirmStr ? '•'.repeat(pinConfirmStr.length) : ''}
                 active={activeField === 'pinConfirm'}
                 onSelect={() => setActiveField('pinConfirm')}
                 compact
               />
+              <AmountDisplay
+                label="New secure areas PIN"
+                value={accessPinStr ? '•'.repeat(accessPinStr.length) : ''}
+                active={activeField === 'accessPin'}
+                onSelect={() => setActiveField('accessPin')}
+                compact
+              />
+              <AmountDisplay
+                label="Confirm secure areas PIN"
+                value={accessPinConfirmStr ? '•'.repeat(accessPinConfirmStr.length) : ''}
+                active={activeField === 'accessPinConfirm'}
+                onSelect={() => setActiveField('accessPinConfirm')}
+                compact
+              />
             </div>
+            <p className="settings-pin-note">
+              Dashboard PIN unlocks the dashboard only. Secure areas PIN protects reports, purchase,
+              loan, staff, and settings. If secure areas PIN is not set, it uses the dashboard PIN.
+            </p>
             <div className="settings-info">
               <div className="settings-row">
                 <span>Current cash</span>
@@ -2429,7 +2477,7 @@ export default function Settings() {
             >
               {saved ? '✓ Saved!' : 'Save Settings'}
             </button>
-            <p className="settings-note">PIN default 0000. Leave PIN empty to keep current.</p>
+            <p className="settings-note">Leave PIN fields empty to keep current.</p>
             </div>
           </div>
         )}

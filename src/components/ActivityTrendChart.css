@@ -1,0 +1,155 @@
+.activity-trend-chart {
+  position: relative;
+  width: 100%;
+  min-height: 148px;
+  padding: 8px 10px 10px;
+  box-sizing: border-box;
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.activity-trend-chart--scrubbing {
+  cursor: grabbing;
+}
+
+.activity-trend-chart--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  cursor: default;
+}
+
+.activity-trend-chart--empty p {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.activity-trend-chart__svg {
+  display: block;
+  width: 100%;
+  height: 120px;
+}
+
+.activity-trend-chart__baseline {
+  stroke: color-mix(in srgb, var(--border) 80%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.activity-trend-chart__area {
+  animation: activity-trend-fade 0.45s ease forwards;
+}
+
+.activity-trend-chart__line {
+  stroke: var(--chart-sales, #4ade80);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.activity-trend-chart__line--glow {
+  stroke-width: 4;
+  opacity: 0.45;
+}
+
+.activity-trend-chart__node {
+  fill: var(--accent, #d4a84b);
+  opacity: 0;
+  transition: r 0.1s ease, opacity 0.1s ease;
+}
+
+.activity-trend-chart__node--active {
+  fill: var(--accent, #d4a84b);
+  opacity: 1;
+  filter: drop-shadow(0 0 6px var(--accent-glow, rgba(212, 168, 75, 0.45)));
+}
+
+.activity-trend-chart__cursor {
+  stroke: color-mix(in srgb, var(--accent) 55%, transparent);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+
+.activity-trend-chart__tooltip {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 108px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  animation: activity-trend-tooltip 0.16s ease;
+  z-index: 2;
+}
+
+.activity-trend-chart__tooltip-time {
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.activity-trend-chart__tooltip-amount {
+  font-size: 0.92rem;
+  font-weight: 900;
+  color: var(--chart-sales, #4ade80);
+  line-height: 1.1;
+}
+
+.activity-trend-chart__tooltip-amount--down {
+  color: var(--accent-expense, #f87171);
+}
+
+.activity-trend-chart__tooltip-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.25;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-trend-chart__hint {
+  margin: 6px 0 0;
+  font-size: 0.58rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+@keyframes activity-trend-fade {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes activity-trend-tooltip {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}

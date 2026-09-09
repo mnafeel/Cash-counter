@@ -519,6 +519,7 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
     openingBankBalance: parsed.openingBankBalance ?? 0,
     dayBalances: normalizeDayBalances(parsed.dayBalances),
     homePin: normalizePin(parsed.homePin, '0000'),
+    accessPin: parsed.accessPin ? normalizePin(parsed.accessPin, '0000') : undefined,
     theme: normalizeTheme(parsed.theme),
     suppliers: normalizeSuppliers(parsed.suppliers),
     reminderAlerts: {
@@ -1062,6 +1063,7 @@ export function applyRemoteCloudData(
         openingBalance: remote.openingBalance,
         openingBankBalance: remote.openingBankBalance,
         homePin: remote.homePin,
+        accessPin: remote.accessPin,
         theme: remote.theme,
         reminderAlerts: remote.reminderAlerts,
       })
@@ -1680,6 +1682,12 @@ export function setOpeningBankBalance(data: AppData, amount: number): AppData {
 
 export function setHomePin(data: AppData, pin: string): AppData {
   const next = { ...data, homePin: normalizePin(pin, '0000') }
+  saveData(next)
+  return next
+}
+
+export function setAccessPin(data: AppData, pin: string): AppData {
+  const next = { ...data, accessPin: normalizePin(pin, '0000') }
   saveData(next)
   return next
 }

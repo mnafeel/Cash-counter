@@ -6,6 +6,7 @@ export type CashDataSnapshot = {
   bankBalance: number
   pendingBills: Sale[]
   homeUnlocked: boolean
+  sensitiveUnlocked: boolean
   dataBooting: boolean
 }
 
@@ -21,6 +22,7 @@ export function createCashDataStore(): CashDataStore & { setSnapshot: (next: Cas
     bankBalance: 0,
     pendingBills: [],
     homeUnlocked: false,
+    sensitiveUnlocked: false,
     dataBooting: false,
   }
   const listeners = new Set<() => void>()
@@ -37,6 +39,7 @@ export function createCashDataStore(): CashDataStore & { setSnapshot: (next: Cas
         next.bankBalance === snapshot.bankBalance &&
         next.pendingBills === snapshot.pendingBills &&
         next.homeUnlocked === snapshot.homeUnlocked &&
+        next.sensitiveUnlocked === snapshot.sensitiveUnlocked &&
         next.dataBooting === snapshot.dataBooting
       ) {
         return

@@ -1,0 +1,159 @@
+.pin-gate-page {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.pin-gate-page--unlocking .pin-gate {
+  animation: pin-gate-unlock 0.22s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.pin-gate {
+  --pin-space: 12px;
+  --pin-key-gap: 10px;
+  --pin-key-h: 54px;
+  --pin-digit: 44px;
+  --pin-digit-gap: 14px;
+
+  width: min(100%, 380px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--pin-space);
+  padding: 22px 18px 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  box-sizing: border-box;
+}
+
+.pin-gate-label {
+  margin: 0;
+  width: 100%;
+  font-size: 0.92rem;
+  font-weight: 900;
+  color: var(--text, var(--cream));
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.pin-gate-hint {
+  margin: 0;
+  width: 100%;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.pin-gate-digits {
+  display: flex;
+  justify-content: center;
+  gap: var(--pin-digit-gap);
+  margin-top: 2px;
+}
+
+.pin-gate-digit {
+  width: var(--pin-digit);
+  height: var(--pin-digit);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text, var(--cream));
+  box-sizing: border-box;
+}
+
+.pin-gate-digit--filled {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.pin-gate-digits--error .pin-gate-digit {
+  border-color: var(--danger-border);
+  animation: pin-gate-shake 0.35s ease;
+}
+
+.pin-gate-error {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--danger-text, #f87171);
+  text-align: center;
+}
+
+.pin-gate-keyboard {
+  width: 100%;
+  min-height: calc(var(--pin-key-h) * 4 + var(--pin-key-gap) * 3);
+  margin-top: 4px;
+}
+
+.pin-gate-keyboard .number-keyboard {
+  width: 100%;
+  padding: 0;
+  gap: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.pin-gate-keyboard .number-keyboard-label {
+  display: none;
+}
+
+.pin-gate-keyboard .numpad-grid {
+  gap: var(--pin-key-gap);
+  --key-gap: var(--pin-key-gap);
+}
+
+.pin-gate-keyboard .numpad-key {
+  height: var(--pin-key-h);
+  min-height: var(--pin-key-h);
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+html[data-screen='tablet'] .pin-gate,
+html[data-screen='desktop'] .pin-gate {
+  --pin-space: 14px;
+  --pin-key-gap: 12px;
+  --pin-key-h: 62px;
+  --pin-digit: 52px;
+  --pin-digit-gap: 16px;
+  padding: 24px 22px 20px;
+}
+
+@keyframes pin-gate-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes pin-gate-unlock {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.96;
+    transform: scale(1.01);
+  }
+}

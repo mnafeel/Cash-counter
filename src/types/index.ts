@@ -277,6 +277,8 @@ export interface AppData {
    */
   dayBalances?: Record<string, DayDrawerOpening>
   homePin?: string
+  /** PIN for reports, purchase, loan, staff, and settings. Defaults to homePin when unset. */
+  accessPin?: string
   theme?: AppTheme
   /** Saved purchase suppliers and their item descriptions. */
   suppliers?: SupplierEntry[]

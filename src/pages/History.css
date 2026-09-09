@@ -15,8 +15,8 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-bottom: 8px;
+  gap: 4px;
+  padding-bottom: 6px;
 }
 
 .history-flow-fold {
@@ -40,10 +40,10 @@
 .history-trend-summary {
   list-style: none;
   cursor: pointer;
-  padding: 6px 10px;
-  font-size: 0.62rem;
-  font-weight: 700;
-  color: var(--text-muted, var(--cream-dim));
+  padding: 8px 10px;
+  font-size: 0.66rem;
+  font-weight: 800;
+  color: var(--text, var(--cream));
   position: relative;
   z-index: 1;
 }
@@ -52,18 +52,13 @@
   display: none;
 }
 
-.history-flow-panel--compact {
-  position: relative;
+.history-flow-panel--interactive {
   margin: 0;
-  height: 76px;
-  min-height: 76px;
-  max-height: 76px;
   overflow: hidden;
   border: none;
   border-top: 1px solid var(--border);
   border-radius: 0;
   box-shadow: none;
-  isolation: isolate;
 }
 
 .history-date-chips {
@@ -73,23 +68,19 @@
 
 .history-header-hints {
   display: none;
+  margin: 0;
+  padding: 0 8px;
+  font-size: 0.58rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-muted);
 }
 
 @media (min-width: 768px) {
   .history-header-hints {
     display: block;
+    font-size: 0.62rem;
   }
-}
-
-.history-flow-panel__chart {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.history-flow-panel__chart .balance-flow-chart--blend {
-  inset: 4% -2% -6% 16%;
-  opacity: 0.92;
 }
 
 .history-flow-panel__copy {
@@ -115,61 +106,13 @@
   color: var(--text, var(--cream));
 }
 
-.history-header {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  padding: 4px 8px 0;
-  box-sizing: border-box;
-}
-
-.history-header-main {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-}
-
-.history-header h2 {
-  margin: 0;
-  font-size: 0.92rem;
-  font-weight: 800;
-  color: var(--cream);
-  letter-spacing: 0.01em;
-  line-height: 1.2;
-}
-
-.history-header-badge {
-  flex-shrink: 0;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 0.58rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--cream);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  white-space: nowrap;
-}
-
 .history-header-meta {
   margin: 0;
+  padding: 0 8px;
   font-size: 0.62rem;
   font-weight: 700;
   line-height: 1.35;
   color: #e8b07a;
-}
-
-.history-header-hints {
-  margin: 0;
-  font-size: 0.58rem;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--text-muted);
 }
 
 .history-page--purchase-only {
@@ -184,7 +127,7 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   padding: 0 8px;
   box-sizing: border-box;
@@ -393,9 +336,46 @@
 .history-filter-field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 5px;
   min-width: 0;
   width: 100%;
+}
+
+.history-filter-field--pending .history-search {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+.history-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.history-search-icon {
+  position: absolute;
+  left: 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.history-search-spinner {
+  position: absolute;
+  right: 10px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: history-search-spin 0.7s linear infinite;
+}
+
+@keyframes history-search-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .history-filter-field--search .history-search {
@@ -404,7 +384,7 @@
 
 .history-filter-label,
 .history-toolbar-label {
-  font-size: 0.48rem;
+  font-size: 0.56rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -443,10 +423,18 @@
 }
 
 .history-search {
+  padding-left: 30px;
+  padding-right: 30px;
+  min-height: 36px;
   font-weight: 800;
   letter-spacing: 0.01em;
   -webkit-font-smoothing: antialiased;
   cursor: text;
+}
+
+.history-list--pending {
+  opacity: 0.72;
+  transition: opacity 0.18s ease;
 }
 
 .history-select:focus,

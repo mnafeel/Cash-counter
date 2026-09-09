@@ -1,17 +1,23 @@
-import { startTransition, useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import MainTabs from './MainTabs'
 import TabPanel from './TabPanel'
+import SectionPinGate from './SectionPinGate'
 import { useDeviceSize } from '../hooks/useDeviceSize'
-import { useHomePinLock } from '../hooks/useHomePinLock'
+import { useAppRouteLocks } from '../hooks/useAppRouteLocks'
+import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import ReminderAlertsNotifier from './ReminderAlertsNotifier'
 import CloudStatusNotifier from './CloudStatusNotifier'
 import OpenTimingNotifier from './OpenTimingNotifier'
+import SidebarCloudLogout from './SidebarCloudLogout'
 import { initReminderNotificationSound } from '../utils/reminderNotificationSound'
 import { normalizeRoutePath } from '../utils/hashRoute'
 import { getMainTabKey, isMainTabPath, type MainTabKey } from '../utils/mainTab'
 import { openTimingLabelForPath, startOpenTiming, finishOpenTiming } from '../utils/openTiming'
+import { isSensitiveRoute } from '../utils/sensitiveRoutes'
 import './Layout.css'
+
+const SIDEBAR_COLLAPSED_KEY = 'sof-sidebar-collapsed'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: '📊' },
@@ -24,6 +30,14 @@ const navItems = [
   { to: '/staff', label: 'Staff', icon: '👥' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ] as const
+
+const SENSITIVE_GATE_LABELS: Record<string, string> = {
+  '/reports': 'Reports',
+  '/purchase': 'Purchases',
+  '/loan': 'Loans',
+  '/staff': 'Staff',
+  '/settings': 'Settings',
+}
 
 function getNavIndex(pathname: string): number {
   const path = normalizeRoutePath(pathname)
@@ -38,15 +52,37 @@ function isNavActive(pathname: string, to: string): boolean {
   return path === to || path.startsWith(`${to}/`)
 }
 
+function readSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function sensitiveGateTitle(pathname: string): string {
+  const path = normalizeRoutePath(pathname)
+  const match = Object.entries(SENSITIVE_GATE_LABELS).find(
+    ([prefix]) => path === prefix || path.startsWith(`${prefix}/`),
+  )
+  return match?.[1] ?? 'Secure area'
+}
+
 export default function Layout() {
   useDeviceSize()
-  useHomePinLock()
+  useAppRouteLocks()
   const navigate = useNavigate()
   const location = useLocation()
+  const { sensitiveUnlocked } = useCashSnapshot(true)
   const mainTab = getMainTabKey(location.pathname)
   const showMainTabs = isMainTabPath(location.pathname)
+  const onSensitiveRoute = isSensitiveRoute(location.pathname)
+  const showSensitiveGate = onSensitiveRoute && !sensitiveUnlocked
   const [visibleTab, setVisibleTab] = useState<MainTabKey | null>(mainTab)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
+  const [navTransition, setNavTransition] = useState(false)
+  const navTransitionTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (mainTab) setVisibleTab(mainTab)
@@ -61,6 +97,22 @@ export default function Layout() {
       requestAnimationFrame(() => finishOpenTiming('App'))
     })
   }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? '1' : '0')
+    } catch {
+      /* ignore */
+    }
+  }, [sidebarCollapsed])
+
+  function triggerNavTransition() {
+    setNavTransition(true)
+    if (navTransitionTimerRef.current !== null) {
+      window.clearTimeout(navTransitionTimerRef.current)
+    }
+    navTransitionTimerRef.current = window.setTimeout(() => setNavTransition(false), 340)
+  }
 
   function navigateNav(to: string) {
     const tab = getMainTabKey(to)
@@ -87,6 +139,7 @@ export default function Layout() {
       if (e.code !== 'KeyQ') return
 
       e.preventDefault()
+      triggerNavTransition()
       const idx = getNavIndex(location.pathname)
       const next = navItems[(idx + 1) % navItems.length]
       navigateNav(next.to)
@@ -95,6 +148,14 @@ export default function Layout() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [location.pathname])
+
+  useEffect(() => {
+    return () => {
+      if (navTransitionTimerRef.current !== null) {
+        window.clearTimeout(navTransitionTimerRef.current)
+      }
+    }
+  }, [])
 
   const navActivePath =
     showMainTabs && visibleTab
@@ -114,8 +175,17 @@ export default function Layout() {
 
   const logoUrl = `${import.meta.env.BASE_URL}logo.png`
 
+  const layoutClassName = [
+    'layout',
+    'layout--sidebar',
+    sidebarOpen ? 'layout--sidebar-open' : '',
+    sidebarCollapsed ? 'layout--sidebar-collapsed' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
-    <div className={`layout layout--sidebar${sidebarOpen ? ' layout--sidebar-open' : ''}`}>
+    <div className={layoutClassName}>
       <button
         type="button"
         className="sidebar-backdrop"
@@ -130,6 +200,15 @@ export default function Layout() {
             <span className="sidebar-brand-name">Shalimar Fashions</span>
             <span className="sidebar-brand-tag">Cash Counter</span>
           </div>
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+            onClick={() => setSidebarCollapsed(true)}
+          >
+            ‹
+          </button>
         </div>
 
         <nav className="sidebar-nav">
@@ -147,9 +226,10 @@ export default function Layout() {
         </nav>
 
         <p className="sidebar-hint" aria-hidden="true">Alt+Q · next section</p>
+        <SidebarCloudLogout />
       </aside>
 
-      <div className="layout-shell">
+      <div className={`layout-shell${navTransition ? ' layout-shell--switching' : ''}`}>
         <header className="app-topbar">
           <button
             type="button"
@@ -161,6 +241,15 @@ export default function Layout() {
             <span className="sidebar-toggle-bar" />
             <span className="sidebar-toggle-bar" />
             <span className="sidebar-toggle-bar" />
+          </button>
+          <button
+            type="button"
+            className="sidebar-expand-btn"
+            aria-label="Expand sidebar"
+            title="Show sidebar"
+            onClick={() => setSidebarCollapsed(false)}
+          >
+            ☰
           </button>
           <div className="topbar-title-wrap">
             <span className="topbar-eyebrow">Shalimar Fashions</span>
@@ -187,10 +276,16 @@ export default function Layout() {
         </header>
 
         <main className="main main--fit">
-          {showMainTabs ? <MainTabs activeTab={displayTab} /> : null}
-          <TabPanel hidden={showMainTabs}>
-            <Outlet />
-          </TabPanel>
+          {showSensitiveGate ? (
+            <SectionPinGate title={sensitiveGateTitle(location.pathname)} />
+          ) : (
+            <>
+              {showMainTabs ? <MainTabs activeTab={displayTab} /> : null}
+              <TabPanel hidden={showMainTabs}>
+                <Outlet />
+              </TabPanel>
+            </>
+          )}
         </main>
       </div>
 

@@ -2,8 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, useCallback, type MouseEven
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useCashActions } from '../context/CashContext'
 import PurchaseHistoryPanel from '../components/PurchaseHistoryPanel'
-import { PageBackButton, PageCorners } from '../components/PageCorners'
-import { useAppPageBack } from '../hooks/useAppPageBack'
+import ActivityTrendChart from '../components/ActivityTrendChart'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { useResetOnTabEnter } from '../hooks/useIsActiveRoute'
@@ -18,7 +17,6 @@ import {
   isPendingCreditSale,
 } from '../storage/database'
 import { saleCollectedAmount } from '../utils/salePayment'
-import BalanceFlowChart from '../components/BalanceFlowChart'
 import {
   getHistoryPaymentLabel,
   getHistoryPaymentSortKey,
@@ -138,7 +136,6 @@ function History({ active }: { active: boolean }) {
     cancelSaleCreditAsUnpaid,
   } = useCashActions()
   const navigate = useNavigate()
-  const goBack = useAppPageBack('/', { route: '/history' })
   const routeActive = active
   const location = useLocation()
   const [filter, setFilter] = useState<HistoryFilter>('all')
@@ -146,7 +143,13 @@ function History({ active }: { active: boolean }) {
   const [sort, setSort] = useState<HistorySort>('date-desc')
   const [dateFilter, setDateFilter] = useState<DateFilter>('today')
   const [selectedDate, setSelectedDate] = useState('')
-  const { value: search, setValue: setSearch, deferredValue: deferredSearch, reset: resetSearch } = useDeferredSearch()
+  const {
+    value: search,
+    setValue: setSearch,
+    deferredValue: deferredSearch,
+    isPending: searchPending,
+    reset: resetSearch,
+  } = useDeferredSearch()
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [receiptItem, setReceiptItem] = useState<HistoryItem | null>(null)
@@ -191,10 +194,8 @@ function History({ active }: { active: boolean }) {
     if (editingKey) {
       setEditingKey(null)
       setEditValue('')
-      return
     }
-    goBack()
-  }, [goBack, receiptItem, editingKey])
+  }, [receiptItem, editingKey])
 
   const resetHistoryUi = useCallback(() => {
     resetSearch()
@@ -302,24 +303,33 @@ function History({ active }: { active: boolean }) {
     [purchaseItems],
   )
 
-  const historyFlowSeries = useMemo(() => {
-    if (normalItems.length === 0) {
-      return Array.from({ length: 12 }, () => 0)
-    }
-    const sorted = [...normalItems].sort((a, b) => historyItemSortTime(a) - historyItemSortTime(b))
-    let running = 0
-    const values: number[] = [0]
-    for (const item of sorted) {
-      if (item.type === 'transfer') continue
-      const delta =
+  const activityTrendPoints = useMemo(() => {
+    const sorted = [...normalItems]
+      .filter((item) => item.type !== 'transfer')
+      .sort((a, b) => historyItemSortTime(a) - historyItemSortTime(b))
+
+    return sorted.map((item) => {
+      const raw = historyItemFilteredAmount(
+        item,
+        dateFilter,
+        selectedDate,
+        paymentFilter,
+        false,
+      )
+      const amount =
         item.type === 'expense' || item.type === 'purchase' || item.type === 'loan'
-          ? -Math.abs(item.amount)
-          : Math.abs(item.amount)
-      running += delta
-      values.push(running)
-    }
-    return values.length >= 4 ? values : [0, ...values, running]
-  }, [normalItems])
+          ? -Math.abs(raw)
+          : Math.abs(raw)
+      const label = item.name?.trim()
+        ? `${historyItemActivityLabel(item)} · ${item.name.trim()}`
+        : historyItemActivityLabel(item)
+      return {
+        time: historyItemSortTime(item),
+        amount,
+        label,
+      }
+    })
+  }, [normalItems, dateFilter, selectedDate, paymentFilter])
 
   const typeTotals = useMemo(() => {
     const totals: Record<HistoryItemType, { sum: number; count: number }> = {
@@ -482,7 +492,7 @@ function History({ active }: { active: boolean }) {
     }
 
     return (
-      <ul className="history-list">
+      <ul className={`history-list${searchPending ? ' history-list--pending' : ''}`}>
         {listItems.map((item) => {
           const key = editKey(item)
           const isEditing = editingKey === key
@@ -658,35 +668,24 @@ function History({ active }: { active: boolean }) {
 
   return (
     <div className="history-page page-shell">
-      <PageCorners left={<PageBackButton onClick={handlePageBack} ariaLabel="Back" />} />
       <div className="history-top">
-      <header className="history-header">
-        <div className="history-header-main">
-          <h2>History</h2>
-          <span className="history-header-badge">
-            {showPurchaseHistory ? combinedItems.length : normalItems.length} records
-          </span>
-        </div>
-        {showPurchaseHistory && purchaseItems.length > 0 ? (
-          <p className="history-header-meta">
-            {purchaseItems.length} paid purchases · {formatMoney(purchasePaidTotal)}
-          </p>
-        ) : null}
-        <p className="history-header-hints">
-          Tap row for receipt · tap name to rename
-          {billEditMode ? ' · tap date to edit bill' : ''}
+      {showPurchaseHistory && purchaseItems.length > 0 ? (
+        <p className="history-header-meta">
+          {purchaseItems.length} paid purchases · {formatMoney(purchasePaidTotal)}
         </p>
-      </header>
+      ) : null}
+      <p className="history-header-hints">
+        Tap row for receipt · tap name to rename
+        {billEditMode ? ' · tap date to edit bill' : ''}
+      </p>
 
       <div className="history-flow-fold">
         <details className="history-trend-details">
           <summary className="history-trend-summary">
             Activity trend · {normalItems.length} records · Sales {formatMoney(typeTotals.sale.sum)}
           </summary>
-          <div className="history-flow-panel app-surface history-flow-panel--compact">
-            <div className="history-flow-panel__chart" aria-hidden="true">
-              <BalanceFlowChart series={historyFlowSeries} tone="sales" blend />
-            </div>
+          <div className="history-flow-panel app-surface history-flow-panel--interactive">
+            <ActivityTrendChart points={activityTrendPoints} />
           </div>
         </details>
       </div>
@@ -718,18 +717,26 @@ function History({ active }: { active: boolean }) {
         <div
           className={`history-toolbar-primary${showPaymentFilters ? '' : ' history-toolbar-primary--no-payment'}`}
         >
-          <label className="history-filter-field history-filter-field--search">
-            <span className="history-filter-label">Search</span>
-            <input
-              type="search"
-              className="history-search"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-              }}
-              placeholder={searchHint}
-              autoComplete="off"
-            />
+          <label
+            className={`history-filter-field history-filter-field--search${searchPending ? ' history-filter-field--pending' : ''}`}
+          >
+            <span className="history-filter-label">Search names, amounts, notes</span>
+            <div className="history-search-wrap">
+              <span className="history-search-icon" aria-hidden="true">⌕</span>
+              <input
+                type="search"
+                className="history-search"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                }}
+                placeholder={searchHint}
+                autoComplete="off"
+                enterKeyHint="search"
+                aria-busy={searchPending}
+              />
+              {searchPending ? <span className="history-search-spinner" aria-hidden="true" /> : null}
+            </div>
           </label>
 
           <label className="history-filter-field history-filter-field--type">

@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import type { AppData } from '../types'
 import AmountDisplay from '../components/AmountDisplay'
 import BigAmount from '../components/BigAmount'
+import PinEntry from '../components/PinEntry'
 import NumberKeyboard from '../components/NumberKeyboard'
 import { formatMoney, parseAmount, formatDate } from '../utils/format'
-import { applyNumpadAction, applyPinAction, normalizePin, type NumpadAction } from '../utils/numpad'
+import { applyNumpadAction, normalizePin, type NumpadAction } from '../utils/numpad'
 import { useCashActions } from '../context/CashContext'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import { useCashDerivedSnapshot } from '../hooks/useCashDerivedSnapshot'
@@ -64,7 +65,7 @@ import {
   type ExpensePayChannelFilter,
 } from '../utils/expenseTimeline'
 import { buildDailyTotalsForPreset } from '../utils/dailyTotals'
-import ReportsPanel, { type ReportSection } from '../components/ReportsPanel'
+import type { ReportSection } from '../components/ReportsPanel'
 import AnalyzePanel from '../components/AnalyzePanel'
 import CustomerDashboard, { type CustomerListFilter } from '../components/CustomerDashboard'
 import CreditDashboard, { type CreditListFilter } from '../components/CreditDashboard'
@@ -133,8 +134,6 @@ function Home({ active }: { active: boolean }) {
   } = useCashActions()
   // Keep real data while tab is hidden (when unlocked) so summaries stay cached on return.
   const workData = !homeUnlocked ? LOCKED_DASHBOARD_DATA : data
-  const [pinStr, setPinStr] = useState('')
-  const [pinError, setPinError] = useState(false)
   const [addTarget, setAddTarget] = useState<ExpensePayType | null>(null)
   const [transferDirection, setTransferDirection] = useState<TransferDirection | null>(null)
   const [panelNote, setPanelNote] = useState('')
@@ -177,7 +176,6 @@ function Home({ active }: { active: boolean }) {
   } = useDeferredSearch()
   const [bankDateFilter, setBankDateFilter] = useState<BankDateFilter>('today')
   const [bankSelectedDate, setBankSelectedDate] = useState('')
-  const [showReports, setShowReports] = useState(false)
   const [showAnalyze, setShowAnalyze] = useState(false)
   const [showCustomers, setShowCustomers] = useState(false)
   const [showCredits, setShowCredits] = useState(false)
@@ -188,9 +186,6 @@ function Home({ active }: { active: boolean }) {
   const [customerInitialName, setCustomerInitialName] = useState<string | undefined>()
   const [creditInitialName, setCreditInitialName] = useState<string | undefined>()
   const [chequeInitialName, setChequeInitialName] = useState<string | undefined>()
-  const [reportPreset, setReportPreset] = useState<ReportDatePreset>('today')
-  const [reportSelectedDate, setReportSelectedDate] = useState('')
-  const [reportSection, setReportSection] = useState<ReportSection | undefined>()
   const [homeDayFilter, setHomeDayFilter] = useState<HomeDayFilter>('today')
   const [homeSelectedDate, setHomeSelectedDate] = useState('')
   const [homeExpenseChannel, setHomeExpenseChannel] = useState<ExpensePayChannelFilter>('all')
@@ -198,7 +193,6 @@ function Home({ active }: { active: boolean }) {
   const noteInputRef = useRef<HTMLInputElement>(null)
 
   useOpenTiming('Dashboard', active, false)
-  useOpenTiming('Reports', showReports)
   useOpenTiming('Analyze', showAnalyze)
   useOpenTiming('Customers', showCustomers)
   useOpenTiming('Credit Dashboard', showCredits)
@@ -220,7 +214,6 @@ function Home({ active }: { active: boolean }) {
     setBankDateFilter('today')
     setBankSelectedDate('')
     setShowBankHistory(false)
-    setShowReports(false)
     setShowAnalyze(false)
     setShowCustomers(false)
     setShowCredits(false)
@@ -241,10 +234,14 @@ function Home({ active }: { active: boolean }) {
     section?: ReportSection,
     selectedDate?: string,
   ) {
-    setReportPreset(preset)
-    setReportSection(section)
-    setReportSelectedDate(selectedDate ?? '')
-    setShowReports(true)
+    const params = new URLSearchParams()
+    params.set('preset', preset)
+    if (section) {
+      params.set('section', section)
+      params.set('focus', '1')
+    }
+    if (selectedDate) params.set('date', selectedDate)
+    navigate(`/reports?${params.toString()}`)
   }
 
   function openHomeDayReports(section?: ReportSection) {
@@ -269,11 +266,6 @@ function Home({ active }: { active: boolean }) {
     setChequeFilter(filter)
     setChequeInitialName(customerName)
     startTransition(() => setShowCheques(true))
-  }
-
-  function openCustomerFromReports(customerName: string) {
-    setShowReports(false)
-    openCredits('credit', customerName)
   }
 
   const homePin = normalizePin(data.homePin, DEFAULT_PIN)
@@ -544,34 +536,6 @@ function Home({ active }: { active: boolean }) {
     removeExpense(id)
   }
 
-  function tryUnlock(nextPin: string) {
-    if (normalizePin(nextPin, '') === homePin) {
-      unlockHome()
-      setPinStr('')
-      setPinError(false)
-      return
-    }
-    setPinError(true)
-    setPinStr('')
-  }
-
-  function handlePinNumpad(action: NumpadAction) {
-    if (action === 'enter') {
-      if (pinStr.length === 4) tryUnlock(pinStr)
-      return
-    }
-    if (action === 'clear') {
-      setPinStr('')
-      setPinError(false)
-      return
-    }
-
-    const next = applyPinAction(pinStr, action)
-    setPinStr(next)
-    setPinError(false)
-    if (next.length === 4) tryUnlock(next)
-  }
-
   function resetPanel() {
     setPanelNote('')
     setPanelAmountStr('')
@@ -641,8 +605,6 @@ function Home({ active }: { active: boolean }) {
     }
   }
 
-  const pinHandlerRef = useRef(handlePinNumpad)
-  pinHandlerRef.current = handlePinNumpad
   const panelHandlerRef = useRef(handlePanelNumpad)
   panelHandlerRef.current = handlePanelNumpad
   const panelOpen = addTarget !== null || transferDirection !== null
@@ -650,10 +612,9 @@ function Home({ active }: { active: boolean }) {
   useRouteNumpadKeyboard(
     '/',
     (action) => {
-      if (!homeUnlocked) pinHandlerRef.current(action)
-      else if (panelOpen && !panelSaved) panelHandlerRef.current(action)
+      if (panelOpen && !panelSaved) panelHandlerRef.current(action)
     },
-    !homeUnlocked || (panelOpen && !panelSaved),
+    panelOpen && !panelSaved,
   )
 
   const panelTitle = transferDirection
@@ -677,28 +638,13 @@ function Home({ active }: { active: boolean }) {
   if (!homeUnlocked) {
     return (
       <div className="home home--locked">
-        <section className="home-pin">
-          <p className="home-pin-label">Enter 4-digit PIN</p>
-          <div className={`home-pin-digits ${pinError ? 'home-pin-digits--error' : ''}`}>
-            {[0, 1, 2, 3].map((i) => (
-              <span
-                key={i}
-                className={`home-pin-digit ${pinStr.length > i ? 'home-pin-digit--filled' : ''}`}
-              >
-                {pinStr.length > i ? '•' : ''}
-              </span>
-            ))}
-          </div>
-          {pinError && <p className="home-pin-error">Wrong PIN. Try again.</p>}
-          <div
-            className="home-pin-keyboard"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            <NumberKeyboard onPress={handlePinNumpad} showEnter={false} variant="pin" />
-          </div>
-          <p className="home-pin-hint">Tap numbers on screen · Default PIN: 0000</p>
-        </section>
+        <PinEntry
+          title="Enter 4-digit PIN"
+          subtitle="Enter your 4-digit PIN to open the dashboard."
+          keyboardRoute="/"
+          verifyPin={(pin) => pin === homePin}
+          onUnlock={unlockHome}
+        />
       </div>
     )
   }
@@ -1549,19 +1495,6 @@ function Home({ active }: { active: boolean }) {
           </div>
         </div>
       )}
-
-      {showReports ? (
-        <ReportsPanel
-          open
-          onClose={() => setShowReports(false)}
-          data={data}
-          initialPreset={reportPreset}
-          initialSelectedDate={reportSelectedDate}
-          initialSection={reportSection}
-          focusSection={Boolean(reportSection)}
-          onOpenCustomer={openCustomerFromReports}
-        />
-      ) : null}
 
       {showAnalyze ? (
         <AnalyzePanel open onClose={() => setShowAnalyze(false)} data={data} />

@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -71,6 +72,7 @@ import {
   saveData,
   scheduleSalePaymentEventsMigration,
   setHomePin,
+  setAccessPin,
   setTheme,
   setOpeningBalance,
   setOpeningBankBalance,
@@ -115,6 +117,7 @@ import { buildHistoryItems } from '../utils/historyItems'
 import { buildPurchaseCreditItems, buildPurchaseHistoryItems } from '../utils/purchaseHistory'
 import { buildNormalExpenseHistoryItems } from '../utils/normalExpenseHistory'
 import { buildLoanOutflowHistoryItems } from '../utils/loanLedger'
+import { PIN_SESSION_MS } from '../utils/pinSession'
 
 export const CashDataStoreContext = createContext<CashDataStore | null>(null)
 export const CashDerivedStoreContext = createContext<CashDerivedStore | null>(null)
@@ -127,8 +130,12 @@ interface CashContextValue {
   bankBalance: number
   pendingBills: Sale[]
   homeUnlocked: boolean
+  sensitiveUnlocked: boolean
   unlockHome: () => void
   lockHome: () => void
+  unlockSensitive: () => void
+  lockSensitive: () => void
+  updateAccessPin: (pin: string) => void
   recordSale: (sale: {
     id?: string
     billAmount: number
@@ -473,7 +480,12 @@ interface CashContextValue {
   ) => void
 }
 
-const CashLockContext = createContext<{ lockHome: () => void; unlockHome: () => void } | null>(null)
+const CashLockContext = createContext<{
+  lockHome: () => void
+  unlockHome: () => void
+  lockSensitive: () => void
+  unlockSensitive: () => void
+} | null>(null)
 
 export function useCashLock() {
   const ctx = useContext(CashLockContext)
@@ -486,7 +498,7 @@ const CashBootContext = createContext(false)
 
 export type CashActionsValue = Omit<
   CashContextValue,
-  'data' | 'dataBooting' | 'balance' | 'bankBalance' | 'pendingBills' | 'homeUnlocked'
+  'data' | 'dataBooting' | 'balance' | 'bankBalance' | 'pendingBills' | 'homeUnlocked' | 'sensitiveUnlocked'
 >
 
 const CashActionsContext = createContext<CashActionsValue | null>(null)
@@ -531,9 +543,73 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => loadData())
   const [dataBooting, setDataBooting] = useState(false)
   const [homeUnlocked, setHomeUnlocked] = useState(false)
+  const [sensitiveUnlocked, setSensitiveUnlocked] = useState(false)
+  const pinSessionTimerRef = useRef<number | null>(null)
 
-  const unlockHome = useCallback(() => setHomeUnlocked(true), [])
-  const lockHome = useCallback(() => setHomeUnlocked(false), [])
+  const lockAllPins = useCallback(() => {
+    setHomeUnlocked(false)
+    setSensitiveUnlocked(false)
+  }, [])
+
+  const clearPinSessionTimer = useCallback(() => {
+    if (pinSessionTimerRef.current !== null) {
+      window.clearTimeout(pinSessionTimerRef.current)
+      pinSessionTimerRef.current = null
+    }
+  }, [])
+
+  const extendPinSession = useCallback(() => {
+    clearPinSessionTimer()
+    pinSessionTimerRef.current = window.setTimeout(() => {
+      lockAllPins()
+    }, PIN_SESSION_MS)
+  }, [clearPinSessionTimer, lockAllPins])
+
+  const activatePinSession = useCallback(() => {
+    setHomeUnlocked(true)
+    setSensitiveUnlocked(true)
+    extendPinSession()
+  }, [extendPinSession])
+
+  const unlockHome = useCallback(() => activatePinSession(), [activatePinSession])
+  const lockHome = useCallback(() => lockAllPins(), [lockAllPins])
+  const unlockSensitive = useCallback(() => activatePinSession(), [activatePinSession])
+  const lockSensitive = useCallback(() => lockAllPins(), [lockAllPins])
+
+  useEffect(() => {
+    if (!homeUnlocked && !sensitiveUnlocked) {
+      clearPinSessionTimer()
+      return
+    }
+
+    extendPinSession()
+
+    let throttled = false
+    const onActivity = () => {
+      if (throttled) return
+      throttled = true
+      extendPinSession()
+      window.setTimeout(() => {
+        throttled = false
+      }, 800)
+    }
+
+    const opts: AddEventListenerOptions = { passive: true }
+    const events = ['pointerdown', 'keydown', 'touchstart', 'scroll', 'click'] as const
+    for (const event of events) {
+      window.addEventListener(event, onActivity, opts)
+    }
+
+    return () => {
+      for (const event of events) {
+        window.removeEventListener(event, onActivity)
+      }
+    }
+  }, [homeUnlocked, sensitiveUnlocked, extendPinSession, clearPinSessionTimer])
+
+  useEffect(() => {
+    return () => clearPinSessionTimer()
+  }, [clearPinSessionTimer])
 
   useEffect(() => {
     applyTheme(data.theme)
@@ -927,6 +1003,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const updateHomePin = useCallback((pin: string) => {
     setData((prev) => setHomePin(prev, pin))
+  }, [])
+
+  const updateAccessPin = useCallback((pin: string) => {
+    setData((prev) => setAccessPin(prev, pin))
   }, [])
 
   const setAppTheme = useCallback((theme: AppTheme) => {
@@ -1544,8 +1624,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const resetAllData = useCallback(() => {
     setData(clearAllLocalData())
+    clearPinSessionTimer()
     setHomeUnlocked(false)
-  }, [])
+    setSensitiveUnlocked(false)
+  }, [clearPinSessionTimer])
 
   const dataStore = useMemo(() => createCashDataStore(), [])
   const derivedStore = useMemo(() => createCashDerivedStore(), [])
@@ -1558,8 +1640,9 @@ export function CashProvider({ children }: { children: ReactNode }) {
       bankBalance,
       pendingBills,
       homeUnlocked,
+      sensitiveUnlocked,
     }),
-    [data, dataBooting, balance, bankBalance, pendingBills, homeUnlocked],
+    [data, dataBooting, balance, bankBalance, pendingBills, homeUnlocked, sensitiveUnlocked],
   )
 
   useEffect(() => {
@@ -1600,6 +1683,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
     (): CashActionsValue => ({
       unlockHome,
       lockHome,
+      unlockSensitive,
+      lockSensitive,
       recordSale,
       updatePendingSale,
       collectPendingSale,
@@ -1610,6 +1695,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
+      updateAccessPin,
       setAppTheme,
       removeSale,
       removeExpense,
@@ -1674,6 +1760,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [
       unlockHome,
       lockHome,
+      unlockSensitive,
+      lockSensitive,
       recordSale,
       updatePendingSale,
       collectPendingSale,
@@ -1684,6 +1772,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
+      updateAccessPin,
       setAppTheme,
       removeSale,
       removeExpense,
@@ -1752,7 +1841,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [dataSnapshot, actionsValue],
   )
 
-  const lockActions = useMemo(() => ({ lockHome, unlockHome }), [lockHome, unlockHome])
+  const lockActions = useMemo(
+    () => ({ lockHome, unlockHome, lockSensitive, unlockSensitive }),
+    [lockHome, unlockHome, lockSensitive, unlockSensitive],
+  )
 
   return (
     <CashDataStoreContext.Provider value={dataStore}>
