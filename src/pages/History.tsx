@@ -6,7 +6,6 @@ import ActivityTrendChart from '../components/ActivityTrendChart'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { useResetOnTabEnter } from '../hooks/useIsActiveRoute'
-import { useOpenTiming } from '../hooks/useOpenTiming'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import { useCashDerivedSnapshot } from '../hooks/useCashDerivedSnapshot'
 import { formatMoney, formatTimestamp } from '../utils/format'
@@ -158,9 +157,6 @@ function History({ active }: { active: boolean }) {
   const [purchaseOnlyMode, setPurchaseOnlyMode] = useState(false)
   const [purchasePanelSession, setPurchasePanelSession] = useState(0)
   const editInputRef = useRef<HTMLInputElement>(null)
-
-  useOpenTiming('History', active, false)
-  useOpenTiming('Purchase History', showPurchaseHistory)
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)

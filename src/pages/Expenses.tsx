@@ -4,10 +4,8 @@ import { useCashActions } from '../context/CashContext'
 import AmountDisplay from '../components/AmountDisplay'
 import NumberKeyboard from '../components/NumberKeyboard'
 import PayTypeChips from '../components/PayTypeChips'
-import { PageBackButton, PageCorners } from '../components/PageCorners'
+import { PageCorners } from '../components/PageCorners'
 import StaffSalaryUnlinkConfirm from '../components/StaffSalaryUnlinkConfirm'
-import { useAppPageBack } from '../hooks/useAppPageBack'
-import { usePageEscape } from '../hooks/usePageEscape'
 import type { ExpensePayType } from '../types'
 import { formatMoney, parseAmount } from '../utils/format'
 import {
@@ -20,7 +18,6 @@ import {
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useResetOnTabEnter } from '../hooks/useIsActiveRoute'
-import { useOpenTiming } from '../hooks/useOpenTiming'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import {
   currentSalaryMonth,
@@ -53,7 +50,6 @@ function formatSplitPart(amount: number): string {
 
 function Expenses({ active }: { active: boolean }) {
   const routeActive = active
-  const goBack = useAppPageBack('/', { route: '/expenses' })
   const { recordExpense } = useCashActions()
   const { data } = useCashSnapshot(active)
   const [amountStr, setAmountStr] = useState('')
@@ -80,7 +76,6 @@ function Expenses({ active }: { active: boolean }) {
   const nameInputPointerRef = useRef(false)
   const staffPanelRef = useRef<HTMLDivElement>(null)
 
-  useOpenTiming('Expenses', active, false)
   const navigate = useNavigate()
 
   const splitMode = payType === 'split'
@@ -450,16 +445,9 @@ function Expenses({ active }: { active: boolean }) {
     focusField('pay')
   }
 
-  function handlePageBack() {
-    goBack()
-  }
-
-  usePageEscape(handlePageBack, routeActive)
-
   return (
     <div className="expenses-page page-shell">
       <PageCorners
-        left={<PageBackButton onClick={handlePageBack} ariaLabel="Back" />}
         right={
           <button
             type="button"

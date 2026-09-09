@@ -4,7 +4,6 @@ import { useCash } from '../context/CashContext'
 import { useOpenTiming } from '../hooks/useOpenTiming'
 import ReportsPanel, { type ReportSection } from '../components/ReportsPanel'
 import CreditDashboard from '../components/CreditDashboard'
-import { useAppPageBack } from '../hooks/useAppPageBack'
 import type { ReportDatePreset } from '../utils/reportsHub'
 
 const REPORT_PRESETS: ReportDatePreset[] = [
@@ -47,7 +46,6 @@ export default function Reports() {
   useOpenTiming('Reports', true, false)
   const [searchParams] = useSearchParams()
   const { data, setCustomerReminder, setBillReminder, updateReminderAlertSettings, applySaleReturn, cancelSaleReturn } = useCash()
-  const goBack = useAppPageBack('/', { route: '/reports' })
   const [customerName, setCustomerName] = useState<string | undefined>()
 
   const initialPreset = useMemo(
@@ -65,8 +63,9 @@ export default function Reports() {
     <>
       <ReportsPanel
         open
+        variant="page"
         data={data}
-        onClose={goBack}
+        onClose={() => {}}
         initialPreset={initialPreset}
         initialSelectedDate={initialSelectedDate}
         initialSection={initialSection}

@@ -36,6 +36,14 @@
   color: var(--cream-dim);
 }
 
+.loan-page-sub {
+  flex-shrink: 0;
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+}
+
 .loan-page-summary {
   flex-shrink: 0;
   display: grid;

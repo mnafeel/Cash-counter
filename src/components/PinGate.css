@@ -1,4 +1,5 @@
 .pin-gate-page {
+  position: relative;
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -91,6 +92,89 @@
   font-weight: 700;
   color: var(--danger-text, #f87171);
   text-align: center;
+}
+
+.pin-gate-forgot-link {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.pin-gate-forgot-link:hover {
+  color: var(--cream);
+}
+
+.pin-gate--forgot {
+  width: min(100%, 420px);
+  align-items: stretch;
+}
+
+.pin-gate-forgot-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pin-gate-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.pin-gate-field span {
+  font-size: 0.55rem;
+  font-weight: 700;
+  color: var(--cream-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.pin-gate-field input {
+  padding: 9px 10px;
+  background: var(--brown-dark);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--cream);
+  font-size: 0.82rem;
+  outline: none;
+}
+
+.pin-gate-field input:focus {
+  border-color: var(--cream-dim);
+}
+
+.pin-gate-forgot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+
+.pin-gate-forgot-actions .btn {
+  flex: 1;
+  min-height: 36px;
+  font-size: 0.76rem;
+}
+
+.pin-gate-forgot-status {
+  margin: 0;
+  width: 100%;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--success-text);
+  text-align: center;
+}
+
+.pin-gate-forgot-status--error {
+  color: var(--danger-text, #f87171);
 }
 
 .pin-gate-keyboard {

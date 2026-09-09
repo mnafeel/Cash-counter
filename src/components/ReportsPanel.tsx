@@ -230,6 +230,8 @@ interface ReportsPanelProps {
   /** When set, only one report section is shown (e.g. Today Sales). */
   focusSection?: boolean
   onOpenCustomer?: (customerName: string) => void
+  /** Page mode keeps the sidebar visible; overlay mode is full-screen. */
+  variant?: 'overlay' | 'page'
 }
 
 export default function ReportsPanel({
@@ -241,7 +243,9 @@ export default function ReportsPanel({
   initialSection,
   focusSection = Boolean(initialSection),
   onOpenCustomer,
+  variant = 'overlay',
 }: ReportsPanelProps) {
+  const isPage = variant === 'page'
   const [datePreset, setDatePreset] = useState<ReportDatePreset>(initialPreset)
   const [selectedDate, setSelectedDate] = useState(toInputDate())
   const [selectedMonth, setSelectedMonth] = useState(currentMonthKey)
@@ -730,8 +734,8 @@ export default function ReportsPanel({
       bodyRef.current?.scrollTo({ top: 0 })
       return
     }
-    onClose()
-  }, [selectedExpenseNameKey, selectedPurchaseSupplierKey, activeSection, focusSection, onClose])
+    if (!isPage) onClose()
+  }, [selectedExpenseNameKey, selectedPurchaseSupplierKey, activeSection, focusSection, onClose, isPage])
 
   usePageEscape(handleReportsBack, open)
 
@@ -767,43 +771,59 @@ export default function ReportsPanel({
 
   if (!open) return null
 
-  return (
-    <Portal>
-    <div className="reports-overlay" role="dialog" aria-modal="true" aria-label="Reports">
-      <div className="reports-page reports-panel page-shell">
-        <PageCorners
-          left={
-            <PageBackButton
-              onClick={handleReportsBack}
-              ariaLabel={
-                selectedExpenseNameKey
-                  ? 'Back to expense names'
-                  : selectedPurchaseSupplierKey
-                    ? 'Back to suppliers'
-                    : !focusSection && activeSection !== 'all'
-                      ? 'Back to all reports'
-                      : 'Back'
-              }
-            />
-          }
-          right={<PageCloseButton onClick={onClose} ariaLabel="Close reports" />}
-        />
+  const reportTitle =
+    selectedExpenseNameGroup
+      ? selectedExpenseNameGroup.name
+      : selectedPurchaseSupplier
+        ? selectedPurchaseSupplier.shopName
+        : focusSection
+          ? activeSection === 'expense-report'
+            ? '📤 Expense Report'
+            : activeSection === 'not-sale'
+              ? '📥 Not sale · cash in'
+              : SECTION_TABS.find((tab) => tab.id === visibleSection)?.label ?? 'Report'
+          : 'Reports'
+
+  const showInlineBack =
+    isPage &&
+    Boolean(
+      selectedExpenseNameKey ||
+        selectedPurchaseSupplierKey ||
+        (!focusSection && activeSection !== 'all'),
+    )
+
+  const panel = (
+      <div className={`reports-page reports-panel page-shell${isPage ? ' reports-panel--page' : ''}`}>
+        {!isPage ? (
+          <PageCorners
+            left={
+              <PageBackButton
+                onClick={handleReportsBack}
+                ariaLabel={
+                  selectedExpenseNameKey
+                    ? 'Back to expense names'
+                    : selectedPurchaseSupplierKey
+                      ? 'Back to suppliers'
+                      : !focusSection && activeSection !== 'all'
+                        ? 'Back to all reports'
+                        : 'Back'
+                }
+              />
+            }
+            right={<PageCloseButton onClick={onClose} ariaLabel="Close reports" />}
+          />
+        ) : null}
         <div className="reports-top">
-          <header className="reports-head page-head--corners">
+          {showInlineBack ? (
+            <button type="button" className="reports-inline-back" onClick={handleReportsBack}>
+              ← Back
+            </button>
+          ) : null}
+          <header className={`reports-head${isPage ? '' : ' page-head--corners'}`}>
             <div className="reports-head-text">
-              <h1 className="reports-title">
-                {selectedExpenseNameGroup
-                  ? selectedExpenseNameGroup.name
-                  : selectedPurchaseSupplier
-                    ? selectedPurchaseSupplier.shopName
-                    : focusSection
-                      ? activeSection === 'expense-report'
-                        ? '📤 Expense Report'
-                        : activeSection === 'not-sale'
-                          ? '📥 Not sale · cash in'
-                          : SECTION_TABS.find((tab) => tab.id === visibleSection)?.label ?? 'Report'
-                      : 'Reports'}
-              </h1>
+              {!isPage || reportTitle !== 'Reports' ? (
+                <h1 className="reports-title">{reportTitle}</h1>
+              ) : null}
               <p className="reports-sub">{periodLabel}</p>
             </div>
           </header>
@@ -1868,7 +1888,15 @@ export default function ReportsPanel({
           )}
         </div>
       </div>
-    </div>
+  )
+
+  if (isPage) return panel
+
+  return (
+    <Portal>
+      <div className="reports-overlay" role="dialog" aria-modal="true" aria-label="Reports">
+        {panel}
+      </div>
     </Portal>
   )
 }

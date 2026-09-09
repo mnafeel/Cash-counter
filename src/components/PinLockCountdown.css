@@ -1,0 +1,30 @@
+.pin-lock-countdown {
+  position: fixed;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  right: max(8px, env(safe-area-inset-right));
+  z-index: 40;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.78;
+  font-variant-numeric: tabular-nums;
+}
+
+.pin-lock-countdown-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.46rem;
+}
+
+.pin-lock-countdown-time {
+  color: var(--cream-dim, var(--text-muted));
+}

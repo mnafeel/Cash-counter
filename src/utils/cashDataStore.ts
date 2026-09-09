@@ -8,6 +8,7 @@ export type CashDataSnapshot = {
   homeUnlocked: boolean
   sensitiveUnlocked: boolean
   dataBooting: boolean
+  pinSessionLastActivityAt: number | null
 }
 
 export type CashDataStore = {
@@ -24,6 +25,7 @@ export function createCashDataStore(): CashDataStore & { setSnapshot: (next: Cas
     homeUnlocked: false,
     sensitiveUnlocked: false,
     dataBooting: false,
+    pinSessionLastActivityAt: null,
   }
   const listeners = new Set<() => void>()
   return {
@@ -40,7 +42,8 @@ export function createCashDataStore(): CashDataStore & { setSnapshot: (next: Cas
         next.pendingBills === snapshot.pendingBills &&
         next.homeUnlocked === snapshot.homeUnlocked &&
         next.sensitiveUnlocked === snapshot.sensitiveUnlocked &&
-        next.dataBooting === snapshot.dataBooting
+        next.dataBooting === snapshot.dataBooting &&
+        next.pinSessionLastActivityAt === snapshot.pinSessionLastActivityAt
       ) {
         return
       }

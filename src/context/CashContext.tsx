@@ -72,7 +72,7 @@ import {
   saveData,
   scheduleSalePaymentEventsMigration,
   setHomePin,
-  setAccessPin,
+  setPinLength,
   setTheme,
   setOpeningBalance,
   setOpeningBankBalance,
@@ -97,6 +97,8 @@ import {
   renameCustomer,
   renameSupplier,
 } from '../storage/database'
+import { getCloudUser } from '../firebase/backup'
+import { recordCloudPinChange } from '../firebase/cloudUsernameRegistry'
 import { setCloudRemoteListener } from '../firebase/sync'
 import {
   fetchTallyBills,
@@ -135,7 +137,10 @@ interface CashContextValue {
   lockHome: () => void
   unlockSensitive: () => void
   lockSensitive: () => void
-  updateAccessPin: (pin: string) => void
+  pinSessionLastActivityAt: number | null
+  setProtectedRouteActive: (active: boolean) => void
+  touchProtectedSession: () => void
+  updatePinLength: (pinLength: 4 | 6) => void
   recordSale: (sale: {
     id?: string
     billAmount: number
@@ -498,7 +503,14 @@ const CashBootContext = createContext(false)
 
 export type CashActionsValue = Omit<
   CashContextValue,
-  'data' | 'dataBooting' | 'balance' | 'bankBalance' | 'pendingBills' | 'homeUnlocked' | 'sensitiveUnlocked'
+  | 'data'
+  | 'dataBooting'
+  | 'balance'
+  | 'bankBalance'
+  | 'pendingBills'
+  | 'homeUnlocked'
+  | 'sensitiveUnlocked'
+  | 'pinSessionLastActivityAt'
 >
 
 const CashActionsContext = createContext<CashActionsValue | null>(null)
@@ -544,32 +556,57 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const [dataBooting, setDataBooting] = useState(false)
   const [homeUnlocked, setHomeUnlocked] = useState(false)
   const [sensitiveUnlocked, setSensitiveUnlocked] = useState(false)
-  const pinSessionTimerRef = useRef<number | null>(null)
+  const [pinSessionLastActivityAt, setPinSessionLastActivityAt] = useState<number | null>(null)
+  const lastPinActivityRef = useRef(0)
+  const pinIdleCheckRef = useRef<number | null>(null)
+  const protectedRouteActiveRef = useRef(false)
+  const activityFrameRef = useRef(0)
 
-  const lockAllPins = useCallback(() => {
-    setHomeUnlocked(false)
-    setSensitiveUnlocked(false)
-  }, [])
-
-  const clearPinSessionTimer = useCallback(() => {
-    if (pinSessionTimerRef.current !== null) {
-      window.clearTimeout(pinSessionTimerRef.current)
-      pinSessionTimerRef.current = null
+  const clearPinIdleCheck = useCallback(() => {
+    if (pinIdleCheckRef.current !== null) {
+      window.clearInterval(pinIdleCheckRef.current)
+      pinIdleCheckRef.current = null
     }
   }, [])
 
-  const extendPinSession = useCallback(() => {
-    clearPinSessionTimer()
-    pinSessionTimerRef.current = window.setTimeout(() => {
-      lockAllPins()
-    }, PIN_SESSION_MS)
-  }, [clearPinSessionTimer, lockAllPins])
+  const lockAllPins = useCallback(() => {
+    clearPinIdleCheck()
+    setHomeUnlocked(false)
+    setSensitiveUnlocked(false)
+    setPinSessionLastActivityAt(null)
+  }, [clearPinIdleCheck])
+
+  const recordPinActivity = useCallback(() => {
+    const now = Date.now()
+    lastPinActivityRef.current = now
+    setPinSessionLastActivityAt(now)
+  }, [])
+
+  const bumpProtectedActivity = useCallback(() => {
+    if (!protectedRouteActiveRef.current) return
+    const now = Date.now()
+    lastPinActivityRef.current = now
+    if (activityFrameRef.current) return
+    activityFrameRef.current = window.requestAnimationFrame(() => {
+      setPinSessionLastActivityAt(lastPinActivityRef.current)
+      activityFrameRef.current = 0
+    })
+  }, [])
+
+  const setProtectedRouteActive = useCallback((active: boolean) => {
+    protectedRouteActiveRef.current = active
+  }, [])
+
+  const touchProtectedSession = useCallback(() => {
+    if (!homeUnlocked) return
+    recordPinActivity()
+  }, [homeUnlocked, recordPinActivity])
 
   const activatePinSession = useCallback(() => {
     setHomeUnlocked(true)
     setSensitiveUnlocked(true)
-    extendPinSession()
-  }, [extendPinSession])
+    recordPinActivity()
+  }, [recordPinActivity])
 
   const unlockHome = useCallback(() => activatePinSession(), [activatePinSession])
   const lockHome = useCallback(() => lockAllPins(), [lockAllPins])
@@ -578,38 +615,87 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!homeUnlocked && !sensitiveUnlocked) {
-      clearPinSessionTimer()
+      clearPinIdleCheck()
       return
     }
 
-    extendPinSession()
+    pinIdleCheckRef.current = window.setInterval(() => {
+      if (Date.now() - lastPinActivityRef.current >= PIN_SESSION_MS) {
+        lockAllPins()
+      }
+    }, 200)
 
-    let throttled = false
-    const onActivity = () => {
-      if (throttled) return
-      throttled = true
-      extendPinSession()
-      window.setTimeout(() => {
-        throttled = false
-      }, 800)
+    return () => clearPinIdleCheck()
+  }, [homeUnlocked, sensitiveUnlocked, clearPinIdleCheck, lockAllPins])
+
+  useEffect(() => {
+    if (!homeUnlocked && !sensitiveUnlocked) return
+
+    const onActivity = () => bumpProtectedActivity()
+    const onPointerMove = () => bumpProtectedActivity()
+
+    const opts: AddEventListenerOptions = { passive: true, capture: true }
+    const activityEvents = [
+      'pointerdown',
+      'pointerup',
+      'keydown',
+      'keyup',
+      'touchstart',
+      'touchend',
+      'touchmove',
+      'click',
+      'wheel',
+      'input',
+      'change',
+      'focusin',
+      'submit',
+    ] as const
+    const moveEvents = ['pointermove', 'mousemove'] as const
+    const scrollEvents = ['scroll'] as const
+
+    const root = document
+    const scrollRoots = new Set<EventTarget>([
+      window,
+      document,
+      document.documentElement,
+      document.body,
+      ...document.querySelectorAll('.main, .main--fit, .sidebar-nav, .layout-shell, .tab-panel'),
+    ])
+
+    for (const event of activityEvents) {
+      root.addEventListener(event, onActivity, opts)
     }
-
-    const opts: AddEventListenerOptions = { passive: true }
-    const events = ['pointerdown', 'keydown', 'touchstart', 'scroll', 'click'] as const
-    for (const event of events) {
-      window.addEventListener(event, onActivity, opts)
+    for (const event of moveEvents) {
+      root.addEventListener(event, onPointerMove, opts)
+    }
+    for (const target of scrollRoots) {
+      for (const event of scrollEvents) {
+        target.addEventListener(event, onActivity, opts)
+      }
     }
 
     return () => {
-      for (const event of events) {
-        window.removeEventListener(event, onActivity)
+      if (activityFrameRef.current) {
+        window.cancelAnimationFrame(activityFrameRef.current)
+        activityFrameRef.current = 0
+      }
+      for (const event of activityEvents) {
+        root.removeEventListener(event, onActivity, opts)
+      }
+      for (const event of moveEvents) {
+        root.removeEventListener(event, onPointerMove, opts)
+      }
+      for (const target of scrollRoots) {
+        for (const event of scrollEvents) {
+          target.removeEventListener(event, onActivity, opts)
+        }
       }
     }
-  }, [homeUnlocked, sensitiveUnlocked, extendPinSession, clearPinSessionTimer])
+  }, [homeUnlocked, sensitiveUnlocked, bumpProtectedActivity])
 
   useEffect(() => {
-    return () => clearPinSessionTimer()
-  }, [clearPinSessionTimer])
+    return () => clearPinIdleCheck()
+  }, [clearPinIdleCheck])
 
   useEffect(() => {
     applyTheme(data.theme)
@@ -1003,10 +1089,14 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const updateHomePin = useCallback((pin: string) => {
     setData((prev) => setHomePin(prev, pin))
+    const cloudUser = getCloudUser()
+    if (cloudUser) {
+      void recordCloudPinChange(cloudUser.uid)
+    }
   }, [])
 
-  const updateAccessPin = useCallback((pin: string) => {
-    setData((prev) => setAccessPin(prev, pin))
+  const updatePinLength = useCallback((pinLength: 4 | 6) => {
+    setData((prev) => setPinLength(prev, pinLength))
   }, [])
 
   const setAppTheme = useCallback((theme: AppTheme) => {
@@ -1624,10 +1714,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
 
   const resetAllData = useCallback(() => {
     setData(clearAllLocalData())
-    clearPinSessionTimer()
-    setHomeUnlocked(false)
-    setSensitiveUnlocked(false)
-  }, [clearPinSessionTimer])
+    lockAllPins()
+  }, [lockAllPins])
 
   const dataStore = useMemo(() => createCashDataStore(), [])
   const derivedStore = useMemo(() => createCashDerivedStore(), [])
@@ -1641,8 +1729,9 @@ export function CashProvider({ children }: { children: ReactNode }) {
       pendingBills,
       homeUnlocked,
       sensitiveUnlocked,
+      pinSessionLastActivityAt,
     }),
-    [data, dataBooting, balance, bankBalance, pendingBills, homeUnlocked, sensitiveUnlocked],
+    [data, dataBooting, balance, bankBalance, pendingBills, homeUnlocked, sensitiveUnlocked, pinSessionLastActivityAt],
   )
 
   useEffect(() => {
@@ -1685,6 +1774,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       lockHome,
       unlockSensitive,
       lockSensitive,
+      setProtectedRouteActive,
+      touchProtectedSession,
       recordSale,
       updatePendingSale,
       collectPendingSale,
@@ -1695,7 +1786,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
-      updateAccessPin,
+      updatePinLength,
       setAppTheme,
       removeSale,
       removeExpense,
@@ -1762,6 +1853,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       lockHome,
       unlockSensitive,
       lockSensitive,
+      setProtectedRouteActive,
+      touchProtectedSession,
       recordSale,
       updatePendingSale,
       collectPendingSale,
@@ -1772,7 +1865,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBalance,
       updateOpeningBankBalance,
       updateHomePin,
-      updateAccessPin,
+      updatePinLength,
       setAppTheme,
       removeSale,
       removeExpense,

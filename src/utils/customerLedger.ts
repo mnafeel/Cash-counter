@@ -483,8 +483,9 @@ export function getCustomerSummary(
   summaries: CustomerSummary[],
   name: string,
 ): CustomerSummary | undefined {
-  const trimmed = name.trim()
-  return summaries.find((summary) => summary.name === trimmed)
+  const key = name.trim().toLowerCase()
+  if (!key) return undefined
+  return summaries.find((summary) => summary.name.trim().toLowerCase() === key)
 }
 
 export function lookupCustomerCreditPending(

@@ -48,12 +48,28 @@ export function getOpenTimingMs(label: string): number | undefined {
   return timingsByLabel.get(label)
 }
 
+/** Page load timings shown in the sidebar dev strip. */
+export const OPEN_TIMING_VISIBLE_LABELS = [
+  'Dashboard',
+  'Reports',
+  'Purchase Expense',
+  'Loan',
+  'Staff',
+  'Settings',
+] as const
+
+export type OpenTimingVisibleLabel = (typeof OPEN_TIMING_VISIBLE_LABELS)[number]
+
+export function isOpenTimingVisible(label: string): boolean {
+  return (OPEN_TIMING_VISIBLE_LABELS as readonly string[]).includes(label)
+}
+
 const ROUTE_LABELS: Record<string, string> = {
   '/': 'Dashboard',
   '/counter': 'Counter',
   '/expenses': 'Expenses',
   '/history': 'History',
-  '/purchase': 'Purchases',
+  '/purchase': 'Purchase Expense',
   '/loan': 'Loan',
   '/staff': 'Staff',
   '/reports': 'Reports',

@@ -14,6 +14,7 @@ import {
   cloudBackupTotals,
   fetchRemoteAppData,
   getCloudUsername,
+  refreshCloudUsernameCache,
   isAutoBackupEnabled,
   isAutoPullFromCloudEnabled,
   isMainBillingDevice,
@@ -104,21 +105,16 @@ import {
 } from '../pinelabs/config'
 import { pineLabsEnvironmentLabel, testPineLabsConnection } from '../pinelabs/pinelabsApi'
 import BillReminderControl from '../components/BillReminderControl'
-import { applyNumpadAction, applyPinAction, type NumpadAction } from '../utils/numpad'
+import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
-import { PageBackButton, PageCorners } from '../components/PageCorners'
-import { useAppPageBack } from '../hooks/useAppPageBack'
+import CloudAccountSettings from '../components/CloudAccountSettings'
+import CloudLoginForm from '../components/CloudLoginForm'
+import CloudPinSettings from '../components/CloudPinSettings'
 import './Settings.css'
 
 const WebsiteApiSettings = lazy(() => import('../components/WebsiteApiSettings'))
 
-type SettingsField =
-  | 'openingCash'
-  | 'openingBank'
-  | 'pin'
-  | 'pinConfirm'
-  | 'accessPin'
-  | 'accessPinConfirm'
+type SettingsField = 'openingCash' | 'openingBank'
 type SettingsTab = 'general' | 'tally' | 'pinelabs' | 'cloud' | 'website'
 type GeneralSubTab = 'basics' | 'reports' | 'credit' | 'cheque' | 'data'
 
@@ -208,7 +204,6 @@ const DAILY_REPORT_DOWNLOAD_GROUPS: {
 
 export default function Settings() {
   useOpenTiming('Settings', true, false)
-  const goBack = useAppPageBack('/', { route: '/settings' })
   const {
     data,
     balance,
@@ -216,7 +211,7 @@ export default function Settings() {
     updateOpeningBalance,
     updateOpeningBankBalance,
     updateHomePin,
-    updateAccessPin,
+    updatePinLength,
     replaceAllData,
     hydrateData,
     resetAllData,
@@ -248,17 +243,13 @@ export default function Settings() {
   const [generalSubTab, setGeneralSubTab] = useState<GeneralSubTab>('basics')
   const [openingStr, setOpeningStr] = useState(String(data.openingBalance))
   const [openingBankStr, setOpeningBankStr] = useState(String(data.openingBankBalance ?? 0))
-  const [pinStr, setPinStr] = useState('')
-  const [pinConfirmStr, setPinConfirmStr] = useState('')
-  const [accessPinStr, setAccessPinStr] = useState('')
-  const [accessPinConfirmStr, setAccessPinConfirmStr] = useState('')
   const [activeField, setActiveField] = useState<SettingsField>('openingCash')
   const [saved, setSaved] = useState(false)
-  const [pinError, setPinError] = useState('')
 
   const [cloudUsername, setCloudUsername] = useState(() => getLastCloudUsername() ?? '')
   const [cloudPassword, setCloudPassword] = useState('')
   const [cloudUser, setCloudUser] = useState<User | null>(null)
+  const [accountHistoryRefreshKey, setAccountHistoryRefreshKey] = useState(0)
   const [autoBackup, setAutoBackup] = useState(isAutoBackupEnabled())
   const [autoPull, setAutoPull] = useState(isAutoPullFromCloudEnabled())
   const [mainBillingDevice, setMainBillingDeviceState] = useState(isMainBillingDevice())
@@ -550,7 +541,8 @@ export default function Settings() {
     return subscribeToAuth(async (user) => {
       setCloudUser(user)
       if (user) {
-        setCloudUsername(getCloudUsername(user))
+        const username = await refreshCloudUsernameCache(user)
+        setCloudUsername(username || getCloudUsername(user))
         void refreshCloudRemoteSummaryState()
       } else {
         setCloudRemoteSummary(null)
@@ -568,34 +560,18 @@ export default function Settings() {
 
   function activeValue(): string {
     if (activeField === 'openingCash') return openingStr
-    if (activeField === 'openingBank') return openingBankStr
-    if (activeField === 'pin') return pinStr
-    if (activeField === 'pinConfirm') return pinConfirmStr
-    if (activeField === 'accessPin') return accessPinStr
-    return accessPinConfirmStr
+    return openingBankStr
   }
 
   function setActiveValue(next: string) {
     if (activeField === 'openingCash') setOpeningStr(next)
-    else if (activeField === 'openingBank') setOpeningBankStr(next)
-    else if (activeField === 'pin') setPinStr(next)
-    else if (activeField === 'pinConfirm') setPinConfirmStr(next)
-    else if (activeField === 'accessPin') setAccessPinStr(next)
-    else setAccessPinConfirmStr(next)
+    else setOpeningBankStr(next)
   }
 
   function handleNumpad(action: NumpadAction) {
     if (tab !== 'general' || action === 'enter') return
-    const isPinField =
-      activeField === 'pin' ||
-      activeField === 'pinConfirm' ||
-      activeField === 'accessPin' ||
-      activeField === 'accessPinConfirm'
     const prev = activeValue()
-    const next = isPinField ? applyPinAction(prev, action) : applyNumpadAction(prev, action)
-    if (isPinField && next.length > 4) return
-    setActiveValue(next)
-    setPinError('')
+    setActiveValue(applyNumpadAction(prev, action))
   }
 
   const numpadHandlerRef = useRef(handleNumpad)
@@ -1073,36 +1049,9 @@ export default function Settings() {
   }
 
   function handleSave() {
-    setPinError('')
-    if (pinStr || pinConfirmStr) {
-      if (pinStr.length !== 4 || pinConfirmStr.length !== 4) {
-        setPinError('Dashboard PIN must be exactly 4 digits.')
-        return
-      }
-      if (pinStr !== pinConfirmStr) {
-        setPinError('Dashboard PINs do not match.')
-        return
-      }
-      updateHomePin(pinStr)
-    }
-    if (accessPinStr || accessPinConfirmStr) {
-      if (accessPinStr.length !== 4 || accessPinConfirmStr.length !== 4) {
-        setPinError('Secure areas PIN must be exactly 4 digits.')
-        return
-      }
-      if (accessPinStr !== accessPinConfirmStr) {
-        setPinError('Secure areas PINs do not match.')
-        return
-      }
-      updateAccessPin(accessPinStr)
-    }
     updateOpeningBalance(opening)
     updateOpeningBankBalance(openingBank)
     setSaved(true)
-    setPinStr('')
-    setPinConfirmStr('')
-    setAccessPinStr('')
-    setAccessPinConfirmStr('')
     setTimeout(() => setSaved(false), 1200)
   }
 
@@ -1419,8 +1368,7 @@ export default function Settings() {
 
   return (
     <div className="settings-page page-shell">
-      <PageCorners left={<PageBackButton onClick={goBack} ariaLabel="Back" />} />
-      <div className="settings-tabs page-head--corners" role="tablist" aria-label="Settings sections">
+      <div className="settings-tabs" role="tablist" aria-label="Settings sections">
         {SETTINGS_TABS.map((item) => (
           <button
             key={item.id}
@@ -1458,7 +1406,7 @@ export default function Settings() {
             <>
             <div className="settings-header">
               <h2>General</h2>
-              <p>Opening balances & security PINs</p>
+              <p>Opening balances & appearance</p>
             </div>
             <div className="settings-fields">
               <AmountDisplay
@@ -1475,39 +1423,7 @@ export default function Settings() {
                 onSelect={() => setActiveField('openingBank')}
                 compact
               />
-              <AmountDisplay
-                label="New Dashboard PIN"
-                value={pinStr ? '•'.repeat(pinStr.length) : ''}
-                active={activeField === 'pin'}
-                onSelect={() => setActiveField('pin')}
-                compact
-              />
-              <AmountDisplay
-                label="Confirm dashboard PIN"
-                value={pinConfirmStr ? '•'.repeat(pinConfirmStr.length) : ''}
-                active={activeField === 'pinConfirm'}
-                onSelect={() => setActiveField('pinConfirm')}
-                compact
-              />
-              <AmountDisplay
-                label="New secure areas PIN"
-                value={accessPinStr ? '•'.repeat(accessPinStr.length) : ''}
-                active={activeField === 'accessPin'}
-                onSelect={() => setActiveField('accessPin')}
-                compact
-              />
-              <AmountDisplay
-                label="Confirm secure areas PIN"
-                value={accessPinConfirmStr ? '•'.repeat(accessPinConfirmStr.length) : ''}
-                active={activeField === 'accessPinConfirm'}
-                onSelect={() => setActiveField('accessPinConfirm')}
-                compact
-              />
             </div>
-            <p className="settings-pin-note">
-              Dashboard PIN unlocks the dashboard only. Secure areas PIN protects reports, purchase,
-              loan, staff, and settings. If secure areas PIN is not set, it uses the dashboard PIN.
-            </p>
             <div className="settings-info">
               <div className="settings-row">
                 <span>Current cash</span>
@@ -2465,7 +2381,6 @@ export default function Settings() {
             ) : null}
             </div>
 
-            {pinError && <p className="settings-pin-error">{pinError}</p>}
             <div className="settings-general-footer">
             <div className="settings-keyboard-wrap">
               <NumberKeyboard onPress={handleNumpad} showEnter={false} />
@@ -2477,7 +2392,6 @@ export default function Settings() {
             >
               {saved ? '✓ Saved!' : 'Save Settings'}
             </button>
-            <p className="settings-note">Leave PIN fields empty to keep current.</p>
             </div>
           </div>
         )}
@@ -2723,16 +2637,32 @@ export default function Settings() {
         )}
 
         {tab === 'cloud' && (
-          <div className="settings-scroll" ref={cloudScrollRef}>
-          <section className="settings-panel">
+          <div className="settings-scroll settings-scroll--cloud" ref={cloudScrollRef}>
+          <section className="settings-panel settings-panel--cloud">
             <div className="settings-header">
-              <h2>Cloud Username</h2>
-              <p>Create or open — same username loads same data</p>
+              <h2>Cloud</h2>
+              <p>Sign in, back up, and manage your account &amp; PIN</p>
             </div>
-            <p className="settings-backup-meta">Firebase · cash-counter-84178</p>
-            {cloudUser && (
-              <div className="settings-backup-open">
-                <p className="settings-backup-signed-in">Open · {getCloudUsername(cloudUser)}</p>
+            <p className="settings-backup-meta settings-backup-meta--project">Firebase · cash-counter-84178</p>
+
+            {!cloudUser ? (
+              <CloudLoginForm
+                username={cloudUsername}
+                password={cloudPassword}
+                busy={backupBusy}
+                onUsernameChange={setCloudUsername}
+                onPasswordChange={setCloudPassword}
+                onSignIn={() => void handleCloudOpen()}
+                onCreateAccount={() => void handleCloudCreate()}
+              />
+            ) : null}
+
+            {cloudUser ? (
+              <section className="cloud-card cloud-card--sync app-surface" aria-label="Cloud sync">
+                <div className="cloud-card-head">
+                  <h3>Backup &amp; sync</h3>
+                  <p>Keep this device in sync with your cloud data.</p>
+                </div>
                 <div className="settings-backup-summary">
                   <span>This device: {data.sales.length} bills</span>
                   <span>{data.expenses.length} records</span>
@@ -2816,7 +2746,7 @@ export default function Settings() {
                     Main device will also pull newer cloud data automatically.
                   </p>
                 )}
-                <div className="settings-backup-actions">
+                <div className="cloud-card-actions">
                   <button
                     type="button"
                     className="btn btn-secondary"
@@ -2839,57 +2769,34 @@ export default function Settings() {
                     disabled={backupBusy}
                     onClick={() => void handleCloudLogout()}
                   >
-                    Logout
+                    Sign out
                   </button>
                 </div>
-              </div>
-            )}
-            <div className="settings-backup-form">
-              <label className="settings-backup-field">
-                <span>Cloud Username</span>
-                <input
-                  type="text"
-                  value={cloudUsername}
-                  onChange={(e) => setCloudUsername(e.target.value)}
-                  autoComplete="username"
-                  placeholder="e.g. shalimar"
-                  autoCapitalize="none"
-                />
-              </label>
-              <label className="settings-backup-field">
-                <span>Cloud Password</span>
-                <input
-                  type="password"
-                  value={cloudPassword}
-                  onChange={(e) => setCloudPassword(e.target.value)}
-                  autoComplete="current-password"
-                  placeholder="Min 6 characters"
-                />
-              </label>
-              <div className="settings-backup-actions settings-backup-actions--create">
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={backupBusy || !cloudUsername.trim() || cloudPassword.length < 6}
-                  onClick={() => void handleCloudCreate()}
-                >
-                  Create username
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  disabled={backupBusy || !cloudUsername.trim() || cloudPassword.length < 6}
-                  onClick={() => void handleCloudOpen()}
-                >
-                  Import
-                </button>
-              </div>
-            </div>
-            {backupStatus && (
-              <p className={`settings-backup-status ${backupError ? 'settings-backup-status--error' : ''}`}>
+              </section>
+            ) : null}
+
+            {cloudUser ? (
+              <CloudAccountSettings
+                cloudUser={cloudUser}
+                historyRefreshKey={accountHistoryRefreshKey}
+              />
+            ) : null}
+
+            <CloudPinSettings
+              data={data}
+              cloudUser={cloudUser}
+              onUpdatePin={(pin) => {
+                updateHomePin(pin)
+                setAccountHistoryRefreshKey((key) => key + 1)
+              }}
+              onUpdatePinLength={updatePinLength}
+            />
+
+            {backupStatus ? (
+              <p className={`cloud-card-status cloud-card-status--global ${backupError ? 'cloud-card-status--error' : ''}`}>
                 {backupStatus}
               </p>
-            )}
+            ) : null}
           </section>
           </div>
         )}

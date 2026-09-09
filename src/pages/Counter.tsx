@@ -12,7 +12,6 @@ import SaleReturnModal from '../components/SaleReturnModal'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useCashActions } from '../context/CashContext'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
-import { useOpenTiming } from '../hooks/useOpenTiming'
 import type { Sale, SaleReturnEntry } from '../types'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
 import { isReminderDue } from '../utils/billReminders'
@@ -183,7 +182,6 @@ function resolveLoadedPendingBill(
 type SavedAction = 'collect' | 'pending' | null
 
 function Counter({ active }: { active: boolean }) {
-  useOpenTiming('Counter', active, false)
   const routeActive = active
   const { data, pendingBills } = useCashSnapshot(active)
   const {
@@ -272,6 +270,7 @@ function Counter({ active }: { active: boolean }) {
   const customerNameFieldRef = useRef<CounterCustomerNameFieldHandle>(null)
   const creditExitTimerRef = useRef<number | null>(null)
   const pendingPanelRef = useRef<HTMLElement>(null)
+  const wasActiveRef = useRef(false)
 
   function getCustomerName(): string {
     return customerNameFieldRef.current?.getValue().trim() ?? ''
@@ -2298,6 +2297,62 @@ function Counter({ active }: { active: boolean }) {
     openBillById(billId)
     setSearchParams({}, { replace: true })
   }, [searchParams, data.sales, setSearchParams])
+
+  const counterHasDraftState = useCallback(() => {
+    if (billStr.trim()) return true
+    if (giveStr.trim() || paidStr.trim()) return true
+    if (
+      cashSplitStr.trim() ||
+      bankSplitStr.trim() ||
+      chequeSplitStr.trim() ||
+      creditSplitStr.trim()
+    ) {
+      return true
+    }
+    if (roundCustomStr.trim() || roundOffAmount != null) return true
+    if (loadedPendingId || collectingCreditId || collectingChequeId) return true
+    if (balanceDueAmount != null) return true
+    if (draftReturns.length > 0) return true
+    if (customerNameFieldRef.current?.getValue().trim()) return true
+    return false
+  }, [
+    billStr,
+    giveStr,
+    paidStr,
+    cashSplitStr,
+    bankSplitStr,
+    chequeSplitStr,
+    creditSplitStr,
+    roundCustomStr,
+    roundOffAmount,
+    loadedPendingId,
+    collectingCreditId,
+    collectingChequeId,
+    balanceDueAmount,
+    draftReturns.length,
+  ])
+
+  useEffect(() => {
+    const entering = !wasActiveRef.current && active
+    wasActiveRef.current = active
+    if (!entering || !active) return
+
+    const run = () => {
+      if (searchParams.get('bill')) return
+      if (counterHasDraftState()) return
+      setNameSectionFocus(false)
+      customerNameFieldRef.current?.blur()
+      clearPendingSection()
+      setChequeListOpen(false)
+      setCreditListOpen(false)
+      setPaymentStep(false)
+      setPayType('cash')
+      setActiveField('bill')
+    }
+
+    const id = window.setTimeout(run, 0)
+    return () => window.clearTimeout(id)
+  }, [active, searchParams, counterHasDraftState])
 
   function clearPendingSection() {
     setPendingSectionFocus(false)

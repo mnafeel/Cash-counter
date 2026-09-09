@@ -1,7 +1,7 @@
 import PinEntry from './PinEntry'
 import { useCashActions } from '../context/CashContext'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
-import { getAccessPin } from '../utils/accessPin'
+import { getPinEntryLength, verifyUserPin } from '../utils/accessPin'
 
 type SectionPinGateProps = {
   title?: string
@@ -9,15 +9,13 @@ type SectionPinGateProps = {
 
 export default function SectionPinGate({ title = 'Secure area' }: SectionPinGateProps) {
   const { data } = useCashSnapshot(true)
-  const { unlockSensitive } = useCashActions()
-  const accessPin = getAccessPin(data)
-
+  const { unlockHome } = useCashActions()
   return (
     <PinEntry
       title={title}
-      subtitle="Enter your 4-digit PIN to continue."
-      verifyPin={(pin) => pin === accessPin}
-      onUnlock={unlockSensitive}
+      verifyPin={(pin) => verifyUserPin(data, pin)}
+      onUnlock={unlockHome}
+      pinLength={getPinEntryLength(data)}
     />
   )
 }

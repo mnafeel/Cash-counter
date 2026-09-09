@@ -1,12 +1,20 @@
 const CLOUD_DOMAIN = '@cash-counter.sof'
 
-export function usernameToAuthEmail(username: string): string {
-  const clean = username.trim().toLowerCase().replace(/\s+/g, '')
+export function normalizeUsernameKey(username: string): string {
+  return username.trim().toLowerCase().replace(/\s+/g, '')
+}
+
+export function validateCloudUsername(username: string): string {
+  const clean = normalizeUsernameKey(username)
   if (!clean) throw new Error('Username is required.')
   if (!/^[a-z0-9._-]{3,32}$/.test(clean)) {
     throw new Error('Username: 3–32 letters, numbers, . _ - only.')
   }
-  return `${clean}${CLOUD_DOMAIN}`
+  return clean
+}
+
+export function usernameToAuthEmail(username: string): string {
+  return `${validateCloudUsername(username)}${CLOUD_DOMAIN}`
 }
 
 export function authEmailToUsername(email: string | null | undefined): string {

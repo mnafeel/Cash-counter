@@ -130,11 +130,22 @@
   letter-spacing: 0.01em;
 }
 
+.purchase-page-intro {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .purchase-page-sub {
   margin: 1px 0 0;
   font-size: 0.52rem;
   font-weight: 600;
   color: var(--cream-dim);
+}
+
+.purchase-page-sub--top {
+  margin-top: 0;
 }
 
 .purchase-page-credit-note {

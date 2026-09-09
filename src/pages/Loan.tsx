@@ -17,7 +17,6 @@ import {
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { formatDate, formatMoney, parseAmount } from '../utils/format'
-import { PageBackButton, PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
@@ -195,21 +194,7 @@ export default function Loan() {
 
   return (
     <div className="loan-page page-shell">
-      <PageCorners
-        left={
-          <PageBackButton
-            onClick={handleClose}
-            ariaLabel={formMode || settlingId ? 'Go back' : 'Back'}
-          />
-        }
-      />
-
-      <header className="loan-page-head page-head--corners">
-        <div className="loan-page-head-text">
-          <h1>Loan</h1>
-          <p>Zero interest · lend and borrow</p>
-        </div>
-      </header>
+      <p className="loan-page-sub">Zero interest · lend and borrow</p>
 
       <div className="loan-page-summary">
         <div className="loan-page-summary-card">

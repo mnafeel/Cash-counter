@@ -22,7 +22,7 @@ import {
   purchasePaidAmount,
 } from '../utils/purchaseHistory'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
-import { PageBackButton, PageCorners } from '../components/PageCorners'
+import { PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
@@ -410,8 +410,7 @@ export default function PurchaseExpense() {
   const nameSuggestionsListRef = useRef<HTMLUListElement>(null)
   const itemSuggestionsListRef = useRef<HTMLUListElement>(null)
 
-  useOpenTiming('Purchases', true, false)
-  useOpenTiming('Purchase History', showPurchaseHistory)
+  useOpenTiming('Purchase Expense', true, false)
 
   const editingBill: BillSlot = billMode === 'no2' ? 2 : 1
   const bill = editingBill === 1 ? bill1 : bill2
@@ -1592,7 +1591,6 @@ export default function PurchaseExpense() {
   return (
     <div className="purchase-page expenses-page page-shell">
       <PageCorners
-        left={<PageBackButton onClick={handlePageBack} ariaLabel="Back" />}
         right={
           <>
             {!isCreditUpdateMode ? (
@@ -1636,9 +1634,8 @@ export default function PurchaseExpense() {
         }
       />
 
-      <header className="purchase-page-head page-head--corners">
-        <h1 className="purchase-page-title">Purchase Expense</h1>
-        <p className="purchase-page-sub">
+      <div className="purchase-page-intro">
+      <p className="purchase-page-sub purchase-page-sub--top">
           Purchases only · {GST_BILL_LABEL} · {NO_GST_BILL_LABEL} · cash, bank, cheque, split
         </p>
         {formNote && !isCreditUpdateMode ? (
@@ -1671,7 +1668,7 @@ export default function PurchaseExpense() {
             {billMode === 'no1' ? purchaseBillLabel(1) : purchaseBillLabel(2)}
           </p>
         ) : null}
-      </header>
+      </div>
 
       <div className="purchase-form">
         <section className="purchase-form-section purchase-form-section--details" aria-label="Supplier details">
@@ -1900,7 +1897,7 @@ export default function PurchaseExpense() {
         open={showPurchaseHistory}
         onClose={() => setShowPurchaseHistory(false)}
         data={data}
-        variant="modal"
+        variant="embedded"
         onUpdateBill={(expenseId) => {
           setShowPurchaseHistory(false)
           loadPurchaseBill(expenseId, 'update')

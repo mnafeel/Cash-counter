@@ -29,18 +29,33 @@ export function applyNumpadAction(current: string, action: NumpadAction): string
   return current + action
 }
 
-/** PIN entry — allows leading zeros (e.g. 0000). Max 4 digits. */
-export function applyPinAction(current: string, action: NumpadAction): string {
+export type PinLength = 4 | 6
+
+export function resolvePinLength(value: unknown): PinLength {
+  return value === 6 ? 6 : 4
+}
+
+/** PIN entry — allows leading zeros. Default max 4 digits. */
+export function applyPinAction(
+  current: string,
+  action: NumpadAction,
+  maxLength: PinLength = 4,
+): string {
   if (action === 'backspace') return current.slice(0, -1)
   if (action === 'clear') return ''
   if (action === 'enter' || action === '.') return current
   if (!/^\d$/.test(action)) return current
-  if (current.length >= 4) return current
+  if (current.length >= maxLength) return current
   return current + action
 }
 
-export function normalizePin(pin: unknown, fallback = '0000'): string {
-  if (pin == null || pin === '') return fallback
+export function normalizePin(
+  pin: unknown,
+  fallback = '0000',
+  maxLength: PinLength = 4,
+): string {
+  if (pin == null || pin === '') return fallback.slice(0, maxLength)
   const digits = String(pin).replace(/\D/g, '')
-  return digits.length > 0 ? digits.slice(0, 4) : fallback
+  const trimmed = digits.length > 0 ? digits.slice(0, maxLength) : fallback
+  return trimmed.slice(0, maxLength)
 }

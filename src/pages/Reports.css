@@ -16,6 +16,27 @@
   min-height: 0;
 }
 
+.reports-panel--page {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+  max-height: none;
+}
+
+.reports-inline-back {
+  align-self: flex-start;
+  margin: 0 0 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 0.66rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .reports-home-btn {
   cursor: pointer;
   font-family: inherit;

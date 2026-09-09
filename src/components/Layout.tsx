@@ -2,19 +2,27 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import MainTabs from './MainTabs'
 import TabPanel from './TabPanel'
-import SectionPinGate from './SectionPinGate'
+import PinEntry from './PinEntry'
+import { useCashActions } from '../context/CashContext'
+import { loginCloud } from '../firebase/backup'
+import { getLastCloudUsername } from '../firebase/cloudUser'
 import { useDeviceSize } from '../hooks/useDeviceSize'
 import { useAppRouteLocks } from '../hooks/useAppRouteLocks'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
-import ReminderAlertsNotifier from './ReminderAlertsNotifier'
+import { getPinEntryLength, verifyUserPin } from '../utils/accessPin'
+import {
+  isPinProtectedMainTab,
+  isPinProtectedRoute,
+} from '../utils/pinProtectedRoutes'
+import NotificationsBell from './NotificationsBell'
 import CloudStatusNotifier from './CloudStatusNotifier'
 import OpenTimingNotifier from './OpenTimingNotifier'
+import PinLockCountdown from './PinLockCountdown'
 import SidebarCloudLogout from './SidebarCloudLogout'
 import { initReminderNotificationSound } from '../utils/reminderNotificationSound'
 import { normalizeRoutePath } from '../utils/hashRoute'
 import { getMainTabKey, isMainTabPath, type MainTabKey } from '../utils/mainTab'
 import { openTimingLabelForPath, startOpenTiming, finishOpenTiming } from '../utils/openTiming'
-import { isSensitiveRoute } from '../utils/sensitiveRoutes'
 import './Layout.css'
 
 const SIDEBAR_COLLAPSED_KEY = 'sof-sidebar-collapsed'
@@ -25,19 +33,11 @@ const navItems = [
   { to: '/expenses', label: 'Expenses', icon: '📤' },
   { to: '/history', label: 'History', icon: '📋' },
   { to: '/reports', label: 'Reports', icon: '📈' },
-  { to: '/purchase', label: 'Purchase', icon: '🛒' },
+  { to: '/purchase', label: 'Purchase Expense', icon: '🛒' },
   { to: '/loan', label: 'Loan', icon: '🤝' },
-  { to: '/staff', label: 'Staff', icon: '👥' },
+  { to: '/staff', label: 'Staff & Salary', icon: '👥' },
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ] as const
-
-const SENSITIVE_GATE_LABELS: Record<string, string> = {
-  '/reports': 'Reports',
-  '/purchase': 'Purchases',
-  '/loan': 'Loans',
-  '/staff': 'Staff',
-  '/settings': 'Settings',
-}
 
 function getNavIndex(pathname: string): number {
   const path = normalizeRoutePath(pathname)
@@ -60,24 +60,16 @@ function readSidebarCollapsed(): boolean {
   }
 }
 
-function sensitiveGateTitle(pathname: string): string {
-  const path = normalizeRoutePath(pathname)
-  const match = Object.entries(SENSITIVE_GATE_LABELS).find(
-    ([prefix]) => path === prefix || path.startsWith(`${prefix}/`),
-  )
-  return match?.[1] ?? 'Secure area'
-}
-
 export default function Layout() {
   useDeviceSize()
   useAppRouteLocks()
   const navigate = useNavigate()
   const location = useLocation()
-  const { sensitiveUnlocked } = useCashSnapshot(true)
+  const { homeUnlocked, data, pinSessionLastActivityAt } = useCashSnapshot(true)
+  const { unlockHome, updateHomePin, setProtectedRouteActive, touchProtectedSession } =
+    useCashActions()
   const mainTab = getMainTabKey(location.pathname)
   const showMainTabs = isMainTabPath(location.pathname)
-  const onSensitiveRoute = isSensitiveRoute(location.pathname)
-  const showSensitiveGate = onSensitiveRoute && !sensitiveUnlocked
   const [visibleTab, setVisibleTab] = useState<MainTabKey | null>(mainTab)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
@@ -89,6 +81,20 @@ export default function Layout() {
   }, [mainTab])
 
   const displayTab = visibleTab ?? mainTab ?? '/'
+
+  const pinProtected = isPinProtectedRoute(location.pathname)
+  const showMainTabPin = showMainTabs && isPinProtectedMainTab(displayTab) && !homeUnlocked
+  const showProtectedPin = !showMainTabs && pinProtected && !homeUnlocked
+
+  useEffect(() => {
+    setProtectedRouteActive(pinProtected)
+  }, [pinProtected, setProtectedRouteActive])
+
+  useEffect(() => {
+    if (homeUnlocked && pinProtected) {
+      touchProtectedSession()
+    }
+  }, [location.pathname, homeUnlocked, pinProtected, touchProtectedSession])
 
   useEffect(() => {
     initReminderNotificationSound()
@@ -184,6 +190,29 @@ export default function Layout() {
     .filter(Boolean)
     .join(' ')
 
+  const mainClassName = [
+    'main',
+    'main--fit',
+    showMainTabPin || showProtectedPin ? 'main--fit-pin-gate' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const pinEntry = (
+    <PinEntry
+      title="Enter PIN"
+      verifyPin={(pin) => verifyUserPin(data, pin)}
+      onUnlock={unlockHome}
+      pinLength={getPinEntryLength(data)}
+      defaultCloudUsername={getLastCloudUsername() ?? ''}
+      onForgotPin={async ({ username, password, newPin }) => {
+        await loginCloud(username, password)
+        updateHomePin(newPin)
+        unlockHome()
+      }}
+    />
+  )
+
   return (
     <div className={layoutClassName}>
       <button
@@ -225,6 +254,7 @@ export default function Layout() {
           ))}
         </nav>
 
+        <OpenTimingNotifier activeNavLabel={activeNavLabel} />
         <p className="sidebar-hint" aria-hidden="true">Alt+Q · next section</p>
         <SidebarCloudLogout />
       </aside>
@@ -272,29 +302,39 @@ export default function Layout() {
               <span aria-hidden="true">📤</span>
               Expenses
             </button>
+            <button
+              type="button"
+              className={`topbar-quick-btn ${isNavActive(navActivePath, '/history') ? 'topbar-quick-btn--active' : ''}`}
+              onClick={() => navigateNav('/history')}
+            >
+              <span aria-hidden="true">📋</span>
+              History
+            </button>
+            <NotificationsBell placement="topbar" />
           </div>
         </header>
 
-        <main className="main main--fit">
-          {showSensitiveGate ? (
-            <SectionPinGate title={sensitiveGateTitle(location.pathname)} />
-          ) : (
+        <main className={mainClassName}>
+          {showMainTabs ? (
             <>
-              {showMainTabs ? <MainTabs activeTab={displayTab} /> : null}
-              <TabPanel hidden={showMainTabs}>
-                <Outlet />
-              </TabPanel>
+              <MainTabs activeTab={displayTab} />
+              {showMainTabPin ? <div className="main-tab-pin-gate">{pinEntry}</div> : null}
             </>
+          ) : showProtectedPin ? (
+            pinEntry
+          ) : (
+            <TabPanel hidden={false}>
+              <Outlet />
+            </TabPanel>
           )}
         </main>
       </div>
 
-      <ReminderAlertsNotifier />
+      {homeUnlocked && pinSessionLastActivityAt ? (
+        <PinLockCountdown lastActivityAt={pinSessionLastActivityAt} />
+      ) : null}
+
       <CloudStatusNotifier />
-      <OpenTimingNotifier
-        navLabels={navItems.map((item) => item.label)}
-        activeNavLabel={activeNavLabel}
-      />
     </div>
   )
 }

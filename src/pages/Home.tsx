@@ -1,16 +1,19 @@
 import { memo, startTransition, useEffect, useMemo, useRef, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import type { AppData } from '../types'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import AmountDisplay from '../components/AmountDisplay'
 import BigAmount from '../components/BigAmount'
-import PinEntry from '../components/PinEntry'
 import NumberKeyboard from '../components/NumberKeyboard'
 import { formatMoney, parseAmount, formatDate } from '../utils/format'
-import { applyNumpadAction, normalizePin, type NumpadAction } from '../utils/numpad'
+import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useCashActions } from '../context/CashContext'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import { useCashDerivedSnapshot } from '../hooks/useCashDerivedSnapshot'
-import { useResetOnTabEnter } from '../hooks/useIsActiveRoute'
+import {
+  consumePendingReminderNavigation,
+  hasReminderNavigationIntent,
+  reminderPathToIntent,
+  type ReminderOverlayKind,
+} from '../utils/reminderNavigation'
 import { useOpenTiming } from '../hooks/useOpenTiming'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
@@ -81,16 +84,6 @@ import {
 } from '../utils/billReminders'
 import './Home.css'
 
-const DEFAULT_PIN = '0000'
-
-/** Stable empty dataset — Home skips heavy dashboard work while PIN-locked. */
-const LOCKED_DASHBOARD_DATA: AppData = {
-  openingBalance: 0,
-  openingBankBalance: 0,
-  sales: [],
-  expenses: [],
-}
-
 type PanelField = 'note' | 'amount'
 
 const BALANCE_DATE_OPTIONS: { id: CashDateFilter; label: string }[] = [
@@ -116,7 +109,8 @@ function homeDaySelectedDate(filter: HomeDayFilter, selectedDate: string): strin
 
 function Home({ active }: { active: boolean }) {
   const navigate = useNavigate()
-  const { data, balance, bankBalance, homeUnlocked } = useCashSnapshot(active)
+  const { data, balance, bankBalance } = useCashSnapshot(active)
+  const { homeUnlocked } = useCashSnapshot(true)
   const derived = useCashDerivedSnapshot(active)
   const {
     recordExpense,
@@ -124,7 +118,6 @@ function Home({ active }: { active: boolean }) {
     removeSale,
     removeExpense,
     removeLoan,
-    unlockHome,
     setCustomerReminder,
     setBillReminder,
     updateReminderAlertSettings,
@@ -132,8 +125,7 @@ function Home({ active }: { active: boolean }) {
     applySaleReturn,
     cancelSaleReturn,
   } = useCashActions()
-  // Keep real data while tab is hidden (when unlocked) so summaries stay cached on return.
-  const workData = !homeUnlocked ? LOCKED_DASHBOARD_DATA : data
+  const workData = data
   const [addTarget, setAddTarget] = useState<ExpensePayType | null>(null)
   const [transferDirection, setTransferDirection] = useState<TransferDirection | null>(null)
   const [panelNote, setPanelNote] = useState('')
@@ -191,15 +183,63 @@ function Home({ active }: { active: boolean }) {
   const [homeExpenseChannel, setHomeExpenseChannel] = useState<ExpensePayChannelFilter>('all')
   const [openBillsOpen, setOpenBillsOpen] = useState(false)
   const noteInputRef = useRef<HTMLInputElement>(null)
+  const wasActiveRef = useRef(active)
 
   useOpenTiming('Dashboard', active, false)
-  useOpenTiming('Analyze', showAnalyze)
-  useOpenTiming('Customers', showCustomers)
-  useOpenTiming('Credit Dashboard', showCredits)
-  useOpenTiming('Cheque Dashboard', showCheques)
-  useOpenTiming('Cash History', showCashHistory)
-  useOpenTiming('Bank History', showBankHistory)
-  useOpenTiming('Delete Records', showDeleteRecords)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const applyReminderOverlay = useCallback((overlay: ReminderOverlayKind, customer?: string) => {
+    if (overlay === 'credits') {
+      setCreditFilter('credit')
+      setCreditInitialName(customer)
+      startTransition(() => setShowCredits(true))
+      return
+    }
+    if (overlay === 'cheques') {
+      setChequeFilter('cheque')
+      setChequeInitialName(customer)
+      startTransition(() => setShowCheques(true))
+      return
+    }
+    setCustomerFilter(customer ? 'credit' : 'all')
+    setCustomerInitialName(customer)
+    startTransition(() => setShowCustomers(true))
+  }, [])
+
+  const applyReminderNavigation = useCallback(() => {
+    const overlay = searchParams.get('overlay')
+    const customer = searchParams.get('customer') || undefined
+    if (overlay === 'credits' || overlay === 'cheques' || overlay === 'customers') {
+      applyReminderOverlay(overlay, customer)
+      const next = new URLSearchParams(searchParams)
+      next.delete('overlay')
+      next.delete('customer')
+      setSearchParams(next, { replace: true })
+      consumePendingReminderNavigation()
+      return true
+    }
+
+    const pending = consumePendingReminderNavigation()
+    if (!pending) return false
+
+    const intent = reminderPathToIntent(pending)
+    if (intent) {
+      applyReminderOverlay(intent.overlay, intent.customer)
+      return true
+    }
+
+    const pathname = pending.split('?')[0] || '/'
+    if (pathname !== '/' && pathname !== '') {
+      navigate(pending)
+      return true
+    }
+    return false
+  }, [applyReminderOverlay, navigate, searchParams, setSearchParams])
+
+  useEffect(() => {
+    if (!active || !homeUnlocked) return
+    applyReminderNavigation()
+  }, [active, homeUnlocked, applyReminderNavigation])
 
   const resetHomeUi = useCallback(() => {
     resetDeleteRecordSearch()
@@ -227,7 +267,23 @@ function Home({ active }: { active: boolean }) {
     resetBankHistorySearch,
   ])
 
-  useResetOnTabEnter(active, resetHomeUi)
+  useEffect(() => {
+    const entering = !wasActiveRef.current && active
+    wasActiveRef.current = active
+    if (!entering) return
+
+    const run = () => {
+      if (hasReminderNavigationIntent(searchParams)) return
+      resetHomeUi()
+    }
+
+    if (typeof requestIdleCallback === 'function') {
+      const id = requestIdleCallback(run, { timeout: 500 })
+      return () => cancelIdleCallback(id)
+    }
+    const id = window.setTimeout(run, 0)
+    return () => window.clearTimeout(id)
+  }, [active, resetHomeUi, searchParams])
 
   function openReports(
     preset: ReportDatePreset = 'today',
@@ -268,7 +324,6 @@ function Home({ active }: { active: boolean }) {
     startTransition(() => setShowCheques(true))
   }
 
-  const homePin = normalizePin(data.homePin, DEFAULT_PIN)
   const panelAmount = parseAmount(panelAmountStr)
   const panelNoteValid = panelNote.trim().length > 0
   const panelAmountValid = panelAmount > 0
@@ -634,20 +689,6 @@ function Home({ active }: { active: boolean }) {
       : addTarget === 'bank'
         ? 'Add to Bank'
         : 'Add to Counter'
-
-  if (!homeUnlocked) {
-    return (
-      <div className="home home--locked">
-        <PinEntry
-          title="Enter 4-digit PIN"
-          subtitle="Enter your 4-digit PIN to open the dashboard."
-          keyboardRoute="/"
-          verifyPin={(pin) => pin === homePin}
-          onUnlock={unlockHome}
-        />
-      </div>
-    )
-  }
 
   return (
     <div className="home home--dashboard">
@@ -1497,7 +1538,14 @@ function Home({ active }: { active: boolean }) {
       )}
 
       {showAnalyze ? (
-        <AnalyzePanel open onClose={() => setShowAnalyze(false)} data={data} />
+        <AnalyzePanel
+          open
+          onClose={() => {
+            setShowAnalyze(false)
+            navigate('/')
+          }}
+          data={data}
+        />
       ) : null}
 
       {showCustomers ? (
@@ -1506,6 +1554,7 @@ function Home({ active }: { active: boolean }) {
           onClose={() => {
             setShowCustomers(false)
             setCustomerInitialName(undefined)
+            navigate('/')
           }}
           data={data}
           initialFilter={customerFilter}

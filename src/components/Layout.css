@@ -213,6 +213,7 @@
 }
 
 .app-topbar {
+  position: relative;
   flex-shrink: 0;
   z-index: 100;
   display: flex;
@@ -220,6 +221,7 @@
   gap: 10px;
   padding: 8px 12px;
   padding-top: max(8px, env(safe-area-inset-top));
+  padding-right: max(12px, env(safe-area-inset-right));
   background: var(--header-bg, var(--surface));
   border-bottom: 1px solid var(--border);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
@@ -277,6 +279,8 @@
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
+  margin-left: auto;
+  padding-left: 6px;
 }
 
 .topbar-quick-btn {
@@ -358,10 +362,15 @@
   display: none !important;
 }
 
+.main--fit {
+  position: relative;
+}
+
 .main--fit:has(.home:not(.home--locked)) {
   background: var(--bg);
 }
 
+.main--fit-pin-gate,
 .main--fit:has(.home--locked),
 .main--fit:has(.pin-gate-page) {
   justify-content: center;
@@ -369,6 +378,16 @@
   overflow-y: auto;
   padding-left: max(var(--ui-pad), env(safe-area-inset-left));
   padding-right: max(var(--ui-pad), env(safe-area-inset-right));
+}
+
+.main-tab-pin-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
 }
 
 .layout-shell--switching .main--fit {
@@ -412,11 +431,30 @@
 }
 
 @media (max-width: 420px) {
+  .app-topbar {
+    gap: 6px;
+    padding-right: max(8px, env(safe-area-inset-right));
+  }
+
+  .topbar-eyebrow {
+    display: none;
+  }
+
+  .topbar-title {
+    font-size: 0.82rem;
+  }
+
+  .topbar-quick-access {
+    gap: 3px;
+    padding-left: 4px;
+  }
+
   .topbar-quick-btn {
     padding: 4px 6px;
     font-size: 0;
     gap: 0;
     min-width: 34px;
+    min-height: 34px;
     justify-content: center;
   }
 

@@ -308,8 +308,9 @@ export function getChequeCustomerSummary(
   summaries: ChequeCustomerSummary[],
   name: string,
 ): ChequeCustomerSummary | undefined {
-  const trimmed = name.trim()
-  return summaries.find((summary) => summary.name === trimmed)
+  const key = name.trim().toLowerCase()
+  if (!key) return undefined
+  return summaries.find((summary) => summary.name.trim().toLowerCase() === key)
 }
 
 export function lookupCustomerChequePending(

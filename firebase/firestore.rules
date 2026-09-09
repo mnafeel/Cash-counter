@@ -5,6 +5,15 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
+    // Maps cloud username → auth email (login resolution). Public read required before sign-in.
+    match /cloudUsernames/{usernameKey} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasAll(['uid', 'authEmail']);
+      allow update, delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+
     // Website API key lookup — owner may create/update/delete own mapping; public read denied (Cloud Function uses Admin SDK).
     match /apiKeys/{keyHash} {
       allow create: if request.auth != null

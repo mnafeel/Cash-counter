@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useCash } from '../context/CashContext'
 import { useOpenTiming } from '../hooks/useOpenTiming'
-import { PageBackButton, PageCorners } from '../components/PageCorners'
+import { PageCorners } from '../components/PageCorners'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { usePageEscape } from '../hooks/usePageEscape'
@@ -684,7 +684,6 @@ export default function Staff() {
   return (
     <div className="staff-page page-shell">
       <PageCorners
-        left={<PageBackButton onClick={handlePageBack} ariaLabel="Back" />}
         right={
           selectedStaffId ? (
             <>
@@ -764,16 +763,11 @@ export default function Staff() {
         }
       />
 
-      <header className="staff-page-head page-head--corners">
-        <div className="staff-page-head-text">
-          <h1>{staffListView === 'inactive' ? 'Inactive staff' : 'Staff & Salary'}</h1>
-          <p>
-            {staffListView === 'inactive'
-              ? `${inactiveStaffList.length} inactive · not on salary or incentive lists`
-              : `${formatSalaryMonthLabel(monthKey)} · monthly salary tracking`}
-          </p>
-        </div>
-      </header>
+      <p className="staff-page-subtitle">
+        {staffListView === 'inactive'
+          ? `${inactiveStaffList.length} inactive · not on salary or incentive lists`
+          : `${formatSalaryMonthLabel(monthKey)} monthly salary tracking`}
+      </p>
 
       <div className="staff-page-toolbar" ref={monthToolbarRef}>
         <div className="staff-page-year">

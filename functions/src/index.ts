@@ -3,8 +3,11 @@ import { initializeApp } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 import { onRequest } from 'firebase-functions/v2/https'
 import { logger } from 'firebase-functions'
+import { updateCloudAccount } from './cloudAccount'
 
 initializeApp()
+
+export { updateCloudAccount }
 
 function hashApiKey(apiKey: string): string {
   return createHash('sha256').update(apiKey.trim()).digest('hex')

@@ -13,7 +13,19 @@ import {
   loadData,
   normalizeData,
 } from '../storage/database'
-import { authEmailToUsername, clearLastCloudUsername, saveLastCloudUsername, usernameToAuthEmail } from './cloudUser'
+import {
+  authEmailToUsername,
+  clearLastCloudUsername,
+  normalizeUsernameKey,
+  saveLastCloudUsername,
+  usernameToAuthEmail,
+} from './cloudUser'
+import {
+  ensureCloudUsernameRegistered,
+  fetchCloudUsername,
+  registerCloudUsername,
+  resolveAuthEmailForUsername,
+} from './cloudUsernameRegistry'
 import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from './config'
 import { formatFirebaseError, stripUndefined } from './utils'
 
@@ -115,6 +127,32 @@ export function isCloudLoggedIn(): boolean {
   return Boolean(getCloudUser())
 }
 
+const cachedUsernameByUid = new Map<string, string>()
+
+export function setCachedCloudUsername(uid: string, username: string): void {
+  cachedUsernameByUid.set(uid, normalizeUsernameKey(username))
+}
+
+export function clearCachedCloudUsername(uid?: string): void {
+  if (uid) cachedUsernameByUid.delete(uid)
+  else cachedUsernameByUid.clear()
+}
+
+export async function refreshCloudUsernameCache(user: User | null): Promise<string> {
+  if (!user) {
+    clearCachedCloudUsername()
+    return ''
+  }
+  const fromProfile = await fetchCloudUsername(user.uid)
+  if (fromProfile) {
+    setCachedCloudUsername(user.uid, fromProfile)
+    return fromProfile
+  }
+  const registered = await ensureCloudUsernameRegistered(user.uid, user.email ?? '')
+  setCachedCloudUsername(user.uid, registered)
+  return registered
+}
+
 export async function createCloudAccount(username: string, password: string): Promise<User> {
   if (!isFirebaseConfigured()) {
     throw new Error('Firebase is not configured in this build.')
@@ -122,7 +160,10 @@ export async function createCloudAccount(username: string, password: string): Pr
   try {
     const email = usernameToAuthEmail(username)
     const cred = await createUserWithEmailAndPassword(getFirebaseAuth(), email, password)
-    saveLastCloudUsername(username)
+    await registerCloudUsername(cred.user.uid, username, email)
+    const key = normalizeUsernameKey(username)
+    setCachedCloudUsername(cred.user.uid, key)
+    saveLastCloudUsername(key)
     return cred.user
   } catch (err) {
     throw new Error(formatFirebaseError(err))
@@ -134,9 +175,11 @@ export async function loginCloud(username: string, password: string): Promise<Us
     throw new Error('Firebase is not configured in this build.')
   }
   try {
-    const email = usernameToAuthEmail(username)
+    const email = await resolveAuthEmailForUsername(username)
     const cred = await signInWithEmailAndPassword(getFirebaseAuth(), email, password)
-    saveLastCloudUsername(username)
+    const key = await ensureCloudUsernameRegistered(cred.user.uid, cred.user.email ?? email)
+    setCachedCloudUsername(cred.user.uid, key)
+    saveLastCloudUsername(normalizeUsernameKey(username))
     return cred.user
   } catch (err) {
     throw new Error(formatFirebaseError(err))
@@ -144,7 +187,10 @@ export async function loginCloud(username: string, password: string): Promise<Us
 }
 
 export function getCloudUsername(user: User | null): string {
-  return authEmailToUsername(user?.email)
+  if (!user) return ''
+  const cached = cachedUsernameByUid.get(user.uid)
+  if (cached) return cached
+  return authEmailToUsername(user.email)
 }
 
 export async function restoreCloudDataForUser(): Promise<AppData | null> {
@@ -152,7 +198,9 @@ export async function restoreCloudDataForUser(): Promise<AppData | null> {
 }
 
 export async function logoutCloud(): Promise<void> {
+  const uid = getCloudUser()?.uid
   clearLastCloudUsername()
+  if (uid) clearCachedCloudUsername(uid)
   await signOut(getFirebaseAuth())
 }
 
