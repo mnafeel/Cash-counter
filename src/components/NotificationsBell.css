@@ -1,3 +1,180 @@
+.reminder-toast-stack {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 360;
+  width: min(360px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+.reminder-toast {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--surface-elevated, var(--surface-2)) 94%, white 6%) 0%,
+    var(--surface) 52%,
+    color-mix(in srgb, var(--brown-dark, var(--surface)) 90%, black 8%) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 18px 42px rgba(0, 0, 0, 0.34),
+    0 8px 18px rgba(0, 0, 0, 0.18);
+  pointer-events: auto;
+  overflow: hidden;
+  animation: reminder-toast-arrive 0.72s cubic-bezier(0.22, 1.08, 0.32, 1);
+}
+
+.reminder-toast__glow {
+  position: absolute;
+  inset: -30% auto auto -10%;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-glow, rgba(212, 168, 75, 0.35)) 0%, transparent 72%);
+  pointer-events: none;
+}
+
+.reminder-toast--overdue {
+  border-color: color-mix(in srgb, var(--danger-border, #c44) 55%, var(--border));
+  background: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--danger, #a33) 18%, var(--surface-2)) 0%,
+    var(--surface) 58%,
+    color-mix(in srgb, var(--brown-dark, var(--surface)) 88%, black 8%) 100%
+  );
+}
+
+.reminder-toast--credit {
+  border-left: 4px solid var(--accent);
+}
+
+.reminder-toast--cheque {
+  border-left: 4px solid var(--transfer-border, #c9a227);
+}
+
+.reminder-toast--loan {
+  border-left: 4px solid #8eb8ff;
+}
+
+@keyframes reminder-toast-arrive {
+  0% {
+    opacity: 0;
+    transform: translate3d(28px, 18px, 0) rotate(4deg) scale(0.92);
+  }
+  55% {
+    opacity: 1;
+    transform: translate3d(-4px, -2px, 0) rotate(-1deg) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+}
+
+.reminder-toast__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reminder-toast__stamp {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.reminder-toast__icon {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 1rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.reminder-toast__copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.reminder-toast__eyebrow {
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.reminder-toast__title {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--cream, var(--text));
+  line-height: 1.2;
+}
+
+.reminder-toast__meta {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.reminder-toast__note {
+  font-size: 0.56rem;
+  font-weight: 600;
+  color: var(--cream-dim, var(--text-muted));
+  line-height: 1.35;
+}
+
+.reminder-toast__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reminder-toast__action {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--brown-dark, var(--surface-2));
+  color: var(--cream-dim, var(--text-muted));
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.reminder-toast__action--close {
+  font-size: 0.58rem;
+}
+
 .notifications-bell {
   position: relative;
   flex-shrink: 0;
@@ -32,6 +209,18 @@
 .notifications-bell-trigger--due {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   animation: notifications-bell-ring 2.4s ease-in-out infinite;
+}
+
+.notifications-bell-trigger--muted {
+  border-color: color-mix(in srgb, var(--text-muted) 35%, var(--border));
+}
+
+.notifications-bell-muted {
+  position: absolute;
+  bottom: -2px;
+  left: -2px;
+  font-size: 0.46rem;
+  line-height: 1;
 }
 
 .notifications-bell--open .notifications-bell-trigger {
@@ -203,9 +392,19 @@
   color: var(--cream, var(--text));
 }
 
+.notifications-bell-panel-note {
+  margin: 4px 0 0;
+  font-size: 0.52rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .notifications-bell-panel-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
+  max-width: 58%;
 }
 
 .notifications-bell-action {
@@ -218,6 +417,18 @@
   font-size: 0.58rem;
   font-weight: 700;
   cursor: pointer;
+}
+
+.notifications-bell-action--active {
+  color: var(--text, var(--cream));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+
+.notifications-bell-action--danger {
+  color: var(--danger-text, #ffe4e4);
+  border-color: color-mix(in srgb, var(--danger-border, #c44) 55%, var(--border));
+  background: color-mix(in srgb, var(--danger, #a33) 22%, var(--brown-dark, var(--surface-2)));
 }
 
 .notifications-bell-panel-body {
@@ -301,6 +512,12 @@
 
 .notifications-bell-item--enter {
   animation: notifications-bell-item-drop 0.55s cubic-bezier(0.22, 1.1, 0.32, 1);
+}
+
+.notifications-bell-item--delivered .notifications-bell-item-main {
+  box-shadow:
+    0 3px 8px rgba(0, 0, 0, 0.12),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 @keyframes notifications-bell-item-drop {
@@ -436,6 +653,16 @@
 }
 
 @media (max-width: 420px) {
+  .reminder-toast-stack {
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    width: auto;
+  }
+
+  .notifications-bell-panel-actions {
+    max-width: 100%;
+  }
+
   .notifications-bell--topbar {
     margin-left: 3px;
   }

@@ -25,6 +25,12 @@ import {
 
 const DISMISSED_STORAGE_KEY = 'cash-counter-dismissed-reminder-alerts'
 const SOUND_PLAYED_STORAGE_KEY = 'cash-counter-reminder-sound-played'
+const SOUND_MUTED_STORAGE_KEY = 'cash-counter-reminder-sound-muted'
+
+/** Gap between one toast leaving and the next arriving. */
+export const REMINDER_TOAST_STAGGER_MS = 3200
+/** How long each toast stays on screen. */
+export const REMINDER_TOAST_SHOW_MS = 6000
 
 export type UnifiedReminderAlert = {
   dismissKey: string
@@ -42,6 +48,23 @@ export type UnifiedReminderAlert = {
   soundStyle: ReminderSoundStyle
   saleId?: string
   loanId?: string
+}
+
+function readSoundMuted(): boolean {
+  try {
+    return localStorage.getItem(SOUND_MUTED_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeSoundMuted(muted: boolean) {
+  try {
+    if (muted) localStorage.setItem(SOUND_MUTED_STORAGE_KEY, '1')
+    else localStorage.removeItem(SOUND_MUTED_STORAGE_KEY)
+  } catch {
+    // ignore quota errors
+  }
 }
 
 function readLastSoundPlayedAt(): Record<string, number> {
@@ -152,11 +175,22 @@ export function useReminderAlerts() {
   const alertSettings = useMemo(() => getReminderAlertSettings(data), [data])
   const [dismissedKeys, setDismissedKeys] = useState<Set<string>>(readDismissedKeys)
   const [soundPlaying, setSoundPlaying] = useState(false)
+  const [soundMuted, setSoundMuted] = useState(readSoundMuted)
+  const [activeToast, setActiveToast] = useState<UnifiedReminderAlert | null>(null)
+  const [toastQueueLength, setToastQueueLength] = useState(0)
+  const [incomingKeys, setIncomingKeys] = useState<Set<string>>(new Set())
+  const [deliveredKeys, setDeliveredKeys] = useState<Set<string>>(new Set())
   const prevAlertStateRef = useRef<Record<string, { visible: boolean; due: boolean }>>({})
   const lastSoundPlayedRef = useRef<Record<string, number>>(readLastSoundPlayedAt())
   const hasSyncedAlertsRef = useRef(false)
-  const knownKeysRef = useRef<Set<string>>(new Set())
-  const [incomingKeys, setIncomingKeys] = useState<Set<string>>(new Set())
+  const toastQueueRef = useRef<string[]>([])
+  const toastShownRef = useRef<Set<string>>(new Set())
+  const toastPumpRef = useRef(false)
+  const activeToastRef = useRef<UnifiedReminderAlert | null>(null)
+  const toastHideTimerRef = useRef<number | null>(null)
+  const toastGapTimerRef = useRef<number | null>(null)
+  const visibleActiveAlertsRef = useRef<UnifiedReminderAlert[]>([])
+  const pumpToastQueueRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     setSoundPlaying(isReminderSoundPlaying())
@@ -181,37 +215,88 @@ export function useReminderAlerts() {
     [activeAlerts, dismissedKeys],
   )
 
+  visibleActiveAlertsRef.current = visibleActiveAlerts
+
   const visibleAlertKeys = useMemo(
     () => visibleActiveAlerts.map((item) => item.dismissKey).sort().join('|'),
     [visibleActiveAlerts],
   )
+
+  const clearToastTimers = useCallback(() => {
+    if (toastHideTimerRef.current !== null) {
+      window.clearTimeout(toastHideTimerRef.current)
+      toastHideTimerRef.current = null
+    }
+    if (toastGapTimerRef.current !== null) {
+      window.clearTimeout(toastGapTimerRef.current)
+      toastGapTimerRef.current = null
+    }
+  }, [])
+
+  pumpToastQueueRef.current = () => {
+    if (toastPumpRef.current || activeToastRef.current) return
+    const nextKey = toastQueueRef.current.shift()
+    setToastQueueLength(toastQueueRef.current.length)
+    if (!nextKey) return
+
+    const alert = visibleActiveAlertsRef.current.find((item) => item.dismissKey === nextKey)
+    if (!alert) {
+      window.setTimeout(() => pumpToastQueueRef.current(), 0)
+      return
+    }
+
+    toastPumpRef.current = true
+    toastShownRef.current.add(nextKey)
+    activeToastRef.current = alert
+    setActiveToast(alert)
+    setDeliveredKeys((prev) => new Set(prev).add(nextKey))
+    setIncomingKeys(new Set([nextKey]))
+    window.setTimeout(() => setIncomingKeys(new Set()), 900)
+
+    toastHideTimerRef.current = window.setTimeout(() => {
+      activeToastRef.current = null
+      setActiveToast(null)
+      toastHideTimerRef.current = null
+      toastGapTimerRef.current = window.setTimeout(() => {
+        toastPumpRef.current = false
+        toastGapTimerRef.current = null
+        pumpToastQueueRef.current()
+      }, REMINDER_TOAST_STAGGER_MS)
+    }, REMINDER_TOAST_SHOW_MS)
+  }
+
+  const enqueueToasts = useCallback((keys: string[]) => {
+    let added = false
+    for (const key of keys) {
+      if (toastShownRef.current.has(key)) continue
+      if (toastQueueRef.current.includes(key)) continue
+      toastQueueRef.current.push(key)
+      added = true
+    }
+    if (!added) return
+    setToastQueueLength(toastQueueRef.current.length)
+    if (!activeToastRef.current && !toastPumpRef.current) {
+      pumpToastQueueRef.current()
+    }
+  }, [])
 
   useEffect(() => {
     writeDismissedKeys(dismissedKeys)
   }, [dismissedKeys])
 
   useEffect(() => {
-    const fresh = new Set<string>()
-    for (const item of visibleActiveAlerts) {
-      if (!knownKeysRef.current.has(item.dismissKey)) {
-        fresh.add(item.dismissKey)
-      }
-    }
-    knownKeysRef.current = new Set(visibleActiveAlerts.map((item) => item.dismissKey))
-    if (fresh.size === 0) return
-    setIncomingKeys(fresh)
-    const id = window.setTimeout(() => {
-      setIncomingKeys((prev) => {
-        const next = new Set(prev)
-        for (const key of fresh) next.delete(key)
-        return next
-      })
-    }, 900)
-    return () => window.clearTimeout(id)
-  }, [visibleAlertKeys, visibleActiveAlerts])
+    const fresh = visibleActiveAlerts
+      .map((item) => item.dismissKey)
+      .filter((key) => !toastShownRef.current.has(key) && !toastQueueRef.current.includes(key))
+    if (fresh.length > 0) enqueueToasts(fresh)
+  }, [visibleAlertKeys, visibleActiveAlerts, enqueueToasts])
 
   useEffect(() => {
-    if (!alertSettings.notificationSoundEnabled) {
+    return () => clearToastTimers()
+  }, [clearToastTimers])
+
+  useEffect(() => {
+    if (!alertSettings.notificationSoundEnabled || soundMuted) {
       stopReminderNotificationSound()
       return
     }
@@ -272,6 +357,7 @@ export function useReminderAlerts() {
     alertSettings.notificationSoundEnabled,
     alertSettings.notificationSoundMode,
     alertSettings.notificationSoundRepeatSeconds,
+    soundMuted,
   ])
 
   const openAlert = useCallback(
@@ -293,7 +379,14 @@ export function useReminderAlerts() {
       next.add(item.dismissKey)
       return next
     })
-  }, [])
+    if (activeToastRef.current?.dismissKey === item.dismissKey) {
+      clearToastTimers()
+      activeToastRef.current = null
+      setActiveToast(null)
+      toastPumpRef.current = false
+      pumpToastQueueRef.current()
+    }
+  }, [clearToastTimers])
 
   const dismissAll = useCallback(
     (event?: MouseEvent) => {
@@ -308,19 +401,69 @@ export function useReminderAlerts() {
     [visibleActiveAlerts],
   )
 
+  const dismissActiveToast = useCallback(() => {
+    if (!activeToastRef.current) return
+    clearToastTimers()
+    activeToastRef.current = null
+    setActiveToast(null)
+    toastPumpRef.current = false
+    pumpToastQueueRef.current()
+  }, [clearToastTimers])
+
   const stopSound = useCallback(() => {
     stopReminderNotificationSound()
   }, [])
+
+  const muteSound = useCallback(() => {
+    setSoundMuted(true)
+    writeSoundMuted(true)
+    stopReminderNotificationSound()
+  }, [])
+
+  const unmuteSound = useCallback(() => {
+    setSoundMuted(false)
+    writeSoundMuted(false)
+  }, [])
+
+  const toggleSoundMuted = useCallback(() => {
+    if (soundMuted) unmuteSound()
+    else muteSound()
+  }, [muteSound, soundMuted, unmuteSound])
+
+  const stopAll = useCallback(
+    (event?: MouseEvent) => {
+      event?.stopPropagation()
+      event?.preventDefault()
+      clearToastTimers()
+      toastQueueRef.current = []
+      setToastQueueLength(0)
+      activeToastRef.current = null
+      setActiveToast(null)
+      toastPumpRef.current = false
+      stopReminderNotificationSound()
+      dismissAll()
+    },
+    [clearToastTimers, dismissAll],
+  )
 
   return {
     queuedReminders,
     activeAlerts,
     visibleActiveAlerts,
     incomingKeys,
+    deliveredKeys,
+    activeToast,
+    toastQueueLength,
     soundPlaying,
+    soundMuted,
     openAlert,
     dismissAlert,
     dismissAll,
+    dismissActiveToast,
     stopSound,
+    muteSound,
+    unmuteSound,
+    toggleSoundMuted,
+    stopAll,
   }
 }

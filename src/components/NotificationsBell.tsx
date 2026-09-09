@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { formatMoney } from '../utils/format'
-import { reminderKindIcon, useReminderAlerts, type UnifiedReminderAlert } from '../hooks/useReminderAlerts'
+import {
+  reminderKindIcon,
+  useReminderAlerts,
+  type UnifiedReminderAlert,
+} from '../hooks/useReminderAlerts'
 import './NotificationsBell.css'
 
 function PremiumBellIcon() {
@@ -37,19 +41,101 @@ function reminderSectionLabel(item: UnifiedReminderAlert): string {
   return 'Upcoming'
 }
 
+function ReminderToastCard({
+  alert,
+  waitingCount,
+  onOpen,
+  onDismiss,
+  onMuteSound,
+  soundMuted,
+}: {
+  alert: UnifiedReminderAlert
+  waitingCount: number
+  onOpen: (event?: MouseEvent) => void
+  onDismiss: () => void
+  onMuteSound: () => void
+  soundMuted: boolean
+}) {
+  return (
+    <div
+      className={`reminder-toast reminder-toast--${alert.kind} ${
+        alert.isOverdue ? 'reminder-toast--overdue' : ''
+      }`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="reminder-toast__glow" aria-hidden="true" />
+      <button type="button" className="reminder-toast__main" onClick={onOpen}>
+        <span className="reminder-toast__stamp" aria-hidden="true">✉</span>
+        <span className="reminder-toast__icon" aria-hidden="true">
+          {reminderKindIcon(alert.kind)}
+        </span>
+        <span className="reminder-toast__copy">
+          <span className="reminder-toast__eyebrow">
+            {reminderSectionLabel(alert)}
+            {waitingCount > 0 ? ` · ${waitingCount} more waiting` : ''}
+          </span>
+          <span className="reminder-toast__title">{alert.title}</span>
+          <span className="reminder-toast__meta">
+            {formatMoney(alert.amount)} · {alert.alertLabel} · {alert.reminderDateLabel}
+          </span>
+          {alert.reminderNote ? (
+            <span className="reminder-toast__note">{alert.reminderNote}</span>
+          ) : null}
+        </span>
+      </button>
+      <div className="reminder-toast__actions">
+        {!soundMuted ? (
+          <button
+            type="button"
+            className="reminder-toast__action"
+            onClick={(event) => {
+              event.stopPropagation()
+              onMuteSound()
+            }}
+            aria-label="Mute reminder sound"
+            title="Mute sound"
+          >
+            🔇
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="reminder-toast__action reminder-toast__action--close"
+          onClick={(event) => {
+            event.stopPropagation()
+            onDismiss()
+          }}
+          aria-label={`Dismiss alert for ${alert.title}`}
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function NotificationsBell({ placement = 'sidebar' }: NotificationsBellProps) {
   const {
     queuedReminders,
     visibleActiveAlerts,
     incomingKeys,
+    deliveredKeys,
+    activeToast,
+    toastQueueLength,
     soundPlaying,
+    soundMuted,
     openAlert,
     dismissAlert,
     dismissAll,
+    dismissActiveToast,
     stopSound,
+    toggleSoundMuted,
+    stopAll,
   } = useReminderAlerts()
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const openedForBatchRef = useRef(false)
   const totalCount = queuedReminders.length
   const dueCount = queuedReminders.filter((item) => item.isDue || item.isOverdue).length
   const activePopupCount = visibleActiveAlerts.length
@@ -79,136 +165,186 @@ export default function NotificationsBell({ placement = 'sidebar' }: Notificatio
   }, [open])
 
   useEffect(() => {
-    if (incomingKeys.size > 0 && activePopupCount > 0) {
+    if (!activeToast) {
+      openedForBatchRef.current = false
+      return
+    }
+    if (!openedForBatchRef.current && activePopupCount > 0) {
+      openedForBatchRef.current = true
       setOpen(true)
     }
-  }, [incomingKeys, activePopupCount])
+  }, [activeToast, activePopupCount])
 
   function handleOpenAlert(item: UnifiedReminderAlert, event?: MouseEvent) {
     event?.stopPropagation()
     openAlert(item)
     setOpen(false)
+    if (activeToast?.dismissKey === item.dismissKey) dismissActiveToast()
   }
 
   const placementClass =
     placement === 'sidebar' ? 'notifications-bell--sidebar' : 'notifications-bell--topbar'
 
   return (
-    <div
-      className={`notifications-bell ${placementClass} ${open ? 'notifications-bell--open' : ''}`}
-      ref={rootRef}
-    >
-      <button
-        type="button"
-        className={`notifications-bell-trigger ${dueCount > 0 ? 'notifications-bell-trigger--due' : ''}`}
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        aria-label={totalCount > 0 ? `${totalCount} reminders` : 'Notifications'}
-        title="Reminders & alerts"
-      >
-        <span className="notifications-bell-icon" aria-hidden="true">
-          <PremiumBellIcon />
-        </span>
-        {totalCount > 0 ? (
-          <>
-            <span className="notifications-bell-count" aria-hidden="true">
-              {totalCount > 99 ? '99+' : totalCount}
-            </span>
-            <span className="notifications-bell-badge" aria-hidden="true">
-              {totalCount > 99 ? '99+' : totalCount}
-            </span>
-          </>
-        ) : null}
-      </button>
-
-      {open ? (
-        <div className="notifications-bell-panel" role="dialog" aria-label="Reminders">
-          <div className="notifications-bell-panel-head">
-            <div>
-              <p className="notifications-bell-panel-kicker">Notifications</p>
-              <h2 className="notifications-bell-panel-title">
-                {totalCount > 0 ? `${totalCount} reminder${totalCount === 1 ? '' : 's'}` : 'All clear'}
-              </h2>
-            </div>
-            <div className="notifications-bell-panel-actions">
-              {soundPlaying ? (
-                <button type="button" className="notifications-bell-action" onClick={() => stopSound()}>
-                  Mute
-                </button>
-              ) : null}
-              {activePopupCount > 0 ? (
-                <button type="button" className="notifications-bell-action" onClick={dismissAll}>
-                  Clear alerts
-                </button>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="notifications-bell-panel-body">
-            {totalCount === 0 ? (
-              <p className="notifications-bell-empty">No reminders scheduled yet.</p>
-            ) : (
-              <div className="notifications-bell-sections">
-                {sections.map((section) => (
-                  <section key={section.key} className="notifications-bell-section">
-                    <h3 className="notifications-bell-section-title">{section.title}</h3>
-                    <ul className="notifications-bell-list">
-                      {section.items.map((item) => {
-                        const isActivePopup = visibleActiveAlerts.some(
-                          (alert) => alert.dismissKey === item.dismissKey,
-                        )
-                        return (
-                          <li
-                            key={item.dismissKey}
-                            className={`notifications-bell-item ${
-                              incomingKeys.has(item.dismissKey) ? 'notifications-bell-item--enter' : ''
-                            } ${item.isOverdue ? 'notifications-bell-item--overdue' : ''} ${
-                              !item.isAlertActive ? 'notifications-bell-item--upcoming' : ''
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              className={`notifications-bell-item-main notifications-bell-item-main--${item.kind}`}
-                              onClick={(event) => handleOpenAlert(item, event)}
-                            >
-                              <span className="notifications-bell-item-icon" aria-hidden="true">
-                                {reminderKindIcon(item.kind)}
-                              </span>
-                              <span className="notifications-bell-item-copy">
-                                <span className="notifications-bell-item-top">
-                                  <strong>{item.title}</strong>
-                                  <span>{formatMoney(item.amount)}</span>
-                                </span>
-                                <span className="notifications-bell-item-meta">
-                                  {reminderSectionLabel(item)} · {item.alertLabel} · {item.reminderDateLabel}
-                                </span>
-                                {item.reminderNote ? (
-                                  <span className="notifications-bell-item-note">{item.reminderNote}</span>
-                                ) : null}
-                              </span>
-                            </button>
-                            {isActivePopup ? (
-                              <button
-                                type="button"
-                                className="notifications-bell-item-dismiss"
-                                onClick={(event) => dismissAlert(item, event)}
-                                aria-label={`Dismiss alert for ${item.title}`}
-                              >
-                                ✕
-                              </button>
-                            ) : null}
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  </section>
-                ))}
-              </div>
-            )}
-          </div>
+    <>
+      {activeToast ? (
+        <div className="reminder-toast-stack" aria-hidden={false}>
+          <ReminderToastCard
+            alert={activeToast}
+            waitingCount={toastQueueLength}
+            soundMuted={soundMuted}
+            onOpen={(event) => handleOpenAlert(activeToast, event)}
+            onDismiss={dismissActiveToast}
+            onMuteSound={toggleSoundMuted}
+          />
         </div>
       ) : null}
-    </div>
+
+      <div
+        className={`notifications-bell ${placementClass} ${open ? 'notifications-bell--open' : ''}`}
+        ref={rootRef}
+      >
+        <button
+          type="button"
+          className={`notifications-bell-trigger ${dueCount > 0 ? 'notifications-bell-trigger--due' : ''} ${
+            soundMuted ? 'notifications-bell-trigger--muted' : ''
+          }`}
+          onClick={() => setOpen((value) => !value)}
+          aria-expanded={open}
+          aria-haspopup="dialog"
+          aria-label={totalCount > 0 ? `${totalCount} reminders` : 'Notifications'}
+          title="Reminders & alerts"
+        >
+          <span className="notifications-bell-icon" aria-hidden="true">
+            <PremiumBellIcon />
+          </span>
+          {soundMuted ? (
+            <span className="notifications-bell-muted" aria-hidden="true">🔇</span>
+          ) : null}
+          {totalCount > 0 ? (
+            <>
+              <span className="notifications-bell-count" aria-hidden="true">
+                {totalCount > 99 ? '99+' : totalCount}
+              </span>
+              <span className="notifications-bell-badge" aria-hidden="true">
+                {totalCount > 99 ? '99+' : totalCount}
+              </span>
+            </>
+          ) : null}
+        </button>
+
+        {open ? (
+          <div className="notifications-bell-panel" role="dialog" aria-label="Reminders">
+            <div className="notifications-bell-panel-head">
+              <div>
+                <p className="notifications-bell-panel-kicker">Notifications</p>
+                <h2 className="notifications-bell-panel-title">
+                  {totalCount > 0 ? `${totalCount} reminder${totalCount === 1 ? '' : 's'}` : 'All clear'}
+                </h2>
+                {soundMuted ? (
+                  <p className="notifications-bell-panel-note">Sound muted · reminders still listed below</p>
+                ) : null}
+              </div>
+              <div className="notifications-bell-panel-actions">
+                <button
+                  type="button"
+                  className={`notifications-bell-action ${
+                    soundMuted ? 'notifications-bell-action--active' : ''
+                  }`}
+                  onClick={toggleSoundMuted}
+                  aria-pressed={soundMuted}
+                  title={soundMuted ? 'Turn reminder sound back on' : 'Mute reminder sound'}
+                >
+                  {soundMuted ? '🔊 Sound on' : '🔇 Mute sound'}
+                </button>
+                {soundPlaying ? (
+                  <button type="button" className="notifications-bell-action" onClick={() => stopSound()}>
+                    Stop sound
+                  </button>
+                ) : null}
+                {activePopupCount > 0 ? (
+                  <button type="button" className="notifications-bell-action" onClick={dismissAll}>
+                    Clear alerts
+                  </button>
+                ) : null}
+                {activePopupCount > 0 || activeToast || toastQueueLength > 0 ? (
+                  <button
+                    type="button"
+                    className="notifications-bell-action notifications-bell-action--danger"
+                    onClick={stopAll}
+                  >
+                    Stop all
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="notifications-bell-panel-body">
+              {totalCount === 0 ? (
+                <p className="notifications-bell-empty">No reminders scheduled yet.</p>
+              ) : (
+                <div className="notifications-bell-sections">
+                  {sections.map((section) => (
+                    <section key={section.key} className="notifications-bell-section">
+                      <h3 className="notifications-bell-section-title">{section.title}</h3>
+                      <ul className="notifications-bell-list">
+                        {section.items.map((item) => {
+                          const isActivePopup = visibleActiveAlerts.some(
+                            (alert) => alert.dismissKey === item.dismissKey,
+                          )
+                          return (
+                            <li
+                              key={item.dismissKey}
+                              className={`notifications-bell-item ${
+                                incomingKeys.has(item.dismissKey) ? 'notifications-bell-item--enter' : ''
+                              } ${deliveredKeys.has(item.dismissKey) ? 'notifications-bell-item--delivered' : ''} ${
+                                item.isOverdue ? 'notifications-bell-item--overdue' : ''
+                              } ${!item.isAlertActive ? 'notifications-bell-item--upcoming' : ''}`}
+                            >
+                              <button
+                                type="button"
+                                className={`notifications-bell-item-main notifications-bell-item-main--${item.kind}`}
+                                onClick={(event) => handleOpenAlert(item, event)}
+                              >
+                                <span className="notifications-bell-item-icon" aria-hidden="true">
+                                  {reminderKindIcon(item.kind)}
+                                </span>
+                                <span className="notifications-bell-item-copy">
+                                  <span className="notifications-bell-item-top">
+                                    <strong>{item.title}</strong>
+                                    <span>{formatMoney(item.amount)}</span>
+                                  </span>
+                                  <span className="notifications-bell-item-meta">
+                                    {reminderSectionLabel(item)} · {item.alertLabel} ·{' '}
+                                    {item.reminderDateLabel}
+                                  </span>
+                                  {item.reminderNote ? (
+                                    <span className="notifications-bell-item-note">{item.reminderNote}</span>
+                                  ) : null}
+                                </span>
+                              </button>
+                              {isActivePopup ? (
+                                <button
+                                  type="button"
+                                  className="notifications-bell-item-dismiss"
+                                  onClick={(event) => dismissAlert(item, event)}
+                                  aria-label={`Dismiss alert for ${item.title}`}
+                                >
+                                  ✕
+                                </button>
+                              ) : null}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </>
   )
 }
