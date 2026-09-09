@@ -1,0 +1,73 @@
+.app-date-chip-input {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  min-width: 7.5rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2, var(--brown-dark));
+  cursor: pointer;
+  font-family: inherit;
+  color-scheme: dark;
+}
+
+[data-theme='light'] .app-date-chip-input {
+  color-scheme: light;
+}
+
+.app-date-chip-input__text {
+  font-size: clamp(0.58rem, 2.2vw, 0.68rem);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  color: var(--text-muted, var(--cream-dim));
+  -webkit-text-fill-color: var(--text-muted, var(--cream-dim));
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
+.app-date-chip-input--active {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--surface);
+}
+
+.app-date-chip-input--active .app-date-chip-input__text {
+  color: var(--text, var(--cream));
+  -webkit-text-fill-color: var(--text, var(--cream));
+}
+
+.app-date-chip-input__native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px;
+  color: transparent;
+  caret-color: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.app-date-chip-input__native:focus-visible {
+  outline: none;
+}
+
+.app-date-chip-input:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--surface);
+}
+
+.app-date-chip-input:focus-within .app-date-chip-input__text {
+  color: var(--text, var(--cream));
+  -webkit-text-fill-color: var(--text, var(--cream));
+}

@@ -53,6 +53,13 @@ export function formatReportTime(iso: string): string {
   return formatTime(iso)
 }
 
+/** YYYY-MM-DD → DD/MM/YYYY for visible date chip labels. */
+export function formatDateInputDisplay(dateValue: string): string {
+  const [year, month, day] = dateValue.split('-')
+  if (!year || !month || !day) return dateValue
+  return `${day}/${month}/${year}`
+}
+
 /** YYYY-MM-DD for HTML date inputs from an ISO timestamp. */
 export function isoToDateInputValue(iso: string): string {
   const date = new Date(iso)

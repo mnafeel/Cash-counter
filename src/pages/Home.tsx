@@ -1,6 +1,7 @@
 import { memo, startTransition, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import AmountDisplay from '../components/AmountDisplay'
+import AppDateChipInput from '../components/AppDateChipInput'
 import BigAmount from '../components/BigAmount'
 import NumberKeyboard from '../components/NumberKeyboard'
 import { formatMoney, parseAmount, formatDate } from '../utils/format'
@@ -771,13 +772,12 @@ function Home({ active }: { active: boolean }) {
                       {opt.label}
                     </button>
                   ))}
-                  <input
-                    type="date"
-                    className={`home-cash-date-input ${cashDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+                  <AppDateChipInput
                     value={cashSelectedDate}
-                    onChange={(e) => {
-                      setCashSelectedDate(e.target.value)
-                      if (e.target.value) setCashDateFilter('date')
+                    active={cashDateFilter === 'date'}
+                    onChange={(nextDate) => {
+                      setCashSelectedDate(nextDate)
+                      if (nextDate) setCashDateFilter('date')
                     }}
                     aria-label="Pick date for cash history"
                   />
@@ -835,13 +835,12 @@ function Home({ active }: { active: boolean }) {
                       {opt.label}
                     </button>
                   ))}
-                  <input
-                    type="date"
-                    className={`home-cash-date-input ${bankDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+                  <AppDateChipInput
                     value={bankSelectedDate}
-                    onChange={(e) => {
-                      setBankSelectedDate(e.target.value)
-                      if (e.target.value) setBankDateFilter('date')
+                    active={bankDateFilter === 'date'}
+                    onChange={(nextDate) => {
+                      setBankSelectedDate(nextDate)
+                      if (nextDate) setBankDateFilter('date')
                     }}
                     aria-label="Pick date for bank history"
                   />
@@ -910,13 +909,12 @@ function Home({ active }: { active: boolean }) {
                   {opt.label}
                 </button>
               ))}
-              <input
-                type="date"
-                className={`home-cash-date-input ${homeDayFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+              <AppDateChipInput
                 value={homeSelectedDate}
-                onChange={(e) => {
-                  setHomeSelectedDate(e.target.value)
-                  if (e.target.value) setHomeDayFilter('date')
+                active={homeDayFilter === 'date'}
+                onChange={(nextDate) => {
+                  setHomeSelectedDate(nextDate)
+                  if (nextDate) setHomeDayFilter('date')
                 }}
                 aria-label="Pick day for summary"
               />
@@ -1174,13 +1172,12 @@ function Home({ active }: { active: boolean }) {
                   {opt.label}
                 </button>
               ))}
-              <input
-                type="date"
-                className={`home-cash-date-input ${cashDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+              <AppDateChipInput
                 value={cashSelectedDate}
-                onChange={(e) => {
-                  setCashSelectedDate(e.target.value)
-                  if (e.target.value) setCashDateFilter('date')
+                active={cashDateFilter === 'date'}
+                onChange={(nextDate) => {
+                  setCashSelectedDate(nextDate)
+                  if (nextDate) setCashDateFilter('date')
                 }}
                 aria-label="Pick date for cash history"
               />
@@ -1272,13 +1269,12 @@ function Home({ active }: { active: boolean }) {
                   {opt.label}
                 </button>
               ))}
-              <input
-                type="date"
-                className={`home-cash-date-input ${bankDateFilter === 'date' ? 'home-cash-date-input--active' : ''}`}
+              <AppDateChipInput
                 value={bankSelectedDate}
-                onChange={(e) => {
-                  setBankSelectedDate(e.target.value)
-                  if (e.target.value) setBankDateFilter('date')
+                active={bankDateFilter === 'date'}
+                onChange={(nextDate) => {
+                  setBankSelectedDate(nextDate)
+                  if (nextDate) setBankDateFilter('date')
                 }}
                 aria-label="Pick date for bank history"
               />
