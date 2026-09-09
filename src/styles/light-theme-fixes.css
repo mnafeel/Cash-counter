@@ -79,6 +79,31 @@
   color: var(--text);
 }
 
+[data-theme='light'] .home .app-date-chip {
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .home .app-date-chip--active {
+  color: var(--text);
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+[data-theme='light'] .home-cash-date-input {
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+
+[data-theme='light'] .home-cash-date-input--active,
+[data-theme='light'] .home-cash-date-input:focus-visible {
+  color: var(--text);
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
 [data-theme='light'] .reports-summary-card span {
   color: var(--text-muted);
 }

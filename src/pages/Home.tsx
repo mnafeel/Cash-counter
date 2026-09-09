@@ -762,7 +762,7 @@ function Home({ active }: { active: boolean }) {
                     <button
                       key={opt.id}
                       type="button"
-                      className={`home-cash-date-chip ${cashDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                      className={`app-date-chip ${cashDateFilter === opt.id ? 'app-date-chip--active' : ''}`}
                       onClick={() => {
                         setCashDateFilter(opt.id)
                         setCashSelectedDate('')
@@ -826,7 +826,7 @@ function Home({ active }: { active: boolean }) {
                     <button
                       key={opt.id}
                       type="button"
-                      className={`home-cash-date-chip ${bankDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                      className={`app-date-chip ${bankDateFilter === opt.id ? 'app-date-chip--active' : ''}`}
                       onClick={() => {
                         setBankDateFilter(opt.id)
                         setBankSelectedDate('')
@@ -901,7 +901,7 @@ function Home({ active }: { active: boolean }) {
                 <button
                   key={opt.id}
                   type="button"
-                  className={`home-cash-date-chip ${homeDayFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                  className={`app-date-chip ${homeDayFilter === opt.id ? 'app-date-chip--active' : ''}`}
                   onClick={() => {
                     setHomeDayFilter(opt.id)
                     setHomeSelectedDate('')
@@ -1165,7 +1165,7 @@ function Home({ active }: { active: boolean }) {
                 <button
                   key={opt.id}
                   type="button"
-                  className={`home-cash-date-chip ${cashDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                  className={`app-date-chip ${cashDateFilter === opt.id ? 'app-date-chip--active' : ''}`}
                   onClick={() => {
                     setCashDateFilter(opt.id)
                     setCashSelectedDate('')
@@ -1263,7 +1263,7 @@ function Home({ active }: { active: boolean }) {
                 <button
                   key={opt.id}
                   type="button"
-                  className={`home-cash-date-chip ${bankDateFilter === opt.id ? 'home-cash-date-chip--active' : ''}`}
+                  className={`app-date-chip ${bankDateFilter === opt.id ? 'app-date-chip--active' : ''}`}
                   onClick={() => {
                     setBankDateFilter(opt.id)
                     setBankSelectedDate('')

@@ -28,6 +28,11 @@
   align-items: center;
 }
 
+button.app-date-chip {
+  appearance: none;
+  -webkit-appearance: none;
+}
+
 .app-date-chip {
   min-height: 28px;
   padding: 4px 10px;

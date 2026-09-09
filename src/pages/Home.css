@@ -1276,39 +1276,42 @@ html[data-screen='desktop'] .home-pin-digit {
   width: 100%;
 }
 
-.home-cash-date-chip {
-  padding: 2px 7px;
-  font-size: 0.48rem;
-  font-weight: 600;
-  color: var(--cream-dim);
-  background: var(--brown-dark);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  cursor: pointer;
-}
-
-.home-cash-date-chip--active {
-  color: var(--cream);
-  border-color: var(--cream);
-  background: var(--surface);
+.home-cash-dates .app-date-chip {
+  padding: 2px 8px;
+  font-size: clamp(0.52rem, 2.1vw, 0.64rem);
+  min-height: 26px;
 }
 
 .home-cash-date-input {
-  padding: 2px 7px;
-  font-size: 0.48rem;
-  font-weight: 600;
-  color: var(--cream-dim);
-  background: var(--brown-dark);
+  min-height: 26px;
+  padding: 2px 8px;
+  font-size: clamp(0.52rem, 2.1vw, 0.64rem);
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--text-muted, var(--cream-dim));
+  background: var(--surface-2, var(--brown-dark));
   border: 1px solid var(--border);
   border-radius: 999px;
   outline: none;
   cursor: pointer;
+  color-scheme: light dark;
+}
+
+[data-theme='brown'] .home-cash-date-input,
+[data-theme='navy'] .home-cash-date-input,
+[data-theme='premium'] .home-cash-date-input {
   color-scheme: dark;
 }
 
-.home-cash-date-input--active {
-  color: var(--cream);
-  border-color: var(--cream);
+[data-theme='light'] .home-cash-date-input {
+  color-scheme: light;
+}
+
+.home-cash-date-input--active,
+.home-cash-date-input:focus-visible {
+  color: var(--text, var(--cream));
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: var(--surface);
 }
 
 .home-balance-day {
@@ -2702,7 +2705,7 @@ html[data-screen='phone'] .home-collect-grid {
     padding: 8px 10px 10px;
   }
 
-  .home-cash-date-chip,
+  .home-cash-dates .app-date-chip,
   .home-cash-date-input {
     font-size: 0.5rem;
     padding: 2px 6px;
@@ -2716,8 +2719,7 @@ html[data-screen='phone'] .home-collect-grid {
 [data-theme='light'] .home-hero-label,
 [data-theme='light'] .stat-label,
 [data-theme='light'] .home-tool-btn,
-[data-theme='light'] .home-balance-last,
-[data-theme='light'] .home-cash-date-chip {
+[data-theme='light'] .home-balance-last {
   color: var(--text-muted);
 }
 
