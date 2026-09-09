@@ -31,6 +31,7 @@
 button.app-date-chip {
   appearance: none;
   -webkit-appearance: none;
+  -webkit-text-fill-color: currentColor;
 }
 
 .app-date-chip {

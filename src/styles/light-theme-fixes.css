@@ -104,6 +104,32 @@
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
 
+[data-theme='light'] .home-cash-date-input::-webkit-datetime-edit,
+[data-theme='light'] .home-cash-date-input::-webkit-datetime-edit-fields-wrapper,
+[data-theme='light'] .home-cash-date-input::-webkit-datetime-edit-text,
+[data-theme='light'] .home-cash-date-input::-webkit-datetime-edit-month-field,
+[data-theme='light'] .home-cash-date-input::-webkit-datetime-edit-day-field,
+[data-theme='light'] .home-cash-date-input::-webkit-datetime-edit-year-field {
+  color: var(--text-muted);
+  -webkit-text-fill-color: var(--text-muted);
+}
+
+[data-theme='light'] .home-cash-date-input--active::-webkit-datetime-edit,
+[data-theme='light'] .home-cash-date-input--active::-webkit-datetime-edit-fields-wrapper,
+[data-theme='light'] .home-cash-date-input--active::-webkit-datetime-edit-text,
+[data-theme='light'] .home-cash-date-input--active::-webkit-datetime-edit-month-field,
+[data-theme='light'] .home-cash-date-input--active::-webkit-datetime-edit-day-field,
+[data-theme='light'] .home-cash-date-input--active::-webkit-datetime-edit-year-field,
+[data-theme='light'] .home-cash-date-input:focus-visible::-webkit-datetime-edit,
+[data-theme='light'] .home-cash-date-input:focus-visible::-webkit-datetime-edit-fields-wrapper,
+[data-theme='light'] .home-cash-date-input:focus-visible::-webkit-datetime-edit-text,
+[data-theme='light'] .home-cash-date-input:focus-visible::-webkit-datetime-edit-month-field,
+[data-theme='light'] .home-cash-date-input:focus-visible::-webkit-datetime-edit-day-field,
+[data-theme='light'] .home-cash-date-input:focus-visible::-webkit-datetime-edit-year-field {
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
+}
+
 [data-theme='light'] .reports-summary-card span {
   color: var(--text-muted);
 }

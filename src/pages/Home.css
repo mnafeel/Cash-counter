@@ -1284,6 +1284,7 @@ html[data-screen='desktop'] .home-pin-digit {
 
 .home-cash-date-input {
   min-height: 26px;
+  min-width: 7.2rem;
   padding: 2px 8px;
   font-size: clamp(0.52rem, 2.1vw, 0.64rem);
   font-weight: 700;
@@ -1294,12 +1295,6 @@ html[data-screen='desktop'] .home-pin-digit {
   border-radius: 999px;
   outline: none;
   cursor: pointer;
-  color-scheme: light dark;
-}
-
-[data-theme='brown'] .home-cash-date-input,
-[data-theme='navy'] .home-cash-date-input,
-[data-theme='premium'] .home-cash-date-input {
   color-scheme: dark;
 }
 
@@ -1307,11 +1302,64 @@ html[data-screen='desktop'] .home-pin-digit {
   color-scheme: light;
 }
 
+.home-cash-date-input::-webkit-datetime-edit,
+.home-cash-date-input::-webkit-datetime-edit-fields-wrapper,
+.home-cash-date-input::-webkit-datetime-edit-text,
+.home-cash-date-input::-webkit-datetime-edit-month-field,
+.home-cash-date-input::-webkit-datetime-edit-day-field,
+.home-cash-date-input::-webkit-datetime-edit-year-field {
+  color: var(--text-muted, var(--cream-dim));
+  -webkit-text-fill-color: var(--text-muted, var(--cream-dim));
+}
+
 .home-cash-date-input--active,
 .home-cash-date-input:focus-visible {
   color: var(--text, var(--cream));
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
   background: var(--surface);
+}
+
+.home-cash-date-input--active::-webkit-datetime-edit,
+.home-cash-date-input--active::-webkit-datetime-edit-fields-wrapper,
+.home-cash-date-input--active::-webkit-datetime-edit-text,
+.home-cash-date-input--active::-webkit-datetime-edit-month-field,
+.home-cash-date-input--active::-webkit-datetime-edit-day-field,
+.home-cash-date-input--active::-webkit-datetime-edit-year-field,
+.home-cash-date-input:focus-visible::-webkit-datetime-edit,
+.home-cash-date-input:focus-visible::-webkit-datetime-edit-fields-wrapper,
+.home-cash-date-input:focus-visible::-webkit-datetime-edit-text,
+.home-cash-date-input:focus-visible::-webkit-datetime-edit-month-field,
+.home-cash-date-input:focus-visible::-webkit-datetime-edit-day-field,
+.home-cash-date-input:focus-visible::-webkit-datetime-edit-year-field {
+  color: var(--text, var(--cream));
+  -webkit-text-fill-color: var(--text, var(--cream));
+}
+
+.home-cash-date-input::-webkit-calendar-picker-indicator {
+  opacity: 0.8;
+  cursor: pointer;
+}
+
+[data-theme='brown'] .home-cash-date-input::-webkit-calendar-picker-indicator,
+[data-theme='navy'] .home-cash-date-input::-webkit-calendar-picker-indicator,
+[data-theme='premium'] .home-cash-date-input::-webkit-calendar-picker-indicator {
+  filter: invert(0.9) brightness(1.05);
+}
+
+[data-theme='light'] .home-cash-date-input::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.65;
+}
+
+/* Balance cards set an accent text color; keep chip/date controls readable on iOS. */
+.home-balance-card .home-cash-dates .app-date-chip {
+  color: var(--text-muted, var(--cream-dim));
+  -webkit-text-fill-color: var(--text-muted, var(--cream-dim));
+}
+
+.home-balance-card .home-cash-dates .app-date-chip--active {
+  color: var(--text, var(--cream));
+  -webkit-text-fill-color: var(--text, var(--cream));
 }
 
 .home-balance-day {
