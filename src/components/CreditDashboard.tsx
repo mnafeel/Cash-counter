@@ -66,7 +66,13 @@ interface CreditDashboardProps {
   onSaveAlertSettings?: (settings: ReminderAlertSettings) => void
   onApplySaleReturn: (
     saleId: string,
-    input: { itemName: string; quantity: number; rate: number },
+    input: {
+      itemName: string
+      quantity: number
+      rate: number
+      discountAmount?: number
+      gstPercent?: number
+    },
   ) => void
   onCancelSaleReturn: (saleId: string, returnId: string) => void
 }
@@ -866,18 +872,29 @@ function CreditCustomerDetail({
           open
           onClose={() => setReturnSale(null)}
           customerName={summary.name}
-          originalBill={saleGrossBillAmount(returnSale)}
-          paidSoFar={saleBillGroupPaidTotal(returnSale, data.sales)}
-          paymentLines={saleBillPaymentLines(returnSale, data.sales)}
-          existingReturns={returnSale.returns ?? []}
-          maxReturnable={saleCreditBalanceDue(returnSale, data.sales)}
+          originalBill={saleGrossBillAmount(
+            data.sales.find((row) => row.id === returnSale.id) ?? returnSale,
+          )}
+          paidSoFar={saleBillGroupPaidTotal(
+            data.sales.find((row) => row.id === returnSale.id) ?? returnSale,
+            data.sales,
+          )}
+          paymentLines={saleBillPaymentLines(
+            data.sales.find((row) => row.id === returnSale.id) ?? returnSale,
+            data.sales,
+          )}
+          existingReturns={
+            (data.sales.find((row) => row.id === returnSale.id) ?? returnSale).returns ?? []
+          }
+          maxReturnable={saleCreditBalanceDue(
+            data.sales.find((row) => row.id === returnSale.id) ?? returnSale,
+            data.sales,
+          )}
           onCancelReturn={(returnId) => {
             onCancelSaleReturn(returnSale.id, returnId)
-            setReturnSale(null)
           }}
-          onDone={(draft) => {
+          onAddItem={(draft) => {
             onApplySaleReturn(returnSale.id, draft)
-            setReturnSale(null)
           }}
         />
       ) : null}

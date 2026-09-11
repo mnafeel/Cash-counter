@@ -3,35 +3,38 @@ import type { SaleReturnEntry } from '../types'
 import { formatMoney } from '../utils/format'
 import {
   buildSaleReturnEntry,
+  calculateSaleReturnAmount,
   formatSaleReturnLine,
   type SaleBillPaymentLine,
+  type SaleReturnDraft,
 } from '../utils/saleReturns'
 import SaleReturnCancelConfirm from './SaleReturnCancelConfirm'
 import './SaleReturnModal.css'
 
-export type SaleReturnDraft = {
-  itemName: string
-  quantity: number
-  rate: number
-}
+export type { SaleReturnDraft }
 
 type SaleReturnModalProps = {
   open: boolean
   onClose: () => void
   customerName?: string
-  /** Gross bill before returns. */
   originalBill: number
-  /** Sum of 1st + 2nd + 3rd + cheque (+ split) payments. */
   paidSoFar?: number
-  /** Individual payment lines for clarity. */
   paymentLines?: SaleBillPaymentLine[]
-  /** Already recorded returns (persisted + draft). */
   existingReturns: SaleReturnEntry[]
-  /** Max amount still returnable (remaining credit due). */
   maxReturnable: number
-  /** Cancel a processed return (restores credit balance). */
   onCancelReturn?: (returnId: string) => void
-  onDone: (draft: SaleReturnDraft) => void
+  onAddItem: (draft: SaleReturnDraft) => void
+}
+
+function resetFormFields() {
+  return {
+    itemName: '',
+    qtyStr: '1',
+    rateStr: '',
+    discountStr: '',
+    gstStr: '',
+    error: '',
+  }
 }
 
 export default function SaleReturnModal({
@@ -44,49 +47,71 @@ export default function SaleReturnModal({
   existingReturns,
   maxReturnable,
   onCancelReturn,
-  onDone,
+  onAddItem,
 }: SaleReturnModalProps) {
   const [itemName, setItemName] = useState('')
   const [qtyStr, setQtyStr] = useState('1')
   const [rateStr, setRateStr] = useState('')
+  const [discountStr, setDiscountStr] = useState('')
+  const [gstStr, setGstStr] = useState('')
   const [error, setError] = useState('')
   const [cancelEntry, setCancelEntry] = useState<SaleReturnEntry | null>(null)
 
   useEffect(() => {
     if (!open) return
-    setItemName('')
-    setQtyStr('1')
-    setRateStr('')
-    setError('')
+    const fields = resetFormFields()
+    setItemName(fields.itemName)
+    setQtyStr(fields.qtyStr)
+    setRateStr(fields.rateStr)
+    setDiscountStr(fields.discountStr)
+    setGstStr(fields.gstStr)
+    setError(fields.error)
     setCancelEntry(null)
   }, [open])
 
   const quantity = Number(qtyStr)
   const rate = Number(rateStr)
-  const preview = useMemo(
+  const discountAmount = Number(discountStr)
+  const gstPercent = Number(gstStr)
+
+  const previewCalc = useMemo(
     () =>
-      buildSaleReturnEntry({
-        itemName: itemName || 'Item',
+      calculateSaleReturnAmount({
         quantity: Number.isFinite(quantity) ? quantity : 0,
         rate: Number.isFinite(rate) ? rate : 0,
+        discountAmount: Number.isFinite(discountAmount) ? discountAmount : 0,
+        gstPercent: Number.isFinite(gstPercent) ? gstPercent : 0,
       }),
-    [itemName, quantity, rate],
+    [quantity, rate, discountAmount, gstPercent],
   )
 
   const existingTotal = existingReturns.reduce((sum, row) => sum + row.amount, 0)
-  const returnAmount = preview?.amount ?? 0
+  const returnAmount = previewCalc.amount
   const creditBeforeReturn = Math.max(0, originalBill - paidSoFar - existingTotal)
   const creditAfterReturn = Math.max(0, creditBeforeReturn - returnAmount)
   const balanceCap = Math.max(0, maxReturnable)
 
   if (!open) return null
 
-  function handleDone() {
-    const entry = buildSaleReturnEntry({
+  function clearItemForm() {
+    const fields = resetFormFields()
+    setItemName(fields.itemName)
+    setQtyStr(fields.qtyStr)
+    setRateStr(fields.rateStr)
+    setDiscountStr(fields.discountStr)
+    setGstStr(fields.gstStr)
+    setError('')
+  }
+
+  function handleAddItem() {
+    const draft: SaleReturnDraft = {
       itemName,
       quantity: Number.isFinite(quantity) ? quantity : 0,
       rate: Number.isFinite(rate) ? rate : 0,
-    })
+      discountAmount: Number.isFinite(discountAmount) && discountAmount > 0 ? discountAmount : undefined,
+      gstPercent: Number.isFinite(gstPercent) && gstPercent > 0 ? gstPercent : undefined,
+    }
+    const entry = buildSaleReturnEntry(draft)
     if (!entry) {
       setError('Enter item name, quantity, and rate.')
       return
@@ -95,8 +120,8 @@ export default function SaleReturnModal({
       setError(`Return cannot exceed credit balance (${formatMoney(balanceCap)}).`)
       return
     }
-    onDone({ itemName: entry.itemName, quantity: entry.quantity, rate: entry.rate })
-    onClose()
+    onAddItem(draft)
+    clearItemForm()
   }
 
   return (
@@ -107,8 +132,8 @@ export default function SaleReturnModal({
           <div>
             <h3>Sale return</h3>
             <p>
-              {customerName?.trim() ? customerName.trim() : 'Customer'} · all payments counted · credit
-              balance updated
+              {customerName?.trim() ? customerName.trim() : 'Customer'} · add items one by one · final
+              amount (after GST & discount) is deducted from the bill
             </p>
           </div>
           <button type="button" className="sale-return-close" onClick={onClose} aria-label="Close">
@@ -160,7 +185,7 @@ export default function SaleReturnModal({
               <li key={row.id}>
                 <span>{formatSaleReturnLine(row)}</span>
                 <div className="sale-return-existing-actions">
-                  <strong>{formatMoney(row.amount)}</strong>
+                  <strong>−{formatMoney(row.amount)}</strong>
                   {onCancelReturn ? (
                     <button
                       type="button"
@@ -176,51 +201,85 @@ export default function SaleReturnModal({
           </ul>
         ) : null}
 
-        <label className="sale-return-field">
-          <span>Returned item / product</span>
-          <input
-            type="text"
-            value={itemName}
-            onChange={(e) => setItemName(e.target.value)}
-            placeholder="e.g. Shirt, fabric, accessory"
-            autoFocus
-            enterKeyHint="next"
-          />
-        </label>
+        <div className="sale-return-form-block">
+          <p className="sale-return-form-title">Add return item</p>
+          <label className="sale-return-field">
+            <span>Returned item / product</span>
+            <input
+              type="text"
+              value={itemName}
+              onChange={(e) => setItemName(e.target.value)}
+              placeholder="e.g. Shirt, fabric, accessory"
+              autoFocus
+              enterKeyHint="next"
+            />
+          </label>
 
-        <div className="sale-return-row">
-          <label className="sale-return-field">
-            <span>Quantity</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step="any"
-              value={qtyStr}
-              onChange={(e) => setQtyStr(e.target.value)}
-            />
-          </label>
-          <label className="sale-return-field">
-            <span>Rate / piece</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step="any"
-              value={rateStr}
-              onChange={(e) => setRateStr(e.target.value)}
-              placeholder="0"
-            />
-          </label>
+          <div className="sale-return-row">
+            <label className="sale-return-field">
+              <span>Quantity</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
+                value={qtyStr}
+                onChange={(e) => setQtyStr(e.target.value)}
+              />
+            </label>
+            <label className="sale-return-field">
+              <span>Rate / piece</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
+                value={rateStr}
+                onChange={(e) => setRateStr(e.target.value)}
+                placeholder="0"
+              />
+            </label>
+          </div>
+
+          <div className="sale-return-row">
+            <label className="sale-return-field">
+              <span>Discount (₹)</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
+                value={discountStr}
+                onChange={(e) => setDiscountStr(e.target.value)}
+                placeholder="0"
+              />
+            </label>
+            <label className="sale-return-field">
+              <span>GST %</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="any"
+                value={gstStr}
+                onChange={(e) => setGstStr(e.target.value)}
+                placeholder="0"
+              />
+            </label>
+          </div>
         </div>
 
         <div className="sale-return-preview">
           <div>
-            <span>This return</span>
+            <span>Line subtotal</span>
+            <strong>{formatMoney(previewCalc.subtotal)}</strong>
+          </div>
+          <div>
+            <span>This return (final)</span>
             <strong>{formatMoney(returnAmount)}</strong>
           </div>
           <div className="sale-return-preview-credit">
-            <span>Credit after return</span>
+            <span>Balance after</span>
             <strong>{formatMoney(creditAfterReturn)}</strong>
           </div>
         </div>
@@ -229,10 +288,14 @@ export default function SaleReturnModal({
 
         <div className="sale-return-actions">
           <button type="button" className="sale-return-btn sale-return-btn--ghost" onClick={onClose}>
-            Cancel
+            Close
           </button>
-          <button type="button" className="sale-return-btn sale-return-btn--primary" onClick={handleDone}>
-            Done
+          <button
+            type="button"
+            className="sale-return-btn sale-return-btn--add"
+            onClick={handleAddItem}
+          >
+            + Add item
           </button>
         </div>
       </div>

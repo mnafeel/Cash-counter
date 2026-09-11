@@ -13,10 +13,7 @@ import {
   summarizeNormalExpenses,
 } from './normalExpenseHistory'
 import { presetToSalesFilter, type ReportDatePreset } from './reportsHub'
-import {
-  buildPurchaseHistoryItems,
-  summarizePurchases,
-} from './purchaseHistory'
+import { summarizePurchasePaymentsInDateRange } from './purchaseHistory'
 import {
   buildLoanOutflowHistoryItems,
   summarizeLoanOutflows,
@@ -137,12 +134,7 @@ export function buildDailyTotals(
     chequeAddedInPeriod += pendingChequeAddedOnCreate(sale, fromDate, toDate)
   }
 
-  const purchaseItems = filterItemsByDateRange(
-    buildPurchaseHistoryItems(data),
-    fromDate,
-    toDate,
-  )
-  const purchaseTotals = summarizePurchases(purchaseItems)
+  const purchasePaidTotals = summarizePurchasePaymentsInDateRange(data, fromDate, toDate)
 
   const expenseItems = filterItemsByDateRange(
     buildNormalExpenseHistoryItems(data),
@@ -168,7 +160,7 @@ export function buildDailyTotals(
     salesTotals.totalBills +
     notSaleTotals.total -
     expenseTotals.total -
-    purchaseTotals.total -
+    purchasePaidTotals.total -
     loanOutflowTotals.cashOutflowTotal
 
   const totalCollected = salesTotals.totalBills + notSaleTotals.total
@@ -187,8 +179,8 @@ export function buildDailyTotals(
     creditChequeAddedCombined: creditAddedInPeriod + chequeAddedInPeriod,
     creditPendingTotal: creditOverview.totalPending,
     chequePendingTotal: chequeOverview.totalPending,
-    purchaseTotal: purchaseTotals.total,
-    purchaseCount: purchaseTotals.count,
+    purchaseTotal: purchasePaidTotals.total,
+    purchaseCount: purchasePaidTotals.eventCount,
     expenseTotal: expenseTotals.total,
     expenseCount: expenseTotals.count,
     loanOutflowTotal: loanOutflowTotals.cashOutflowTotal,

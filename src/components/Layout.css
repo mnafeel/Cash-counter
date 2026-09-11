@@ -50,8 +50,10 @@
   border-right: 1px solid var(--border);
   box-shadow: var(--shadow);
   transform: translateX(calc(-100% - 8px));
-  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
   overflow: hidden;
+  touch-action: pan-y;
+  will-change: transform;
 }
 
 .layout--sidebar-open .sidebar-backdrop {

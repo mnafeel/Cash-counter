@@ -88,7 +88,6 @@ export function saleBillPaymentLines(sale: Sale, allSales: Sale[] = []): SaleBil
       })
     }
 
-    // Paid split parent with no paymentEvents — still count as an advance payment.
     if (events.length === 0 && row.status === 'paid') {
       const amount = saleCollectedAmount(row)
       if (amount > 0) {
@@ -144,30 +143,61 @@ export function saleCreditBalanceDue(sale: Sale, allSales: Sale[] = []): number 
   return Math.max(0, Math.round((gross - paid - returns) * 100) / 100)
 }
 
-export function formatSaleReturnLine(entry: SaleReturnEntry): string {
-  const qty = entry.quantity
-  const qtyLabel = Number.isInteger(qty) ? String(qty) : String(qty)
-  return `${entry.itemName} · ${qtyLabel} × ${formatMoney(entry.rate)}`
-}
-
-export function buildSaleReturnEntry(input: {
+export type SaleReturnDraft = {
   itemName: string
   quantity: number
   rate: number
+  discountAmount?: number
+  gstPercent?: number
+}
+
+export function calculateSaleReturnAmount(input: {
+  quantity: number
+  rate: number
+  discountAmount?: number
+  gstPercent?: number
+}): { subtotal: number; discountAmount: number; gstPercent: number; amount: number } {
+  const quantity = Math.max(0, input.quantity)
+  const rate = Math.max(0, input.rate)
+  const subtotal = Math.round(quantity * rate * 100) / 100
+  const discountAmount = Math.max(0, Math.min(subtotal, input.discountAmount ?? 0))
+  const gstPercent = Math.max(0, input.gstPercent ?? 0)
+  const taxable = Math.max(0, subtotal - discountAmount)
+  const gstAmount = Math.round(taxable * (gstPercent / 100) * 100) / 100
+  const amount = Math.round((taxable + gstAmount) * 100) / 100
+  return { subtotal, discountAmount, gstPercent, amount }
+}
+
+export function formatSaleReturnLine(entry: SaleReturnEntry): string {
+  const qty = entry.quantity
+  const qtyLabel = Number.isInteger(qty) ? String(qty) : String(qty)
+  const parts = [`${entry.itemName} · ${qtyLabel} × ${formatMoney(entry.rate)}`]
+  if ((entry.discountAmount ?? 0) > 0) parts.push(`disc ${formatMoney(entry.discountAmount!)}`)
+  if ((entry.gstPercent ?? 0) > 0) parts.push(`GST ${entry.gstPercent}%`)
+  return parts.join(' · ')
+}
+
+export function buildSaleReturnEntry(input: SaleReturnDraft & {
   id?: string
   createdAt?: string
 }): SaleReturnEntry | null {
   const itemName = input.itemName.trim()
   const quantity = Math.max(0, input.quantity)
   const rate = Math.max(0, input.rate)
-  const amount = Math.round(quantity * rate * 100) / 100
-  if (!itemName || quantity <= 0 || rate < 0 || amount <= 0) return null
+  if (!itemName || quantity <= 0 || rate < 0) return null
+
+  const calc = calculateSaleReturnAmount(input)
+  if (calc.amount <= 0) return null
+
   return {
     id: input.id ?? crypto.randomUUID(),
     itemName,
     quantity,
     rate,
-    amount,
+    subtotal: calc.subtotal,
+    discountAmount: calc.discountAmount > 0 ? calc.discountAmount : undefined,
+    gstPercent: calc.gstPercent > 0 ? calc.gstPercent : undefined,
+    amount: calc.amount,
     createdAt: input.createdAt ?? new Date().toISOString(),
   }
 }

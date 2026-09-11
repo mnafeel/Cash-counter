@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useCash } from '../context/CashContext'
+import { useCash, useCashActions } from '../context/CashContext'
 import {
   buildBillReminders,
   getReminderAlertSettings,
+  isPastReminderTimeToday,
+  localDateKey,
   type BillReminderItem,
   type BillReminderPhase,
 } from '../utils/billReminders'
@@ -22,6 +24,16 @@ import {
   subscribeReminderSoundPlaying,
   type ReminderSoundStyle,
 } from '../utils/reminderNotificationSound'
+import {
+  isReminderSnoozed,
+  pinReminder as persistPinnedReminder,
+  readPinnedReminderKeys,
+  readSnoozedUntilMap,
+  REMINDER_SNOOZE_30_MIN_MS,
+  snoozeReminder as persistSnoozeReminder,
+  snoozeReminderUntil as persistSnoozeUntil,
+  unpinReminder as persistUnpinReminder,
+} from '../utils/reminderAlertState'
 
 const DISMISSED_STORAGE_KEY = 'cash-counter-dismissed-reminder-alerts'
 const SOUND_PLAYED_STORAGE_KEY = 'cash-counter-reminder-sound-played'
@@ -48,6 +60,7 @@ export type UnifiedReminderAlert = {
   soundStyle: ReminderSoundStyle
   saleId?: string
   loanId?: string
+  customerName?: string
 }
 
 function readSoundMuted(): boolean {
@@ -116,6 +129,7 @@ function billAlert(item: BillReminderItem): UnifiedReminderAlert {
     phase: item.phase,
     soundStyle: 'normal',
     saleId: item.saleId,
+    customerName: item.customerName,
   }
 }
 
@@ -162,6 +176,7 @@ export function reminderKindIcon(kind: UnifiedReminderAlert['kind']): string {
 
 export function useReminderAlerts() {
   const { data } = useCash()
+  const { setBillReminder, setCustomerReminder, setLoanReminder } = useCashActions()
   const { homeUnlocked } = useCashSnapshot(true)
   const navigate = useNavigate()
   const mightHaveReminders = useMemo(() => {
@@ -180,11 +195,13 @@ export function useReminderAlerts() {
   const [toastQueueLength, setToastQueueLength] = useState(0)
   const [incomingKeys, setIncomingKeys] = useState<Set<string>>(new Set())
   const [deliveredKeys, setDeliveredKeys] = useState<Set<string>>(new Set())
+  const [pinnedKeys, setPinnedKeys] = useState<Set<string>>(() => readPinnedReminderKeys())
+  const [snoozeTick, setSnoozeTick] = useState(0)
   const prevAlertStateRef = useRef<Record<string, { visible: boolean; due: boolean }>>({})
   const lastSoundPlayedRef = useRef<Record<string, number>>(readLastSoundPlayedAt())
   const hasSyncedAlertsRef = useRef(false)
   const toastQueueRef = useRef<string[]>([])
-  const toastShownRef = useRef<Set<string>>(new Set())
+  const toastShownDateRef = useRef<Record<string, string>>({})
   const toastPumpRef = useRef(false)
   const activeToastRef = useRef<UnifiedReminderAlert | null>(null)
   const toastHideTimerRef = useRef<number | null>(null)
@@ -210,16 +227,51 @@ export function useReminderAlerts() {
     [queuedReminders],
   )
 
+  const toastableAlerts = useMemo(
+    () =>
+      activeAlerts.filter(
+        (item) =>
+          !dismissedKeys.has(item.dismissKey) &&
+          !isReminderSnoozed(item.dismissKey) &&
+          !pinnedKeys.has(item.dismissKey),
+      ),
+    [activeAlerts, dismissedKeys, pinnedKeys, snoozeTick],
+  )
+
   const visibleActiveAlerts = useMemo(
     () => activeAlerts.filter((item) => !dismissedKeys.has(item.dismissKey)),
     [activeAlerts, dismissedKeys],
   )
 
-  visibleActiveAlertsRef.current = visibleActiveAlerts
+  const pinnedAlerts = useMemo(
+    () => queuedReminders.filter((item) => pinnedKeys.has(item.dismissKey)),
+    [queuedReminders, pinnedKeys],
+  )
+
+  visibleActiveAlertsRef.current = toastableAlerts
+
+  const toastShowMs = useMemo(() => {
+    const seconds = alertSettings.notificationShowSeconds
+    if (seconds > 0) return seconds * 1000
+    return REMINDER_TOAST_SHOW_MS
+  }, [alertSettings.notificationShowSeconds])
+
+  const toastShowMsRef = useRef(toastShowMs)
+  toastShowMsRef.current = toastShowMs
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const snoozed = readSnoozedUntilMap()
+      const nowMs = Date.now()
+      const hasActiveSnooze = Object.values(snoozed).some((until) => until > nowMs)
+      if (hasActiveSnooze) setSnoozeTick((value) => value + 1)
+    }, 15000)
+    return () => window.clearInterval(id)
+  }, [])
 
   const visibleAlertKeys = useMemo(
-    () => visibleActiveAlerts.map((item) => item.dismissKey).sort().join('|'),
-    [visibleActiveAlerts],
+    () => toastableAlerts.map((item) => item.dismissKey).sort().join('|'),
+    [toastableAlerts],
   )
 
   const clearToastTimers = useCallback(() => {
@@ -246,7 +298,7 @@ export function useReminderAlerts() {
     }
 
     toastPumpRef.current = true
-    toastShownRef.current.add(nextKey)
+    toastShownDateRef.current[nextKey] = localDateKey()
     activeToastRef.current = alert
     setActiveToast(alert)
     setDeliveredKeys((prev) => new Set(prev).add(nextKey))
@@ -262,13 +314,17 @@ export function useReminderAlerts() {
         toastGapTimerRef.current = null
         pumpToastQueueRef.current()
       }, REMINDER_TOAST_STAGGER_MS)
-    }, REMINDER_TOAST_SHOW_MS)
+    }, toastShowMsRef.current)
   }
+
+  const canEnqueueToastToday = useCallback((key: string) => {
+    return toastShownDateRef.current[key] !== localDateKey()
+  }, [])
 
   const enqueueToasts = useCallback((keys: string[]) => {
     let added = false
     for (const key of keys) {
-      if (toastShownRef.current.has(key)) continue
+      if (!canEnqueueToastToday(key)) continue
       if (toastQueueRef.current.includes(key)) continue
       toastQueueRef.current.push(key)
       added = true
@@ -278,18 +334,18 @@ export function useReminderAlerts() {
     if (!activeToastRef.current && !toastPumpRef.current) {
       pumpToastQueueRef.current()
     }
-  }, [])
+  }, [canEnqueueToastToday])
 
   useEffect(() => {
     writeDismissedKeys(dismissedKeys)
   }, [dismissedKeys])
 
   useEffect(() => {
-    const fresh = visibleActiveAlerts
+    const fresh = toastableAlerts
       .map((item) => item.dismissKey)
-      .filter((key) => !toastShownRef.current.has(key) && !toastQueueRef.current.includes(key))
+      .filter((key) => canEnqueueToastToday(key) && !toastQueueRef.current.includes(key))
     if (fresh.length > 0) enqueueToasts(fresh)
-  }, [visibleAlertKeys, visibleActiveAlerts, enqueueToasts])
+  }, [visibleAlertKeys, toastableAlerts, enqueueToasts, canEnqueueToastToday, now])
 
   useEffect(() => {
     return () => clearToastTimers()
@@ -301,31 +357,39 @@ export function useReminderAlerts() {
       return
     }
 
-    const dueAlerts = visibleActiveAlerts.filter((item) => item.isDue || item.isOverdue)
-    if (dueAlerts.length === 0) {
+    const timedAlerts = toastableAlerts.filter(
+      (item) => item.isAlertActive && isPastReminderTimeToday(item.reminderSortAt, now),
+    )
+    if (timedAlerts.length === 0) {
       stopReminderNotificationSound()
       prevAlertStateRef.current = {}
       return
     }
 
-    const nowMs = Date.now()
+    const nowMs = now.getTime()
+    const todayKey = localDateKey(now)
     const repeatMs = Math.max(1, alertSettings.notificationSoundRepeatSeconds) * 1000
     let shouldPlay = false
     const nextState: Record<string, { visible: boolean; due: boolean }> = {}
 
-    for (const item of visibleActiveAlerts) {
+    for (const item of timedAlerts) {
       const due = item.isDue || item.isOverdue
       const prev = prevAlertStateRef.current[item.dismissKey]
       nextState[item.dismissKey] = { visible: true, due }
 
-      if (!due) continue
       if (!hasSyncedAlertsRef.current) continue
 
       const lastPlayed = lastSoundPlayedRef.current[item.dismissKey] ?? 0
-      if (!prev?.due) {
-        if (nowMs - lastPlayed >= repeatMs) shouldPlay = true
-      } else if (alertSettings.notificationSoundMode !== 'once' && nowMs - lastPlayed >= repeatMs) {
+      const playedToday = lastPlayed > 0 && localDateKey(new Date(lastPlayed)) === todayKey
+
+      if (!playedToday) {
         shouldPlay = true
+      } else if (due) {
+        if (!prev?.due && nowMs - lastPlayed >= repeatMs) {
+          shouldPlay = true
+        } else if (alertSettings.notificationSoundMode !== 'once' && nowMs - lastPlayed >= repeatMs) {
+          shouldPlay = true
+        }
       }
     }
 
@@ -334,12 +398,12 @@ export function useReminderAlerts() {
 
     if (!shouldPlay) return
 
-    for (const item of dueAlerts) {
+    for (const item of timedAlerts) {
       lastSoundPlayedRef.current[item.dismissKey] = nowMs
     }
     writeLastSoundPlayedAt(lastSoundPlayedRef.current)
 
-    const useUrgent = dueAlerts.some((item) => item.soundStyle === 'urgent' || item.isOverdue)
+    const useUrgent = timedAlerts.some((item) => item.soundStyle === 'urgent' || item.isOverdue)
     const style = useUrgent ? 'urgent' : 'normal'
     const mode = alertSettings.notificationSoundMode
     if (mode === 'once') {
@@ -353,7 +417,8 @@ export function useReminderAlerts() {
     }
     return undefined
   }, [
-    visibleActiveAlerts,
+    toastableAlerts,
+    now,
     alertSettings.notificationSoundEnabled,
     alertSettings.notificationSoundMode,
     alertSettings.notificationSoundRepeatSeconds,
@@ -446,10 +511,91 @@ export function useReminderAlerts() {
     [clearToastTimers, dismissAll],
   )
 
+  const clearReminder = useCallback(
+    (item: UnifiedReminderAlert) => {
+      if (item.loanId) {
+        setLoanReminder(item.loanId, null, null, false)
+      } else if (item.saleId) {
+        const sale = data.sales.find((entry) => entry.id === item.saleId)
+        if (sale?.reminderAt) {
+          setBillReminder(item.saleId, null)
+        } else if (
+          item.customerName &&
+          (item.kind === 'credit' || item.kind === 'cheque')
+        ) {
+          setCustomerReminder(item.customerName, item.kind, null)
+        } else {
+          setBillReminder(item.saleId, null)
+        }
+      }
+      persistUnpinReminder(item.dismissKey)
+      setPinnedKeys((prev) => {
+        const next = new Set(prev)
+        next.delete(item.dismissKey)
+        return next
+      })
+      setDismissedKeys((prev) => {
+        const next = new Set(prev)
+        next.delete(item.dismissKey)
+        return next
+      })
+      if (activeToastRef.current?.dismissKey === item.dismissKey) {
+        clearToastTimers()
+        activeToastRef.current = null
+        setActiveToast(null)
+        toastPumpRef.current = false
+        pumpToastQueueRef.current()
+      }
+      stopReminderNotificationSound()
+    },
+    [clearToastTimers, data.sales, setBillReminder, setCustomerReminder, setLoanReminder],
+  )
+
+  const snoozeAlert = useCallback(
+    (
+      item: UnifiedReminderAlert,
+      options?: { durationMs?: number; untilMs?: number },
+    ) => {
+      if (options?.untilMs != null) {
+        persistSnoozeUntil(item.dismissKey, options.untilMs)
+      } else {
+        persistSnoozeReminder(item.dismissKey, options?.durationMs ?? REMINDER_SNOOZE_30_MIN_MS)
+      }
+      setSnoozeTick((value) => value + 1)
+      if (activeToastRef.current?.dismissKey === item.dismissKey) {
+        clearToastTimers()
+        activeToastRef.current = null
+        setActiveToast(null)
+        toastPumpRef.current = false
+        pumpToastQueueRef.current()
+      }
+      stopReminderNotificationSound()
+    },
+    [clearToastTimers],
+  )
+
+  const pinAlert = useCallback(
+    (item: UnifiedReminderAlert) => {
+      persistPinnedReminder(item.dismissKey)
+      setPinnedKeys((prev) => new Set(prev).add(item.dismissKey))
+      if (activeToastRef.current?.dismissKey === item.dismissKey) {
+        clearToastTimers()
+        activeToastRef.current = null
+        setActiveToast(null)
+        toastPumpRef.current = false
+        pumpToastQueueRef.current()
+      }
+      stopReminderNotificationSound()
+    },
+    [clearToastTimers],
+  )
+
   return {
     queuedReminders,
     activeAlerts,
     visibleActiveAlerts,
+    toastableAlerts,
+    pinnedAlerts,
     incomingKeys,
     deliveredKeys,
     activeToast,
@@ -460,6 +606,9 @@ export function useReminderAlerts() {
     dismissAlert,
     dismissAll,
     dismissActiveToast,
+    clearReminder,
+    snoozeAlert,
+    pinAlert,
     stopSound,
     muteSound,
     unmuteSound,

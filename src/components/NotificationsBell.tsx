@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type TouchEvent } from 'react'
+import { isReminderSnoozed } from '../utils/reminderAlertState'
 import { formatMoney } from '../utils/format'
 import {
   reminderKindIcon,
@@ -36,82 +37,209 @@ type NotificationsBellProps = {
 
 function reminderSectionLabel(item: UnifiedReminderAlert): string {
   if (item.isOverdue) return 'Overdue'
-  if (item.isDue) return 'Due now'
-  if (item.isAlertActive) return 'Alert window'
-  return 'Upcoming'
+  if (item.isDue) return 'Due'
+  return 'Reminder'
 }
 
 function ReminderToastCard({
   alert,
   waitingCount,
-  onOpen,
   onDismiss,
+  onOpenDetails,
   onMuteSound,
+  onStopSound,
   soundMuted,
+  soundPlaying,
 }: {
   alert: UnifiedReminderAlert
   waitingCount: number
-  onOpen: (event?: MouseEvent) => void
-  onDismiss: () => void
+  onDismiss: (event?: MouseEvent) => void
+  onOpenDetails: (event?: MouseEvent) => void
   onMuteSound: () => void
+  onStopSound: () => void
   soundMuted: boolean
+  soundPlaying: boolean
 }) {
+  const touchStartYRef = useRef(0)
+  const [dragY, setDragY] = useState(0)
+  const [dismissing, setDismissing] = useState(false)
+
+  function handleTouchStart(event: TouchEvent) {
+    touchStartYRef.current = event.touches[0]?.clientY ?? 0
+  }
+
+  function handleTouchMove(event: TouchEvent) {
+    const currentY = event.touches[0]?.clientY ?? touchStartYRef.current
+    const delta = currentY - touchStartYRef.current
+    if (delta > 0) setDragY(delta)
+  }
+
+  function handleTouchEnd() {
+    if (dragY > 48) {
+      setDismissing(true)
+      window.setTimeout(() => onDismiss(), 160)
+      return
+    }
+    setDragY(0)
+  }
+
   return (
     <div
-      className={`reminder-toast reminder-toast--${alert.kind} ${
+      className={`reminder-toast reminder-toast--chip reminder-toast--${alert.kind} ${
         alert.isOverdue ? 'reminder-toast--overdue' : ''
-      }`}
+      } ${dismissing ? 'reminder-toast--dismissing' : ''}`}
       role="status"
       aria-live="polite"
+      style={{ transform: dragY > 0 ? `translateY(${dragY}px)` : undefined, opacity: dragY > 0 ? 1 - dragY / 120 : undefined }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
-      <div className="reminder-toast__glow" aria-hidden="true" />
-      <button type="button" className="reminder-toast__main" onClick={onOpen}>
-        <span className="reminder-toast__stamp" aria-hidden="true">✉</span>
-        <span className="reminder-toast__icon" aria-hidden="true">
+      <div className="reminder-toast__chip">
+        <span className="reminder-toast__chip-icon" aria-hidden="true">
           {reminderKindIcon(alert.kind)}
         </span>
-        <span className="reminder-toast__copy">
-          <span className="reminder-toast__eyebrow">
-            {reminderSectionLabel(alert)}
-            {waitingCount > 0 ? ` · ${waitingCount} more waiting` : ''}
+        <button type="button" className="reminder-toast__chip-body" onClick={onDismiss}>
+          <span className="reminder-toast__chip-line">
+            <strong>{alert.title}</strong>
+            <span className="reminder-toast__chip-amount">{formatMoney(alert.amount)}</span>
           </span>
-          <span className="reminder-toast__title">{alert.title}</span>
-          <span className="reminder-toast__meta">
-            {formatMoney(alert.amount)} · {alert.alertLabel} · {alert.reminderDateLabel}
+          <span className="reminder-toast__chip-meta">
+            {reminderSectionLabel(alert)} · {alert.reminderDateLabel}
+            {waitingCount > 0 ? ` · +${waitingCount}` : ''}
           </span>
-          {alert.reminderNote ? (
-            <span className="reminder-toast__note">{alert.reminderNote}</span>
+        </button>
+        <div className="reminder-toast__chip-actions">
+          {soundPlaying ? (
+            <button
+              type="button"
+              className="reminder-toast__chip-btn"
+              onClick={(event) => {
+                event.stopPropagation()
+                onStopSound()
+              }}
+              title="Stop sound"
+              aria-label="Stop sound"
+            >
+              ■
+            </button>
+          ) : !soundMuted ? (
+            <button
+              type="button"
+              className="reminder-toast__chip-btn"
+              onClick={(event) => {
+                event.stopPropagation()
+                onMuteSound()
+              }}
+              title="Mute"
+              aria-label="Mute"
+            >
+              🔇
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="reminder-toast__chip-btn reminder-toast__chip-btn--open"
+            onClick={(event) => {
+              event.stopPropagation()
+              onOpenDetails(event)
+            }}
+            title="Open"
+            aria-label={`Open reminder for ${alert.title}`}
+          >
+            →
+          </button>
+          <button
+            type="button"
+            className="reminder-toast__chip-btn reminder-toast__chip-btn--close"
+            onClick={(event) => {
+              event.stopPropagation()
+              onDismiss(event)
+            }}
+            title="Dismiss"
+            aria-label={`Dismiss reminder for ${alert.title}`}
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function renderReminderItem(
+  item: UnifiedReminderAlert,
+  options: {
+    incomingKeys: Set<string>
+    deliveredKeys: Set<string>
+    pinnedKeys: Set<string>
+    isActivePopup: boolean
+    onOpen: (item: UnifiedReminderAlert, event?: MouseEvent) => void
+    onClear: (item: UnifiedReminderAlert, event?: MouseEvent) => void
+    onSnooze: (item: UnifiedReminderAlert, event?: MouseEvent) => void
+  },
+) {
+  const snoozed = isReminderSnoozed(item.dismissKey)
+  const pinned = options.pinnedKeys.has(item.dismissKey)
+  const showTools = item.isDue || item.isOverdue || item.isAlertActive || pinned
+  return (
+    <li
+      key={item.dismissKey}
+      className={`notifications-bell-item ${
+        options.incomingKeys.has(item.dismissKey) ? 'notifications-bell-item--enter' : ''
+      } ${options.deliveredKeys.has(item.dismissKey) ? 'notifications-bell-item--delivered' : ''} ${
+        pinned ? 'notifications-bell-item--pinned' : ''
+      } ${snoozed ? 'notifications-bell-item--snoozed' : ''} ${
+        item.isOverdue ? 'notifications-bell-item--overdue' : ''
+      } ${!item.isAlertActive ? 'notifications-bell-item--upcoming' : ''}`}
+    >
+      <button
+        type="button"
+        className={`notifications-bell-item-main notifications-bell-item-main--${item.kind}`}
+        onClick={(event) => options.onOpen(item, event)}
+      >
+        <span className="notifications-bell-item-icon" aria-hidden="true">
+          {reminderKindIcon(item.kind)}
+        </span>
+        <span className="notifications-bell-item-copy">
+          <span className="notifications-bell-item-top">
+            <strong>{item.title}</strong>
+            <span>{formatMoney(item.amount)}</span>
+          </span>
+          <span className="notifications-bell-item-meta">
+            {pinned ? 'Docked · silent' : snoozed ? 'Snoozed' : reminderSectionLabel(item)} ·{' '}
+            {item.alertLabel} · {item.reminderDateLabel}
+          </span>
+          {item.reminderNote ? (
+            <span className="notifications-bell-item-note">{item.reminderNote}</span>
           ) : null}
         </span>
       </button>
-      <div className="reminder-toast__actions">
-        {!soundMuted ? (
+      {showTools ? (
+        <div className="notifications-bell-item-tools">
+          {item.isAlertActive && !pinned && !snoozed ? (
+            <button
+              type="button"
+              className="notifications-bell-item-tool"
+              onClick={(event) => options.onSnooze(item, event)}
+              aria-label={`Snooze ${item.title}`}
+              title="Snooze 30 min"
+            >
+              ⏰
+            </button>
+          ) : null}
           <button
             type="button"
-            className="reminder-toast__action"
-            onClick={(event) => {
-              event.stopPropagation()
-              onMuteSound()
-            }}
-            aria-label="Mute reminder sound"
-            title="Mute sound"
+            className="notifications-bell-item-dismiss"
+            onClick={(event) => options.onClear(item, event)}
+            aria-label={`Cancel reminder for ${item.title}`}
+            title="Cancel reminder"
           >
-            🔇
+            ✕
           </button>
-        ) : null}
-        <button
-          type="button"
-          className="reminder-toast__action reminder-toast__action--close"
-          onClick={(event) => {
-            event.stopPropagation()
-            onDismiss()
-          }}
-          aria-label={`Dismiss alert for ${alert.title}`}
-        >
-          ✕
-        </button>
-      </div>
-    </div>
+        </div>
+      ) : null}
+    </li>
   )
 }
 
@@ -121,6 +249,7 @@ export default function NotificationsBell({ placement = 'sidebar' }: Notificatio
     visibleActiveAlerts,
     incomingKeys,
     deliveredKeys,
+    pinnedAlerts,
     activeToast,
     toastQueueLength,
     soundPlaying,
@@ -128,30 +257,36 @@ export default function NotificationsBell({ placement = 'sidebar' }: Notificatio
     openAlert,
     dismissAlert,
     dismissAll,
-    dismissActiveToast,
+    clearReminder,
+    snoozeAlert,
     stopSound,
     toggleSoundMuted,
     stopAll,
   } = useReminderAlerts()
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
-  const openedForBatchRef = useRef(false)
   const totalCount = queuedReminders.length
   const dueCount = queuedReminders.filter((item) => item.isDue || item.isOverdue).length
   const activePopupCount = visibleActiveAlerts.length
 
+  const pinnedKeys = useMemo(
+    () => new Set(pinnedAlerts.map((item) => item.dismissKey)),
+    [pinnedAlerts],
+  )
+
   const sections = useMemo(() => {
-    const dueNow = queuedReminders.filter((item) => item.isDue || item.isOverdue)
-    const alertWindow = queuedReminders.filter(
+    const unpinned = queuedReminders.filter((item) => !pinnedKeys.has(item.dismissKey))
+    const dueNow = unpinned.filter((item) => item.isDue || item.isOverdue)
+    const alertWindow = unpinned.filter(
       (item) => item.isAlertActive && !item.isDue && !item.isOverdue,
     )
-    const upcoming = queuedReminders.filter((item) => !item.isAlertActive)
+    const upcoming = unpinned.filter((item) => !item.isAlertActive)
     return [
       { key: 'due', title: 'Due now', items: dueNow },
       { key: 'alert', title: 'Alert window', items: alertWindow },
       { key: 'upcoming', title: 'Upcoming', items: upcoming },
     ].filter((section) => section.items.length > 0)
-  }, [queuedReminders])
+  }, [queuedReminders, pinnedKeys])
 
   useEffect(() => {
     if (!open) return
@@ -164,22 +299,26 @@ export default function NotificationsBell({ placement = 'sidebar' }: Notificatio
     return () => document.removeEventListener('pointerdown', onPointerDown)
   }, [open])
 
-  useEffect(() => {
-    if (!activeToast) {
-      openedForBatchRef.current = false
-      return
-    }
-    if (!openedForBatchRef.current && activePopupCount > 0) {
-      openedForBatchRef.current = true
-      setOpen(true)
-    }
-  }, [activeToast, activePopupCount])
-
   function handleOpenAlert(item: UnifiedReminderAlert, event?: MouseEvent) {
     event?.stopPropagation()
     openAlert(item)
     setOpen(false)
-    if (activeToast?.dismissKey === item.dismissKey) dismissActiveToast()
+  }
+
+  function handleClearAlert(item: UnifiedReminderAlert, event?: MouseEvent) {
+    event?.stopPropagation()
+    clearReminder(item)
+  }
+
+  function handleSnoozeAlert(item: UnifiedReminderAlert, event?: MouseEvent) {
+    event?.stopPropagation()
+    snoozeAlert(item)
+  }
+
+  function handleDismissToast(item: UnifiedReminderAlert, event?: MouseEvent) {
+    event?.stopPropagation()
+    dismissAlert(item, event)
+    stopSound()
   }
 
   const placementClass =
@@ -193,9 +332,11 @@ export default function NotificationsBell({ placement = 'sidebar' }: Notificatio
             alert={activeToast}
             waitingCount={toastQueueLength}
             soundMuted={soundMuted}
-            onOpen={(event) => handleOpenAlert(activeToast, event)}
-            onDismiss={dismissActiveToast}
+            soundPlaying={soundPlaying}
+            onDismiss={(event) => handleDismissToast(activeToast, event)}
+            onOpenDetails={(event) => handleOpenAlert(activeToast, event)}
             onMuteSound={toggleSoundMuted}
+            onStopSound={stopSound}
           />
         </div>
       ) : null}
@@ -284,58 +425,43 @@ export default function NotificationsBell({ placement = 'sidebar' }: Notificatio
                 <p className="notifications-bell-empty">No reminders scheduled yet.</p>
               ) : (
                 <div className="notifications-bell-sections">
+                  {pinnedAlerts.length > 0 ? (
+                    <section className="notifications-bell-section notifications-bell-section--pinned">
+                      <h3 className="notifications-bell-section-title">Docked · silent</h3>
+                      <ul className="notifications-bell-list">
+                        {pinnedAlerts.map((item) =>
+                          renderReminderItem(item, {
+                            incomingKeys,
+                            deliveredKeys,
+                            pinnedKeys,
+                            isActivePopup: visibleActiveAlerts.some(
+                              (alert) => alert.dismissKey === item.dismissKey,
+                            ),
+                            onOpen: handleOpenAlert,
+                            onClear: handleClearAlert,
+                            onSnooze: handleSnoozeAlert,
+                          }),
+                        )}
+                      </ul>
+                    </section>
+                  ) : null}
                   {sections.map((section) => (
                     <section key={section.key} className="notifications-bell-section">
                       <h3 className="notifications-bell-section-title">{section.title}</h3>
                       <ul className="notifications-bell-list">
-                        {section.items.map((item) => {
-                          const isActivePopup = visibleActiveAlerts.some(
-                            (alert) => alert.dismissKey === item.dismissKey,
-                          )
-                          return (
-                            <li
-                              key={item.dismissKey}
-                              className={`notifications-bell-item ${
-                                incomingKeys.has(item.dismissKey) ? 'notifications-bell-item--enter' : ''
-                              } ${deliveredKeys.has(item.dismissKey) ? 'notifications-bell-item--delivered' : ''} ${
-                                item.isOverdue ? 'notifications-bell-item--overdue' : ''
-                              } ${!item.isAlertActive ? 'notifications-bell-item--upcoming' : ''}`}
-                            >
-                              <button
-                                type="button"
-                                className={`notifications-bell-item-main notifications-bell-item-main--${item.kind}`}
-                                onClick={(event) => handleOpenAlert(item, event)}
-                              >
-                                <span className="notifications-bell-item-icon" aria-hidden="true">
-                                  {reminderKindIcon(item.kind)}
-                                </span>
-                                <span className="notifications-bell-item-copy">
-                                  <span className="notifications-bell-item-top">
-                                    <strong>{item.title}</strong>
-                                    <span>{formatMoney(item.amount)}</span>
-                                  </span>
-                                  <span className="notifications-bell-item-meta">
-                                    {reminderSectionLabel(item)} · {item.alertLabel} ·{' '}
-                                    {item.reminderDateLabel}
-                                  </span>
-                                  {item.reminderNote ? (
-                                    <span className="notifications-bell-item-note">{item.reminderNote}</span>
-                                  ) : null}
-                                </span>
-                              </button>
-                              {isActivePopup ? (
-                                <button
-                                  type="button"
-                                  className="notifications-bell-item-dismiss"
-                                  onClick={(event) => dismissAlert(item, event)}
-                                  aria-label={`Dismiss alert for ${item.title}`}
-                                >
-                                  ✕
-                                </button>
-                              ) : null}
-                            </li>
-                          )
-                        })}
+                        {section.items.map((item) =>
+                          renderReminderItem(item, {
+                            incomingKeys,
+                            deliveredKeys,
+                            pinnedKeys,
+                            isActivePopup: visibleActiveAlerts.some(
+                              (alert) => alert.dismissKey === item.dismissKey,
+                            ),
+                            onOpen: handleOpenAlert,
+                            onClear: handleClearAlert,
+                            onSnooze: handleSnoozeAlert,
+                          }),
+                        )}
                       </ul>
                     </section>
                   ))}

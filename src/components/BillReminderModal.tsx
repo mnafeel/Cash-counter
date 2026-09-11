@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import AppDateChipInput from './AppDateChipInput'
 import type { ReminderAlertSettings } from '../types'
 import { DEFAULT_REMINDER_ALERTS, NOTIFICATION_SHOW_SECOND_OPTIONS, NOTIFICATION_SOUND_REPEAT_OPTIONS } from '../types'
 import {
@@ -70,16 +71,18 @@ export default function BillReminderModal({
   )
   const [soundTesting, setSoundTesting] = useState(false)
   const [loanUrgent, setLoanUrgent] = useState(reminderUrgent ?? false)
-
-  const suggestedDefault = useMemo(
-    () => (reminderAt ? null : getSuggestedReminderDateTime(billKind)),
-    [reminderAt, billKind, open],
-  )
+  const wasOpenRef = useRef(false)
 
   const quickOptions = useMemo(() => getReminderDateTimeQuickOptions(), [open])
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      wasOpenRef.current = false
+      return
+    }
+    if (wasOpenRef.current) return
+    wasOpenRef.current = true
+
     if (reminderAt) {
       setDateValue(isoToDateInputValue(reminderAt))
       setTimeValue(isoToTimeInputValue(reminderAt))
@@ -186,15 +189,16 @@ export default function BillReminderModal({
           <section className="bill-reminder-modal-section">
             <span className="bill-reminder-modal-section-title">📅 Reminder date &amp; time</span>
             <div className="bill-reminder-modal-datetime">
-              <label className="bill-reminder-modal-pick">
+              <div className="bill-reminder-modal-pick bill-reminder-modal-pick--date">
                 <span>Date</span>
-                <input
-                  type="date"
+                <AppDateChipInput
                   value={dateValue}
-                  onChange={(e) => setDateValue(e.target.value)}
+                  active
+                  className="bill-reminder-modal-date-chip"
+                  onChange={setDateValue}
                   aria-label={`${kindLabel} reminder date`}
                 />
-              </label>
+              </div>
               <label className="bill-reminder-modal-pick">
                 <span>Time</span>
                 <input
@@ -205,11 +209,7 @@ export default function BillReminderModal({
                 />
               </label>
             </div>
-            {!reminderAt && suggestedDefault ? (
-              <p className="bill-reminder-modal-suggested">Suggested: {suggestedDefault.label}</p>
-            ) : null}
-            {!reminderAt ? (
-              <div className="bill-reminder-modal-quick">
+            <div className="bill-reminder-modal-quick">
                 {quickOptions.map((option) => (
                   <button
                     key={option.label}
@@ -228,10 +228,12 @@ export default function BillReminderModal({
                   </button>
                 ))}
               </div>
-            ) : null}
             {reminderAt ? (
-              <p className="bill-reminder-modal-current">Current: {formatDate(reminderAt)}</p>
+              <p className="bill-reminder-modal-current">Editing reminder · was {formatDate(reminderAt)}</p>
             ) : null}
+            <p className="bill-reminder-modal-help">
+              Pick any date and time. Alerts can start days before the due date, or only on the due day.
+            </p>
           </section>
 
           <section className="bill-reminder-modal-section">

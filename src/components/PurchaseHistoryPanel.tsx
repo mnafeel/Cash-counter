@@ -17,7 +17,7 @@ import {
   buildPurchaseHistoryItems,
   buildPurchaseLedgerPaymentEvents,
   buildPurchasePaymentHistoryRows,
-  filterPurchaseHistoryItems,
+  filterPurchaseHistoryItemsByActivity,
   formatPurchaseCreditMonthLabel,
   groupPurchasesBySupplier,
   matchesPurchaseHistorySearch,
@@ -34,7 +34,7 @@ import {
   type SupplierPurchaseFileSummary,
 } from '../utils/purchaseHistory'
 import { toInputDate } from '../utils/salesReport'
-import { currentMonthKey, defaultMonthPickerKey, listMonthPickerOptions } from '../utils/monthPicker'
+import { collectAppDataMonthDates, currentMonthKey, defaultMonthPickerKey, listMonthPickerOptions } from '../utils/monthPicker'
 import PurchaseCreditPanel, { type PurchaseCreditPanelHandle } from './PurchaseCreditPanel'
 import './PurchaseHistoryPanel.css'
 import './PurchaseHistoryPanel.light.css'
@@ -107,8 +107,8 @@ export default function PurchaseHistoryPanel({
 
   const allItems = useMemo(() => buildPurchaseHistoryItems(data), [data])
   const monthOptions = useMemo(
-    () => listMonthPickerOptions(allItems.map((item) => item.date)),
-    [allItems],
+    () => listMonthPickerOptions(collectAppDataMonthDates(data)),
+    [data],
   )
 
   useEffect(() => {
@@ -120,18 +120,28 @@ export default function PurchaseHistoryPanel({
     () => purchaseCreditItems.reduce((sum, item) => sum + item.amount, 0),
     [purchaseCreditItems],
   )
-  const dateFilteredItems = useMemo(() => {
+  const periodFilterArgs = useMemo(() => {
     if (dateFilter === 'range') {
-      return filterPurchaseHistoryItems(allItems, 'range', rangeFrom, rangeTo)
+      return { dateFilter: 'range' as const, selectedDate: rangeFrom, rangeTo }
     }
     if (dateFilter === 'monthPick') {
-      return filterPurchaseHistoryItems(allItems, 'monthPick', selectedMonth)
+      return { dateFilter: 'monthPick' as const, selectedDate: selectedMonth, rangeTo: '' }
     }
-    return filterPurchaseHistoryItems(allItems, dateFilter, selectedDate)
-  }, [allItems, dateFilter, selectedDate, selectedMonth, rangeFrom, rangeTo])
+    return { dateFilter, selectedDate, rangeTo: '' }
+  }, [dateFilter, selectedDate, selectedMonth, rangeFrom, rangeTo])
+
+  const dateFilteredItems = useMemo(() => {
+    return filterPurchaseHistoryItemsByActivity(
+      data,
+      allItems,
+      periodFilterArgs.dateFilter,
+      periodFilterArgs.selectedDate,
+      periodFilterArgs.rangeTo,
+    )
+  }, [allItems, data, periodFilterArgs])
   const periodSummary = useMemo(
-    () => summarizeSupplierPurchaseFile(data, dateFilteredItems),
-    [data, dateFilteredItems],
+    () => summarizeSupplierPurchaseFile(data, dateFilteredItems, periodFilterArgs),
+    [data, dateFilteredItems, periodFilterArgs],
   )
   const allTimeSummary = useMemo(
     () => summarizeSupplierPurchaseFile(data, allItems),
@@ -161,13 +171,13 @@ export default function PurchaseHistoryPanel({
     () =>
       buildPurchasePaymentHistoryRows(
         data,
-        dateFilteredItems.filter((item) => item.paidAmount > 0),
-        dateFilter === 'range' ? 'range' : dateFilter,
-        dateFilter === 'range' ? rangeFrom : dateFilter === 'monthPick' ? selectedMonth : selectedDate,
-        rangeTo,
+        allItems.filter((item) => item.paidAmount > 0),
+        periodFilterArgs.dateFilter,
+        periodFilterArgs.selectedDate,
+        periodFilterArgs.rangeTo,
         payChannel,
       ),
-    [dateFilteredItems, data, dateFilter, selectedDate, selectedMonth, rangeFrom, rangeTo, payChannel],
+    [allItems, data, periodFilterArgs, payChannel],
   )
   const selectedSupplier = useMemo((): PurchaseSupplierGroup | null => {
     if (!selectedSupplierKey) return null
@@ -625,7 +635,7 @@ export default function PurchaseHistoryPanel({
             </div>
             <div className="purchase-hist-item-quick">
               {item.billNo ? <span className="purchase-hist-item-chip">Bill {item.billNo}</span> : null}
-              <span className="purchase-hist-item-chip">{formatTimestamp(item.date)}</span>
+              <span className="purchase-hist-item-chip">Recorded {formatTimestamp(item.createdAt)}</span>
               {purchaseSupplierBillDateDiffers(item.billDate, item.date) ? (
                 <span className="purchase-hist-item-chip purchase-hist-item-chip--billdate">
                   Bill date {formatReportDate(item.billDate!)}
@@ -687,9 +697,15 @@ export default function PurchaseHistoryPanel({
                 </div>
               ) : null}
               <div className="purchase-hist-item-detail-row">
-                <span>Paid</span>
-                <strong>{formatTimestamp(item.date)}</strong>
+                <span>Recorded</span>
+                <strong>{formatTimestamp(item.createdAt)}</strong>
               </div>
+              {item.updatedAt !== item.createdAt ? (
+                <div className="purchase-hist-item-detail-row">
+                  <span>Last payment</span>
+                  <strong>{formatTimestamp(item.updatedAt)}</strong>
+                </div>
+              ) : null}
               {purchaseSupplierBillDateDiffers(item.billDate, item.date) ? (
                 <div className="purchase-hist-item-detail-row">
                   <span>Supplier bill date</span>
@@ -721,13 +737,31 @@ export default function PurchaseHistoryPanel({
               {item.paidNo1Amount > 0 ? (
                 <div className="purchase-hist-item-detail-row">
                   <span>{NO1_BILL_LABEL} paid</span>
-                  <strong>{formatMoney(item.paidNo1Amount)}</strong>
+                  <strong>
+                    {formatMoney(item.paidNo1Amount)}
+                    {item.no1ActivityAt ? ` · ${formatTimestamp(item.no1ActivityAt)}` : ''}
+                  </strong>
+                </div>
+              ) : null}
+              {item.no2Amount > 0 && item.paidNo2Amount <= 0 ? (
+                <div className="purchase-hist-item-detail-row purchase-hist-item-detail-row--pending">
+                  <span>{NO2_BILL_LABEL} balance</span>
+                  <strong>{formatMoney(item.no2Amount)}</strong>
                 </div>
               ) : null}
               {item.paidNo2Amount > 0 ? (
                 <div className="purchase-hist-item-detail-row">
                   <span>{NO2_BILL_LABEL} paid</span>
-                  <strong>{formatMoney(item.paidNo2Amount)}</strong>
+                  <strong>
+                    {formatMoney(item.paidNo2Amount)}
+                    {item.no2ActivityAt ? ` · ${formatTimestamp(item.no2ActivityAt)}` : ''}
+                  </strong>
+                </div>
+              ) : null}
+              {item.no1Amount > 0 && item.paidNo1Amount <= 0 ? (
+                <div className="purchase-hist-item-detail-row purchase-hist-item-detail-row--pending">
+                  <span>{NO1_BILL_LABEL} balance</span>
+                  <strong>{formatMoney(item.no1Amount)}</strong>
                 </div>
               ) : null}
               {paymentEvents.length > 0 ? (

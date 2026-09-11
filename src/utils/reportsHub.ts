@@ -8,7 +8,8 @@ import {
 } from './normalExpenseHistory'
 import {
   buildPurchaseHistoryItems,
-  filterPurchaseHistoryItems,
+  purchasePeriodPaymentsToSummary,
+  summarizePurchasePaymentsInPeriod,
   summarizePurchases,
 } from './purchaseHistory'
 import {
@@ -160,11 +161,11 @@ export function buildReportOverview(data: AppData): ReportOverview {
   const monthSales = summarizeSales(monthSalesRows).totalBills
 
   const purchases = buildPurchaseHistoryItems(data)
-  const todayPurchases = summarizePurchases(
-    filterPurchaseHistoryItems(purchases, 'today', ''),
+  const todayPurchases = purchasePeriodPaymentsToSummary(
+    summarizePurchasePaymentsInPeriod(data, purchases, 'today', ''),
   ).total
-  const monthPurchases = summarizePurchases(
-    filterPurchaseHistoryItems(purchases, 'month', ''),
+  const monthPurchases = purchasePeriodPaymentsToSummary(
+    summarizePurchasePaymentsInPeriod(data, purchases, 'month', ''),
   ).total
 
   const expenses = buildNormalExpenseHistoryItems(data)

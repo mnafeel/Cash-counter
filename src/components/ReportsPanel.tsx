@@ -59,8 +59,10 @@ import {
 } from '../utils/expenseTimeline'
 import {
   buildPurchaseHistoryItems,
-  filterPurchaseHistoryItems,
+  filterPurchaseHistoryItemsByActivity,
   groupPurchasesBySupplier,
+  purchasePeriodPaymentsToSummary,
+  summarizePurchasePaymentsInPeriod,
   type PurchaseHistoryItem,
 } from '../utils/purchaseHistory'
 import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
@@ -442,9 +444,21 @@ export default function ReportsPanel({
   const purchaseItems = useMemo(() => {
     if (!needsPurchase && !needsExpense) return []
     const items = buildPurchaseHistoryItems(data)
-    return filterPurchaseHistoryItems(items, datePreset, filterDateArg, rangeTo)
+    return filterPurchaseHistoryItemsByActivity(data, items, datePreset, filterDateArg, rangeTo)
   }, [data, datePreset, filterDateArg, rangeTo, needsPurchase, needsExpense])
-  const purchaseTotals = useMemo(() => summarizePurchases(purchaseItems), [purchaseItems])
+  const purchaseTotals = useMemo(
+    () =>
+      purchasePeriodPaymentsToSummary(
+        summarizePurchasePaymentsInPeriod(
+          data,
+          buildPurchaseHistoryItems(data),
+          datePreset,
+          filterDateArg,
+          rangeTo,
+        ),
+      ),
+    [data, datePreset, filterDateArg, rangeTo],
+  )
   const purchaseSupplierGroups = useMemo(
     () => groupPurchasesBySupplier(purchaseItems),
     [purchaseItems],

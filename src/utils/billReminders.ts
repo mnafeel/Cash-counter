@@ -1,6 +1,6 @@
 import type { AppData, ReminderAlertSettings, Sale } from '../types'
 import { DEFAULT_REMINDER_ALERTS } from '../types'
-import { formatDate, isoToDateInputValue, isoToTimeInputValue } from './format'
+import { formatDate, formatTime, isoToDateInputValue, isoToTimeInputValue } from './format'
 import { getSaleCustomerName } from './saleCustomerName'
 import { getEffectiveSaleReminderAt, getEffectiveSaleReminderNote } from './customerReminders'
 import { UNNAMED_CREDIT_CUSTOMER } from './customerLedger'
@@ -168,6 +168,33 @@ function localDayTimestamp(iso: string): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 }
 
+/** Local calendar day key (YYYY-MM-DD) for per-day toast/sound tracking. */
+export function localDateKey(d = new Date()): string {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+/** Today at the reminder's clock time (local). */
+export function reminderClockTodayMs(reminderAt: string, now = new Date()): number {
+  const reminder = new Date(reminderAt)
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    reminder.getHours(),
+    reminder.getMinutes(),
+    0,
+    0,
+  ).getTime()
+}
+
+/** Whether the reminder's daily alert time has passed today. */
+export function isPastReminderTimeToday(reminderAt: string, now = new Date()): boolean {
+  return now.getTime() >= reminderClockTodayMs(reminderAt, now)
+}
+
 function daysUntilReminder(reminderAt: string, now = new Date()): number {
   const dueDay = localDayTimestamp(reminderAt)
   const today = localDayTimestamp(now.toISOString())
@@ -205,19 +232,41 @@ export function evaluateBillReminderAlert(
     }
   }
 
-  const daysSinceAlertStart = Math.floor((nowMs - alertStartMs) / MS_PER_DAY)
+  const alertStartDay = localDayTimestamp(new Date(alertStartMs).toISOString())
+  const todayDay = localDayTimestamp(now.toISOString())
+  const daysSinceAlertStart = Math.round((todayDay - alertStartDay) / MS_PER_DAY)
   const interval = settings.alertIntervalDays
-  const showToday = interval <= 1 || daysSinceAlertStart % interval === 0
+  const isIntervalDay = interval <= 1 || daysSinceAlertStart % interval === 0
+
+  const upcomingLabel =
+    daysUntilDue === 0
+      ? 'Due today'
+      : daysUntilDue === 1
+        ? 'Collect tomorrow'
+        : `Collect in ${daysUntilDue} days`
+
+  if (!isIntervalDay) {
+    return {
+      isAlertActive: false,
+      phase: 'upcoming',
+      alertLabel: upcomingLabel,
+      daysUntilDue,
+    }
+  }
+
+  if (!isPastReminderTimeToday(reminderAt, now)) {
+    return {
+      isAlertActive: false,
+      phase: 'upcoming',
+      alertLabel: `Alert at ${formatTime(reminderAt)}`,
+      daysUntilDue,
+    }
+  }
 
   return {
-    isAlertActive: showToday,
+    isAlertActive: true,
     phase: 'upcoming',
-    alertLabel:
-      daysUntilDue === 0
-        ? 'Due today'
-        : daysUntilDue === 1
-          ? 'Collect tomorrow'
-          : `Collect in ${daysUntilDue} days`,
+    alertLabel: upcomingLabel,
     daysUntilDue,
   }
 }

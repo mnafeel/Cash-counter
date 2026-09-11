@@ -194,26 +194,6 @@ function Counter({ active }: { active: boolean }) {
     applySaleReturn,
     cancelSaleReturn,
   } = useCashActions()
-  function recordSale(
-    sale: Parameters<typeof recordSaleAction>[0],
-  ) {
-    recordSaleAction({
-      ...sale,
-      ...(deductDraftReturns ? { originalBillAmount: typedBillAmount } : {}),
-      ...(draftReturns.length > 0 && !loadedPendingId ? { returns: draftReturns } : {}),
-    })
-  }
-
-  function updatePendingSale(
-    id: string,
-    sale: Parameters<typeof updatePendingSaleAction>[1],
-  ) {
-    updatePendingSaleAction(id, {
-      ...sale,
-      ...(deductDraftReturns ? { originalBillAmount: typedBillAmount } : {}),
-      ...(draftReturns.length > 0 && !loadedPendingId ? { returns: draftReturns } : {}),
-    })
-  }
   const tabData = data
   const tabSales = data.sales
   const tabPendingBills = pendingBills
@@ -393,6 +373,14 @@ function Counter({ active }: { active: boolean }) {
     [tabSales, loadedPendingId],
   )
 
+  useEffect(() => {
+    if (!loadedPendingBill) return
+    setDraftReturns(loadedPendingBill.returns ? [...loadedPendingBill.returns] : [])
+  }, [
+    loadedPendingBill?.id,
+    loadedPendingBill?.returns?.map((row) => `${row.id}:${row.amount}`).join('|'),
+  ])
+
   const effectiveCollectingChequeId = useMemo((): string | null => {
     if (collectingChequeId) return collectingChequeId
     if (loadedPendingBill && isChequePendingBill(loadedPendingBill)) {
@@ -451,12 +439,68 @@ function Counter({ active }: { active: boolean }) {
     () => draftReturns.reduce((sum, row) => sum + Math.max(0, row.amount), 0),
     [draftReturns],
   )
-  /** New bill: bill field is gross; deduct draft returns for pay/credit due. */
+  const loadedReturnTotal = loadedPendingBill ? saleReturnTotal(loadedPendingBill) : 0
+  const activeReturnTotal = loadedPendingId ? loadedReturnTotal : draftReturnTotal
+  const loadedGrossAmount = loadedPendingBill ? saleGrossBillAmount(loadedPendingBill) : 0
+  const hasReturnAdjustments =
+    activeReturnTotal > 0 ||
+    (loadedPendingBill?.originalBillAmount != null &&
+      loadedPendingBill.originalBillAmount > (loadedPendingBill.billAmount ?? 0))
+  /** New bill: bill field is gross; deduct returns for pay/credit due. */
   const deductDraftReturns =
     !loadedPendingId && !balanceOnlyMode && draftReturnTotal > 0
-  const billAmount = deductDraftReturns
-    ? Math.max(0, typedBillAmount - draftReturnTotal)
-    : typedBillAmount
+  const billAmount = loadedPendingBill
+    ? balanceOnlyMode
+      ? saleCreditBalanceDue(loadedPendingBill, tabSales)
+      : hasReturnAdjustments
+        ? saleCreditBalanceDue(loadedPendingBill, tabSales)
+        : typedBillAmount
+    : deductDraftReturns
+      ? Math.max(0, typedBillAmount - draftReturnTotal)
+      : typedBillAmount
+  const pendingReturnMeta = useMemo(() => {
+    if (balanceOnlyMode) return null
+    const returns = draftReturns.length > 0 ? draftReturns : undefined
+    if (!returns?.length && !hasReturnAdjustments && !deductDraftReturns) return null
+    const gross = loadedPendingBill
+      ? loadedGrossAmount > 0
+        ? loadedGrossAmount
+        : typedBillAmount + activeReturnTotal
+      : typedBillAmount
+    return {
+      gross,
+      returns: returns ?? loadedPendingBill?.returns,
+    }
+  }, [
+    balanceOnlyMode,
+    draftReturns,
+    hasReturnAdjustments,
+    deductDraftReturns,
+    loadedPendingBill,
+    loadedGrossAmount,
+    typedBillAmount,
+    activeReturnTotal,
+  ])
+
+  function recordSale(sale: Parameters<typeof recordSaleAction>[0]) {
+    recordSaleAction({
+      ...sale,
+      ...(pendingReturnMeta ? { originalBillAmount: pendingReturnMeta.gross } : {}),
+      ...(pendingReturnMeta?.returns?.length ? { returns: pendingReturnMeta.returns } : {}),
+    })
+  }
+
+  function updatePendingSale(
+    id: string,
+    sale: Parameters<typeof updatePendingSaleAction>[1],
+  ) {
+    updatePendingSaleAction(id, {
+      ...sale,
+      ...(pendingReturnMeta ? { originalBillAmount: pendingReturnMeta.gross } : {}),
+      ...(pendingReturnMeta?.returns?.length ? { returns: pendingReturnMeta.returns } : {}),
+    })
+  }
+
   const giveAmount = parseAmount(giveStr)
   const paidAmount = parseAmount(paidStr)
   const cashSplitAmount = parseAmount(cashSplitStr)
@@ -477,7 +521,7 @@ function Counter({ active }: { active: boolean }) {
           ? saleGrossBillAmount(collectingCreditBill)
           : typedBillAmount
   const returnTotalDisplay = loadedPendingBill
-    ? saleReturnTotal(loadedPendingBill)
+    ? Math.max(saleReturnTotal(loadedPendingBill), draftReturnTotal)
     : collectingCreditBill
       ? saleReturnTotal(collectingCreditBill)
       : draftReturnTotal
@@ -507,9 +551,12 @@ function Counter({ active }: { active: boolean }) {
               : balanceDueAmount ?? billAmount
             : balanceDueAmount ?? billAmount
       })()
-    : Math.max(0, dueAmount)
+    : hasReturnAdjustments && loadedPendingBill
+      ? saleCreditBalanceDue(loadedPendingBill, tabSales)
+      : Math.max(0, dueAmount)
   const showBalanceBreakdown =
     returnTotalDisplay > 0 ||
+    hasReturnAdjustments ||
     (balanceOnlyMode &&
       (paidSoFarDisplay > 0 ||
         returnTotalDisplay > 0 ||
@@ -1886,10 +1933,10 @@ function Counter({ active }: { active: boolean }) {
     const due = payType === 'split' ? splitTotal : dueAmount
     const base = {
       billAmount: due,
-      originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
+      originalBillAmount: pendingReturnMeta?.gross ?? billAmount,
       customerName: name,
       payType,
-      ...(draftReturns.length > 0 && !loadedPendingId ? { returns: draftReturns } : {}),
+      ...(pendingReturnMeta?.returns?.length ? { returns: pendingReturnMeta.returns } : {}),
     }
 
     if (payType === 'split') {
@@ -1990,11 +2037,14 @@ function Counter({ active }: { active: boolean }) {
       setCreditCollectDue(0)
     }
 
+    const hasReturns = (bill.returns?.length ?? 0) > 0 || bill.originalBillAmount != null
     setLoadedPendingId(bill.id)
-    setBalanceDueAmount(isBalanceBill ? due : null)
-    setOriginalBillHint(isBalanceBill && original !== due ? original : null)
+    setBalanceDueAmount(isBalanceBill || hasReturns ? due : null)
+    setOriginalBillHint(
+      hasReturns ? original : isBalanceBill && original !== due ? original : null,
+    )
     setDraftReturns(bill.returns ? [...bill.returns] : [])
-    setBillStr(String(isBalanceBill ? due : original))
+    setBillStr(String(hasReturns ? original : isBalanceBill ? due : original))
     setGiveStr('')
     setPaidStr('')
     setRoundOffAmount(null)
@@ -3289,7 +3339,13 @@ function Counter({ active }: { active: boolean }) {
     else setActiveField('bill')
   }
 
-  function handleReturnDone(draft: { itemName: string; quantity: number; rate: number }) {
+  function handleReturnAddItem(draft: {
+    itemName: string
+    quantity: number
+    rate: number
+    discountAmount?: number
+    gstPercent?: number
+  }) {
     const targetId =
       collectingCreditId ??
       effectiveCollectingCreditId ??
@@ -4503,7 +4559,7 @@ function Counter({ active }: { active: boolean }) {
           }
           setDraftReturns((prev) => prev.filter((row) => row.id !== returnId))
         }}
-        onDone={handleReturnDone}
+        onAddItem={handleReturnAddItem}
       />
     </div>
   )

@@ -30,7 +30,7 @@ export type HistoryPaymentFilter = 'all' | HistoryPaymentMode
 export interface HistoryReceiptLine {
   label: string
   amount: number
-  status: 'paid' | 'pending'
+  status: 'paid' | 'pending' | 'return'
   detail?: string
   /** @deprecated use paidAt */
   date?: string
@@ -43,7 +43,7 @@ export interface HistoryReceiptEvent {
   date: string
   amount?: number
   detail?: string
-  type: 'bill-created' | 'pending-created' | 'collected' | 'pending' | 'total'
+  type: 'bill-created' | 'pending-created' | 'collected' | 'pending' | 'return' | 'total'
 }
 
 export interface HistoryItem {
@@ -140,11 +140,12 @@ function finalizeReceiptEvents(drafts: ReceiptEventDraft[]): HistoryReceiptEvent
 }
 
 function receiptEventToLine(event: HistoryReceiptEvent, createdAt: string): HistoryReceiptLine {
+  const isReturn = event.type === 'return'
   const isPending = event.type === 'pending' || event.type === 'pending-created'
   return {
     label: event.label,
     amount: event.amount ?? 0,
-    status: isPending ? 'pending' : 'paid',
+    status: isReturn ? 'return' : isPending ? 'pending' : 'paid',
     detail: event.detail,
     createdAt,
     paidAt: event.type === 'collected' ? event.date : undefined,
@@ -205,7 +206,7 @@ function appendCreditSaleStructuredEvents(
         label: `Return · ${formatSaleReturnLine(row)}`,
         date: row.createdAt,
         amount: row.amount,
-        type: 'pending',
+        type: 'return',
         detail: `Bill reduced by ${formatMoney(row.amount)}`,
       })
     }
@@ -326,7 +327,7 @@ function appendChequeSaleStructuredEvents(
         label: `Return · ${formatSaleReturnLine(row)}`,
         date: row.createdAt,
         amount: row.amount,
-        type: 'pending',
+        type: 'return',
         detail: `Bill reduced by ${formatMoney(row.amount)}`,
       })
     }
@@ -473,7 +474,7 @@ function appendStandardSaleStructuredEvents(sale: Sale, drafts: ReceiptEventDraf
         label: `Return · ${formatSaleReturnLine(row)}`,
         date: row.createdAt,
         amount: row.amount,
-        type: 'pending',
+        type: 'return',
         detail: `Bill reduced by ${formatMoney(row.amount)}`,
       })
     }
@@ -1680,21 +1681,31 @@ function buildPurchaseStructuredReceipt(
   })
 
   if (item.no1Amount > 0 && item.billType === 'both') {
+    const no1Events = ledgerEvents.filter((event) => event.billNumber === 1 && event.kind === 'paid')
+    const no1Paid = no1Events.reduce((sum, event) => sum + event.total, 0)
     createReceiptDraft(drafts, RECEIPT_SEQ.BILL_CREATED, {
       label: `${NO1_BILL_LABEL} bill`,
       date: item.createdAt,
       amount: item.no1Amount,
       type: 'bill-created',
-      detail: item.paidNo1Amount > 0 ? `Paid ${formatMoney(item.paidNo1Amount)}` : 'Pending',
+      detail:
+        no1Paid > 0
+          ? `Paid ${formatMoney(no1Paid)}${item.no1ActivityAt ? ` · ${formatDate(item.no1ActivityAt)}` : ''}`
+          : `Pending · ${formatMoney(item.no1Amount)} due`,
     })
   }
   if (item.no2Amount > 0 && item.billType === 'both') {
+    const no2Events = ledgerEvents.filter((event) => event.billNumber === 2 && event.kind === 'paid')
+    const no2Paid = no2Events.reduce((sum, event) => sum + event.total, 0)
     createReceiptDraft(drafts, RECEIPT_SEQ.BILL_CREATED, {
       label: `${NO2_BILL_LABEL} bill`,
       date: item.createdAt,
       amount: item.no2Amount,
       type: 'bill-created',
-      detail: item.paidNo2Amount > 0 ? `Paid ${formatMoney(item.paidNo2Amount)}` : 'Pending',
+      detail:
+        no2Paid > 0
+          ? `Paid ${formatMoney(no2Paid)}${item.no2ActivityAt ? ` · ${formatDate(item.no2ActivityAt)}` : ''}`
+          : `Pending · ${formatMoney(item.no2Amount)} due`,
     })
   }
 
@@ -1753,7 +1764,9 @@ function buildPurchaseStructuredReceipt(
   }
 
   if (item.paidAmount > 0) {
-    appendTotalCollected(drafts, item.paidAmount, item.date)
+    const lastPaidAt =
+      ledgerEvents.filter((event) => event.kind === 'paid').at(-1)?.at ?? item.updatedAt
+    appendTotalCollected(drafts, item.paidAmount, lastPaidAt)
   }
 
   const timeline = finalizeReceiptEvents(drafts)

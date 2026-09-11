@@ -56,8 +56,11 @@ import {
   summarizeNormalExpenses,
 } from '../utils/normalExpenseHistory'
 import {
-  filterPurchaseHistoryItems,
-  getTopPurchaseShop,
+  filterPurchaseHistoryItemsByActivity,
+  filterPurchaseHistoryItemsByCreated,
+  getTopPurchaseShops,
+  purchasePeriodPaymentsToSummary,
+  summarizePurchasePaymentsInPeriod,
   summarizePurchases,
 } from '../utils/purchaseHistory'
 import {
@@ -375,16 +378,36 @@ function Home({ active }: { active: boolean }) {
     [periodExpenseItems],
   )
   const periodPurchaseItems = useMemo(() => {
-    return filterPurchaseHistoryItems(derived.purchaseHistoryItems, homeDayPreset, homeDayDate)
+    return filterPurchaseHistoryItemsByActivity(
+      workData,
+      derived.purchaseHistoryItems,
+      homeDayPreset,
+      homeDayDate,
+    )
+  }, [workData, derived.purchaseHistoryItems, homeDayPreset, homeDayDate])
+  const periodPurchaseCreatedItems = useMemo(() => {
+    return filterPurchaseHistoryItemsByCreated(
+      derived.purchaseHistoryItems,
+      homeDayPreset,
+      homeDayDate,
+    )
   }, [derived.purchaseHistoryItems, homeDayPreset, homeDayDate])
   const periodPurchaseSummary = useMemo(
-    () => summarizePurchases(periodPurchaseItems),
-    [periodPurchaseItems],
+    () => summarizePurchases(periodPurchaseCreatedItems),
+    [periodPurchaseCreatedItems],
   )
-  /** Cash/bank paid on purchases only — used under Expenses (credit bills stay on Purchases). */
+  /** Cash/bank paid on purchases only — dated when money actually left. */
   const periodPurchasePaidSummary = useMemo(
-    () => summarizePurchases(periodPurchaseItems, true),
-    [periodPurchaseItems],
+    () =>
+      purchasePeriodPaymentsToSummary(
+        summarizePurchasePaymentsInPeriod(
+          workData,
+          derived.purchaseHistoryItems,
+          homeDayPreset,
+          homeDayDate,
+        ),
+      ),
+    [workData, derived.purchaseHistoryItems, homeDayPreset, homeDayDate],
   )
   const periodLoanOutflowItems = useMemo(() => {
     return filterLoanOutflowHistoryItems(
@@ -415,10 +438,10 @@ function Home({ active }: { active: boolean }) {
       : homeExpenseChannel === 'bank'
         ? periodExpenseChannels.bankWithTransfers
         : periodExpenseChannels.total
-  const periodTopShop = useMemo(
-    () => getTopPurchaseShop(periodPurchaseItems),
-    [periodPurchaseItems],
-  )
+  const periodTopShop = useMemo(() => {
+    const periodPaidByShop = getTopPurchaseShops(periodPurchaseItems, true, 10)
+    return periodPaidByShop[0] ?? null
+  }, [periodPurchaseItems])
   const creditOverview = useMemo(() => buildCreditOverview(workData), [workData])
   const chequeOverview = useMemo(() => buildChequeOverview(workData), [workData])
   const dueReminders = useMemo(() => countActiveBillReminders(workData), [workData])

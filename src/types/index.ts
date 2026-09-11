@@ -18,7 +18,13 @@ export interface SaleReturnEntry {
   itemName: string
   quantity: number
   rate: number
-  /** quantity × rate */
+  /** Line subtotal before discount/GST (qty × rate). */
+  subtotal?: number
+  /** Flat discount in ₹ before GST. */
+  discountAmount?: number
+  /** GST % applied on (subtotal − discount). */
+  gstPercent?: number
+  /** Final deducted amount after discount + GST. */
   amount: number
   createdAt: string
 }

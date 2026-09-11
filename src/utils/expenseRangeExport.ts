@@ -9,7 +9,7 @@ import {
 } from './normalExpenseHistory'
 import {
   buildPurchaseHistoryItems,
-  filterPurchaseHistoryItems,
+  filterPurchaseHistoryItemsByActivity,
   summarizePurchases,
   type PurchaseHistoryItem,
 } from './purchaseHistory'
@@ -59,9 +59,13 @@ function normalExpenseItems(input: ExpenseRangeInput) {
 
 function purchaseExpenseItems(input: ExpenseRangeInput) {
   const { from, to } = normalizeRange(input.fromDate, input.toDate)
-  return filterPurchaseHistoryItems(buildPurchaseHistoryItems(input.data), 'range', from, to).sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-  )
+  return filterPurchaseHistoryItemsByActivity(
+    input.data,
+    buildPurchaseHistoryItems(input.data),
+    'range',
+    from,
+    to,
+  ).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 }
 
 export function filterNo1PurchaseItems(items: PurchaseHistoryItem[]): PurchaseHistoryItem[] {

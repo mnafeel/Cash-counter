@@ -218,6 +218,29 @@
   color: #f0a0a0;
 }
 
+.sale-return-form-block {
+  padding: 8px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--brown-dark) 92%, var(--accent) 4%);
+}
+
+.sale-return-form-title {
+  margin: 0 0 8px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.sale-return-btn--add {
+  background: var(--btn-primary-bg, var(--accent));
+  color: var(--text-on-accent, #fff);
+  border-color: transparent;
+  font-weight: 800;
+}
+
 .sale-return-actions {
   display: grid;
   grid-template-columns: 1fr 1.4fr;

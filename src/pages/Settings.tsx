@@ -73,7 +73,7 @@ import {
   buildNormalExpenseHistoryItems,
   filterNormalExpenseHistoryItems,
 } from '../utils/normalExpenseHistory'
-import { buildPurchaseHistoryItems, filterPurchaseHistoryItems } from '../utils/purchaseHistory'
+import { buildPurchaseHistoryItems, filterPurchaseHistoryItemsByActivity } from '../utils/purchaseHistory'
 import {
   downloadDataBackup,
   formatBackupSummary,
@@ -467,7 +467,8 @@ export default function Settings() {
   )
   const expenseExportPurchaseItems = useMemo(
     () =>
-      filterPurchaseHistoryItems(
+      filterPurchaseHistoryItemsByActivity(
+        data,
         buildPurchaseHistoryItems(data),
         'range',
         expenseExportFrom,

@@ -4458,7 +4458,13 @@ export function updateSaleBill(
 export function applySaleReturn(
   data: AppData,
   saleId: string,
-  input: { itemName: string; quantity: number; rate: number },
+  input: {
+    itemName: string
+    quantity: number
+    rate: number
+    discountAmount?: number
+    gstPercent?: number
+  },
 ): AppData {
   const sale = data.sales.find((s) => s.id === saleId)
   if (!sale) return data

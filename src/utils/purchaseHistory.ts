@@ -37,6 +37,10 @@ export interface PurchaseHistoryItem {
   createdAt: string
   /** Last payment / update ISO time — used for sorting and “Updated” labels. */
   updatedAt: string
+  /** Latest cash/bank outflow on No 1 — display only. */
+  no1ActivityAt?: string
+  /** Latest cash/bank outflow on No 2 — display only. */
+  no2ActivityAt?: string
   hasOpenCredit?: boolean
   openCreditAmount?: number
   openCreditExpenseId?: string
@@ -178,8 +182,38 @@ export interface SupplierPurchaseFileSummary {
 export function summarizeSupplierPurchaseFile(
   data: AppData,
   items: PurchaseHistoryItem[],
+  period?: {
+    dateFilter: PurchaseDateFilter | 'monthPick'
+    selectedDate: string
+    rangeTo?: string
+  },
 ): SupplierPurchaseFileSummary {
-  const payment = summarizePurchasePaymentBreakdown(data, items)
+  const periodPaid = period
+    ? summarizePurchasePaymentsInPeriod(
+        data,
+        items,
+        period.dateFilter,
+        period.selectedDate,
+        period.rangeTo ?? '',
+      )
+    : null
+  const payment = periodPaid
+    ? {
+        no1: {
+          cash: periodPaid.no1Cash,
+          bank: periodPaid.no1Bank,
+          total: periodPaid.no1Total,
+        },
+        no2: {
+          cash: periodPaid.no2Cash,
+          bank: periodPaid.no2Bank,
+          cheque: periodPaid.no2Cheque,
+          credit: 0,
+          other: 0,
+          total: periodPaid.no2Total,
+        },
+      }
+    : summarizePurchasePaymentBreakdown(data, items)
   let pendingBillCount = 0
   let paidBillCount = 0
   let creditOpenBillCount = 0
@@ -194,9 +228,11 @@ export function summarizeSupplierPurchaseFile(
 
   for (const item of items) {
     billTotal += item.amount
-    paidTotal += item.paidAmount
-    paidNo1Total += item.paidNo1Amount
-    paidNo2Total += item.paidNo2Amount
+    if (!periodPaid) {
+      paidTotal += item.paidAmount
+      paidNo1Total += item.paidNo1Amount
+      paidNo2Total += item.paidNo2Amount
+    }
     no1BillTotal += item.no1Amount
     no2BillTotal += item.no2Amount
     pendingTotal += Math.max(0, item.amount - item.paidAmount)
@@ -211,6 +247,12 @@ export function summarizeSupplierPurchaseFile(
     } else {
       pendingBillCount += 1
     }
+  }
+
+  if (periodPaid) {
+    paidTotal = periodPaid.total
+    paidNo1Total = periodPaid.no1Total
+    paidNo2Total = periodPaid.no2Total
   }
 
   return {
@@ -342,7 +384,7 @@ export function purchaseExpenseOutflowEvents(
     return [
       {
         id: `${expense.id}-paid`,
-        at: expense.updatedAt ?? expense.createdAt,
+        at: expense.createdAt,
         cash: paid.cash,
         bank: paid.bank + paid.cheque,
       },
@@ -1016,6 +1058,8 @@ function buildPurchaseHistoryItemsUncached(data: AppData): PurchaseHistoryItem[]
           purchaseExpenseSupplierBillDate(no1) ?? purchaseExpenseSupplierBillDate(no2),
         createdAt: no1.createdAt,
         updatedAt: latestPurchaseActivityTime(no1, no2),
+        no1ActivityAt: purchaseExpenseActivityTime(no1),
+        no2ActivityAt: purchaseExpenseActivityTime(no2),
         hasOpenCredit: no1Credit.open || no2Credit.open,
         openCreditAmount: openCreditAmount > 0 ? openCreditAmount : undefined,
         openCreditExpenseId: no1Credit.open ? no1.id : no2Credit.open ? no2.id : undefined,
@@ -1045,6 +1089,8 @@ function buildPurchaseHistoryItemsUncached(data: AppData): PurchaseHistoryItem[]
       billDate: purchaseExpenseSupplierBillDate(expense),
       createdAt: expense.createdAt,
       updatedAt: purchaseExpenseActivityTime(expense),
+      no1ActivityAt: gst ? purchaseExpenseActivityTime(expense) : undefined,
+      no2ActivityAt: gst ? undefined : purchaseExpenseActivityTime(expense),
       hasOpenCredit: credit.open,
       openCreditAmount: credit.open ? credit.amount : undefined,
       openCreditExpenseId: credit.open ? credit.expenseId : undefined,
@@ -1135,10 +1181,161 @@ export function getTopPurchaseShop(
   return getTopPurchaseShops(items, paidOnly, 1)[0] ?? null
 }
 
-export function summarizeTodayPaid(items: PurchaseHistoryItem[]): number {
-  return items
-    .filter((item) => matchesCashDateFilter(item.date, 'today', ''))
-    .reduce((sum, item) => sum + item.paidAmount, 0)
+export function summarizeTodayPaid(
+  data: AppData,
+  items: PurchaseHistoryItem[],
+): number {
+  return summarizePurchasePaymentsInPeriod(data, items, 'today', '').total
+}
+
+export function matchesPurchaseHistoryDateFilter(
+  iso: string,
+  dateFilter: PurchaseDateFilter | 'monthPick',
+  selectedDate: string,
+  rangeTo = '',
+): boolean {
+  if (dateFilter === 'all') return true
+  if (dateFilter === 'monthPick') {
+    if (!selectedDate) return true
+    return purchaseCreditMonthKey(iso) === selectedDate
+  }
+  return matchesCashDateFilter(iso, dateFilter, selectedDate, rangeTo)
+}
+
+/** Bills recorded (created) in the period — for bill-total stats. */
+export function filterPurchaseHistoryItemsByCreated(
+  items: PurchaseHistoryItem[],
+  dateFilter: PurchaseDateFilter | 'monthPick',
+  selectedDate: string,
+  rangeTo = '',
+): PurchaseHistoryItem[] {
+  if (dateFilter === 'all') return items
+  if (dateFilter === 'monthPick') {
+    if (!selectedDate) return items
+    return items.filter((item) => purchaseCreditMonthKey(item.createdAt) === selectedDate)
+  }
+  return items.filter((item) =>
+    matchesPurchaseHistoryDateFilter(item.createdAt, dateFilter, selectedDate, rangeTo),
+  )
+}
+
+/** Bills with a payment or new purchase in the period — for history lists. */
+export function purchaseItemHasActivityInPeriod(
+  data: AppData,
+  item: PurchaseHistoryItem,
+  dateFilter: PurchaseDateFilter | 'monthPick',
+  selectedDate: string,
+  rangeTo = '',
+): boolean {
+  if (dateFilter === 'all') return true
+  if (matchesPurchaseHistoryDateFilter(item.createdAt, dateFilter, selectedDate, rangeTo)) {
+    return true
+  }
+  for (const expense of purchaseExpensesForHistoryItems(data, [item])) {
+    for (const event of purchaseExpenseOutflowEvents(expense)) {
+      if (matchesPurchaseHistoryDateFilter(event.at, dateFilter, selectedDate, rangeTo)) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
+export function filterPurchaseHistoryItemsByActivity(
+  data: AppData,
+  items: PurchaseHistoryItem[],
+  dateFilter: PurchaseDateFilter | 'monthPick',
+  selectedDate: string,
+  rangeTo = '',
+): PurchaseHistoryItem[] {
+  if (dateFilter === 'all') return items
+  return items.filter((item) =>
+    purchaseItemHasActivityInPeriod(data, item, dateFilter, selectedDate, rangeTo),
+  )
+}
+
+export interface PurchasePeriodPaymentTotals {
+  total: number
+  no1Total: number
+  no2Total: number
+  no1Cash: number
+  no1Bank: number
+  no2Cash: number
+  no2Bank: number
+  no2Cheque: number
+  eventCount: number
+}
+
+function purchaseExpenseBillNumber(expense: Expense): 1 | 2 {
+  if (expense.billNumber === 2) return 2
+  return isGstExpense(expense.name, expense.billNumber) ? 1 : 2
+}
+
+/** Cash/bank actually paid in the period — one row per outflow event. */
+export function summarizePurchasePaymentsInPeriod(
+  data: AppData,
+  items: PurchaseHistoryItem[],
+  dateFilter: PurchaseDateFilter | 'monthPick',
+  selectedDate: string,
+  rangeTo = '',
+): PurchasePeriodPaymentTotals {
+  const totals: PurchasePeriodPaymentTotals = {
+    total: 0,
+    no1Total: 0,
+    no2Total: 0,
+    no1Cash: 0,
+    no1Bank: 0,
+    no2Cash: 0,
+    no2Bank: 0,
+    no2Cheque: 0,
+    eventCount: 0,
+  }
+
+  for (const item of items) {
+    for (const expense of purchaseExpensesForHistoryItems(data, [item])) {
+      const billNumber = purchaseExpenseBillNumber(expense)
+      const isNo1 = billNumber === 1
+      for (const event of purchaseExpenseOutflowEvents(expense)) {
+        if (!matchesPurchaseHistoryDateFilter(event.at, dateFilter, selectedDate, rangeTo)) continue
+        const paid = event.cash + event.bank
+        if (paid <= 0) continue
+        totals.total += paid
+        totals.eventCount += 1
+        if (isNo1) {
+          totals.no1Total += paid
+          totals.no1Cash += event.cash
+          totals.no1Bank += event.bank
+        } else {
+          totals.no2Total += paid
+          totals.no2Cash += event.cash
+          totals.no2Bank += event.bank
+        }
+      }
+    }
+  }
+
+  return totals
+}
+
+export function summarizePurchasePaymentsInDateRange(
+  data: AppData,
+  fromDate: string,
+  toDate: string,
+): PurchasePeriodPaymentTotals {
+  return summarizePurchasePaymentsInPeriod(data, buildPurchaseHistoryItems(data), 'range', fromDate, toDate)
+}
+
+export function purchasePeriodPaymentsToSummary(
+  totals: PurchasePeriodPaymentTotals,
+): PurchaseSummary {
+  return {
+    total: totals.total,
+    gstTotal: totals.no1Total,
+    noGstTotal: totals.no2Total,
+    count: totals.eventCount,
+    creditTotal: 0,
+    creditCount: 0,
+  }
 }
 
 export function filterPurchaseHistoryItems(
@@ -1302,8 +1499,7 @@ function formatPurchaseLedgerMethodLabel(cash: number, bank: number, chequePendi
 }
 
 function expenseBillNumber(expense: Expense): 1 | 2 {
-  if (expense.billNumber === 2) return 2
-  return isGstExpense(expense.name, expense.billNumber) ? 1 : 2
+  return purchaseExpenseBillNumber(expense)
 }
 
 /** Each cash/bank/cheque outflow for a purchase history row, dated when money actually left. */

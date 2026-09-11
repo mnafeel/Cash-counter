@@ -7,6 +7,7 @@ import { useCashActions } from '../context/CashContext'
 import { loginCloud } from '../firebase/backup'
 import { getLastCloudUsername } from '../firebase/cloudUser'
 import { useDeviceSize } from '../hooks/useDeviceSize'
+import { useSidebarGestures } from '../hooks/useSidebarGestures'
 import { useAppRouteLocks } from '../hooks/useAppRouteLocks'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import { getPinEntryLength, verifyUserPin } from '../utils/accessPin'
@@ -75,6 +76,9 @@ export default function Layout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed)
   const [navTransition, setNavTransition] = useState(false)
   const navTransitionTimerRef = useRef<number | null>(null)
+  const sidebarRef = useRef<HTMLElement | null>(null)
+
+  useSidebarGestures(sidebarOpen, setSidebarOpen, sidebarRef)
 
   useEffect(() => {
     if (mainTab) setVisibleTab(mainTab)
@@ -222,7 +226,7 @@ export default function Layout() {
         onClick={() => setSidebarOpen(false)}
       />
 
-      <aside className="app-sidebar" aria-label="Main navigation">
+      <aside className="app-sidebar" aria-label="Main navigation" ref={sidebarRef}>
         <div className="sidebar-brand">
           <img src={logoUrl} alt="Shalimar Fashions" className="sidebar-logo" />
           <div className="sidebar-brand-text">

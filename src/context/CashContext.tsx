@@ -193,7 +193,13 @@ interface CashContextValue {
   ) => void
   applySaleReturn: (
     saleId: string,
-    input: { itemName: string; quantity: number; rate: number },
+    input: {
+      itemName: string
+      quantity: number
+      rate: number
+      discountAmount?: number
+      gstPercent?: number
+    },
   ) => void
   cancelSaleReturn: (saleId: string, returnId: string) => void
   recordExpense: (expense: {
