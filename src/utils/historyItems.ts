@@ -1892,7 +1892,8 @@ export function getHistoryItemListPaymentParts(
         line.label === 'Bill total' ||
         line.label === 'Purchase' ||
         line.label === 'Bill created' ||
-        line.label === 'Total collected'
+        line.label === 'Total collected' ||
+        line.status === 'return'
       ) {
         continue
       }

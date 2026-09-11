@@ -28,7 +28,6 @@ import {
   salesFilterForPreset,
   summarizeChequeItems,
   summarizeCreditItems,
-  summarizePurchases,
   type ReportDatePreset,
 } from '../utils/reportsHub'
 import {
