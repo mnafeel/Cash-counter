@@ -2397,6 +2397,7 @@ export function updatePendingBill(
     creditAmount?: number
     pendingPayType?: PayType
     paidAmount?: number
+    paymentEvents?: SalePaymentEvent[]
     returns?: SaleReturnEntry[]
   },
 ): AppData {
@@ -2421,7 +2422,10 @@ export function updatePendingBill(
         originalBillAmount: updates.originalBillAmount ?? s.originalBillAmount,
         customerName: updates.customerName ?? s.customerName,
         payType: updates.payType ?? s.payType,
-        pendingPayType: updates.pendingPayType ?? s.pendingPayType,
+        pendingPayType:
+          'pendingPayType' in updates
+            ? updates.pendingPayType
+            : s.pendingPayType,
         returns: updates.returns !== undefined ? updates.returns : s.returns,
         cashAmount:
           updates.cashAmount !== undefined
@@ -2477,24 +2481,42 @@ export function updatePendingBill(
               ? undefined
               : s.chequeApproved,
         paidAmount:
-          updates.paidAmount ??
-          (priorCollected && priorCollected.total > 0 ? priorCollected.total : s.paidAmount),
+          updates.paidAmount !== undefined
+            ? updates.paidAmount
+            : priorCollected && priorCollected.total > 0
+              ? priorCollected.total
+              : s.paidAmount,
+        ...( 'paymentEvents' in updates
+          ? { paymentEvents: updates.paymentEvents }
+          : {}),
       }
 
+      const patchedCleared =
+        updates.paidAmount === 0 && (updates.paymentEvents?.length ?? 0) === 0
+          ? {
+              ...patched,
+              cashAmount: undefined,
+              bankAmount: undefined,
+              chequeAmount: undefined,
+              chequeApproved: undefined,
+            }
+          : patched
+
       const financialChanged =
-        patched.billAmount !== s.billAmount ||
-        patched.originalBillAmount !== s.originalBillAmount ||
-        patched.paidAmount !== s.paidAmount ||
-        (patched.cashAmount ?? 0) !== (s.cashAmount ?? 0) ||
-        (patched.bankAmount ?? 0) !== (s.bankAmount ?? 0) ||
-        (patched.chequeAmount ?? 0) !== (s.chequeAmount ?? 0) ||
-        (patched.creditAmount ?? 0) !== (s.creditAmount ?? 0) ||
-        patched.payType !== s.payType ||
-        patched.pendingPayType !== s.pendingPayType
+        patchedCleared.billAmount !== s.billAmount ||
+        patchedCleared.originalBillAmount !== s.originalBillAmount ||
+        patchedCleared.paidAmount !== s.paidAmount ||
+        (patchedCleared.cashAmount ?? 0) !== (s.cashAmount ?? 0) ||
+        (patchedCleared.bankAmount ?? 0) !== (s.bankAmount ?? 0) ||
+        (patchedCleared.chequeAmount ?? 0) !== (s.chequeAmount ?? 0) ||
+        (patchedCleared.creditAmount ?? 0) !== (s.creditAmount ?? 0) ||
+        patchedCleared.payType !== s.payType ||
+        patchedCleared.pendingPayType !== s.pendingPayType ||
+        (patchedCleared.paymentEvents?.length ?? 0) !== (s.paymentEvents?.length ?? 0)
 
       return financialChanged
-        ? { ...patched, updatedAt: new Date().toISOString() }
-        : { ...patched, updatedAt: patched.updatedAt ?? new Date().toISOString() }
+        ? { ...patchedCleared, updatedAt: new Date().toISOString() }
+        : { ...patchedCleared, updatedAt: patchedCleared.updatedAt ?? new Date().toISOString() }
     }),
   }
   const updated = next.sales.find((s) => s.id === id)

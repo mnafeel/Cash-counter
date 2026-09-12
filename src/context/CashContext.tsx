@@ -17,6 +17,7 @@ import type {
   PayType,
   ReminderAlertSettings,
   Sale,
+  SalePaymentEvent,
   SaleReturnEntry,
   SaleStatus,
   StaffLeaveType,
@@ -172,6 +173,8 @@ interface CashContextValue {
       chequeAmount?: number
       creditAmount?: number
       pendingPayType?: PayType
+      paidAmount?: number
+      paymentEvents?: SalePaymentEvent[]
       returns?: SaleReturnEntry[]
     },
   ) => void
@@ -872,6 +875,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
         chequeAmount?: number
         creditAmount?: number
         pendingPayType?: PayType
+        paidAmount?: number
+        paymentEvents?: SalePaymentEvent[]
         returns?: SaleReturnEntry[]
       },
     ) => {
