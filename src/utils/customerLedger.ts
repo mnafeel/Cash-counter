@@ -1,5 +1,5 @@
 import type { AppData, Sale } from '../types'
-import { formatDate, formatMoney } from './format'
+import { formatDate, formatMoney, formatSaleCreatedUpdatedLabel } from './format'
 import { memoByDataRef } from './memoByDataRef'
 import {
   saleBillGroupId,
@@ -290,13 +290,14 @@ function groupBillAmount(parent: Sale, children: Sale[]): number {
   return parent.billAmount + children.reduce((sum, c) => sum + c.billAmount, 0)
 }
 
-function buildGroupPurchaseRow(parent: Sale, children: Sale[]): CustomerPurchaseRow | null {
+function buildGroupPurchaseRow(parent: Sale, children: Sale[], allSales: Sale[]): CustomerPurchaseRow | null {
   const billAmount = groupBillAmount(parent, children)
   const paidAmount =
     (parent.status !== 'pending' ? saleTotalCollected(parent) : saleCollectedAmount(parent)) +
     children.reduce((sum, child) => sum + saleCollectedAmount(child), 0)
   const creditPending =
-    saleCreditPendingAmount(parent) + children.reduce((sum, child) => sum + saleCreditPendingAmount(child), 0)
+    saleCreditPendingAmount(parent, allSales) +
+    children.reduce((sum, child) => sum + saleCreditPendingAmount(child, allSales), 0)
   const creditInvolved = groupCreditInvolved(parent, children)
   const customerName = resolveCustomerLabel(
     [parent.customerName, ...children.map((child) => child.customerName)],
@@ -317,7 +318,7 @@ function buildGroupPurchaseRow(parent: Sale, children: Sale[]): CustomerPurchase
     date,
     dateLabel: formatDate(date),
     billDate: parent.createdAt,
-    billDateLabel: formatDate(parent.createdAt),
+    billDateLabel: formatSaleCreatedUpdatedLabel(parent),
     billAmount: billAmount || parent.billAmount + children.reduce((sum, c) => sum + c.billAmount, 0),
     paidAmount,
     creditPending,
@@ -328,10 +329,10 @@ function buildGroupPurchaseRow(parent: Sale, children: Sale[]): CustomerPurchase
   }
 }
 
-function buildSinglePurchaseRow(sale: Sale): CustomerPurchaseRow | null {
+function buildSinglePurchaseRow(sale: Sale, allSales: Sale[]): CustomerPurchaseRow | null {
   const billAmount = saleOriginalBillAmount(sale)
   const paidAmount = saleCollectedAmount(sale)
-  const creditPending = saleCreditPendingAmount(sale)
+  const creditPending = saleCreditPendingAmount(sale, allSales)
   const creditInvolved = isCreditInvolvedSale(sale)
   const customerName = resolveCustomerLabel([sale.customerName], creditPending > 0 || creditInvolved)
   if (!customerName) return null
@@ -346,7 +347,7 @@ function buildSinglePurchaseRow(sale: Sale): CustomerPurchaseRow | null {
     date,
     dateLabel: formatDate(date),
     billDate: sale.createdAt,
-    billDateLabel: formatDate(sale.createdAt),
+    billDateLabel: formatSaleCreatedUpdatedLabel(sale),
     billAmount,
     paidAmount,
     creditPending,
@@ -370,18 +371,18 @@ export function buildCustomerPurchases(data: AppData): CustomerPurchaseRow[] {
 
     if (isSplitGroup) {
       for (const child of children) consumedChildIds.add(child.id)
-      const row = buildGroupPurchaseRow(sale, children)
+      const row = buildGroupPurchaseRow(sale, children, data.sales)
       if (row) rows.push(row)
       continue
     }
 
-    const row = buildSinglePurchaseRow(sale)
+    const row = buildSinglePurchaseRow(sale, data.sales)
     if (row) rows.push(row)
   }
 
   for (const sale of data.sales) {
     if (!sale.parentSplitId || consumedChildIds.has(sale.id)) continue
-    const row = buildSinglePurchaseRow(sale)
+    const row = buildSinglePurchaseRow(sale, data.sales)
     if (row) rows.push(row)
   }
 

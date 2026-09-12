@@ -1,5 +1,5 @@
 import type { AppData, Sale } from '../types'
-import { formatDate } from './format'
+import { formatDate, formatSaleCreatedUpdatedLabel } from './format'
 import { memoByDataRef } from './memoByDataRef'
 import {
   saleBillGroupId,
@@ -115,13 +115,14 @@ function groupBillAmount(parent: Sale, children: Sale[]): number {
   return parent.billAmount + children.reduce((sum, c) => sum + c.billAmount, 0)
 }
 
-function buildGroupRow(parent: Sale, children: Sale[]): ChequePurchaseRow | null {
+function buildGroupRow(parent: Sale, children: Sale[], allSales: Sale[]): ChequePurchaseRow | null {
   const billAmount = groupBillAmount(parent, children)
   const paidAmount =
     (parent.status !== 'pending' ? saleTotalCollected(parent) : saleCollectedAmount(parent)) +
     children.reduce((sum, child) => sum + saleCollectedAmount(child), 0)
   const chequePending =
-    saleChequePendingAmount(parent) + children.reduce((sum, child) => sum + saleChequePendingAmount(child), 0)
+    saleChequePendingAmount(parent, allSales) +
+    children.reduce((sum, child) => sum + saleChequePendingAmount(child, allSales), 0)
   const chequeInvolved = groupChequeInvolved(parent, children)
   const customerName = resolveCustomerLabel(
     [parent.customerName, ...children.map((child) => child.customerName)],
@@ -142,7 +143,7 @@ function buildGroupRow(parent: Sale, children: Sale[]): ChequePurchaseRow | null
     date,
     dateLabel: formatDate(date),
     billDate: parent.createdAt,
-    billDateLabel: formatDate(parent.createdAt),
+    billDateLabel: formatSaleCreatedUpdatedLabel(parent),
     billAmount: billAmount || parent.billAmount + children.reduce((sum, c) => sum + c.billAmount, 0),
     paidAmount,
     chequePending,
@@ -153,10 +154,10 @@ function buildGroupRow(parent: Sale, children: Sale[]): ChequePurchaseRow | null
   }
 }
 
-function buildSingleRow(sale: Sale): ChequePurchaseRow | null {
+function buildSingleRow(sale: Sale, allSales: Sale[]): ChequePurchaseRow | null {
   const billAmount = saleOriginalBillAmount(sale)
   const paidAmount = saleCollectedAmount(sale)
-  const chequePending = saleChequePendingAmount(sale)
+  const chequePending = saleChequePendingAmount(sale, allSales)
   const chequeInvolved = isChequeInvolvedSale(sale)
   const customerName = resolveCustomerLabel([sale.customerName], chequePending > 0 || chequeInvolved)
   if (!customerName) return null
@@ -171,7 +172,7 @@ function buildSingleRow(sale: Sale): ChequePurchaseRow | null {
     date,
     dateLabel: formatDate(date),
     billDate: sale.createdAt,
-    billDateLabel: formatDate(sale.createdAt),
+    billDateLabel: formatSaleCreatedUpdatedLabel(sale),
     billAmount,
     paidAmount,
     chequePending,
@@ -195,18 +196,18 @@ export function buildChequePurchases(data: AppData): ChequePurchaseRow[] {
 
     if (isSplitGroup) {
       for (const child of children) consumedChildIds.add(child.id)
-      const row = buildGroupRow(sale, children)
+      const row = buildGroupRow(sale, children, data.sales)
       if (row && row.chequeInvolved) rows.push(row)
       continue
     }
 
-    const row = buildSingleRow(sale)
+    const row = buildSingleRow(sale, data.sales)
     if (row && row.chequeInvolved) rows.push(row)
   }
 
   for (const sale of data.sales) {
     if (!sale.parentSplitId || consumedChildIds.has(sale.id)) continue
-    const row = buildSingleRow(sale)
+    const row = buildSingleRow(sale, data.sales)
     if (row && row.chequeInvolved) rows.push(row)
   }
 

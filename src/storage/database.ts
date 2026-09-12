@@ -1326,8 +1326,7 @@ export function getPendingBills(data: AppData): Sale[] {
     .filter((s) => s.status === 'pending')
     .sort(
       (a, b) =>
-        new Date(b.updatedAt ?? b.createdAt).getTime() -
-        new Date(a.updatedAt ?? a.createdAt).getTime(),
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     )
 }
 
@@ -2398,6 +2397,8 @@ export function updatePendingBill(
     pendingPayType?: PayType
     paidAmount?: number
     paymentEvents?: SalePaymentEvent[]
+    chequeApproved?: boolean
+    bankAmount?: number
     returns?: SaleReturnEntry[]
   },
 ): AppData {
@@ -2436,7 +2437,9 @@ export function updatePendingBill(
                 ? s.cashAmount ?? (priorCollected && priorCollected.cash > 0 ? priorCollected.cash : undefined)
                 : undefined,
         bankAmount:
-          updates.bankAmount !== undefined
+          'bankAmount' in updates
+            ? updates.bankAmount
+            : updates.bankAmount !== undefined
             ? updates.bankAmount
             : updates.payType === 'split'
               ? updates.bankAmount
@@ -2474,12 +2477,15 @@ export function updatePendingBill(
                 ? updates.billAmount
                 : undefined,
         chequeApproved:
-          updates.payType === 'cheque' ||
-          (updates.payType == null && (s.payType === 'cheque' || s.pendingPayType === 'cheque'))
-            ? s.chequeApproved
-            : updates.payType === 'credit'
-              ? undefined
-              : s.chequeApproved,
+          'chequeApproved' in updates
+            ? updates.chequeApproved
+            : updates.payType === 'cheque' ||
+                (updates.payType == null &&
+                  (s.payType === 'cheque' || s.pendingPayType === 'cheque'))
+              ? s.chequeApproved
+              : updates.payType === 'credit'
+                ? undefined
+                : s.chequeApproved,
         paidAmount:
           updates.paidAmount !== undefined
             ? updates.paidAmount

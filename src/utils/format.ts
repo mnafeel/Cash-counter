@@ -19,6 +19,19 @@ export function formatDate(iso: string): string {
   }).format(new Date(iso))
 }
 
+/** Bill created time, plus updated time when the bill was edited after creation. */
+export function formatSaleCreatedUpdatedLabel(sale: {
+  createdAt: string
+  updatedAt?: string
+}): string {
+  const created = formatDate(sale.createdAt)
+  const updatedAt = sale.updatedAt
+  if (!updatedAt || updatedAt === sale.createdAt) return created
+  const updated = formatDate(updatedAt)
+  if (updated === created) return created
+  return `${created} · ${updated}`
+}
+
 /** Full date + time with seconds for history and audit lines. */
 export function formatTimestamp(iso: string): string {
   if (!iso) return '—'

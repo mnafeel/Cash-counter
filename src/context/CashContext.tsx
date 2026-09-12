@@ -175,6 +175,8 @@ interface CashContextValue {
       pendingPayType?: PayType
       paidAmount?: number
       paymentEvents?: SalePaymentEvent[]
+      chequeApproved?: boolean
+      bankAmount?: number
       returns?: SaleReturnEntry[]
     },
   ) => void
@@ -877,6 +879,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
         pendingPayType?: PayType
         paidAmount?: number
         paymentEvents?: SalePaymentEvent[]
+        chequeApproved?: boolean
+        bankAmount?: number
         returns?: SaleReturnEntry[]
       },
     ) => {

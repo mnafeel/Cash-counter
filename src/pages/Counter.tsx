@@ -13,7 +13,7 @@ import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useCashActions } from '../context/CashContext'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
 import type { Sale, SalePaymentEvent, SaleReturnEntry } from '../types'
-import { formatDate, formatMoney, parseAmount } from '../utils/format'
+import { formatDate, formatMoney, formatSaleCreatedUpdatedLabel, parseAmount } from '../utils/format'
 import { isReminderDue } from '../utils/billReminders'
 import {
   getEffectiveSaleReminderAt,
@@ -167,6 +167,30 @@ function isChequePendingBill(bill: Sale): boolean {
   return getPendingBillPayType(bill) === 'cheque'
 }
 
+function stepListHighlight(current: number, length: number, direction: 'down' | 'up'): number {
+  if (length <= 0) return -1
+  if (direction === 'down') {
+    if (current < 0) return 0
+    return Math.min(current + 1, length - 1)
+  }
+  if (current < 0) return length - 1
+  return Math.max(current - 1, 0)
+}
+
+function openChequeListAmount(bill: Sale, sales: Sale[]): number {
+  const due = saleCreditBalanceDue(bill, sales)
+  if (due > 0) return due
+  if (!isChequePendingBill(bill)) return due
+  return Math.max(bill.billAmount ?? 0, bill.chequeAmount ?? 0)
+}
+
+function openCreditListAmount(bill: Sale, sales: Sale[]): number {
+  const due = saleCreditBalanceDue(bill, sales)
+  if (due > 0) return due
+  if (!isCreditPendingBill(bill)) return due
+  return Math.max(bill.billAmount ?? 0, bill.creditAmount ?? 0)
+}
+
 function isCreditPendingBill(bill: Sale): boolean {
   return getPendingBillPayType(bill) === 'credit'
 }
@@ -218,8 +242,10 @@ function Counter({ active }: { active: boolean }) {
   const [nameSectionFocus, setNameSectionFocus] = useState(false)
   const [chequeListOpen, setChequeListOpen] = useState(false)
   const [highlightedChequeIndex, setHighlightedChequeIndex] = useState(-1)
+  const [chequeListKeyboardNav, setChequeListKeyboardNav] = useState(false)
   const [creditListOpen, setCreditListOpen] = useState(false)
   const [highlightedCreditIndex, setHighlightedCreditIndex] = useState(-1)
+  const [creditListKeyboardNav, setCreditListKeyboardNav] = useState(false)
   const {
     value: chequeListSearch,
     setValue: setChequeListSearch,
@@ -290,7 +316,13 @@ function Counter({ active }: { active: boolean }) {
   }, [tabData])
 
   const chequePendingBills = useMemo(
-    () => tabPendingBills.filter(isChequePendingBill),
+    () =>
+      tabPendingBills
+        .filter(isChequePendingBill)
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
     [tabPendingBills],
   )
 
@@ -308,7 +340,13 @@ function Counter({ active }: { active: boolean }) {
     : ''
 
   const creditPendingBills = useMemo(
-    () => tabPendingBills.filter(isCreditPendingBill),
+    () =>
+      tabPendingBills
+        .filter(isCreditPendingBill)
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
     [tabPendingBills],
   )
 
@@ -349,13 +387,21 @@ function Counter({ active }: { active: boolean }) {
   }, [deferredCreditListSearch, creditListOpen, filteredCreditPendingBills.length])
 
   const chequePendingTotal = useMemo(
-    () => chequePendingBills.reduce((sum, bill) => sum + bill.billAmount, 0),
-    [chequePendingBills],
+    () =>
+      chequePendingBills.reduce(
+        (sum, bill) => sum + openChequeListAmount(bill, tabSales),
+        0,
+      ),
+    [chequePendingBills, tabSales],
   )
 
   const creditPendingTotal = useMemo(
-    () => creditPendingBills.reduce((sum, bill) => sum + bill.billAmount, 0),
-    [creditPendingBills],
+    () =>
+      creditPendingBills.reduce(
+        (sum, bill) => sum + openCreditListAmount(bill, tabSales),
+        0,
+      ),
+    [creditPendingBills, tabSales],
   )
 
   const billPendingBills = useMemo(
@@ -1767,14 +1813,22 @@ function Counter({ active }: { active: boolean }) {
     if (creditListOpen) {
       setCreditListOpen(false)
       setHighlightedCreditIndex(-1)
+      setCreditListKeyboardNav(false)
       setChequeListOpen(true)
       setHighlightedChequeIndex(chequePendingBills.length > 0 ? 0 : -1)
+      setChequeListKeyboardNav(false)
       return
     }
     setChequeListOpen((open) => {
       const next = !open
-      if (next) setHighlightedChequeIndex(chequePendingBills.length > 0 ? 0 : -1)
-      else setHighlightedChequeIndex(-1)
+      if (next) {
+        setHighlightedChequeIndex(chequePendingBills.length > 0 ? 0 : -1)
+        setChequeListKeyboardNav(false)
+      }
+      else {
+        setHighlightedChequeIndex(-1)
+        setChequeListKeyboardNav(false)
+      }
       return next
     })
   }
@@ -1783,14 +1837,22 @@ function Counter({ active }: { active: boolean }) {
     if (chequeListOpen) {
       setChequeListOpen(false)
       setHighlightedChequeIndex(-1)
+      setChequeListKeyboardNav(false)
       setCreditListOpen(true)
       setHighlightedCreditIndex(creditPendingBills.length > 0 ? 0 : -1)
+      setCreditListKeyboardNav(false)
       return
     }
     setCreditListOpen((open) => {
       const next = !open
-      if (next) setHighlightedCreditIndex(creditPendingBills.length > 0 ? 0 : -1)
-      else setHighlightedCreditIndex(-1)
+      if (next) {
+        setHighlightedCreditIndex(creditPendingBills.length > 0 ? 0 : -1)
+        setCreditListKeyboardNav(false)
+      }
+      else {
+        setHighlightedCreditIndex(-1)
+        setCreditListKeyboardNav(false)
+      }
       return next
     })
   }
@@ -1957,6 +2019,25 @@ function Counter({ active }: { active: boolean }) {
     return typedBillAmount
   }
 
+  /** Pending save only — cheque/credit face in paid field is not a collection/approval. */
+  function pendingSaveCollection(netDue: number): {
+    cash: number
+    bank: number
+    cheque: number
+    applied: number
+  } {
+    const empty = { cash: 0, bank: 0, cheque: 0, applied: 0 }
+    if (netDue <= 0) return empty
+    if (payType === 'cheque' || payType === 'credit') {
+      if (giveAmount > 0) {
+        const applied = Math.min(netDue, giveAmount)
+        return { cash: applied, bank: 0, cheque: 0, applied }
+      }
+      return empty
+    }
+    return pendingAppliedCollection(netDue)
+  }
+
   function pendingAppliedCollection(netDue: number): {
     cash: number
     bank: number
@@ -2026,7 +2107,7 @@ function Counter({ active }: { active: boolean }) {
       ? saleReturnTotal({ returns: pendingReturnMeta.returns })
       : draftReturnTotal
     const netDue = Math.max(0, gross - returnsAmount)
-    const parts = pendingAppliedCollection(netDue)
+    const parts = pendingSaveCollection(netDue)
     const openBalance =
       parts.applied > 0
         ? Math.max(0, Math.round((netDue - parts.applied) * 100) / 100)
@@ -2062,6 +2143,32 @@ function Counter({ active }: { active: boolean }) {
       }
     }
 
+    if (payType === 'cheque' && netDue > 0) {
+      const openCheque = parts.applied > 0 ? openBalance : netDue
+      return {
+        ...base,
+        billAmount: openCheque,
+        originalBillAmount: gross > 0 ? gross : netDue,
+        paidAmount: parts.applied,
+        paymentEvents: pendingCollectionEvents(parts),
+        chequeAmount: openCheque,
+        ...(parts.cash > 0 ? { cashAmount: parts.cash } : {}),
+      }
+    }
+
+    if (payType === 'credit' && netDue > 0) {
+      const openCredit = parts.applied > 0 ? openBalance : netDue
+      return {
+        ...base,
+        billAmount: openCredit,
+        originalBillAmount: gross > 0 ? gross : netDue,
+        paidAmount: parts.applied,
+        paymentEvents: pendingCollectionEvents(parts),
+        creditAmount: openCredit,
+        ...(parts.cash > 0 ? { cashAmount: parts.cash } : {}),
+      }
+    }
+
     if (parts.applied <= 0) {
       return base
     }
@@ -2071,14 +2178,6 @@ function Counter({ active }: { active: boolean }) {
     }
     if (payType === 'bank') {
       return { ...base, bankAmount: parts.bank }
-    }
-    if (payType === 'cheque') {
-      return {
-        ...base,
-        chequeAmount: parts.cheque,
-        bankAmount: parts.cheque,
-        chequeApproved: true,
-      }
     }
 
     return base
@@ -2149,6 +2248,8 @@ function Counter({ active }: { active: boolean }) {
     setCreditListOpen(false)
     setHighlightedChequeIndex(-1)
     setHighlightedCreditIndex(-1)
+    setChequeListKeyboardNav(false)
+    setCreditListKeyboardNav(false)
 
     if (isCheque) {
       setCollectingCreditId(null)
@@ -2321,7 +2422,7 @@ function Counter({ active }: { active: boolean }) {
       setChequeCollectDue(due)
       setChequeCollectCreditMode(false)
       setBalanceDueAmount(due)
-      setPaidStr('')
+      setPaidStr(due > 0 ? formatSplitPart(due) : '')
       setPayType('cheque')
       setActiveField('paid')
       return
@@ -2390,6 +2491,8 @@ function Counter({ active }: { active: boolean }) {
     setCreditListOpen(false)
     setHighlightedChequeIndex(-1)
     setHighlightedCreditIndex(-1)
+    setChequeListKeyboardNav(false)
+    setCreditListKeyboardNav(false)
     setCollectingCreditId(null)
     setCollectingChequeId(null)
     setCreditCollectDue(0)
@@ -2588,6 +2691,9 @@ function Counter({ active }: { active: boolean }) {
       customerName: name,
       payType: 'cheque',
       pendingPayType: 'cheque',
+      chequeAmount: amount,
+      bankAmount: undefined,
+      chequeApproved: undefined,
     })
   }
 
@@ -2745,6 +2851,7 @@ function Counter({ active }: { active: boolean }) {
           changeAmount: 0,
           payType: 'cheque',
           pendingPayType: 'cheque',
+          chequeAmount: chequeSplitAmount,
           customerName: name,
           parentSplitId: splitSaleId ?? undefined,
           status: 'pending',
@@ -3612,6 +3719,10 @@ function Counter({ active }: { active: boolean }) {
   const creditBarRef = useRef<HTMLDivElement>(null)
   const chequeListRef = useRef<HTMLUListElement>(null)
   const creditListRef = useRef<HTMLUListElement>(null)
+  const chequeSearchInputRef = useRef<HTMLInputElement>(null)
+  const creditSearchInputRef = useRef<HTMLInputElement>(null)
+  const chequeScrollFromKeyboardRef = useRef(false)
+  const creditScrollFromKeyboardRef = useRef(false)
   const pendingBillsRef = useRef(billPendingBills)
   const highlightedPendingIndexRef = useRef(highlightedPendingIndex)
   const selectPendingBillRef = useRef(selectPendingBill)
@@ -3690,11 +3801,25 @@ function Counter({ active }: { active: boolean }) {
       setCreditListOpen(false)
       setHighlightedChequeIndex(-1)
       setHighlightedCreditIndex(-1)
+      setChequeListKeyboardNav(false)
+      setCreditListKeyboardNav(false)
     }
 
     window.addEventListener('pointerdown', onPointerDown)
     return () => window.removeEventListener('pointerdown', onPointerDown)
   }, [chequeListOpen, creditListOpen, routeActive])
+
+  useEffect(() => {
+    if (!chequeListOpen) return
+    const id = window.setTimeout(() => chequeSearchInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(id)
+  }, [chequeListOpen])
+
+  useEffect(() => {
+    if (!creditListOpen) return
+    const id = window.setTimeout(() => creditSearchInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(id)
+  }, [creditListOpen])
 
   useEffect(() => {
     if (!routeActive || !chequeListOpen) return
@@ -3705,7 +3830,11 @@ function Counter({ active }: { active: boolean }) {
       const target = e.target
       if (target instanceof HTMLElement) {
         const tag = target.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+        const inChequeBar = chequeBarRef.current?.contains(target)
+        if (
+          (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) &&
+          !inChequeBar
+        ) {
           return
         }
       }
@@ -3715,14 +3844,16 @@ function Counter({ active }: { active: boolean }) {
 
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setHighlightedChequeIndex((current) => (current + 1) % bills.length)
+        setChequeListKeyboardNav(true)
+        chequeScrollFromKeyboardRef.current = true
+        setHighlightedChequeIndex((current) => stepListHighlight(current, bills.length, 'down'))
         return
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault()
-        setHighlightedChequeIndex((current) =>
-          current <= 0 ? bills.length - 1 : current - 1,
-        )
+        setChequeListKeyboardNav(true)
+        chequeScrollFromKeyboardRef.current = true
+        setHighlightedChequeIndex((current) => stepListHighlight(current, bills.length, 'up'))
         return
       }
       if (e.key === 'Enter') {
@@ -3744,6 +3875,8 @@ function Counter({ active }: { active: boolean }) {
 
   useEffect(() => {
     if (!chequeListOpen || highlightedChequeIndex < 0) return
+    if (!chequeScrollFromKeyboardRef.current) return
+    chequeScrollFromKeyboardRef.current = false
     const item = activeChequeItemRef.current
     const list = chequeListRef.current
     if (!item || !list) return
@@ -3765,7 +3898,11 @@ function Counter({ active }: { active: boolean }) {
       const target = e.target
       if (target instanceof HTMLElement) {
         const tag = target.tagName
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+        const inCreditBar = creditBarRef.current?.contains(target)
+        if (
+          (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) &&
+          !inCreditBar
+        ) {
           return
         }
       }
@@ -3775,14 +3912,16 @@ function Counter({ active }: { active: boolean }) {
 
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setHighlightedCreditIndex((current) => (current + 1) % bills.length)
+        setCreditListKeyboardNav(true)
+        creditScrollFromKeyboardRef.current = true
+        setHighlightedCreditIndex((current) => stepListHighlight(current, bills.length, 'down'))
         return
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault()
-        setHighlightedCreditIndex((current) =>
-          current <= 0 ? bills.length - 1 : current - 1,
-        )
+        setCreditListKeyboardNav(true)
+        creditScrollFromKeyboardRef.current = true
+        setHighlightedCreditIndex((current) => stepListHighlight(current, bills.length, 'up'))
         return
       }
       if (e.key === 'Enter') {
@@ -3804,6 +3943,8 @@ function Counter({ active }: { active: boolean }) {
 
   useEffect(() => {
     if (!creditListOpen || highlightedCreditIndex < 0) return
+    if (!creditScrollFromKeyboardRef.current) return
+    creditScrollFromKeyboardRef.current = false
     const item = activeCreditItemRef.current
     const list = creditListRef.current
     if (!item || !list) return
@@ -4347,18 +4488,23 @@ function Counter({ active }: { active: boolean }) {
             </button>
             {chequeListOpen && chequePendingBills.length > 0 && (
               <>
-                {chequePendingBills.length > 4 ? (
-                  <input
-                    type="search"
-                    className="counter-pending-search"
-                    value={chequeListSearch}
-                    onChange={(e) => setChequeListSearch(e.target.value)}
-                    placeholder="Search cheque bills…"
-                    autoComplete="off"
-                    aria-label="Search cheque bills"
-                  />
-                ) : null}
-              <ul ref={chequeListRef} className="counter-cheque-list" role="listbox">
+                <input
+                  ref={chequeSearchInputRef}
+                  type="text"
+                  className="counter-pending-search"
+                  value={chequeListSearch}
+                  onChange={(e) => setChequeListSearch(e.target.value)}
+                  placeholder="Search cheque bills…"
+                  autoComplete="off"
+                  aria-label="Search cheque bills"
+                  inputMode="search"
+                />
+              <ul
+                ref={chequeListRef}
+                className={`counter-cheque-list ${chequeListKeyboardNav ? 'counter-cheque-list--keyboard-nav' : ''}`}
+                role="listbox"
+                onMouseMove={() => setChequeListKeyboardNav(false)}
+              >
                 {filteredChequePendingBills.map((bill, index) => {
                   const billName = getSaleCustomerName(bill, data.sales)
                   const billReminderAt = getEffectiveSaleReminderAt(data, bill)
@@ -4368,12 +4514,15 @@ function Counter({ active }: { active: boolean }) {
                     <button
                       type="button"
                       ref={index === highlightedChequeIndex ? activeChequeItemRef : null}
-                      className={`counter-cheque-item ${index === highlightedChequeIndex || loadedPendingId === bill.id ? 'counter-cheque-item--active' : ''}`}
-                      onMouseEnter={() => setHighlightedChequeIndex(index)}
+                      className={`counter-cheque-item ${index === highlightedChequeIndex ? 'counter-cheque-item--active' : ''}`}
+                      onMouseEnter={() => {
+                        if (chequeListKeyboardNav) return
+                        setHighlightedChequeIndex(index)
+                      }}
                       onClick={() => selectPendingBill(bill)}
                     >
                       <span className="counter-cheque-item-amount">
-                        {formatMoney(bill.billAmount)}
+                        {formatMoney(openChequeListAmount(bill, data.sales))}
                       </span>
                       {billName ? (
                         <span className="counter-cheque-item-name">{billName}</span>
@@ -4391,7 +4540,7 @@ function Counter({ active }: { active: boolean }) {
                         <span className="counter-cheque-item-reminder-note">📝 {billReminderNote}</span>
                       ) : null}
                       <span className="counter-cheque-item-date">
-                        {formatDate(bill.updatedAt ?? bill.createdAt)}
+                        {formatSaleCreatedUpdatedLabel(bill)}
                       </span>
                     </button>
                   </li>
@@ -4421,18 +4570,23 @@ function Counter({ active }: { active: boolean }) {
             </button>
             {creditListOpen && creditPendingBills.length > 0 && (
               <>
-                {creditPendingBills.length > 4 ? (
-                  <input
-                    type="search"
-                    className="counter-pending-search"
-                    value={creditListSearch}
-                    onChange={(e) => setCreditListSearch(e.target.value)}
-                    placeholder="Search credit bills…"
-                    autoComplete="off"
-                    aria-label="Search credit bills"
-                  />
-                ) : null}
-              <ul ref={creditListRef} className="counter-credit-list" role="listbox">
+                <input
+                  ref={creditSearchInputRef}
+                  type="text"
+                  className="counter-pending-search"
+                  value={creditListSearch}
+                  onChange={(e) => setCreditListSearch(e.target.value)}
+                  placeholder="Search credit bills…"
+                  autoComplete="off"
+                  aria-label="Search credit bills"
+                  inputMode="search"
+                />
+              <ul
+                ref={creditListRef}
+                className={`counter-credit-list ${creditListKeyboardNav ? 'counter-credit-list--keyboard-nav' : ''}`}
+                role="listbox"
+                onMouseMove={() => setCreditListKeyboardNav(false)}
+              >
                 {filteredCreditPendingBills.map((bill, index) => {
                   const billName = getSaleCustomerName(bill, data.sales)
                   const billReminderAt = getEffectiveSaleReminderAt(data, bill)
@@ -4442,12 +4596,15 @@ function Counter({ active }: { active: boolean }) {
                     <button
                       type="button"
                       ref={index === highlightedCreditIndex ? activeCreditItemRef : null}
-                      className={`counter-credit-item ${index === highlightedCreditIndex || loadedPendingId === bill.id ? 'counter-credit-item--active' : ''}`}
-                      onMouseEnter={() => setHighlightedCreditIndex(index)}
+                      className={`counter-credit-item ${index === highlightedCreditIndex ? 'counter-credit-item--active' : ''}`}
+                      onMouseEnter={() => {
+                        if (creditListKeyboardNav) return
+                        setHighlightedCreditIndex(index)
+                      }}
                       onClick={() => selectPendingBill(bill)}
                     >
                       <span className="counter-credit-item-amount">
-                        {formatMoney(bill.billAmount)}
+                        {formatMoney(openCreditListAmount(bill, data.sales))}
                       </span>
                       {billName ? (
                         <span className="counter-credit-item-name">{billName}</span>
@@ -4465,7 +4622,7 @@ function Counter({ active }: { active: boolean }) {
                         <span className="counter-credit-item-reminder-note">📝 {billReminderNote}</span>
                       ) : null}
                       <span className="counter-credit-item-date">
-                        {formatDate(bill.updatedAt ?? bill.createdAt)}
+                        {formatSaleCreatedUpdatedLabel(bill)}
                       </span>
                     </button>
                   </li>

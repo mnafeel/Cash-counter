@@ -9,6 +9,7 @@ import {
   salePaidCollectedBreakdown,
   normalizeCollectedBreakdown,
 } from './salePayment'
+import { saleCreditBalanceDue } from './saleReturns'
 
 export type ReportPeriod = 'day' | 'week' | 'month'
 export type ReportSort = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
@@ -258,14 +259,16 @@ export function saleOriginalBillAmount(sale: Sale): number {
   return sale.billAmount
 }
 
-export function saleCreditPendingAmount(sale: Sale): number {
+export function saleCreditPendingAmount(sale: Sale, allSales?: Sale[]): number {
   if (!isCreditPendingSale(sale)) return 0
-  return sale.billAmount
+  if (allSales && allSales.length > 0) return saleCreditBalanceDue(sale, allSales)
+  return Math.max(0, sale.billAmount)
 }
 
-export function saleChequePendingAmount(sale: Sale): number {
+export function saleChequePendingAmount(sale: Sale, allSales?: Sale[]): number {
   if (!isChequePendingSale(sale)) return 0
-  return sale.billAmount
+  if (allSales && allSales.length > 0) return saleCreditBalanceDue(sale, allSales)
+  return Math.max(0, sale.billAmount)
 }
 
 function saleIsChequeRelated(sale: Sale): boolean {

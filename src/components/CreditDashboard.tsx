@@ -831,15 +831,21 @@ function CreditCustomerDetail({
             <h3 className="customer-section-title customer-section-title--peer">
               Also open cheque · {formatMoney(chequePending)}
             </h3>
-            {chequeSummary.chequeBills.map((purchase) => (
+            {chequeSummary.chequeBills.map((purchase) => {
+              const chequeSale = data.sales.find((entry) => entry.id === purchase.id)
+              const chequeDue = chequeSale
+                ? saleCreditBalanceDue(chequeSale, data.sales)
+                : purchase.chequePending
+              return (
               <div key={purchase.id} className="customer-purchase-item customer-purchase-item--cheque">
                 <div className="customer-purchase-head">
                   <strong>Bill {purchase.billDateLabel}</strong>
-                  <span>{formatMoney(purchase.chequePending)}</span>
+                  <span>{formatMoney(chequeDue)}</span>
                 </div>
                 <div className="customer-purchase-meta">{purchase.payDetail}</div>
               </div>
-            ))}
+              )
+            })}
           </>
         ) : null}
 

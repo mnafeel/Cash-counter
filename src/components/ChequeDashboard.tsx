@@ -10,6 +10,7 @@ import {
   searchChequeCustomerSummaries,
   type ChequeCustomerSummary,
 } from '../utils/chequeLedger'
+import { saleCreditBalanceDue } from '../utils/saleReturns'
 import { buildCustomerSummaries } from '../utils/customerLedger'
 import { getCustomerReminderAt } from '../utils/customerReminders'
 import { evaluateBillReminderAlert, getReminderAlertSettings } from '../utils/billReminders'
@@ -387,11 +388,14 @@ function ChequeCustomerDetail({
             </h3>
             {summary.chequeBills.map((purchase) => {
               const sale = data.sales.find((entry) => entry.id === purchase.id)
+              const toPay = sale
+                ? saleCreditBalanceDue(sale, data.sales)
+                : purchase.chequePending
               return (
               <div key={purchase.id} className="customer-purchase-item customer-purchase-item--credit customer-purchase-item--stack">
                 <div className="customer-purchase-head">
                   <strong>Bill {purchase.billDateLabel}</strong>
-                  <span>{formatMoney(purchase.chequePending)}</span>
+                  <span>{formatMoney(toPay)}</span>
                 </div>
                 <div className="customer-purchase-meta">{purchase.payDetail}</div>
               {purchase.paymentHistory ? (

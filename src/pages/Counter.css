@@ -1173,12 +1173,30 @@
   text-align: left;
 }
 
-.counter-cheque-item:hover,
-.counter-cheque-item:focus,
 .counter-cheque-item--active,
-.counter-credit-item:hover,
-.counter-credit-item:focus,
 .counter-credit-item--active {
+  background: var(--surface-2);
+  border-color: var(--cream-dim);
+}
+
+.counter-cheque-item:hover,
+.counter-cheque-item:focus-visible,
+.counter-credit-item:hover,
+.counter-credit-item:focus-visible {
+  background: var(--surface-2);
+  border-color: var(--cream-dim);
+}
+
+.counter-cheque-list--keyboard-nav .counter-cheque-item:hover,
+.counter-cheque-list--keyboard-nav .counter-cheque-item:focus-visible,
+.counter-credit-list--keyboard-nav .counter-credit-item:hover,
+.counter-credit-list--keyboard-nav .counter-credit-item:focus-visible {
+  background: transparent;
+  border-color: transparent;
+}
+
+.counter-cheque-list--keyboard-nav .counter-cheque-item--active,
+.counter-credit-list--keyboard-nav .counter-credit-item--active {
   background: var(--surface-2);
   border-color: var(--cream-dim);
 }
