@@ -40,6 +40,19 @@ const navItems = [
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ] as const
 
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true
+  return target.isContentEditable
+}
+
+function altNavIndexFromKey(e: KeyboardEvent): number | null {
+  const match = e.code.match(/^(?:Digit|Numpad)([1-9])$/)
+  if (!match) return null
+  return parseInt(match[1], 10) - 1
+}
+
 function getNavIndex(pathname: string): number {
   const path = normalizeRoutePath(pathname)
   if (path === '/' || path === '') return 0
@@ -146,6 +159,17 @@ export default function Layout() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
+      if (isTypingTarget(e.target)) return
+
+      const navIndex = altNavIndexFromKey(e)
+      if (navIndex !== null) {
+        if (navIndex >= navItems.length) return
+        e.preventDefault()
+        triggerNavTransition()
+        navigateNav(navItems[navIndex].to)
+        return
+      }
+
       if (e.code !== 'KeyQ') return
 
       e.preventDefault()
@@ -245,21 +269,32 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar-nav">
-          {navItems.map((item) => (
-            <button
-              key={item.to}
-              type="button"
-              className={`sidebar-nav-link ${isNavActive(navActivePath, item.to) || (!showMainTabs && isNavActive(location.pathname, item.to)) ? 'sidebar-nav-link--active' : ''}`}
-              onClick={() => navigateNav(item.to)}
-            >
-              <span className="sidebar-nav-icon" aria-hidden="true">{item.icon}</span>
-              <span className="sidebar-nav-label">{item.label}</span>
-            </button>
-          ))}
+          {navItems.map((item, index) => {
+            const shortcut = index + 1
+            return (
+              <button
+                key={item.to}
+                type="button"
+                className={`sidebar-nav-link ${isNavActive(navActivePath, item.to) || (!showMainTabs && isNavActive(location.pathname, item.to)) ? 'sidebar-nav-link--active' : ''}`}
+                onClick={() => navigateNav(item.to)}
+                title={`${item.label} (Alt+${shortcut})`}
+              >
+                <span className="sidebar-nav-icon" aria-hidden="true">{item.icon}</span>
+                <span className="sidebar-nav-label">{item.label}</span>
+                <kbd className="sidebar-nav-shortcut" aria-label={`Alt+${shortcut}`}>
+                  <span className="sidebar-nav-shortcut-mod" aria-hidden="true">⌥</span>
+                  <span className="sidebar-nav-shortcut-key" aria-hidden="true">{shortcut}</span>
+                </kbd>
+              </button>
+            )
+          })}
         </nav>
 
         <OpenTimingNotifier activeNavLabel={activeNavLabel} />
-        <p className="sidebar-hint" aria-hidden="true">Alt+Q · next section</p>
+        <p className="sidebar-hint" aria-hidden="true">
+          <span className="sidebar-hint-chip">⌥1–{navItems.length}</span>
+          <span className="sidebar-hint-chip">⌥Q next</span>
+        </p>
         <SidebarCloudLogout />
       </aside>
 
