@@ -2398,7 +2398,6 @@ export function updatePendingBill(
     paidAmount?: number
     paymentEvents?: SalePaymentEvent[]
     chequeApproved?: boolean
-    bankAmount?: number
     returns?: SaleReturnEntry[]
   },
 ): AppData {
@@ -2438,8 +2437,6 @@ export function updatePendingBill(
                 : undefined,
         bankAmount:
           'bankAmount' in updates
-            ? updates.bankAmount
-            : updates.bankAmount !== undefined
             ? updates.bankAmount
             : updates.payType === 'split'
               ? updates.bankAmount
