@@ -1,4 +1,4 @@
-import type { AppData, AppTheme, Expense, ExpenseCreditPayment, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, ReminderAlertSettings, Sale, SaleReturnEntry, StaffBonusMemberShare, StaffBonusMonthSettings, StaffBonusPart, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
+import type { AppData, AppTheme, Expense, ExpenseCreditPayment, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, PendingBalanceTransfer, ReminderAlertSettings, Sale, SaleReturnEntry, StaffBonusMemberShare, StaffBonusMonthSettings, StaffBonusPart, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
 import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
 import { buildCustomerSummaries } from '../utils/customerLedger'
 import { collectSplitNameTargets, getSaleCustomerName } from '../utils/saleCustomerName'
@@ -47,7 +47,9 @@ import { sealTodayDrawerOpenings } from '../utils/dayDrawerOpenings'
 import {
   buildSaleReturnEntry,
   saleBillGroupPaidTotal,
+  saleCreditBalanceDue,
   saleGrossBillAmount,
+  salePendingLegAmount,
   saleReturnTotal,
 } from '../utils/saleReturns'
 
@@ -1390,16 +1392,17 @@ export function getCurrentBalance(data: AppData): number {
 
 export function addSale(
   data: AppData,
-  sale: Omit<Sale, 'id' | 'createdAt'> & { id?: string },
+  sale: Omit<Sale, 'id' | 'createdAt'> & { id?: string; createdAt?: string },
 ): AppData {
   const presetId = sale.id
-  const { id: _id, ...rest } = sale
+  const { id: _id, createdAt: presetCreatedAt, ...rest } = sale
   const now = new Date().toISOString()
+  const createdAt = presetCreatedAt ?? now
   const newSale: Sale = applyStoredCustomerReminderToSale(data, {
     ...rest,
     status: rest.status ?? 'paid',
     id: presetId ?? crypto.randomUUID(),
-    createdAt: now,
+    createdAt,
     updatedAt: now,
   })
   const withEvents =
@@ -1783,6 +1786,34 @@ export function emptyTrash(data: AppData): AppData {
   const next = markTrashPurged({ ...data, trash: [] }, purgeKeys)
   saveData(next, { cloudImmediate: true })
   return next
+}
+
+/**
+ * Remove a pending credit/cheque anchor row after balance moved to linked legs.
+ * Unlike deleteSale, does not cascade-delete children — they become standalone pending bills.
+ */
+function removePendingBalanceAnchor(data: AppData, anchorId: string): AppData {
+  const anchor = data.sales.find((s) => s.id === anchorId)
+  if (!anchor) return data
+
+  const now = new Date().toISOString()
+  let trashed = pushTrash(data, {
+    id: anchor.id,
+    kind: 'sale',
+    deletedAt: now,
+    label: getSaleCustomerName(anchor, data.sales) || 'Bill',
+    amount: anchor.originalBillAmount ?? anchor.billAmount,
+    snapshot: anchor,
+  })
+
+  return {
+    ...trashed,
+    sales: data.sales
+      .filter((s) => s.id !== anchorId)
+      .map((s) =>
+        s.parentSplitId === anchorId ? { ...s, updatedAt: now } : s,
+      ),
+  }
 }
 
 export function deleteSale(
@@ -2398,6 +2429,9 @@ export function updatePendingBill(
     paidAmount?: number
     paymentEvents?: SalePaymentEvent[]
     chequeApproved?: boolean
+    pendingBalanceReclassifiedAt?: string
+    pendingBalanceReclassifiedFrom?: PayType
+    pendingBalanceTransfers?: PendingBalanceTransfer[]
     returns?: SaleReturnEntry[]
   },
 ): AppData {
@@ -2491,6 +2525,15 @@ export function updatePendingBill(
               : s.paidAmount,
         ...( 'paymentEvents' in updates
           ? { paymentEvents: updates.paymentEvents }
+          : {}),
+        ...( 'pendingBalanceReclassifiedAt' in updates
+          ? { pendingBalanceReclassifiedAt: updates.pendingBalanceReclassifiedAt }
+          : {}),
+        ...( 'pendingBalanceReclassifiedFrom' in updates
+          ? { pendingBalanceReclassifiedFrom: updates.pendingBalanceReclassifiedFrom }
+          : {}),
+        ...(updates.pendingBalanceTransfers !== undefined
+          ? { pendingBalanceTransfers: updates.pendingBalanceTransfers }
           : {}),
       }
 
@@ -3266,6 +3309,28 @@ function revertPendingPayTypes(sale: Sale): { payType: PayType; pendingPayType: 
   return { payType: 'cheque', pendingPayType: 'cheque' }
 }
 
+/** After open credit/cheque moved away, close leg as paid when collections remain. */
+function settlePendingLegWhenOpenBalanceCleared(
+  data: AppData,
+  saleId: string,
+  transferEvent: PendingBalanceTransfer,
+): AppData {
+  const sale = data.sales.find((row) => row.id === saleId)
+  if (!sale) return data
+  const now = new Date().toISOString()
+  const withTransfer: Sale = {
+    ...sale,
+    pendingBalanceTransfers: [...(sale.pendingBalanceTransfers ?? []), transferEvent],
+  }
+  const settled = syncSaleFieldsFromActiveEvents({ ...withTransfer, billAmount: 0 })
+  return {
+    ...data,
+    sales: data.sales.map((row) =>
+      row.id === saleId ? { ...settled, updatedAt: now } : row,
+    ),
+  }
+}
+
 function syncSaleFieldsFromActiveEvents(sale: Sale): Sale {
   const prior = saleActiveCollectedParts(sale)
   const originalBillAmount =
@@ -3646,6 +3711,212 @@ function syncParentSplitCreditAmount(
         : s,
     ),
   }
+}
+
+function balanceLinkIdForSale(sale: Sale): string {
+  return sale.parentSplitId ?? sale.id
+}
+
+function consolidatePendingLegs(
+  data: AppData,
+  linkParentId: string,
+  kind: 'cheque' | 'credit',
+  excludeId: string,
+): { data: AppData; keeper: Sale | undefined; priorTotal: number } {
+  const pred = kind === 'cheque' ? isPendingChequeSale : isPendingCreditSale
+  const legs = data.sales.filter(
+    (sale) =>
+      sale.status === 'pending' &&
+      pred(sale) &&
+      sale.id !== excludeId &&
+      (sale.parentSplitId === linkParentId || sale.id === linkParentId),
+  )
+  if (legs.length === 0) {
+    return { data, keeper: undefined, priorTotal: 0 }
+  }
+  const priorTotal = legs.reduce((sum, leg) => sum + salePendingLegAmount(leg), 0)
+  const keeper = legs.reduce((best, row) =>
+    salePendingLegAmount(row) >= salePendingLegAmount(best) ? row : best,
+  )
+  let next = data
+  const dropIds = new Set(legs.filter((leg) => leg.id !== keeper.id).map((leg) => leg.id))
+  if (dropIds.size > 0) {
+    next = { ...next, sales: next.sales.filter((sale) => !dropIds.has(sale.id)) }
+  }
+  const refreshed = next.sales.find((sale) => sale.id === keeper.id)
+  return { data: next, keeper: refreshed, priorTotal }
+}
+
+/** Atomically move open credit → cheque pending (cumulative on one cheque leg). */
+export function transferPendingCreditToCheque(
+  data: AppData,
+  creditSaleId: string,
+  amount: number,
+  customerName?: string,
+): AppData {
+  const creditSale = data.sales.find(
+    (sale) => sale.id === creditSaleId && sale.status === 'pending',
+  )
+  if (!creditSale || amount <= 0 || !isPendingCreditSale(creditSale)) return data
+
+  const due = saleCreditBalanceDue(creditSale, data.sales)
+  const transfer = Math.min(amount, due)
+  if (transfer <= 0) return data
+
+  const now = new Date().toISOString()
+  const gross = creditSale.originalBillAmount ?? saleGrossBillAmount(creditSale)
+  const linkParentId = balanceLinkIdForSale(creditSale)
+  const transferEvent: PendingBalanceTransfer = {
+    at: now,
+    amount: transfer,
+    direction: 'credit_to_cheque',
+  }
+
+  let next = data
+  const consolidated = consolidatePendingLegs(next, linkParentId, 'cheque', creditSaleId)
+  next = consolidated.data
+  const totalCheque = Math.round((consolidated.priorTotal + transfer) * 100) / 100
+  const name = customerName?.trim() || creditSale.customerName
+
+  const chequeUpdates = {
+    billAmount: totalCheque,
+    originalBillAmount: gross,
+    customerName: name,
+    payType: 'cheque' as const,
+    pendingPayType: 'cheque' as const,
+    chequeAmount: totalCheque,
+    chequeApproved: false as const,
+    bankAmount: undefined,
+    pendingBalanceTransfers: [
+      ...(consolidated.keeper?.pendingBalanceTransfers ?? []),
+      transferEvent,
+    ],
+  }
+
+  if (consolidated.keeper) {
+    next = updatePendingBill(next, consolidated.keeper.id, chequeUpdates)
+  } else {
+    next = addSale(next, {
+      ...chequeUpdates,
+      paidAmount: 0,
+      changeAmount: 0,
+      parentSplitId: linkParentId,
+      status: 'pending',
+      createdAt: creditSale.createdAt,
+    })
+  }
+
+  const remainder = Math.round((due - transfer) * 100) / 100
+  const priorPaid = saleCollectedAmount(creditSale)
+  if (remainder <= 0.01) {
+    if (priorPaid <= 0.01) {
+      next = removePendingBalanceAnchor(next, creditSaleId)
+    } else {
+      next = settlePendingLegWhenOpenBalanceCleared(next, creditSaleId, transferEvent)
+    }
+  } else {
+    next = updatePendingBill(next, creditSaleId, {
+      billAmount: remainder,
+      originalBillAmount: gross,
+      customerName: name,
+      payType: 'credit',
+      pendingPayType: 'credit',
+      creditAmount: remainder > 0 ? remainder : undefined,
+      pendingBalanceTransfers: [
+        ...(creditSale.pendingBalanceTransfers ?? []),
+        transferEvent,
+      ],
+    })
+  }
+
+  saveData(next)
+  return next
+}
+
+/** Atomically move open cheque → credit pending (cumulative on one credit leg). */
+export function transferPendingChequeToCredit(
+  data: AppData,
+  chequeSaleId: string,
+  amount: number,
+  customerName?: string,
+): AppData {
+  const chequeSale = data.sales.find(
+    (sale) => sale.id === chequeSaleId && sale.status === 'pending',
+  )
+  if (!chequeSale || amount <= 0 || !isPendingChequeSale(chequeSale)) return data
+
+  const due = saleCreditBalanceDue(chequeSale, data.sales)
+  const transfer = Math.min(amount, due)
+  if (transfer <= 0) return data
+
+  const now = new Date().toISOString()
+  const gross = chequeSale.originalBillAmount ?? saleGrossBillAmount(chequeSale)
+  const linkParentId = balanceLinkIdForSale(chequeSale)
+  const transferEvent: PendingBalanceTransfer = {
+    at: now,
+    amount: transfer,
+    direction: 'cheque_to_credit',
+  }
+
+  let next = data
+  const consolidated = consolidatePendingLegs(next, linkParentId, 'credit', chequeSaleId)
+  next = consolidated.data
+  const totalCredit = Math.round((consolidated.priorTotal + transfer) * 100) / 100
+  const name = customerName?.trim() || chequeSale.customerName
+
+  const creditUpdates = {
+    billAmount: totalCredit,
+    originalBillAmount: gross,
+    customerName: name,
+    payType: 'credit' as const,
+    pendingPayType: 'credit' as const,
+    creditAmount: totalCredit,
+    pendingBalanceTransfers: [
+      ...(consolidated.keeper?.pendingBalanceTransfers ?? []),
+      transferEvent,
+    ],
+  }
+
+  if (consolidated.keeper) {
+    next = updatePendingBill(next, consolidated.keeper.id, creditUpdates)
+  } else {
+    next = addSale(next, {
+      ...creditUpdates,
+      paidAmount: 0,
+      changeAmount: 0,
+      parentSplitId: linkParentId,
+      status: 'pending',
+      createdAt: chequeSale.createdAt,
+    })
+  }
+
+  const remainder = Math.round((due - transfer) * 100) / 100
+  const priorPaid = saleCollectedAmount(chequeSale)
+  if (remainder <= 0.01) {
+    if (priorPaid <= 0.01) {
+      next = removePendingBalanceAnchor(next, chequeSaleId)
+    } else {
+      next = settlePendingLegWhenOpenBalanceCleared(next, chequeSaleId, transferEvent)
+    }
+  } else {
+    next = updatePendingBill(next, chequeSaleId, {
+      billAmount: remainder,
+      originalBillAmount: gross,
+      customerName: name,
+      payType: 'cheque',
+      pendingPayType: 'cheque',
+      chequeAmount: remainder,
+      chequeApproved: false,
+      bankAmount: undefined,
+      pendingBalanceTransfers: [
+        ...(chequeSale.pendingBalanceTransfers ?? []),
+        transferEvent,
+      ],
+    })
+  }
+
+  saveData(next)
+  return next
 }
 
 export function isPendingCreditSale(sale: Sale): boolean {

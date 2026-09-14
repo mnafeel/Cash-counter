@@ -5,7 +5,7 @@ import {
   toInputDate,
   type SalesReportFilter,
 } from './salesReport'
-import { saleHasCollectionInRange } from './salePayment'
+import { saleHasCollectionInRange, saleHasPendingBalanceTransferInRange } from './salePayment'
 import { buildCreditOverview } from './customerLedger'
 import { buildChequeOverview } from './chequeLedger'
 import {
@@ -92,7 +92,9 @@ function filterItemsByDateRange<T extends { date: string }>(
 function pendingBelongsToPeriod(sale: Sale, fromDate: string, toDate: string): boolean {
   if (isInDateRange(sale.createdAt, fromDate, toDate)) return true
   if (!isInDateRange(sale.updatedAt ?? sale.createdAt, fromDate, toDate)) return false
-  return !saleHasCollectionInRange(sale, fromDate, toDate)
+  if (saleHasCollectionInRange(sale, fromDate, toDate)) return false
+  if (saleHasPendingBalanceTransferInRange(sale, fromDate, toDate)) return false
+  return true
 }
 
 function pendingCreditAddedOnCreate(sale: Sale, fromDate: string, toDate: string): number {

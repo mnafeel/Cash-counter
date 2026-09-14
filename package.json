@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "cp -f index.vite.html index.html && vite",
+    "dev": "bash scripts/dev-start.sh",
     "dev:stable": "bash scripts/dev-server.sh",
     "build": "cp index.vite.html index.html && tsc -b && vite build",
     "lint": "oxlint",

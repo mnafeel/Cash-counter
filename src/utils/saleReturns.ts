@@ -14,11 +14,12 @@ export function saleRelatedBillSales(sale: Sale, allSales: Sale[]): Sale[] {
   const byId = new Map<string, Sale>()
   byId.set(sale.id, sale)
 
-  if (sale.parentSplitId) {
-    const parent = allSales.find((row) => row.id === sale.parentSplitId)
+  const linkId = sale.parentSplitId ?? null
+  if (linkId) {
+    const parent = allSales.find((row) => row.id === linkId)
     if (parent) byId.set(parent.id, parent)
     for (const row of allSales) {
-      if (row.parentSplitId === sale.parentSplitId) byId.set(row.id, row)
+      if (row.parentSplitId === linkId || row.id === linkId) byId.set(row.id, row)
     }
   } else {
     for (const row of allSales) {
@@ -27,6 +28,24 @@ export function saleRelatedBillSales(sale: Sale, allSales: Sale[]): Sale[] {
   }
 
   return [...byId.values()]
+}
+
+function saleOpenBalanceGroupGross(sale: Sale, allSales: Sale[]): number {
+  const group = saleRelatedBillSales(sale, allSales)
+  let gross = 0
+  for (const row of group) {
+    gross = Math.max(gross, saleGrossBillAmount(row), row.originalBillAmount ?? 0)
+  }
+  return gross > 0 ? gross : saleGrossBillAmount(sale)
+}
+
+function saleOpenBalanceGroupReturns(sale: Sale, allSales: Sale[]): number {
+  const group = saleRelatedBillSales(sale, allSales)
+  let total = 0
+  for (const row of group) {
+    total = Math.max(total, saleReturnTotal(row))
+  }
+  return total
 }
 
 /**
@@ -135,8 +154,106 @@ export function saleBalanceAfterReturns(sale: Sale, allSales: Sale[] = []): numb
   return saleCreditBalanceDue(sale, allSales)
 }
 
+export function isCreditPendingSale(sale: Sale): boolean {
+  return (
+    sale.status === 'pending' &&
+    (sale.payType === 'credit' || sale.pendingPayType === 'credit')
+  )
+}
+
+export function isChequePendingSale(sale: Sale): boolean {
+  return (
+    sale.status === 'pending' &&
+    (sale.payType === 'cheque' || sale.pendingPayType === 'cheque')
+  )
+}
+
+/** Open amount on a pending credit or cheque leg row. */
+export function salePendingLegAmount(sale: Sale): number {
+  if (isCreditPendingSale(sale)) {
+    return Math.max(sale.billAmount ?? 0, sale.creditAmount ?? 0)
+  }
+  if (isChequePendingSale(sale)) {
+    return Math.max(sale.billAmount ?? 0, sale.chequeAmount ?? 0)
+  }
+  return sale.billAmount ?? 0
+}
+
+/** Shared anchor for credit ↔ cheque pending legs (standalone or split children). */
+export function saleBalanceLinkId(sale: Sale): string | null {
+  if (sale.parentSplitId) return sale.parentSplitId
+  if (isCreditPendingSale(sale) || isChequePendingSale(sale)) return sale.id
+  return null
+}
+
+/** Anchor + pending children that share one open customer balance. */
+export function saleLinkedPendingLegs(sale: Sale, allSales: Sale[]): Sale[] {
+  const linkId = saleBalanceLinkId(sale)
+  if (!linkId) {
+    return sale.status === 'pending' ? [sale] : []
+  }
+  const legs: Sale[] = []
+  const anchor = allSales.find((row) => row.id === linkId)
+  if (anchor && anchor.status === 'pending') legs.push(anchor)
+  for (const row of allSales) {
+    if (
+      row.parentSplitId === linkId &&
+      row.status === 'pending' &&
+      !legs.some((leg) => leg.id === row.id)
+    ) {
+      legs.push(row)
+    }
+  }
+  return legs
+}
+
 /** Clear remaining due: original − sum(all payments) − returns. */
+/** Sum of all open cheque legs linked to this bill (handles split + repeated transfers). */
+export function linkedPendingChequeTotal(sale: Sale, allSales: Sale[] = []): number {
+  const legs = saleLinkedPendingLegs(sale, allSales).filter(isChequePendingSale)
+  if (legs.length === 0) {
+    return isChequePendingSale(sale) ? salePendingLegAmount(sale) : 0
+  }
+  const total = legs.reduce((sum, leg) => sum + salePendingLegAmount(leg), 0)
+  return Math.round(total * 100) / 100
+}
+
+/** Sum of all open credit legs linked to this bill. */
+export function linkedPendingCreditTotal(sale: Sale, allSales: Sale[] = []): number {
+  const legs = saleLinkedPendingLegs(sale, allSales).filter(isCreditPendingSale)
+  if (legs.length === 0) {
+    return isCreditPendingSale(sale) ? salePendingLegAmount(sale) : 0
+  }
+  const total = legs.reduce((sum, leg) => sum + salePendingLegAmount(leg), 0)
+  return Math.round(total * 100) / 100
+}
+
 export function saleCreditBalanceDue(sale: Sale, allSales: Sale[] = []): number {
+  if (
+    sale.status === 'pending' &&
+    allSales.length > 0 &&
+    (isCreditPendingSale(sale) || isChequePendingSale(sale))
+  ) {
+    const gross = saleOpenBalanceGroupGross(sale, allSales)
+    const returns = saleOpenBalanceGroupReturns(sale, allSales)
+    const paid = saleBillGroupPaidTotal(sale, allSales)
+    const groupDue = Math.max(0, Math.round((gross - paid - returns) * 100) / 100)
+    if (isChequePendingSale(sale)) {
+      const chequeOpen = linkedPendingChequeTotal(sale, allSales)
+      if (chequeOpen > 0.01) {
+        return Math.min(groupDue, Math.round(chequeOpen * 100) / 100)
+      }
+    }
+    if (isCreditPendingSale(sale)) {
+      const creditOpen = linkedPendingCreditTotal(sale, allSales)
+      if (creditOpen > 0.01) {
+        return Math.min(groupDue, Math.round(creditOpen * 100) / 100)
+      }
+    }
+    const leg = salePendingLegAmount(sale)
+    if (leg > 0.01) return Math.min(groupDue, leg)
+    return groupDue
+  }
   const gross = saleGrossBillAmount(sale)
   const returns = saleReturnTotal(sale)
   const paid = saleBillGroupPaidTotal(sale, allSales)

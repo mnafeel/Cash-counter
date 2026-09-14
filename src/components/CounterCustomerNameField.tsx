@@ -11,26 +11,22 @@ export interface CounterCustomerNameFieldHandle {
   isFocused: () => boolean
 }
 
-type CustomerBarTag = {
+type CustomerBalanceTag = {
   key: string
   label: string
-  kind: 'old-credit' | 'old-cheque' | 'credit' | 'cheque'
+  amount: string
+  kind: 'credit' | 'cheque' | 'old-credit' | 'old-cheque'
 }
 
 interface CounterCustomerNameFieldProps {
   customerNameSuggestions: string[]
   customerPendingByName: Map<string, number>
   customerChequePendingByName: Map<string, number>
-  showCreditSession: boolean
-  showChequeSession: boolean
+  sessionCreditAmount?: number | null
+  sessionChequeAmount?: number | null
+  onNameChange?: (name: string) => void
   onFocusSection?: () => void
   onFocusChange?: (focused: boolean) => void
-}
-
-function customerBarTagLabel(tag: CustomerBarTag): string {
-  if (tag.kind === 'credit') return 'Credit'
-  if (tag.kind === 'cheque') return 'Cheque'
-  return tag.label
 }
 
 function scrollActiveOptionIntoView(option: HTMLElement | null, list: HTMLElement | null) {
@@ -77,14 +73,19 @@ function isSuggestionNavKey(key: string): boolean {
   return key === 'ArrowDown' || key === 'ArrowUp' || key === 'PageDown' || key === 'PageUp'
 }
 
+function notifyNameChange(onNameChange: ((name: string) => void) | undefined, name: string) {
+  onNameChange?.(name)
+}
+
 const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, CounterCustomerNameFieldProps>(
   function CounterCustomerNameField(
     {
       customerNameSuggestions,
       customerPendingByName,
       customerChequePendingByName,
-      showCreditSession,
-      showChequeSession,
+      sessionCreditAmount,
+      sessionChequeAmount,
+      onNameChange,
       onFocusSection,
       onFocusChange,
     },
@@ -100,18 +101,23 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
     const suggestionsListRef = useRef<HTMLUListElement>(null)
     const keyboardNavRef = useRef(false)
 
-    useImperativeHandle(ref, () => ({
-      focus: () => inputRef.current?.focus(),
-      blur: () => inputRef.current?.blur(),
-      select: () => inputRef.current?.select(),
-      getValue: () => draft,
-      setValue: (value: string) => {
-        setDraft(value)
-        setDropdownOpen(false)
-        setHighlightedIndex(-1)
-      },
-      isFocused: () => document.activeElement === inputRef.current,
-    }))
+    useImperativeHandle(
+      ref,
+      () => ({
+        focus: () => inputRef.current?.focus(),
+        blur: () => inputRef.current?.blur(),
+        select: () => inputRef.current?.select(),
+        getValue: () => draft,
+        setValue: (value: string) => {
+          setDraft(value)
+          notifyNameChange(onNameChange, value)
+          setDropdownOpen(false)
+          setHighlightedIndex(-1)
+        },
+        isFocused: () => document.activeElement === inputRef.current,
+      }),
+      [draft, onNameChange],
+    )
 
     const filteredSuggestions = useMemo(() => {
       const query = draft.trim()
@@ -119,39 +125,62 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
       return searchNamesByPrefix(customerNameSuggestions, query, 20)
     }, [draft, customerNameSuggestions])
 
-    const customerBarTags = useMemo(() => {
-      const tags: CustomerBarTag[] = []
+    const balanceTags = useMemo(() => {
+      const tags: CustomerBalanceTag[] = []
       const key = draft.trim().toLowerCase()
+      if (!key) return tags
 
-      if (key) {
-        const oldCredit = customerPendingByName.get(key) ?? 0
-        const oldCheque = customerChequePendingByName.get(key) ?? 0
-        if (oldCredit > 0) {
+      const ledgerCredit = customerPendingByName.get(key) ?? 0
+      const ledgerCheque = customerChequePendingByName.get(key) ?? 0
+      const sessionCredit = (sessionCreditAmount ?? 0) > 0 ? sessionCreditAmount! : 0
+      const sessionCheque = (sessionChequeAmount ?? 0) > 0 ? sessionChequeAmount! : 0
+      const collectingBill = sessionCredit > 0 || sessionCheque > 0
+
+      if (collectingBill) {
+        const otherCredit = Math.max(0, ledgerCredit - sessionCredit)
+        const otherCheque = Math.max(0, ledgerCheque - sessionCheque)
+        if (otherCredit > 0) {
           tags.push({
             key: 'old-credit',
-            label: `Old Credit · ${formatMoney(oldCredit)}`,
+            label: 'Old Credit',
+            amount: formatMoney(otherCredit),
             kind: 'old-credit',
           })
         }
-        if (oldCheque > 0) {
+        if (otherCheque > 0) {
           tags.push({
             key: 'old-cheque',
-            label: `Old Cheque · ${formatMoney(oldCheque)}`,
+            label: 'Old Cheque',
+            amount: formatMoney(otherCheque),
             kind: 'old-cheque',
           })
         }
+      } else {
+        if (ledgerCredit > 0) {
+          tags.push({
+            key: 'credit',
+            label: 'Credit',
+            amount: formatMoney(ledgerCredit),
+            kind: 'credit',
+          })
+        }
+        if (ledgerCheque > 0) {
+          tags.push({
+            key: 'cheque',
+            label: 'Cheque',
+            amount: formatMoney(ledgerCheque),
+            kind: 'cheque',
+          })
+        }
       }
-
-      if (showCreditSession) tags.push({ key: 'credit', label: 'Credit', kind: 'credit' })
-      if (showChequeSession) tags.push({ key: 'cheque', label: 'Cheque', kind: 'cheque' })
 
       return tags
     }, [
       draft,
       customerPendingByName,
       customerChequePendingByName,
-      showCreditSession,
-      showChequeSession,
+      sessionCreditAmount,
+      sessionChequeAmount,
     ])
 
     useEffect(() => {
@@ -180,7 +209,9 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
             className="counter-customer-input"
             value={draft}
             onChange={(e) => {
-              setDraft(e.target.value)
+              const next = e.target.value
+              setDraft(next)
+              notifyNameChange(onNameChange, next)
               setDropdownOpen(true)
               setHighlightedIndex(-1)
             }}
@@ -226,7 +257,9 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
 
               if (dropdownOpen && count > 0 && e.key === 'Enter' && highlightedIndex >= 0) {
                 e.preventDefault()
-                setDraft(filteredSuggestions[highlightedIndex])
+                const picked = filteredSuggestions[highlightedIndex]
+                setDraft(picked)
+                notifyNameChange(onNameChange, picked)
                 setDropdownOpen(false)
                 setHighlightedIndex(-1)
                 keyboardNavRef.current = false
@@ -235,15 +268,21 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
             placeholder="Optional"
             autoComplete="off"
           />
-          {customerBarTags.length > 0 ? (
-            <div className="counter-customer-tags counter-customer-tags--inline" role="status" aria-live="polite">
-              {customerBarTags.map((tag) => (
+          {balanceTags.length > 0 ? (
+            <div
+              className="counter-customer-balances"
+              role="status"
+              aria-live="polite"
+              aria-label="Customer credit and cheque pending"
+            >
+              {balanceTags.map((tag) => (
                 <span
                   key={tag.key}
-                  className={`counter-customer-tag counter-customer-tag--${tag.kind}`}
-                  title={tag.label}
+                  className={`counter-customer-balance counter-customer-balance--${tag.kind}`}
+                  title={`${tag.label} ${tag.amount}`}
                 >
-                  {customerBarTagLabel(tag)}
+                  <span className="counter-customer-balance-label">{tag.label}</span>
+                  <span className="counter-customer-balance-amount">{tag.amount}</span>
                 </span>
               ))}
             </div>
@@ -275,23 +314,28 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
                     onMouseDown={(e) => {
                       e.preventDefault()
                       setDraft(name)
+                      notifyNameChange(onNameChange, name)
                       setDropdownOpen(false)
                       setHighlightedIndex(-1)
                     }}
                   >
-                    <span>{name}</span>
-                    <span className="counter-customer-suggestion-tags">
-                      {creditDue > 0 ? (
-                        <span className="counter-customer-suggestion-pending">
-                          Old Credit {formatMoney(creditDue)}
-                        </span>
-                      ) : null}
-                      {chequeDue > 0 ? (
-                        <span className="counter-customer-suggestion-pending counter-customer-suggestion-pending--cheque">
-                          Old Cheque {formatMoney(chequeDue)}
-                        </span>
-                      ) : null}
-                    </span>
+                    <span className="counter-customer-suggestion-name">{name}</span>
+                    {(creditDue > 0 || chequeDue > 0) ? (
+                      <span className="counter-customer-suggestion-balances">
+                        {creditDue > 0 ? (
+                          <span className="counter-customer-balance counter-customer-balance--credit counter-customer-balance--compact">
+                            <span className="counter-customer-balance-label">Credit</span>
+                            <span className="counter-customer-balance-amount">{formatMoney(creditDue)}</span>
+                          </span>
+                        ) : null}
+                        {chequeDue > 0 ? (
+                          <span className="counter-customer-balance counter-customer-balance--cheque counter-customer-balance--compact">
+                            <span className="counter-customer-balance-label">Cheque</span>
+                            <span className="counter-customer-balance-amount">{formatMoney(chequeDue)}</span>
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
                   </button>
                 </li>
               )

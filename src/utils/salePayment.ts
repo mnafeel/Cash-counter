@@ -559,6 +559,25 @@ export function saleLastPaymentEventAt(sale: Sale): string | undefined {
   return events[events.length - 1].at
 }
 
+/** True when a credit ↔ cheque reclass happened in the filtered date range. */
+export function saleHasPendingBalanceTransferInRange(
+  sale: Sale,
+  fromDate?: string,
+  toDate?: string,
+): boolean {
+  return (sale.pendingBalanceTransfers ?? []).some((row) =>
+    isIsoInDateRange(row.at, fromDate, toDate),
+  )
+}
+
+/**
+ * Day-level history / sales list date for open credit or cheque — bill creation or
+ * last cash/bank/cheque collection, never credit↔cheque transfer days.
+ */
+export function salePendingBalanceHistoryDate(sale: Sale): string {
+  return saleLastPaymentEventAt(sale) ?? sale.createdAt
+}
+
 /** Timestamp for a specific channel collection (cash or bank/cheque). */
 export function saleChannelCollectionAt(
   sale: Sale,

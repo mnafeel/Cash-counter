@@ -3,13 +3,19 @@ import { formatDate, formatMoney } from './format'
 import {
   saleCollectedAmount,
   saleHasCollectionInRange,
+  saleHasPendingBalanceTransferInRange,
   salePaymentEventsInRange,
   saleCollectedComponentBreakdown,
   getSalePaymentEvents,
   salePaidCollectedBreakdown,
+  salePendingBalanceHistoryDate,
   normalizeCollectedBreakdown,
 } from './salePayment'
-import { saleCreditBalanceDue } from './saleReturns'
+import {
+  linkedPendingCreditTotal,
+  saleCreditBalanceDue,
+  salePendingLegAmount,
+} from './saleReturns'
 
 export type ReportPeriod = 'day' | 'week' | 'month'
 export type ReportSort = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
@@ -194,10 +200,22 @@ function saleHasPartialCollection(sale: Sale): boolean {
   return isPendingBalanceBill(sale) && saleCollectedAmount(sale) > 0
 }
 
+/** Sales list “updated” — hide credit↔cheque transfer bumps (receipt still shows transfer date). */
+function saleSalesRowUpdatedAt(sale: Sale): string {
+  const updated = sale.updatedAt ?? sale.createdAt
+  const transfers = sale.pendingBalanceTransfers ?? []
+  if (transfers.length === 0) return updated
+  const lastTransfer = transfers[transfers.length - 1]
+  if (localDayTimestamp(updated) === localDayTimestamp(lastTransfer.at)) {
+    return sale.createdAt
+  }
+  return updated
+}
+
 export function saleReportDate(sale: Sale, mode: SaleDateMode = 'collected'): string {
   if (mode === 'created') return sale.createdAt
   if (sale.status === 'pending') {
-    if (isPendingBalanceBill(sale)) return sale.updatedAt ?? sale.createdAt
+    if (isPendingBalanceBill(sale)) return salePendingBalanceHistoryDate(sale)
     if (saleHasPartialCollection(sale) && sale.updatedAt) return sale.updatedAt
     return sale.createdAt
   }
@@ -261,8 +279,20 @@ export function saleOriginalBillAmount(sale: Sale): number {
 
 export function saleCreditPendingAmount(sale: Sale, allSales?: Sale[]): number {
   if (!isCreditPendingSale(sale)) return 0
-  if (allSales && allSales.length > 0) return saleCreditBalanceDue(sale, allSales)
-  return Math.max(0, sale.billAmount)
+  if (allSales && allSales.length > 0) {
+    const linked = linkedPendingCreditTotal(sale, allSales)
+    const leg =
+      linked > 0.01
+        ? linked
+        : sale.status === 'pending'
+          ? salePendingLegAmount(sale)
+          : 0
+    if (leg > 0.01) return leg
+    const due = saleCreditBalanceDue(sale, allSales)
+    return due > 0.01 ? due : 0
+  }
+  const bill = Math.max(0, sale.billAmount)
+  return bill > 0.01 ? bill : 0
 }
 
 export function saleChequePendingAmount(sale: Sale, allSales?: Sale[]): number {
@@ -293,7 +323,11 @@ export function salePendingBelongsToPeriod(sale: Sale, filter?: SalesReportFilte
   if ((filter.dateMode ?? 'collected') === 'created') return true
   if (isInDateRange(sale.createdAt, filter)) return true
   if (!isInDateRange(sale.updatedAt ?? sale.createdAt, filter)) return false
-  return !saleHasCollectionInRange(sale, filter.fromDate, filter.toDate)
+  if (saleHasCollectionInRange(sale, filter.fromDate, filter.toDate)) return false
+  if (saleHasPendingBalanceTransferInRange(sale, filter.fromDate, filter.toDate)) {
+    return false
+  }
+  return true
 }
 
 function saleCreditPendingForFilter(sale: Sale, filter?: SalesReportFilter): number {
@@ -663,7 +697,7 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
   const hasCredit = saleIsCreditRelated(sale)
   const hasCheque = saleIsChequeRelated(sale)
   const hasCreditOrCheque = hasCredit || hasCheque || saleWasOpenedAsCreditOrCheque(sale)
-  const updatedAt = sale.updatedAt ?? sale.createdAt
+  const updatedAt = saleSalesRowUpdatedAt(sale)
   return {
     id: sale.id,
     groupId: saleBillGroupId(sale),

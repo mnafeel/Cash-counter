@@ -343,8 +343,77 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
+}
+
+.counter-customer-balances {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  gap: 5px;
+  margin-left: auto;
+  max-width: min(52%, 14rem);
+}
+
+.counter-customer-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  line-height: 1.15;
+}
+
+.counter-customer-balance-label {
+  font-size: clamp(0.42rem, calc(var(--counter-height, 560px) * 0.011), 0.5rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.88;
+  white-space: nowrap;
+}
+
+.counter-customer-balance-amount {
+  font-size: clamp(0.52rem, calc(var(--counter-height, 560px) * 0.015), 0.66rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.counter-customer-balance--credit {
+  color: rgba(180, 220, 255, 0.95);
+  background: rgba(40, 80, 120, 0.22);
+  border-color: rgba(120, 170, 220, 0.28);
+}
+
+.counter-customer-balance--cheque {
+  color: rgba(220, 200, 255, 0.95);
+  background: rgba(80, 50, 120, 0.22);
+  border-color: rgba(170, 140, 220, 0.28);
+}
+
+.counter-customer-balance--old-credit,
+.counter-customer-balance--old-cheque {
+  color: rgba(230, 190, 100, 0.95);
+  background: rgba(120, 90, 40, 0.18);
+  border-color: rgba(200, 170, 100, 0.22);
+}
+
+.counter-customer-balance--compact {
+  padding: 1px 5px;
+}
+
+.counter-customer-balance--compact .counter-customer-balance-label {
+  font-size: 0.4rem;
+}
+
+.counter-customer-balance--compact .counter-customer-balance-amount {
+  font-size: 0.52rem;
 }
 
 .counter-customer-tags {
@@ -362,25 +431,55 @@
   margin-left: auto;
 }
 
+.counter-customer-cd {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+
+.counter-customer-tags--balances {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  align-items: stretch;
+}
+
+.counter-customer-tags--old-ledger {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+  align-items: stretch;
+  padding-top: 1px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.counter-customer-tags--old-ledger .counter-customer-tag {
+  font-size: clamp(0.48rem, calc(var(--counter-height, 560px) * 0.013), 0.58rem);
+  font-weight: 600;
+}
+
 .counter-customer-tag {
-  flex-shrink: 0;
-  max-width: 9.5rem;
+  flex: 1 1 calc(50% - 3px);
+  min-width: 0;
+  font-size: clamp(0.5rem, calc(var(--counter-height, 560px) * 0.014), 0.62rem);
+  font-weight: 700;
+  line-height: 1.25;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.46rem;
-  font-weight: 800;
-  line-height: 1.2;
-  padding: 2px 5px;
-  border-radius: 999px;
-  border: 1px solid transparent;
 }
 
 .counter-customer-tag--credit,
 .counter-customer-tag--cheque {
-  max-width: 4.5rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .counter-customer-tag--old-credit,
@@ -454,11 +553,19 @@
   cursor: pointer;
 }
 
-.counter-customer-suggestion > span:first-child {
+.counter-customer-suggestion-name {
   min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.counter-customer-suggestion-balances {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  gap: 4px;
 }
 
 .counter-customer-suggestion-pending {
@@ -1206,6 +1313,14 @@
   font-size: 0.85rem;
   font-weight: 800;
   line-height: 1.1;
+}
+
+.counter-cheque-item-split,
+.counter-credit-item-split {
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  line-height: 1.15;
 }
 
 .counter-cheque-item-name,

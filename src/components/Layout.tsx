@@ -9,7 +9,7 @@ import { getLastCloudUsername } from '../firebase/cloudUser'
 import { useDeviceSize } from '../hooks/useDeviceSize'
 import { useSidebarGestures } from '../hooks/useSidebarGestures'
 import { useAppRouteLocks } from '../hooks/useAppRouteLocks'
-import { useCashSnapshot } from '../hooks/useCashSnapshot'
+import { useCashLayoutSession } from '../hooks/useCashLayoutSession'
 import { getPinEntryLength, verifyUserPin } from '../utils/accessPin'
 import {
   isPinProtectedMainTab,
@@ -79,7 +79,7 @@ export default function Layout() {
   useAppRouteLocks()
   const navigate = useNavigate()
   const location = useLocation()
-  const { homeUnlocked, data, pinSessionLastActivityAt } = useCashSnapshot(true)
+  const { homeUnlocked, pinSessionLastActivityAt, dataRef } = useCashLayoutSession()
   const { unlockHome, updateHomePin, setProtectedRouteActive, touchProtectedSession } =
     useCashActions()
   const mainTab = getMainTabKey(location.pathname)
@@ -229,9 +229,9 @@ export default function Layout() {
   const pinEntry = (
     <PinEntry
       title="Enter PIN"
-      verifyPin={(pin) => verifyUserPin(data, pin)}
+      verifyPin={(pin) => verifyUserPin(dataRef.current, pin)}
       onUnlock={unlockHome}
-      pinLength={getPinEntryLength(data)}
+      pinLength={getPinEntryLength(dataRef.current)}
       defaultCloudUsername={getLastCloudUsername() ?? ''}
       onForgotPin={async ({ username, password, newPin }) => {
         await loginCloud(username, password)

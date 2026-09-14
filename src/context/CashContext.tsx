@@ -52,6 +52,8 @@ import {
   cancelSaleChequeAsUnpaid,
   cancelSaleCreditAsUnpaid,
   collectPendingBill,
+  transferPendingCreditToCheque,
+  transferPendingChequeToCredit,
   clearAllLocalData,
   deleteExpense,
   deleteLoan,
@@ -176,6 +178,8 @@ interface CashContextValue {
       paidAmount?: number
       paymentEvents?: SalePaymentEvent[]
       chequeApproved?: boolean
+      pendingBalanceReclassifiedAt?: string
+      pendingBalanceReclassifiedFrom?: PayType
       returns?: SaleReturnEntry[]
     },
   ) => void
@@ -194,6 +198,16 @@ interface CashContextValue {
       chequeApproved?: boolean
       customerName?: string
     },
+  ) => void
+  transferPendingCreditToCheque: (
+    creditSaleId: string,
+    amount: number,
+    customerName?: string,
+  ) => void
+  transferPendingChequeToCredit: (
+    chequeSaleId: string,
+    amount: number,
+    customerName?: string,
   ) => void
   applySaleReturn: (
     saleId: string,
@@ -879,6 +893,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
         paidAmount?: number
         paymentEvents?: SalePaymentEvent[]
         chequeApproved?: boolean
+        pendingBalanceReclassifiedAt?: string
+        pendingBalanceReclassifiedFrom?: PayType
         returns?: SaleReturnEntry[]
       },
     ) => {
@@ -905,6 +921,20 @@ export function CashProvider({ children }: { children: ReactNode }) {
       },
     ) => {
       setData((prev) => collectPendingBill(prev, id, sale))
+    },
+    [],
+  )
+
+  const transferPendingCreditToChequeAction = useCallback(
+    (creditSaleId: string, amount: number, customerName?: string) => {
+      setData((prev) => transferPendingCreditToCheque(prev, creditSaleId, amount, customerName))
+    },
+    [],
+  )
+
+  const transferPendingChequeToCreditAction = useCallback(
+    (chequeSaleId: string, amount: number, customerName?: string) => {
+      setData((prev) => transferPendingChequeToCredit(prev, chequeSaleId, amount, customerName))
     },
     [],
   )
@@ -1751,10 +1781,11 @@ export function CashProvider({ children }: { children: ReactNode }) {
     dataStore.setSnapshot(dataSnapshot)
   }, [dataStore, dataSnapshot])
 
-  const heavyDerivedDataset =
-    data.sales.length > 200 || data.expenses.length > 300
-
   useEffect(() => {
+    let cancelled = false
+    let idleId: number | null = null
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+
     const buildDerived = (): CashDerivedSnapshot => ({
       historyItems: buildHistoryItems(data),
       cashActivityItems: buildCashActivityItems(data),
@@ -1765,21 +1796,39 @@ export function CashProvider({ children }: { children: ReactNode }) {
       loanOutflowHistoryItems: buildLoanOutflowHistoryItems(data),
     })
 
-    const apply = () => derivedStore.setDerived(buildDerived())
-
-    if (!heavyDerivedDataset) {
-      apply()
-      return
+    const apply = () => {
+      idleId = null
+      timeoutId = null
+      if (cancelled) return
+      derivedStore.setDerived(buildDerived())
     }
 
-    // Large datasets: rebuild during idle time so tab switches and billing stay responsive.
-    if (typeof requestIdleCallback === 'function') {
-      const id = requestIdleCallback(apply, { timeout: 1200 })
-      return () => cancelIdleCallback(id)
+    const schedule = () => {
+      if (cancelled) return
+      if (idleId !== null && typeof cancelIdleCallback === 'function') {
+        cancelIdleCallback(idleId)
+        idleId = null
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId)
+        timeoutId = null
+      }
+      if (typeof requestIdleCallback === 'function') {
+        idleId = requestIdleCallback(apply, { timeout: 120 })
+      } else {
+        timeoutId = window.setTimeout(apply, 0)
+      }
     }
-    const id = window.setTimeout(apply, 16)
-    return () => window.clearTimeout(id)
-  }, [data, derivedStore, heavyDerivedDataset])
+
+    schedule()
+    return () => {
+      cancelled = true
+      if (idleId !== null && typeof cancelIdleCallback === 'function') {
+        cancelIdleCallback(idleId)
+      }
+      if (timeoutId !== null) window.clearTimeout(timeoutId)
+    }
+  }, [data, derivedStore])
 
   const actionsValue = useMemo(
     (): CashActionsValue => ({
@@ -1792,6 +1841,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       recordSale,
       updatePendingSale,
       collectPendingSale,
+      transferPendingCreditToCheque: transferPendingCreditToChequeAction,
+      transferPendingChequeToCredit: transferPendingChequeToCreditAction,
       recordExpense,
       recordExpenses,
       recordIndependentExpenses,
@@ -1871,6 +1922,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       recordSale,
       updatePendingSale,
       collectPendingSale,
+      transferPendingCreditToChequeAction,
+      transferPendingChequeToCreditAction,
       recordExpense,
       recordExpenses,
       recordIndependentExpenses,

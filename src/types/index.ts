@@ -12,6 +12,13 @@ export interface SalePaymentEvent {
   cancelledAt?: string
 }
 
+/** Audit trail when open credit/cheque balance moves between pending legs. */
+export interface PendingBalanceTransfer {
+  at: string
+  amount: number
+  direction: 'credit_to_cheque' | 'cheque_to_credit'
+}
+
 /** Item returned against a sales / credit bill — reduces amount due. */
 export interface SaleReturnEntry {
   id: string
@@ -60,6 +67,10 @@ export interface Sale {
   /** Open credit balance cleared via Settings / History cancel (partial collection kept). */
   creditCancelledAt?: string
   creditCancelledAmount?: number
+  /** When open credit/cheque balance was reclassified (e.g. credit → cheque pending). */
+  pendingBalanceReclassifiedAt?: string
+  pendingBalanceReclassifiedFrom?: PayType
+  pendingBalanceTransfers?: PendingBalanceTransfer[]
   /** Follow-up date to remind about collecting this pending bill. */
   reminderAt?: string
   /** Optional note shown with reminder alerts. */
