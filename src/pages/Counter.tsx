@@ -3619,14 +3619,15 @@ function Counter({ active }: { active: boolean }) {
     if (collectingCreditId) {
       const creditBill = data.sales.find((sale) => sale.id === collectingCreditId)
       const due = creditBill?.billAmount ?? approvedCheque
+      const slice = Math.min(approvedCheque, due)
       collectCreditPayment(collectingCreditId, {
         dueAmount: due,
-        collected: Math.min(approvedCheque, due),
+        collectTarget: due,
+        collected: slice,
         changeAmount: 0,
         payType: 'cheque',
-        chequeAmount: Math.min(approvedCheque, due),
+        chequeAmount: slice,
         chequeApproved: true,
-        bankAmount: Math.min(approvedCheque, due),
         customerName: name,
       })
       flashSaved('collect')

@@ -23,6 +23,7 @@ import {
   salePendingBalanceHistoryDate,
   salePendingCreditPaidBreakdown,
   sanitizeSplitParentChildChequeOverlap,
+  paymentEventBankInflow,
 } from './salePayment'
 
 export type HistoryItemType = 'sale' | 'expense' | 'purchase' | 'deposit' | 'transfer' | 'loan'
@@ -183,7 +184,7 @@ function appendChronologicalPaymentEvents(
         createReceiptDraft(drafts, RECEIPT_SEQ.CREDIT_PAYMENT, {
           label:
             creditPayIndex === 1
-              ? 'Credit payment · Cash'
+              ? '1st credit payment · Cash'
               : `${ordinalWord(creditPayIndex - 1)} credit payment · Cash`,
           date: event.at,
           amount: normalized.cash,
@@ -197,7 +198,7 @@ function appendChronologicalPaymentEvents(
         createReceiptDraft(drafts, RECEIPT_SEQ.CREDIT_PAYMENT, {
           label:
             creditPayIndex === 1
-              ? 'Credit payment · Bank'
+              ? '1st credit payment · Bank'
               : `${ordinalWord(creditPayIndex - 1)} credit payment · Bank`,
           date: event.at,
           amount: bankPart,
@@ -635,6 +636,12 @@ function buildStructuredSaleReceipt(
 } {
   const members = groupSales?.length ? groupSales : [sale]
   const primary = members[0]
+  if (
+    members.length > 1 &&
+    members.some((row) => isCreditBill(row) || isChequeBill(row))
+  ) {
+    return buildBalanceGroupStructuredReceipt(members)
+  }
   const drafts: ReceiptEventDraft[] = []
   if (isCreditBill(primary)) {
     appendCreditSaleStructuredEvents(primary, drafts, { groupSales: members })
@@ -648,18 +655,291 @@ function buildStructuredSaleReceipt(
   return { timeline, lines }
 }
 
+function isBalanceLinkedGroup(parent: Sale, children: Sale[]): boolean {
+  if (parent.payType === 'split') return false
+  if (isCreditBill(parent) || isChequeBill(parent)) return true
+  return children.some((child) => isCreditBill(child) || isChequeBill(child))
+}
+
+function balanceGroupPrimary(members: Sale[]): Sale {
+  const sorted = [...members].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  )
+  return (
+    sorted.find((row) => isCreditBill(row)) ??
+    sorted.find((row) => isChequeBill(row)) ??
+    sorted[0]
+  )
+}
+
+function receiptPaymentLeg(sale: Sale): 'credit' | 'cheque' | 'standard' {
+  if (isChequeBill(sale)) return 'cheque'
+  if (isCreditBill(sale)) return 'credit'
+  return 'standard'
+}
+
+/** Credit + cheque linked legs: one timeline with per-leg labels (1st credit …, 1st cheque …). */
+function appendBalanceGroupPaymentEvents(
+  members: Sale[],
+  drafts: ReceiptEventDraft[],
+): number {
+  const merged = mergedActivePaymentEvents(members)
+  let creditPayIndex = 0
+  let chequeApprovalIndex = 0
+  let standardCashIndex = 0
+  let standardBankIndex = 0
+  let total = 0
+
+  for (const { sale, event } of merged) {
+    total += event.amount
+    const normalized = normalizeCollectedBreakdown({
+      cash: event.cash ?? 0,
+      bank: event.bank ?? 0,
+      cheque: event.cheque ?? 0,
+      total: event.amount,
+    })
+    const leg = receiptPaymentLeg(sale)
+
+    if (leg === 'cheque') {
+      const bankIn = paymentEventBankInflow(event)
+      if (normalized.cash > 0) {
+        createReceiptDraft(drafts, RECEIPT_SEQ.CASH_RECEIVED, {
+          label:
+            chequeApprovalIndex === 0 && bankIn <= 0
+              ? 'Cash received'
+              : `${ordinalWord(chequeApprovalIndex)} cash received`,
+          date: event.at,
+          amount: normalized.cash,
+          type: 'collected',
+          detail: formatDate(event.at),
+        })
+      }
+      if (bankIn > 0) {
+        createReceiptDraft(drafts, RECEIPT_SEQ.CHEQUE_APPROVED, {
+          label:
+            chequeApprovalIndex === 0
+              ? '1st cheque approved'
+              : `${ordinalWord(chequeApprovalIndex)} cheque approved`,
+          date: event.at,
+          amount: bankIn,
+          type: 'collected',
+          detail: `To bank · ${formatDate(event.at)}`,
+        })
+        chequeApprovalIndex += 1
+      }
+      continue
+    }
+
+    if (leg === 'credit') {
+      if (normalized.cash > 0) {
+        creditPayIndex += 1
+        createReceiptDraft(drafts, RECEIPT_SEQ.CREDIT_PAYMENT, {
+          label:
+            creditPayIndex === 1
+              ? '1st credit payment · Cash'
+              : `${ordinalWord(creditPayIndex - 1)} credit payment · Cash`,
+          date: event.at,
+          amount: normalized.cash,
+          type: 'collected',
+          detail: formatDate(event.at),
+        })
+      }
+      const bankIn = paymentEventBankInflow(event)
+      if (bankIn > 0) {
+        creditPayIndex += 1
+        createReceiptDraft(drafts, RECEIPT_SEQ.CREDIT_PAYMENT, {
+          label:
+            creditPayIndex === 1
+              ? '1st credit payment · Bank'
+              : `${ordinalWord(creditPayIndex - 1)} credit payment · Bank`,
+          date: event.at,
+          amount: bankIn,
+          type: 'collected',
+          detail: formatDate(event.at),
+        })
+      }
+      continue
+    }
+
+    if (normalized.cash > 0) {
+      createReceiptDraft(drafts, RECEIPT_SEQ.CASH_RECEIVED, {
+        label:
+          standardCashIndex === 0 ? 'Cash received' : `${ordinalWord(standardCashIndex)} cash received`,
+        date: event.at,
+        amount: normalized.cash,
+        type: 'collected',
+        detail: formatDate(event.at),
+      })
+      standardCashIndex += 1
+    }
+    const bankIn = paymentEventBankInflow(event)
+    if (bankIn > 0) {
+      createReceiptDraft(drafts, RECEIPT_SEQ.BANK_RECEIVED, {
+        label:
+          standardBankIndex === 0 ? 'Bank received' : `${ordinalWord(standardBankIndex)} bank received`,
+        date: event.at,
+        amount: bankIn,
+        type: 'collected',
+        detail: formatDate(event.at),
+      })
+      standardBankIndex += 1
+    }
+  }
+
+  return Math.round(total * 100) / 100
+}
+
+function appendBalanceGroupChequeCancellations(
+  members: Sale[],
+  drafts: ReceiptEventDraft[],
+): void {
+  const allEvents = members.flatMap((row) => getSalePaymentEvents(row).filter((e) => e.amount > 0))
+  let chequeCancelIndex = 0
+  for (const event of allEvents) {
+    if (!event.cancelled) continue
+    const normalized = normalizeCollectedBreakdown({
+      cash: event.cash ?? 0,
+      bank: event.bank ?? 0,
+      cheque: event.cheque ?? 0,
+      total: event.amount,
+    })
+    createReceiptDraft(drafts, RECEIPT_SEQ.CHEQUE_CANCELLED, {
+      label:
+        allEvents.filter((e) => e.cancelled).length <= 1
+          ? 'Cheque cancelled'
+          : `${ordinalWord(chequeCancelIndex)} cheque cancelled`,
+      detail: `Was approved · ${formatDate(event.cancelledAt ?? event.at)}`,
+      date: event.cancelledAt ?? event.at,
+      amount: normalized.total || event.amount,
+      type: 'pending',
+    })
+    chequeCancelIndex += 1
+  }
+}
+
+function appendBalanceGroupReturnEvents(sale: Sale, drafts: ReceiptEventDraft[]): void {
+  const totalBill = saleGrossBillAmount(sale)
+  const returnTotal = saleReturnTotal(sale)
+  if (!sale.returns?.length) return
+
+  for (const row of sale.returns) {
+    createReceiptDraft(drafts, RECEIPT_SEQ.SALE_RETURN, {
+      label: `Return · ${formatSaleReturnLine(row)}`,
+      date: row.createdAt,
+      amount: row.amount,
+      type: 'return',
+      detail: `Bill reduced by ${formatMoney(row.amount)}`,
+    })
+  }
+  createReceiptDraft(drafts, RECEIPT_SEQ.SALE_RETURN, {
+    label: 'Bill after returns',
+    date: sale.updatedAt ?? sale.createdAt,
+    amount: Math.max(0, totalBill - returnTotal),
+    type: 'bill-created',
+    detail: `Reduced by ${formatMoney(returnTotal)}`,
+  })
+}
+
+function buildBalanceGroupStructuredReceipt(members: Sale[]): {
+  timeline: HistoryReceiptEvent[]
+  lines: HistoryReceiptLine[]
+} {
+  const primary = balanceGroupPrimary(members)
+  const sortedMembers = [...members].sort(
+    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  )
+  const drafts: ReceiptEventDraft[] = []
+  const fullBill =
+    primary.originalBillAmount ??
+    sortedMembers.find((row) => row.originalBillAmount)?.originalBillAmount ??
+    primary.billAmount + sortedMembers.filter((row) => row.id !== primary.id).reduce(
+      (sum, row) => sum + row.billAmount,
+      0,
+    )
+
+  createReceiptDraft(drafts, RECEIPT_SEQ.BILL_CREATED, {
+    label: 'Bill created',
+    date: primary.createdAt,
+    amount: fullBill,
+    type: 'bill-created',
+    detail: formatDate(primary.createdAt),
+  })
+
+  appendBalanceGroupReturnEvents(primary, drafts)
+
+  const totalCollected = appendBalanceGroupPaymentEvents(members, drafts)
+
+  for (const member of sortedMembers) {
+    appendPendingBalanceTransferEvents(member, drafts)
+  }
+
+  for (const member of sortedMembers) {
+    if (
+      member.pendingBalanceReclassifiedFrom === 'credit' &&
+      member.pendingBalanceReclassifiedAt &&
+      member.status === 'pending' &&
+      member.billAmount > 0.01 &&
+      isChequeBill(member)
+    ) {
+      createReceiptDraft(drafts, RECEIPT_SEQ.CREDIT_PAYMENT, {
+        label: 'Credit changed to cheque',
+        date: member.pendingBalanceReclassifiedAt,
+        amount: member.billAmount,
+        type: 'pending',
+        detail: `Open balance moved to cheque · ${formatDate(member.pendingBalanceReclassifiedAt)}`,
+      })
+    }
+  }
+
+  for (const member of sortedMembers) {
+    if (member.creditCancelledAt && (member.creditCancelledAmount ?? 0) > 0) {
+      createReceiptDraft(drafts, RECEIPT_SEQ.CANCELLED, {
+        label: 'Credit cancelled',
+        detail: `Open balance cleared · ${formatDate(member.creditCancelledAt)}`,
+        date: member.creditCancelledAt,
+        amount: member.creditCancelledAmount,
+        type: 'pending',
+      })
+    } else {
+      appendOpenBalanceLine(member, drafts)
+    }
+  }
+
+  appendBalanceGroupChequeCancellations(members, drafts)
+
+  appendTotalCollected(
+    drafts,
+    totalCollected,
+    latestIso(
+      members
+        .map((row) => saleLastPaymentEventAt(row) ?? saleDisplayCollectionAt(row) ?? row.createdAt)
+        .filter(Boolean),
+    ) ?? primary.createdAt,
+  )
+
+  const timeline = finalizeReceiptEvents(drafts)
+  const lines = structuredReceiptLines(drafts, primary.createdAt)
+  return { timeline, lines }
+}
+
 function appendSplitParentCollectionEvents(
   parent: Sale,
   children: Sale[],
   drafts: ReceiptEventDraft[],
 ): void {
-  if (parent.status === 'pending') return
-
   const activeEvents = getSalePaymentEvents(parent).filter(
     (event) => event.amount > 0 && !event.cancelled,
   )
 
   if (activeEvents.length > 0) {
+    if (isCreditBill(parent)) {
+      appendChronologicalPaymentEvents([parent], drafts, 'credit')
+      return
+    }
+    if (isChequeBill(parent)) {
+      appendChronologicalPaymentEvents([parent], drafts, 'cheque')
+      return
+    }
     activeEvents.forEach((event, index) => {
       const normalized = normalizeCollectedBreakdown({
         cash: event.cash ?? 0,
@@ -679,11 +959,12 @@ function appendSplitParentCollectionEvents(
           detail: formatDate(event.at),
         })
       }
-      if (normalized.bank > 0 || normalized.cheque > 0) {
+      const bankIn = paymentEventBankInflow(event)
+      if (bankIn > 0) {
         createReceiptDraft(drafts, RECEIPT_SEQ.BANK_RECEIVED, {
           label: `${prefix} · Bank`,
           date: event.at,
-          amount: normalized.bank + normalized.cheque,
+          amount: bankIn,
           type: 'collected',
           detail: formatDate(event.at),
         })
@@ -691,6 +972,8 @@ function appendSplitParentCollectionEvents(
     })
     return
   }
+
+  if (parent.status === 'pending') return
 
   const parentCollected = parentCollectedExcludingChequeChildren(parent, children)
   if (!parentCollected) return
@@ -723,6 +1006,10 @@ function buildSplitStructuredReceipt(
   parent: Sale,
   children: Sale[],
 ): { timeline: HistoryReceiptEvent[]; lines: HistoryReceiptLine[] } {
+  if (isBalanceLinkedGroup(parent, children)) {
+    return buildBalanceGroupStructuredReceipt([parent, ...children])
+  }
+
   const drafts: ReceiptEventDraft[] = []
   const fullBill =
     parent.originalBillAmount ??
@@ -1599,7 +1886,10 @@ function buildMergedBalanceGroupHistoryItem(
     members.reduce((sum, row) => sum + collectedPaymentAmount(row), 0) * 100,
   ) / 100
   const paymentCollections = members.flatMap((row) => buildSalePaymentCollections(row) ?? [])
-  const receipt = buildStructuredSaleReceipt(primary, members)
+  const receipt =
+    members.some((row) => isCreditBill(row) || isChequeBill(row))
+      ? buildBalanceGroupStructuredReceipt(members)
+      : buildStructuredSaleReceipt(primary, members)
 
   return {
     ...item,

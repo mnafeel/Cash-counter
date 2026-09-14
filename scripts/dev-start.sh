@@ -16,6 +16,38 @@ pkill -f "${ROOT}.*tsc -b" 2>/dev/null || true
 
 cp -f index.vite.html index.html
 
-echo "Starting Vite (first start can take 1–2 min on a slow machine)…"
-echo "Open: http://${HOST}:${PORT}/"
-exec node node_modules/vite/bin/vite.js --host "$HOST" --port "$PORT" --clearScreen false
+URL="http://${HOST}:${PORT}/"
+echo "Starting Vite…"
+echo "First start can take 1–2 minutes while dependencies are optimized."
+echo "Do not open the app until you see \"ready\" below."
+echo ""
+
+node node_modules/vite/bin/vite.js --host "$HOST" --port "$PORT" --clearScreen false &
+VITE_PID=$!
+
+cleanup() {
+  kill "$VITE_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+READY=0
+for _ in $(seq 1 120); do
+  if curl -sf -o /dev/null --connect-timeout 1 "$URL" 2>/dev/null; then
+    READY=1
+    echo ""
+    echo "✓ Dev server is up → ${URL}"
+    break
+  fi
+  if ! kill -0 "$VITE_PID" 2>/dev/null; then
+    echo "Vite exited before the server was ready. Check errors above."
+    exit 1
+  fi
+  sleep 1
+done
+
+if [ "$READY" -eq 0 ]; then
+  echo ""
+  echo "Still starting… open ${URL} when Vite prints \"ready\" above."
+fi
+
+wait "$VITE_PID"

@@ -7,6 +7,7 @@ import {
   salePaymentEventsInRange,
   saleCollectedComponentBreakdown,
   getSalePaymentEvents,
+  paymentEventBankInflow,
   salePaidCollectedBreakdown,
   salePendingBalanceHistoryDate,
   normalizeCollectedBreakdown,
@@ -509,7 +510,7 @@ export function buildSalesReport(
         }
         row.totalBills += event.amount
         row.cashTotal += event.cash ?? 0
-        row.bankTotal += (event.bank ?? 0) + (event.cheque ?? 0)
+        row.bankTotal += paymentEventBankInflow(event)
         groups.set(key, row)
       }
       continue

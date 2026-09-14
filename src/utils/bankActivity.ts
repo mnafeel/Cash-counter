@@ -3,6 +3,7 @@ import { isPurchaseExpense } from './expenseBillLabels'
 import { loanSettlementEvents } from './loanLedger'
 import {
   getSalePaymentEvents,
+  paymentEventBankInflow,
   saleCollectionTimestamp,
   sanitizeSplitParentChildChequeOverlap,
   isActivePaymentEvent,
@@ -41,7 +42,7 @@ function pushSaleItems(items: CashActivityItem[], sale: Sale) {
   if (events.length > 0) {
     events.forEach((event, index) => {
       if (!isActivePaymentEvent(event)) return
-      const bank = (event.bank ?? 0) + (event.cheque ?? 0)
+      const bank = paymentEventBankInflow(event)
       if (bank > 0) {
         items.push({
           id: `sale-${sale.id}-bank-${index}`,

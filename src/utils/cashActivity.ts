@@ -2,7 +2,14 @@ import type { AppData, Expense, Loan, Sale } from '../types'
 import { isPurchaseExpense } from './expenseBillLabels'
 import { loanSettlementEvents } from './loanLedger'
 import { purchaseExpenseActivityTime, purchasePaidComponents } from './purchaseHistory'
-import { getSalePaymentEvents, saleCollectionTimestamp, sanitizeSplitParentChildChequeOverlap, isChequeOriginSale, isActivePaymentEvent } from './salePayment'
+import {
+  getSalePaymentEvents,
+  paymentEventBankInflow,
+  saleCollectionTimestamp,
+  sanitizeSplitParentChildChequeOverlap,
+  isChequeOriginSale,
+  isActivePaymentEvent,
+} from './salePayment'
 import { saleCashCollected, saleBankCollected, saleChequeToBankCollected, toInputDate } from './salesReport'
 import { memoByDataRef } from './memoByDataRef'
 
@@ -182,7 +189,7 @@ function pushSaleItems(items: CashActivityItem[], sale: Sale) {
       if (cash <= 0) return
       // Cheque→bank settlements must never appear as cash drawer credits.
       if (isChequeOriginSale(sale)) {
-        const bank = (event.bank ?? 0) + (event.cheque ?? 0)
+        const bank = paymentEventBankInflow(event)
         if (bank > 0 && Math.abs(cash - bank) < 0.01) return
         if ((sale.chequeAmount ?? 0) > 0 && Math.abs(cash - (sale.chequeAmount ?? 0)) < 0.01) {
           return

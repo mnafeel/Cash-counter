@@ -454,6 +454,13 @@ export function normalizePaymentEvent(event: SalePaymentEvent): SalePaymentEvent
   }
 }
 
+/** Bank drawer credit for one payment event (cheque approvals are not bank+cheque). */
+export function paymentEventBankInflow(event: SalePaymentEvent): number {
+  const cheque = event.cheque ?? 0
+  if (cheque > 0) return cheque
+  return event.bank ?? 0
+}
+
 export function isActivePaymentEvent(event: SalePaymentEvent): boolean {
   return event.cancelled !== true
 }
