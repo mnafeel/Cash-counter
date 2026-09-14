@@ -856,24 +856,6 @@ function Counter({ active }: { active: boolean }) {
     chequeSplitAmount,
   ])
 
-  const chequeCollectDisplayAmount = useMemo(() => {
-    if (!activeChequeCollectId || chequeCollectCreditMode) return 0
-    if (!isChequeCollectSplit && payType !== 'cheque') return 0
-    return Math.max(
-      0,
-      splitTotal - cashSplitAmount - bankSplitAmount - creditSplitAmount,
-    )
-  }, [
-    activeChequeCollectId,
-    chequeCollectCreditMode,
-    isChequeCollectSplit,
-    payType,
-    splitTotal,
-    cashSplitAmount,
-    bankSplitAmount,
-    creditSplitAmount,
-  ])
-
   const chequeCollectRemainingAmount = useMemo(() => {
     if (!collectingChequeId || chequeCollectCreditMode) return 0
     if (payType === 'split') {
@@ -1378,28 +1360,6 @@ function Counter({ active }: { active: boolean }) {
     splitHasChequePending && !splitHasBoth && billAmount > 0 && savedAction === null
   const canSendSplitBothPending =
     splitHasBoth && billAmount > 0 && savedAction === null
-  const canChequePayTypeApprove =
-    savedAction === null &&
-    Boolean(activeChequeCollectId) &&
-    !chequeCollectCreditMode &&
-    payType === 'cheque' &&
-    paymentStep &&
-    paidAmount > 0 &&
-    paidAmount <= chequeCollectDueAmount + 0.01
-
-  const canChequeCollectSplitBankApprove =
-    savedAction === null &&
-    isChequeCollectSplit &&
-    bankSplitAmount > 0 &&
-    bankSplitAmount <= chequeCollectDueAmount + 0.01 &&
-    (cashSplitAmount === 0 || giveAmount === 0 || giveAmount >= cashSplitAmount)
-
-  const canChequeCollectSplitChequeApprove =
-    savedAction === null &&
-    isChequeCollectSplit &&
-    chequeSplitAmount > 0 &&
-    chequeSplitAmount <= chequeCollectDueAmount + 0.01 &&
-    (cashSplitAmount === 0 || giveAmount === 0 || giveAmount >= cashSplitAmount)
 
   const canSplitChequeApprove =
     savedAction === null &&

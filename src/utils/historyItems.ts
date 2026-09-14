@@ -232,13 +232,9 @@ function appendChronologicalPaymentEvents(
     const bankPart = normalized.bank + normalized.cheque
     if (bankPart > 0) {
       const label =
-        style === 'cheque'
-          ? bankIndex === 0
-            ? 'Bank received'
-            : `${ordinalWord(bankIndex)} bank received`
-          : bankIndex === 0 && merged.length <= 1
-            ? 'Bank received'
-            : `${ordinalWord(bankIndex)} bank received`
+        bankIndex === 0 && merged.length <= 1
+          ? 'Bank received'
+          : `${ordinalWord(bankIndex)} bank received`
       createReceiptDraft(drafts, RECEIPT_SEQ.BANK_RECEIVED, {
         label,
         date: event.at,
@@ -381,8 +377,6 @@ function appendCreditSaleStructuredEvents(
 ): void {
   const totalBill = saleGrossBillAmount(sale)
   const returnTotal = saleReturnTotal(sale)
-  const allEvents = getSalePaymentEvents(sale).filter((event) => event.amount > 0)
-  const activeEvents = allEvents.filter((event) => !event.cancelled)
 
   if (opts?.includeBillCreated !== false) {
     createReceiptDraft(drafts, RECEIPT_SEQ.BILL_CREATED, {
