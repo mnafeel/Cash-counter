@@ -7,6 +7,7 @@ import { formatFirebaseError, stripUndefined } from '../firebase/utils'
 import {
   buildWebsiteExportPayload,
   buildWebsiteExportQuickStats,
+  packWebsiteExportBody,
   websiteExportFingerprint,
   type WebsiteExportPayload,
   type WebsiteExportQuickStats,
@@ -351,31 +352,56 @@ export async function pushWebsiteExport(
   const exportedAt = new Date().toISOString()
   const payload = buildWebsiteExportPayload(data, user.uid, exportedAt)
   const keyHash = await resolveKeyHash(apiKey)
-  const body = JSON.stringify(payload)
+  const packed = packWebsiteExportBody(payload)
 
   try {
-    await Promise.all([
-      setDoc(exportDocRef(user.uid), {
-        ...stripUndefined(payload),
-        _updatedAt: exportedAt,
-      }),
-      setDoc(publicExportDocRef(keyHash), {
-        body,
-        exportedAt,
-        storeId: user.uid,
+    // Public doc first — ads / website fetch by API key hash. Must succeed or push fails.
+    await setDoc(publicExportDocRef(keyHash), {
+      body: packed.body,
+      exportedAt,
+      storeId: user.uid,
+      enabled: true,
+      byteLength: packed.byteLength,
+      trimmed: packed.trimmed,
+      adSpotCount: payload.adSpots.length,
+      salesCount: payload.totals.salesCount,
+      customerCount: payload.totals.customerCount,
+    })
+
+    // Private copy as JSON string too (avoids Firestore 1 MiB blow-ups from nested arrays).
+    await setDoc(exportDocRef(user.uid), {
+      body: packed.body,
+      exportedAt,
+      storeId: user.uid,
+      version: payload.version,
+      totals: stripUndefined(payload.totals),
+      trimmed: packed.trimmed,
+      _updatedAt: exportedAt,
+    })
+
+    await setDoc(
+      configDocRef(user.uid),
+      {
         enabled: true,
-      }),
-      setDoc(
-        configDocRef(user.uid),
-        {
-          enabled: true,
-          lastExportAt: exportedAt,
-          uid: user.uid,
-          keyHash,
-        },
-        { merge: true },
-      ),
-    ])
+        lastExportAt: exportedAt,
+        uid: user.uid,
+        keyHash,
+        publicExportReady: true,
+        trimmed: packed.trimmed,
+      },
+      { merge: true },
+    )
+
+    // Ensure apiKeys/{hash} still points at this store (stale after rotate/partial cleanup).
+    await setDoc(
+      apiKeyDocRef(keyHash),
+      {
+        uid: user.uid,
+        createdAt: new Date().toISOString(),
+        lastExportAt: exportedAt,
+      },
+      { merge: true },
+    )
   } catch (err) {
     throw new Error(formatFirebaseError(err))
   }

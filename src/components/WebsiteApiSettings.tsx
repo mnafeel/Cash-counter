@@ -132,7 +132,7 @@ export default function WebsiteApiSettings({ data, cloudLoggedIn }: WebsiteApiSe
     try {
       const at = await pushWebsiteExport(data, { force: true })
       refreshNote(
-        `Published · ${quick.salesCount} sales · ${quick.customerCount} customers · ${new Date(at).toLocaleString()}`,
+        `Published for API fetch · ${quick.salesCount} sales · ${quick.customerCount} customers / ad spots · ${new Date(at).toLocaleString()}`,
       )
     } catch (err) {
       refreshNote(err instanceof Error ? err.message : 'Push failed', true)
@@ -169,8 +169,8 @@ export default function WebsiteApiSettings({ data, cloudLoggedIn }: WebsiteApiSe
         <div className="settings-header">
           <h2>Website API</h2>
           <p>
-            Give your new website read-only sale, customer, cash visit, and bank visit data via an
-            API key. Changes publish automatically in the background.
+            Publish this store for your website or ads site with an API key. Push writes a live
+            export (sales, customers, and ad spots) that other apps fetch by key.
           </p>
         </div>
 
@@ -232,7 +232,7 @@ export default function WebsiteApiSettings({ data, cloudLoggedIn }: WebsiteApiSe
             disabled={busy || !enabled || !apiKey || !cloudLoggedIn}
             onClick={() => void handlePush()}
           >
-            Push export now
+            Push export / ad spots now
           </button>
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={downloadJson}>
             Download JSON
@@ -291,8 +291,9 @@ export default function WebsiteApiSettings({ data, cloudLoggedIn }: WebsiteApiSe
               </div>
               <p className="settings-backup-meta">
                 Response field <code>fields.body.stringValue</code> is JSON with{' '}
-                <code>sales</code>, <code>customers</code>, <code>cashVisits</code>,{' '}
-                <code>bankVisits</code>. Connected store updates this URL automatically.
+                <code>sales</code>, <code>customers</code>, <code>adSpots</code>,{' '}
+                <code>cashVisits</code>, <code>bankVisits</code>. After Push export now, the ads
+                site can fetch this URL with your API key hash.
               </p>
             </>
           ) : (

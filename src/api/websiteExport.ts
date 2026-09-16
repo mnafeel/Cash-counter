@@ -59,6 +59,144 @@ export interface WebsiteExportPayload {
   customers: WebsiteCustomerRow[]
   cashVisits: WebsiteVisitRow[]
   bankVisits: WebsiteVisitRow[]
+  /**
+   * Compact publisher rows for external ads sites that look up spots by API key.
+   * Same store customers, shaped for ad-network fetch.
+   */
+  adSpots: WebsiteAdSpotRow[]
+  /** True when lists were shortened to fit Firestore’s 1 MiB document limit. */
+  trimmed?: boolean
+  trimNote?: string
+}
+
+/** Publisher spot row consumed by the ads site. */
+export interface WebsiteAdSpotRow {
+  id: string
+  name: string
+  label: string
+  billCount: number
+  totalPaid: number
+  creditOpen: number
+  chequeOpen: number
+  lastAt: string
+}
+
+/** Firestore practical limit for a single document (~1 MiB). Leave headroom for field wrappers. */
+export const WEBSITE_EXPORT_MAX_BODY_BYTES = 900_000
+
+function utf8Bytes(text: string): number {
+  return new TextEncoder().encode(text).length
+}
+
+function buildAdSpots(customers: WebsiteCustomerRow[]): WebsiteAdSpotRow[] {
+  return customers.map((row, index) => ({
+    id: `spot-${index + 1}-${row.name.trim().toLowerCase().replace(/\s+/g, '-') || 'customer'}`,
+    name: row.name,
+    label: row.name,
+    billCount: row.billCount,
+    totalPaid: row.totalPaid,
+    creditOpen: row.creditOpen,
+    chequeOpen: row.chequeOpen,
+    lastAt: row.lastPurchaseAt,
+  }))
+}
+
+/**
+ * Serialize export JSON under Firestore’s document size limit.
+ * Drops visit detail first, then newest→oldest sales/customers until it fits.
+ */
+export function packWebsiteExportBody(payload: WebsiteExportPayload): {
+  body: string
+  trimmed: boolean
+  byteLength: number
+} {
+  const baseTotals = { ...payload.totals }
+  let sales = payload.sales
+  let customers = payload.customers
+  let cashVisits = payload.cashVisits
+  let bankVisits = payload.bankVisits
+  let trimmed = false
+  let trimNote: string | undefined
+
+  const pack = (): string => {
+    const adSpots = buildAdSpots(customers)
+    const next: WebsiteExportPayload = {
+      version: payload.version,
+      exportedAt: payload.exportedAt,
+      storeId: payload.storeId,
+      totals: {
+        ...baseTotals,
+        salesCount: sales.length,
+        customerCount: customers.length,
+        cashVisitCount: cashVisits.length || baseTotals.cashVisitCount,
+        bankVisitCount: bankVisits.length || baseTotals.bankVisitCount,
+      },
+      sales,
+      customers,
+      cashVisits,
+      bankVisits,
+      adSpots,
+      ...(trimmed ? { trimmed: true, trimNote } : {}),
+    }
+    // Keep totals as full store counts even when lists are shortened.
+    next.totals.salesCount = baseTotals.salesCount
+    next.totals.customerCount = baseTotals.customerCount
+    next.totals.cashVisitCount = baseTotals.cashVisitCount
+    next.totals.bankVisitCount = baseTotals.bankVisitCount
+    return JSON.stringify(next)
+  }
+
+  let body = pack()
+  if (utf8Bytes(body) <= WEBSITE_EXPORT_MAX_BODY_BYTES) {
+    return { body, trimmed: false, byteLength: utf8Bytes(body) }
+  }
+
+  trimmed = true
+  cashVisits = []
+  bankVisits = []
+  trimNote = 'Visit detail omitted to fit API size limit'
+  body = pack()
+  if (utf8Bytes(body) <= WEBSITE_EXPORT_MAX_BODY_BYTES) {
+    return { body, trimmed: true, byteLength: utf8Bytes(body) }
+  }
+
+  // Drop older sales / customers until under limit (keep newest first).
+  sales = [...sales].sort(
+    (a, b) => new Date(b.updatedAt ?? b.createdAt).getTime() - new Date(a.updatedAt ?? a.createdAt).getTime(),
+  )
+  customers = [...customers].sort(
+    (a, b) => new Date(b.lastPurchaseAt).getTime() - new Date(a.lastPurchaseAt).getTime(),
+  )
+
+  while (utf8Bytes(body) > WEBSITE_EXPORT_MAX_BODY_BYTES && (sales.length > 50 || customers.length > 50)) {
+    if (sales.length >= customers.length && sales.length > 50) {
+      sales = sales.slice(0, Math.max(50, Math.floor(sales.length * 0.7)))
+    } else if (customers.length > 50) {
+      customers = customers.slice(0, Math.max(50, Math.floor(customers.length * 0.7)))
+    } else {
+      break
+    }
+    trimNote = `Showing newest ${sales.length} sales and ${customers.length} customers (full counts in totals)`
+    body = pack()
+  }
+
+  // Last resort: customers/adSpots only.
+  if (utf8Bytes(body) > WEBSITE_EXPORT_MAX_BODY_BYTES) {
+    sales = []
+    while (utf8Bytes(body) > WEBSITE_EXPORT_MAX_BODY_BYTES && customers.length > 20) {
+      customers = customers.slice(0, Math.max(20, Math.floor(customers.length * 0.7)))
+      trimNote = `Customers/ad spots only · newest ${customers.length}`
+      body = pack()
+    }
+  }
+
+  const byteLength = utf8Bytes(body)
+  if (byteLength > WEBSITE_EXPORT_MAX_BODY_BYTES) {
+    throw new Error(
+      `Website export is too large to publish (${Math.round(byteLength / 1024)} KB). Reduce history or contact support.`,
+    )
+  }
+  return { body, trimmed: true, byteLength }
 }
 
 /** Cheap counts for Settings — does not build cash/bank activity or ledgers. */
@@ -183,5 +321,6 @@ export function buildWebsiteExportPayload(
     customers,
     cashVisits,
     bankVisits,
+    adSpots: buildAdSpots(customers),
   }
 }

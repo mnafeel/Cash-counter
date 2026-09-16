@@ -25,11 +25,27 @@ function setCors(res: { set: (k: string, v: string) => void }): void {
   res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type')
 }
 
+function parseExportBody(raw: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  if (!raw) return null
+  if (typeof raw.body === 'string' && raw.body.trim()) {
+    try {
+      const parsed = JSON.parse(raw.body) as Record<string, unknown>
+      return parsed && typeof parsed === 'object' ? parsed : null
+    } catch {
+      return null
+    }
+  }
+  const { _updatedAt: _ignored, body: _body, ...rest } = raw
+  void _ignored
+  void _body
+  return rest
+}
+
 /**
  * GET /getWebsiteData
  * Header: Authorization: Bearer <apiKey>
  *
- * Returns JSON: { sales, customers, cashVisits, bankVisits, totals, ... }
+ * Returns JSON: { sales, customers, cashVisits, bankVisits, adSpots, totals, ... }
  * published from Cash Counter when Website API is enabled.
  */
 export const getWebsiteData = onRequest({ cors: true, region: 'us-central1' }, async (req, res) => {
@@ -76,19 +92,40 @@ export const getWebsiteData = onRequest({ cors: true, region: 'us-central1' }, a
       return
     }
 
+    // Prefer public hash doc (same path ads sites use on Spark).
+    const publicSnap = await db.doc(`websiteApiExports/${keyHash}`).get()
+    if (publicSnap.exists) {
+      const publicData = publicSnap.data() as Record<string, unknown>
+      if (publicData.enabled === false) {
+        res.status(403).json({ error: 'Website API is disabled for this store' })
+        return
+      }
+      const fromPublic = parseExportBody(publicData)
+      if (fromPublic) {
+        res.status(200).json(fromPublic)
+        return
+      }
+    }
+
     const exportSnap = await db.doc(`users/${uid}/websiteApi/export`).get()
     if (!exportSnap.exists) {
       res.status(404).json({
-        error: 'No export published yet. Open Cash Counter → Settings → Website API → Push export (or Save to cloud).',
+        error:
+          'No export published yet. Open Cash Counter → Settings → Website API → Push export now, then fetch again.',
       })
       return
     }
 
-    const payload = exportSnap.data() || {}
-    const { _updatedAt: _ignored, ...body } = payload as Record<string, unknown>
-    void _ignored
+    const fromPrivate = parseExportBody(exportSnap.data() as Record<string, unknown>)
+    if (!fromPrivate) {
+      res.status(404).json({
+        error:
+          'Export is empty or unreadable. Open Cash Counter → Settings → Website API → Push export now.',
+      })
+      return
+    }
 
-    res.status(200).json(body)
+    res.status(200).json(fromPrivate)
   } catch (err) {
     logger.error('getWebsiteData failed', err)
     res.status(500).json({ error: 'Server error reading store data' })

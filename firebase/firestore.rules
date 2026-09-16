@@ -18,7 +18,8 @@ service cloud.firestore {
     match /apiKeys/{keyHash} {
       allow create: if request.auth != null
         && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasOnly(['uid', 'createdAt']);
+        && request.resource.data.keys().hasAll(['uid', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt', 'lastExportAt']);
       allow update, delete: if request.auth != null && resource.data.uid == request.auth.uid;
       allow read: if false;
     }
