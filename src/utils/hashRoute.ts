@@ -25,6 +25,8 @@ const KNOWN_ROUTES = new Set([
   '/staff',
   '/reports',
   '/settings',
+  '/adjustments',
+  '/utilities',
 ])
 
 export function isKnownRoute(pathname: string): boolean {

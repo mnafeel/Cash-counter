@@ -97,6 +97,10 @@ import {
   updateSaleCustomerName,
   applySaleReturn,
   cancelSaleReturn,
+  replaceSaleReturns,
+  creditCustomerAdvanceFromReturn,
+  recordCustomerAdvance,
+  refundCustomerAdvance,
   renameCustomer,
   renameSupplier,
 } from '../storage/database'
@@ -217,9 +221,30 @@ interface CashContextValue {
       rate: number
       discountAmount?: number
       gstPercent?: number
+      taxAmount?: number
     },
   ) => void
+  replaceSaleReturns: (saleId: string, returns: SaleReturnEntry[]) => void
   cancelSaleReturn: (saleId: string, returnId: string) => void
+  recordCustomerAdvance: (input: {
+    customerName: string
+    amount: number
+    payType: 'cash' | 'bank'
+    note?: string
+  }) => boolean
+  creditCustomerAdvanceFromReturn: (input: {
+    customerName: string
+    amount: number
+    returnEntryId?: string
+    note?: string
+  }) => boolean
+  refundCustomerAdvance: (input: {
+    customerName: string
+    amount: number
+    cashAmount?: number
+    bankAmount?: number
+    note?: string
+  }) => boolean
   recordExpense: (expense: {
     amount: number
     name: string
@@ -871,6 +896,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       status?: SaleStatus
       returns?: SaleReturnEntry[]
       staffId?: string
+      customerAdvanceApplied?: number
     }) => {
       setData((prev) => addSale(prev, sale))
     },
@@ -918,6 +944,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
         creditAmount?: number
         chequeApproved?: boolean
         customerName?: string
+        customerAdvanceApplied?: number
       },
     ) => {
       setData((prev) => collectPendingBill(prev, id, sale))
@@ -1715,8 +1742,25 @@ export function CashProvider({ children }: { children: ReactNode }) {
   )
 
   const applySaleReturnHandler = useCallback(
-    (saleId: string, input: { itemName: string; quantity: number; rate: number }) => {
+    (
+      saleId: string,
+      input: {
+        itemName: string
+        quantity: number
+        rate: number
+        discountAmount?: number
+        gstPercent?: number
+        taxAmount?: number
+      },
+    ) => {
       setData((prev) => applySaleReturn(prev, saleId, input))
+    },
+    [],
+  )
+
+  const replaceSaleReturnsHandler = useCallback(
+    (saleId: string, returns: SaleReturnEntry[]) => {
+      setData((prev) => replaceSaleReturns(prev, saleId, returns))
     },
     [],
   )
@@ -1724,6 +1768,61 @@ export function CashProvider({ children }: { children: ReactNode }) {
   const cancelSaleReturnHandler = useCallback((saleId: string, returnId: string) => {
     setData((prev) => cancelSaleReturn(prev, saleId, returnId))
   }, [])
+
+  const recordCustomerAdvanceHandler = useCallback(
+    (input: {
+      customerName: string
+      amount: number
+      payType: 'cash' | 'bank'
+      note?: string
+    }) => {
+      let ok = false
+      setData((prev) => {
+        const next = recordCustomerAdvance(prev, input)
+        ok = next !== prev
+        return next
+      })
+      return ok
+    },
+    [],
+  )
+
+  const creditCustomerAdvanceFromReturnHandler = useCallback(
+    (input: {
+      customerName: string
+      amount: number
+      returnEntryId?: string
+      note?: string
+    }) => {
+      let ok = false
+      setData((prev) => {
+        const next = creditCustomerAdvanceFromReturn(prev, input)
+        ok = next !== prev
+        return next
+      })
+      return ok
+    },
+    [],
+  )
+
+  const refundCustomerAdvanceHandler = useCallback(
+    (input: {
+      customerName: string
+      amount: number
+      cashAmount?: number
+      bankAmount?: number
+      note?: string
+    }) => {
+      let ok = false
+      setData((prev) => {
+        const next = refundCustomerAdvance(prev, input)
+        ok = next !== prev
+        return next
+      })
+      return ok
+    },
+    [],
+  )
 
   const editPaidSalePaymentHandler = useCallback(
     (id: string, payment: PaidSalePaymentEdit, relatedSaleIds?: string[]) => {
@@ -1895,7 +1994,11 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateExpense: updateExpenseHandler,
       updateSaleBill: updateSaleBillHandler,
       applySaleReturn: applySaleReturnHandler,
+      replaceSaleReturns: replaceSaleReturnsHandler,
       cancelSaleReturn: cancelSaleReturnHandler,
+      recordCustomerAdvance: recordCustomerAdvanceHandler,
+      creditCustomerAdvanceFromReturn: creditCustomerAdvanceFromReturnHandler,
+      refundCustomerAdvance: refundCustomerAdvanceHandler,
       editPaidSalePayment: editPaidSalePaymentHandler,
       replaceAllData,
       hydrateData,
@@ -1975,7 +2078,11 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateExpenseHandler,
       updateSaleBillHandler,
       applySaleReturnHandler,
+      replaceSaleReturnsHandler,
       cancelSaleReturnHandler,
+      recordCustomerAdvanceHandler,
+      creditCustomerAdvanceFromReturnHandler,
+      refundCustomerAdvanceHandler,
       editPaidSalePaymentHandler,
       replaceAllData,
       hydrateData,

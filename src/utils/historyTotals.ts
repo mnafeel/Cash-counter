@@ -47,7 +47,7 @@ function addPaymentAmount(
   )
 
   if (modes.length === 0) {
-    totals.salesCash += amount
+    // Advance-only / non-drawer settlements — do not invent cash.
     return
   }
 
@@ -125,6 +125,19 @@ export function buildHistoryTotals(
     } else if (item.type === 'deposit') {
       totals.moneyAdded += amount
       totals.addedCount += 1
+    } else if (item.type === 'advance') {
+      if (item.sub?.includes('refunded')) {
+        totals.expenses += amount
+        totals.expenseCount += 1
+      } else if (
+        item.sub?.toLowerCase().includes('return credit') ||
+        item.sub?.toLowerCase().includes('return')
+      ) {
+        // Return credit to advance — not cash received; omit from moneyAdded.
+      } else {
+        totals.moneyAdded += amount
+        totals.addedCount += 1
+      }
     } else if (item.type === 'transfer') {
       totals.transferCount += 1
     }

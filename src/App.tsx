@@ -10,6 +10,7 @@ const Loan = lazy(() => import('./pages/Loan'))
 const Staff = lazy(() => import('./pages/Staff'))
 const Reports = lazy(() => import('./pages/Reports'))
 const Settings = lazy(() => import('./pages/Settings'))
+const Utilities = lazy(() => import('./pages/Utilities'))
 
 function LazyPage({ children }: { children: ReactNode }) {
   return <Suspense fallback={<AppBootScreen />}>{children}</Suspense>
@@ -85,6 +86,22 @@ export default function App() {
                 element={
                   <LazyPage>
                     <Settings />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="utilities/*"
+                element={
+                  <LazyPage>
+                    <Utilities />
+                  </LazyPage>
+                }
+              />
+              <Route
+                path="adjustments/*"
+                element={
+                  <LazyPage>
+                    <Utilities />
                   </LazyPage>
                 }
               />

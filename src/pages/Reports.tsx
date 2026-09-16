@@ -45,7 +45,7 @@ function parseReportSection(value: string | null): ReportSection | undefined {
 export default function Reports() {
   useOpenTiming('Reports', true, false)
   const [searchParams] = useSearchParams()
-  const { data, setCustomerReminder, setBillReminder, updateReminderAlertSettings, applySaleReturn, cancelSaleReturn } = useCash()
+  const { data, setCustomerReminder, setBillReminder, updateReminderAlertSettings, replaceSaleReturns, cancelSaleReturn } = useCash()
   const [customerName, setCustomerName] = useState<string | undefined>()
 
   const initialPreset = useMemo(
@@ -82,7 +82,7 @@ export default function Reports() {
         onSetCustomerReminder={setCustomerReminder}
         onSetBillReminder={setBillReminder}
         onSaveAlertSettings={updateReminderAlertSettings}
-        onApplySaleReturn={applySaleReturn}
+        onReplaceSaleReturns={replaceSaleReturns}
         onCancelSaleReturn={cancelSaleReturn}
       />
     </>

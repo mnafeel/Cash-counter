@@ -461,6 +461,27 @@ export function paymentEventBankInflow(event: SalePaymentEvent): number {
   return event.bank ?? 0
 }
 
+function isPendingUnapprovedChequeSale(sale: Sale): boolean {
+  return (
+    sale.status === 'pending' &&
+    (sale.payType === 'cheque' || sale.pendingPayType === 'cheque') &&
+    sale.chequeApproved !== true
+  )
+}
+
+/** Cash / approved bank only — pending cheque instruments are not money yet. */
+export function paymentEventRealizedAmount(sale: Sale, event: SalePaymentEvent): number {
+  if (event.cancelled || event.amount <= 0) return 0
+  if (isPendingUnapprovedChequeSale(sale)) {
+    return event.cash ?? 0
+  }
+  const cash = event.cash ?? 0
+  const bankIn = paymentEventBankInflow(event)
+  const parts = cash + bankIn
+  if (parts > 0) return Math.round(parts * 100) / 100
+  return event.amount
+}
+
 export function isActivePaymentEvent(event: SalePaymentEvent): boolean {
   return event.cancelled !== true
 }
@@ -530,6 +551,18 @@ export function salePaidCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
       total,
     })
   }
+
+  // Advance settled the bill with no drawer cash/bank — do not invent cash from paidAmount.
+  const advanceApplied = sale.customerAdvanceApplied ?? 0
+  if (
+    advanceApplied > 0.01 &&
+    (sale.cashAmount ?? 0) <= 0.01 &&
+    (sale.bankAmount ?? 0) <= 0.01 &&
+    !(sale.chequeApproved && (sale.chequeAmount ?? 0) > 0.01)
+  ) {
+    return { cash: 0, bank: 0, cheque: 0, total: 0 }
+  }
+
   if (sale.paidAmount > 0) {
     if (sale.payType === 'bank' || sale.payType === 'cheque') {
       return { cash: 0, bank: sale.paidAmount, cheque: 0, total: sale.paidAmount }
@@ -540,6 +573,9 @@ export function salePaidCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
     return { cash: sale.paidAmount, bank: 0, cheque: 0, total: sale.paidAmount }
   }
   if (sale.billAmount > 0) {
+    if (advanceApplied > 0.01) {
+      return { cash: 0, bank: 0, cheque: 0, total: 0 }
+    }
     if (sale.payType === 'bank' || sale.payType === 'cheque') {
       return { cash: 0, bank: sale.billAmount, cheque: 0, total: sale.billAmount }
     }
@@ -660,10 +696,22 @@ export function getSalePaymentEvents(sale: Sale): SalePaymentEvent[] {
 
   // Always sanitize first so legacy cash-on-cheque rows never reach activity/balances.
   const cleaned = sanitizeChequeSaleCash(sale)
-  const raw =
-    cleaned.paymentEvents && cleaned.paymentEvents.length > 0
-      ? repairSalePaymentEvents(cleaned).paymentEvents ?? []
-      : inferLegacyPaymentEvents(cleaned)
+  const repaired = repairSalePaymentEvents(cleaned)
+  const advanceOnly =
+    (repaired.customerAdvanceApplied ?? 0) > 0.01 &&
+    (repaired.cashAmount ?? 0) <= 0.01 &&
+    (repaired.bankAmount ?? 0) <= 0.01 &&
+    !(repaired.chequeApproved && (repaired.chequeAmount ?? 0) > 0.01)
+
+  let raw: SalePaymentEvent[]
+  if (repaired.paymentEvents && repaired.paymentEvents.length > 0) {
+    raw = repaired.paymentEvents
+  } else if (advanceOnly) {
+    // Do not re-infer fake cash from paidAmount for advance-settled bills.
+    raw = []
+  } else {
+    raw = inferLegacyPaymentEvents(repaired)
+  }
   const result = raw.map(normalizePaymentEvent)
   paymentEventsCache.set(key, result)
   return result
@@ -682,6 +730,25 @@ export function migrateSalePaymentEvents(sale: Sale): Sale {
 
 export function repairSalePaymentEvents(sale: Sale): Sale {
   const sanitized = sanitizeChequeSaleCash(sale)
+
+  // Advance-only settlement: strip invented cash/bank events when drawer fields are empty.
+  const advanceApplied = sanitized.customerAdvanceApplied ?? 0
+  const fieldCash = sanitized.cashAmount ?? 0
+  const fieldBank = sanitized.bankAmount ?? 0
+  const fieldCheque =
+    sanitized.chequeApproved && (sanitized.chequeAmount ?? 0) > 0
+      ? sanitized.chequeAmount ?? 0
+      : 0
+  if (
+    advanceApplied > 0.01 &&
+    fieldCash <= 0.01 &&
+    fieldBank <= 0.01 &&
+    fieldCheque <= 0.01 &&
+    sanitized.paymentEvents &&
+    sanitized.paymentEvents.length > 0
+  ) {
+    return { ...sanitized, paymentEvents: [] }
+  }
 
   if (!sanitized.paymentEvents || sanitized.paymentEvents.length === 0) return sanitized
 
@@ -913,7 +980,10 @@ export function salePendingRawCollectedParts(sale: Sale): {
 
   if (sale.paidAmount > 0) {
     if (sale.pendingPayType === 'cheque' || sale.payType === 'cheque') {
-      return { cash: 0, bank: 0, cheque: sale.paidAmount, total: sale.paidAmount }
+      if (sale.chequeApproved === true) {
+        return { cash: 0, bank: 0, cheque: sale.paidAmount, total: sale.paidAmount }
+      }
+      return empty
     }
     return { cash: sale.paidAmount, bank: 0, cheque: 0, total: sale.paidAmount }
   }
@@ -930,5 +1000,11 @@ export function salePendingCreditPaidBreakdown(sale: Sale): {
 } {
   const raw = salePendingRawCollectedParts(sale)
   if (raw.total <= 0) return { cash: 0, bank: 0, cheque: 0, total: 0 }
+  if (isPendingUnapprovedChequeSale(sale)) {
+    const cash = raw.cash
+    const bank = raw.bank
+    const total = cash + bank
+    return normalizeCollectedBreakdown({ cash, bank, cheque: 0, total })
+  }
   return normalizeCollectedBreakdown(raw)
 }

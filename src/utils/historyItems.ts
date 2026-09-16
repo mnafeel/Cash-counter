@@ -1,4 +1,4 @@
-import type { AppData, Expense, Loan, Sale } from '../types'
+import type { AppData, CustomerAdvanceLedgerEntry, Expense, Loan, Sale } from '../types'
 import { expenseBillTag, isPurchaseExpense, NO1_BILL_LABEL, NO2_BILL_LABEL } from './expenseBillLabels'
 import { formatDate, formatMoney, formatTimestamp } from './format'
 import { decorateLoan, loanRemainingAmount, loanSettlementEvents } from './loanLedger'
@@ -8,8 +8,10 @@ import { getSaleCustomerName } from './saleCustomerName'
 import { memoByDataRef } from './memoByDataRef'
 import {
   formatSaleReturnLine,
+  saleBillGroupRealizedCollected,
   saleGrossBillAmount,
   saleNetBillAmount,
+  saleRelatedBillSales,
   saleReturnTotal,
 } from './saleReturns'
 import {
@@ -24,9 +26,17 @@ import {
   salePendingCreditPaidBreakdown,
   sanitizeSplitParentChildChequeOverlap,
   paymentEventBankInflow,
+  paymentEventRealizedAmount,
 } from './salePayment'
 
-export type HistoryItemType = 'sale' | 'expense' | 'purchase' | 'deposit' | 'transfer' | 'loan'
+export type HistoryItemType =
+  | 'sale'
+  | 'expense'
+  | 'purchase'
+  | 'deposit'
+  | 'transfer'
+  | 'loan'
+  | 'advance'
 
 export type HistoryFilter = 'all' | HistoryItemType
 
@@ -123,8 +133,13 @@ function formatCollectionDayLabel(iso: string): string {
 const RECEIPT_SEQ = {
   BILL_CREATED: 0,
   SALE_RETURN: 5,
+  ADVANCE_APPLIED: 8,
+  BALANCE_AFTER_ADVANCE: 9,
   CASH_RECEIVED: 10,
+  CUSTOMER_GIVEN: 11,
+  CHANGE_GIVEN: 12,
   BANK_RECEIVED: 15,
+  BALANCE_PAID: 16,
   CREDIT_BALANCE: 45,
   BALANCE_TRANSFER: 20,
   CHEQUE_PENDING: 25,
@@ -169,8 +184,8 @@ function appendChronologicalPaymentEvents(
   let creditPayIndex = 0
   let total = 0
 
-  for (const { event } of merged) {
-    total += event.amount
+  for (const { sale, event } of merged) {
+    total += paymentEventRealizedAmount(sale, event)
     const normalized = normalizeCollectedBreakdown({
       cash: event.cash ?? 0,
       bank: event.bank ?? 0,
@@ -179,6 +194,8 @@ function appendChronologicalPaymentEvents(
     })
 
     if (style === 'credit') {
+      const realized = paymentEventRealizedAmount(sale, event)
+      if (realized <= 0) continue
       if (normalized.cash > 0) {
         creditPayIndex += 1
         createReceiptDraft(drafts, RECEIPT_SEQ.CREDIT_PAYMENT, {
@@ -192,7 +209,7 @@ function appendChronologicalPaymentEvents(
           detail: formatDate(event.at),
         })
       }
-      const bankPart = normalized.bank + normalized.cheque
+      const bankPart = Math.max(0, Math.round((realized - normalized.cash) * 100) / 100)
       if (bankPart > 0) {
         creditPayIndex += 1
         createReceiptDraft(drafts, RECEIPT_SEQ.CREDIT_PAYMENT, {
@@ -259,7 +276,7 @@ function appendOpenBalanceLine(sale: Sale, drafts: ReceiptEventDraft[]): void {
       date: openAt,
       amount: sale.billAmount,
       type: 'pending-created',
-      detail: formatDate(openAt),
+      detail: `Outstanding ${formatMoney(sale.billAmount)} · ${formatDate(openAt)}`,
     })
     return
   }
@@ -269,7 +286,7 @@ function appendOpenBalanceLine(sale: Sale, drafts: ReceiptEventDraft[]): void {
       date: openAt,
       amount: sale.billAmount,
       type: 'pending-created',
-      detail: formatDate(openAt),
+      detail: `Outstanding ${formatMoney(sale.billAmount)} · ${formatDate(openAt)}`,
     })
     return
   }
@@ -326,6 +343,21 @@ function structuredReceiptLines(drafts: ReceiptEventDraft[], createdAt: string):
   return finalizeReceiptEvents(drafts).map((event) => receiptEventToLine(event, createdAt))
 }
 
+function pruneReceiptLinesWhenFullyCollected(
+  lines: HistoryReceiptLine[],
+  fullBill: number,
+  totalCollected: number,
+): HistoryReceiptLine[] {
+  if (fullBill <= 0 || totalCollected < fullBill - 0.01) return lines
+  return lines.filter((line) => {
+    if (line.status !== 'pending') return true
+    const lower = line.label.toLowerCase()
+    if (lower.includes('credit → cheque') || lower.includes('cheque → credit')) return true
+    if (lower.includes('credit changed to cheque')) return false
+    return false
+  })
+}
+
 function createReceiptDraft(
   drafts: ReceiptEventDraft[],
   seq: number,
@@ -334,19 +366,43 @@ function createReceiptDraft(
   drafts.push({ seq, subSeq: drafts.length, event })
 }
 
+function isReceiptTotalCollectedLabel(label: string): boolean {
+  return label === 'Total collected' || label === 'Bill total collected'
+}
+
 function appendTotalCollected(
   drafts: ReceiptEventDraft[],
   amount: number,
   date: string,
+  label: 'Total collected' | 'Bill total collected' = 'Bill total collected',
 ): void {
   if (amount <= 0) return
   createReceiptDraft(drafts, RECEIPT_SEQ.TOTAL, {
-    label: 'Total collected',
+    label,
     date,
     amount,
     type: 'total',
     detail: formatDate(date),
   })
+}
+
+function appendSaleTotalCollected(
+  drafts: ReceiptEventDraft[],
+  drawerCollected: number,
+  advanceApplied: number,
+  date: string,
+): void {
+  if (advanceApplied > 0.01) {
+    // Advance + cash/bank/cheque actually received on this bill.
+    appendTotalCollected(
+      drafts,
+      Math.round((drawerCollected + advanceApplied) * 100) / 100,
+      date,
+      'Total collected',
+    )
+    return
+  }
+  appendTotalCollected(drafts, drawerCollected, date, 'Bill total collected')
 }
 
 function appendPendingBalanceTransferEvents(sale: Sale, drafts: ReceiptEventDraft[]): void {
@@ -356,16 +412,16 @@ function appendPendingBalanceTransferEvents(sale: Sale, drafts: ReceiptEventDraf
         label: 'Credit → Cheque',
         date: row.at,
         amount: row.amount,
-        type: 'pending',
-        detail: `Moved to cheque pending · ${formatDate(row.at)}`,
+        type: 'bill-created',
+        detail: `Balance moved to cheque · ${formatMoney(row.amount)} · ${formatDate(row.at)}`,
       })
     } else {
       createReceiptDraft(drafts, RECEIPT_SEQ.BALANCE_TRANSFER, {
         label: 'Cheque → Credit',
         date: row.at,
         amount: row.amount,
-        type: 'pending',
-        detail: `Moved to credit pending · ${formatDate(row.at)}`,
+        type: 'bill-created',
+        detail: `Balance moved to credit · ${formatMoney(row.amount)} · ${formatDate(row.at)}`,
       })
     }
   }
@@ -374,7 +430,12 @@ function appendPendingBalanceTransferEvents(sale: Sale, drafts: ReceiptEventDraf
 function appendCreditSaleStructuredEvents(
   sale: Sale,
   drafts: ReceiptEventDraft[],
-  opts?: { includeTotal?: boolean; includeBillCreated?: boolean; groupSales?: Sale[] },
+  opts?: {
+    includeTotal?: boolean
+    includeBillCreated?: boolean
+    groupSales?: Sale[]
+    advances?: CustomerAdvanceLedgerEntry[]
+  },
 ): void {
   const totalBill = saleGrossBillAmount(sale)
   const returnTotal = saleReturnTotal(sale)
@@ -409,7 +470,9 @@ function appendCreditSaleStructuredEvents(
   }
 
   const sources = opts?.groupSales?.length ? opts.groupSales : [sale]
-  const totalCollected = appendChronologicalPaymentEvents(sources, drafts, 'credit')
+  const advanceApplied = appendAdvanceAppliedReceiptEvents(sale, drafts, opts?.advances)
+  appendChronologicalPaymentEvents(sources, drafts, 'credit')
+  const drawerCollected = saleBillGroupRealizedCollected(sale, sources)
 
   if (sale.creditCancelledAt && (sale.creditCancelledAmount ?? 0) > 0) {
     createReceiptDraft(drafts, RECEIPT_SEQ.CANCELLED, {
@@ -425,9 +488,10 @@ function appendCreditSaleStructuredEvents(
 
   appendPendingBalanceTransferEvents(sale, drafts)
   if (opts?.includeTotal !== false) {
-    appendTotalCollected(
+    appendSaleTotalCollected(
       drafts,
-      totalCollected,
+      drawerCollected,
+      advanceApplied,
       saleLastPaymentEventAt(sale) ?? saleDisplayCollectionAt(sale) ?? sale.createdAt,
     )
   }
@@ -436,7 +500,12 @@ function appendCreditSaleStructuredEvents(
 function appendChequeSaleStructuredEvents(
   sale: Sale,
   drafts: ReceiptEventDraft[],
-  opts?: { includeTotal?: boolean; includeBillCreated?: boolean; groupSales?: Sale[] },
+  opts?: {
+    includeTotal?: boolean
+    includeBillCreated?: boolean
+    groupSales?: Sale[]
+    advances?: CustomerAdvanceLedgerEntry[]
+  },
 ): void {
   const sources = opts?.groupSales?.length ? opts.groupSales : [sale]
   const totalBill = saleGrossBillAmount(sale)
@@ -444,7 +513,6 @@ function appendChequeSaleStructuredEvents(
   const allEvents = sources.flatMap((row) =>
     getSalePaymentEvents(row).filter((event) => event.amount > 0),
   )
-  const activeEvents = sources.flatMap((row) => activeSalePaymentEvents(row))
 
   if (opts?.includeBillCreated !== false) {
     createReceiptDraft(drafts, RECEIPT_SEQ.BILL_CREATED, {
@@ -476,6 +544,7 @@ function appendChequeSaleStructuredEvents(
   }
 
   appendChronologicalPaymentEvents(sources, drafts, 'cheque')
+  const advanceApplied = appendAdvanceAppliedReceiptEvents(sale, drafts, opts?.advances)
 
   appendPendingBalanceTransferEvents(sale, drafts)
 
@@ -497,28 +566,34 @@ function appendChequeSaleStructuredEvents(
   appendOpenBalanceLine(sale, drafts)
 
   let chequeApprovalIndex = 0
-  activeEvents.forEach((event) => {
-    const normalized = normalizeCollectedBreakdown({
-      cash: event.cash ?? 0,
-      bank: event.bank ?? 0,
-      cheque: event.cheque ?? 0,
-      total: event.amount,
-    })
-    const chequePart = normalized.bank + normalized.cheque
-    if (chequePart <= 0) return
+  for (const row of sources) {
+    for (const event of activeSalePaymentEvents(row)) {
+      const normalized = normalizeCollectedBreakdown({
+        cash: event.cash ?? 0,
+        bank: event.bank ?? 0,
+        cheque: event.cheque ?? 0,
+        total: event.amount,
+      })
+      const realized = paymentEventRealizedAmount(row, event)
+      const bankPart = Math.max(
+        0,
+        Math.round((realized - normalized.cash) * 100) / 100,
+      )
+      if (bankPart <= 0) continue
 
-    createReceiptDraft(drafts, RECEIPT_SEQ.CHEQUE_APPROVED, {
-      label:
-        chequeApprovalIndex === 0
-          ? '1st cheque approved'
-          : `${ordinalWord(chequeApprovalIndex)} cheque approved`,
-      date: event.at,
-      amount: chequePart,
-      type: 'collected',
-      detail: `To bank · ${formatDate(event.at)}`,
-    })
-    chequeApprovalIndex += 1
-  })
+      createReceiptDraft(drafts, RECEIPT_SEQ.CHEQUE_APPROVED, {
+        label:
+          chequeApprovalIndex === 0
+            ? '1st cheque approved'
+            : `${ordinalWord(chequeApprovalIndex)} cheque approved`,
+        date: event.at,
+        amount: bankPart,
+        type: 'collected',
+        detail: `To bank · ${formatDate(event.at)}`,
+      })
+      chequeApprovalIndex += 1
+    }
+  }
 
   let chequeCancelIndex = 0
   allEvents.forEach((event) => {
@@ -542,11 +617,12 @@ function appendChequeSaleStructuredEvents(
     chequeCancelIndex += 1
   })
 
-  const totalCollected = activeEvents.reduce((sum, event) => sum + event.amount, 0)
+  const drawerCollected = saleBillGroupRealizedCollected(sale, sources)
   if (opts?.includeTotal !== false) {
-    appendTotalCollected(
+    appendSaleTotalCollected(
       drafts,
-      totalCollected,
+      drawerCollected,
+      advanceApplied,
       saleLastPaymentEventAt(sale) ?? saleDisplayCollectionAt(sale) ?? sale.createdAt,
     )
   }
@@ -556,6 +632,7 @@ function appendStandardSaleStructuredEvents(
   sale: Sale,
   drafts: ReceiptEventDraft[],
   groupSales?: Sale[],
+  advances?: CustomerAdvanceLedgerEntry[],
 ): void {
   const totalBill = saleGrossBillAmount(sale)
   const returnTotal = saleReturnTotal(sale)
@@ -587,6 +664,8 @@ function appendStandardSaleStructuredEvents(
       detail: `Reduced by ${formatMoney(returnTotal)}`,
     })
   }
+
+  const advanceApplied = appendAdvanceAppliedReceiptEvents(sale, drafts, advances)
 
   let totalCollected = 0
   const sources = groupSales?.length ? groupSales : [sale]
@@ -620,9 +699,10 @@ function appendStandardSaleStructuredEvents(
   if (activeEvents.length === 0) {
     totalCollected = collectedPaymentAmount(sale)
   }
-  appendTotalCollected(
+  appendSaleTotalCollected(
     drafts,
     totalCollected,
+    advanceApplied,
     saleLastPaymentEventAt(sale) ?? saleDisplayCollectionAt(sale) ?? sale.createdAt,
   )
 }
@@ -630,6 +710,7 @@ function appendStandardSaleStructuredEvents(
 function buildStructuredSaleReceipt(
   sale: Sale,
   groupSales?: Sale[],
+  advances?: CustomerAdvanceLedgerEntry[],
 ): {
   timeline: HistoryReceiptEvent[]
   lines: HistoryReceiptLine[]
@@ -640,15 +721,15 @@ function buildStructuredSaleReceipt(
     members.length > 1 &&
     members.some((row) => isCreditBill(row) || isChequeBill(row))
   ) {
-    return buildBalanceGroupStructuredReceipt(members)
+    return buildBalanceGroupStructuredReceipt(members, advances)
   }
   const drafts: ReceiptEventDraft[] = []
   if (isCreditBill(primary)) {
-    appendCreditSaleStructuredEvents(primary, drafts, { groupSales: members })
+    appendCreditSaleStructuredEvents(primary, drafts, { groupSales: members, advances })
   } else if (isChequeBill(primary)) {
-    appendChequeSaleStructuredEvents(primary, drafts, { groupSales: members })
+    appendChequeSaleStructuredEvents(primary, drafts, { groupSales: members, advances })
   } else {
-    appendStandardSaleStructuredEvents(primary, drafts, members)
+    appendStandardSaleStructuredEvents(primary, drafts, members, advances)
   }
   const timeline = finalizeReceiptEvents(drafts)
   const lines = structuredReceiptLines(drafts, primary.createdAt)
@@ -688,10 +769,8 @@ function appendBalanceGroupPaymentEvents(
   let chequeApprovalIndex = 0
   let standardCashIndex = 0
   let standardBankIndex = 0
-  let total = 0
 
   for (const { sale, event } of merged) {
-    total += event.amount
     const normalized = normalizeCollectedBreakdown({
       cash: event.cash ?? 0,
       bank: event.bank ?? 0,
@@ -701,27 +780,30 @@ function appendBalanceGroupPaymentEvents(
     const leg = receiptPaymentLeg(sale)
 
     if (leg === 'cheque') {
-      const bankIn = paymentEventBankInflow(event)
-      if (normalized.cash > 0) {
+      const realized = paymentEventRealizedAmount(sale, event)
+      if (realized <= 0) continue
+      const cash = normalized.cash
+      if (cash > 0) {
         createReceiptDraft(drafts, RECEIPT_SEQ.CASH_RECEIVED, {
           label:
-            chequeApprovalIndex === 0 && bankIn <= 0
+            chequeApprovalIndex === 0 && realized <= cash
               ? 'Cash received'
               : `${ordinalWord(chequeApprovalIndex)} cash received`,
           date: event.at,
-          amount: normalized.cash,
+          amount: cash,
           type: 'collected',
           detail: formatDate(event.at),
         })
       }
-      if (bankIn > 0) {
+      const bankPart = Math.max(0, Math.round((realized - cash) * 100) / 100)
+      if (bankPart > 0) {
         createReceiptDraft(drafts, RECEIPT_SEQ.CHEQUE_APPROVED, {
           label:
             chequeApprovalIndex === 0
               ? '1st cheque approved'
               : `${ordinalWord(chequeApprovalIndex)} cheque approved`,
           date: event.at,
-          amount: bankIn,
+          amount: bankPart,
           type: 'collected',
           detail: `To bank · ${formatDate(event.at)}`,
         })
@@ -786,7 +868,7 @@ function appendBalanceGroupPaymentEvents(
     }
   }
 
-  return Math.round(total * 100) / 100
+  return saleBillGroupRealizedCollected(balanceGroupPrimary(members), members)
 }
 
 function appendBalanceGroupChequeCancellations(
@@ -840,7 +922,10 @@ function appendBalanceGroupReturnEvents(sale: Sale, drafts: ReceiptEventDraft[])
   })
 }
 
-function buildBalanceGroupStructuredReceipt(members: Sale[]): {
+function buildBalanceGroupStructuredReceipt(
+  members: Sale[],
+  advances?: CustomerAdvanceLedgerEntry[],
+): {
   timeline: HistoryReceiptEvent[]
   lines: HistoryReceiptLine[]
 } {
@@ -867,7 +952,12 @@ function buildBalanceGroupStructuredReceipt(members: Sale[]): {
 
   appendBalanceGroupReturnEvents(primary, drafts)
 
-  const totalCollected = appendBalanceGroupPaymentEvents(members, drafts)
+  let advanceApplied = 0
+  for (const member of sortedMembers) {
+    advanceApplied += appendAdvanceAppliedReceiptEvents(member, drafts, advances)
+  }
+
+  const drawerCollected = appendBalanceGroupPaymentEvents(members, drafts)
 
   for (const member of sortedMembers) {
     appendPendingBalanceTransferEvents(member, drafts)
@@ -885,7 +975,7 @@ function buildBalanceGroupStructuredReceipt(members: Sale[]): {
         label: 'Credit changed to cheque',
         date: member.pendingBalanceReclassifiedAt,
         amount: member.billAmount,
-        type: 'pending',
+        type: 'bill-created',
         detail: `Open balance moved to cheque · ${formatDate(member.pendingBalanceReclassifiedAt)}`,
       })
     }
@@ -900,16 +990,18 @@ function buildBalanceGroupStructuredReceipt(members: Sale[]): {
         amount: member.creditCancelledAmount,
         type: 'pending',
       })
-    } else {
+    } else if (member.status === 'pending' && member.billAmount > 0.01) {
       appendOpenBalanceLine(member, drafts)
     }
   }
 
   appendBalanceGroupChequeCancellations(members, drafts)
 
-  appendTotalCollected(
+  const settlementTotal = Math.round((drawerCollected + advanceApplied) * 100) / 100
+  appendSaleTotalCollected(
     drafts,
-    totalCollected,
+    drawerCollected,
+    advanceApplied,
     latestIso(
       members
         .map((row) => saleLastPaymentEventAt(row) ?? saleDisplayCollectionAt(row) ?? row.createdAt)
@@ -918,7 +1010,8 @@ function buildBalanceGroupStructuredReceipt(members: Sale[]): {
   )
 
   const timeline = finalizeReceiptEvents(drafts)
-  const lines = structuredReceiptLines(drafts, primary.createdAt)
+  let lines = structuredReceiptLines(drafts, primary.createdAt)
+  lines = pruneReceiptLinesWhenFullyCollected(lines, fullBill, settlementTotal)
   return { timeline, lines }
 }
 
@@ -1005,9 +1098,10 @@ function appendSplitParentCollectionEvents(
 function buildSplitStructuredReceipt(
   parent: Sale,
   children: Sale[],
+  advances?: CustomerAdvanceLedgerEntry[],
 ): { timeline: HistoryReceiptEvent[]; lines: HistoryReceiptLine[] } {
   if (isBalanceLinkedGroup(parent, children)) {
-    return buildBalanceGroupStructuredReceipt([parent, ...children])
+    return buildBalanceGroupStructuredReceipt([parent, ...children], advances)
   }
 
   const drafts: ReceiptEventDraft[] = []
@@ -1024,6 +1118,13 @@ function buildSplitStructuredReceipt(
     detail: formatDate(parent.createdAt),
   })
 
+  const advanceApplied =
+    appendAdvanceAppliedReceiptEvents(parent, drafts, advances) +
+    children.reduce(
+      (sum, child) => sum + appendAdvanceAppliedReceiptEvents(child, drafts, advances),
+      0,
+    )
+
   appendSplitParentCollectionEvents(parent, children, drafts)
 
   const sortedChildren = [...children].sort(
@@ -1034,18 +1135,22 @@ function buildSplitStructuredReceipt(
       appendCreditSaleStructuredEvents(child, drafts, {
         includeTotal: false,
         includeBillCreated: false,
+        advances,
       })
     } else if (isChequeBill(child)) {
       appendChequeSaleStructuredEvents(child, drafts, {
         includeTotal: false,
         includeBillCreated: false,
+        advances,
       })
     }
   }
 
-  appendTotalCollected(
+  const drawerCollected = splitGroupMoneyCollected(parent, children)
+  appendSaleTotalCollected(
     drafts,
-    splitGroupMoneyCollected(parent, children),
+    drawerCollected,
+    advanceApplied,
     latestIso([
       saleLastPaymentEventAt(parent) ?? parent.createdAt,
       ...children.map(
@@ -1055,11 +1160,13 @@ function buildSplitStructuredReceipt(
   )
 
   const timeline = finalizeReceiptEvents(drafts)
-  const lines = structuredReceiptLines(drafts, parent.createdAt)
+  let lines = structuredReceiptLines(drafts, parent.createdAt)
+  const settlementTotal = Math.round((drawerCollected + advanceApplied) * 100) / 100
+  lines = pruneReceiptLinesWhenFullyCollected(lines, fullBill, settlementTotal)
   return { timeline, lines }
 }
 
-function isoMatchesHistoryDateFilter(
+export function isoMatchesHistoryDateFilter(
   iso: string,
   dateFilter: HistoryDateFilter,
   selectedDate: string,
@@ -1092,6 +1199,38 @@ function isoMatchesHistoryDateFilter(
   return true
 }
 
+function historySaleHasAdvanceApplied(item: HistoryItem): boolean {
+  if (item.paySummary?.toLowerCase().includes('advance applied')) return true
+  return (
+    item.receiptLines?.some((line) => {
+      const label = line.label.toLowerCase()
+      return label === 'advance applied' || label.startsWith('advance applied')
+    }) ?? false
+  )
+}
+
+/** Dates that should keep a sale visible for a History day filter. */
+function historySaleActivityDates(item: HistoryItem): string[] {
+  const dates: string[] = []
+  if (item.billCreatedAt) dates.push(item.billCreatedAt)
+  if (item.completedAt) dates.push(item.completedAt)
+  if (item.date) dates.push(item.date)
+  for (const collection of item.paymentCollections ?? []) {
+    if (collection.at) dates.push(collection.at)
+  }
+  for (const line of item.receiptLines ?? []) {
+    if (line.label === 'Advance applied') {
+      if (line.paidAt) dates.push(line.paidAt)
+      if (line.date) dates.push(line.date)
+      if (line.createdAt) dates.push(line.createdAt)
+    }
+  }
+  for (const event of item.receiptTimeline ?? []) {
+    if (event.label === 'Advance applied' && event.date) dates.push(event.date)
+  }
+  return dates
+}
+
 export function matchesHistoryDateFilter(
   item: HistoryItem,
   dateFilter: HistoryDateFilter,
@@ -1099,10 +1238,12 @@ export function matchesHistoryDateFilter(
 ): boolean {
   if (dateFilter === 'all') return true
 
-  if (item.type === 'sale' && item.paymentCollections && item.paymentCollections.length > 0) {
+  if (item.type === 'sale') {
+    // Match any bill activity day: created, settled, cash/bank collected, or advance applied.
+    // Never hide a bill that Cash-in-Counter already shows for the same day.
     if (
-      item.paymentCollections.some((collection) =>
-        isoMatchesHistoryDateFilter(collection.at, dateFilter, selectedDate),
+      historySaleActivityDates(item).some((iso) =>
+        isoMatchesHistoryDateFilter(iso, dateFilter, selectedDate),
       )
     ) {
       return true
@@ -1111,6 +1252,12 @@ export function matchesHistoryDateFilter(
     const isPending = item.receiptLines?.some((line) => line.status === 'pending') ?? false
     if (isPending && item.billCreatedAt) {
       return isoMatchesHistoryDateFilter(item.billCreatedAt, dateFilter, selectedDate)
+    }
+
+    // Last resort for advance/return-credit bills with sparse timestamps.
+    if (historySaleHasAdvanceApplied(item)) {
+      const dateToMatch = item.completedAt ?? item.billCreatedAt ?? item.date
+      return isoMatchesHistoryDateFilter(dateToMatch, dateFilter, selectedDate)
     }
 
     return false
@@ -1132,6 +1279,12 @@ export function matchesHistoryDateFilter(
       return false
     }
     return isoMatchesHistoryDateFilter(item.date, dateFilter, selectedDate)
+  }
+
+  // Advance ledger rows (received / return credit / refund).
+  if (item.type === 'advance') {
+    const dateToMatch = item.completedAt ?? item.billCreatedAt ?? item.date
+    return isoMatchesHistoryDateFilter(dateToMatch, dateFilter, selectedDate)
   }
 
   const dateToMatch = item.completedAt ?? item.billCreatedAt ?? item.date
@@ -1160,7 +1313,19 @@ export function historyItemAmountForDateFilter(
         })
         return sum + normalized.total
       }, 0)
-    if (dayTotal > 0) return dayTotal
+
+    if (dayTotal > 0) {
+      return Math.round(dayTotal * 100) / 100
+    }
+
+    // Bill created/settled on this day even if drawer collection timestamps differ.
+    if (
+      historySaleActivityDates(item).some((iso) =>
+        isoMatchesHistoryDateFilter(iso, dateFilter, selectedDate),
+      )
+    ) {
+      return historyItemDisplayAmount(item, purchasePaidOnly)
+    }
 
     const isPending = item.receiptLines?.some((line) => line.status === 'pending') ?? false
     if (
@@ -1169,6 +1334,16 @@ export function historyItemAmountForDateFilter(
       isoMatchesHistoryDateFilter(item.billCreatedAt, dateFilter, selectedDate)
     ) {
       return 0
+    }
+  }
+
+  if (item.type === 'sale') {
+    if (
+      historySaleActivityDates(item).some((iso) =>
+        isoMatchesHistoryDateFilter(iso, dateFilter, selectedDate),
+      )
+    ) {
+      return historyItemDisplayAmount(item, purchasePaidOnly)
     }
   }
 
@@ -1198,7 +1373,7 @@ export function historyItemChannelAmount(
     let sum = 0
     for (const line of item.receiptLines) {
       if (line.status === 'pending') continue
-      if (line.label === 'Total collected') continue
+      if (isReceiptTotalCollectedLabel(line.label)) continue
       if (channel === 'cash' && (line.label === 'Cash' || line.label === 'Cash received' || line.label.includes('cash received'))) sum += line.amount
       if (
         channel === 'bank' &&
@@ -1288,32 +1463,277 @@ export function getHistoryTypeLabel(type: HistoryItemType): string {
   if (type === 'transfer') return 'Transfer'
   if (type === 'purchase') return 'Purchase'
   if (type === 'loan') return 'Loan'
+  if (type === 'advance') return 'Advance'
   return 'Expense'
 }
 
-/** Sale row label — pending bills show Credit/Cheque Pending instead of generic Bill Collected. */
-export function getHistoryItemTypeLabel(item: HistoryItem): string {
-  if (item.type !== 'sale') return getHistoryTypeLabel(item.type)
+function advanceEntryChannelLabel(entry: CustomerAdvanceLedgerEntry): string {
+  if (entry.kind === 'from_return') {
+    return `Return Credit ${formatMoney(entry.amount)}`
+  }
+  const cash = entry.cashAmount ?? 0
+  const bank = entry.bankAmount ?? 0
+  if (cash > 0 && bank > 0) {
+    return `💵 ${formatMoney(cash)} · 🏦 ${formatMoney(bank)}`
+  }
+  if (bank > 0) return `🏦 ${formatMoney(bank)}`
+  if (cash > 0) return `💵 ${formatMoney(cash)}`
+  return formatMoney(entry.amount)
+}
 
-  const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
-  const hasPendingLine =
-    item.receiptLines?.some((line) => line.status === 'pending') ?? false
+function advanceEntryPaymentMode(entry: CustomerAdvanceLedgerEntry): HistoryPaymentMode | undefined {
+  if (entry.kind === 'from_return') return undefined
+  const cash = entry.cashAmount ?? 0
+  const bank = entry.bankAmount ?? 0
+  if (cash > 0 && bank > 0) return 'split'
+  if (bank > 0) return 'bank'
+  if (cash > 0) return 'cash'
+  return undefined
+}
 
-  if (modes.includes('cheque') || item.paymentMode === 'cheque') return 'Cheque Pending'
-  if (modes.includes('credit') || item.paymentMode === 'credit') return 'Credit Pending'
-
-  if (hasPendingLine || item.paymentMode === 'pending') {
-    const haystack = (item.receiptLines ?? [])
-      .map((line) => line.label.toLowerCase())
-      .join(' ')
-    if (haystack.includes('cheque pending')) return 'Cheque Pending'
-    if (haystack.includes('credit balance') || haystack.includes('credit pending')) {
-      return 'Credit Pending'
+function advanceAppliedPools(
+  entry: CustomerAdvanceLedgerEntry | undefined,
+  amount: number,
+): { cash: number; bank: number; returnCredit: number } {
+  const cash = Math.max(0, entry?.cashAmount ?? 0)
+  const bank = Math.max(0, entry?.bankAmount ?? 0)
+  let returnCredit = Math.round(Math.max(0, amount - cash - bank) * 100) / 100
+  if (returnCredit <= 0.01 && entry?.note) {
+    const match = entry.note.match(/Return credit\s+([\d.]+)/i)
+    if (match) {
+      const fromNote = Number(match[1])
+      if (Number.isFinite(fromNote) && fromNote > 0) {
+        returnCredit = Math.round(fromNote * 100) / 100
+      }
     }
   }
+  return { cash, bank, returnCredit }
+}
 
-  if (hasPendingLine) return 'Bill Pending'
-  return getHistoryTypeLabel(item.type)
+function findAdvanceAppliedForSale(
+  advances: CustomerAdvanceLedgerEntry[] | undefined,
+  saleId: string,
+): CustomerAdvanceLedgerEntry | undefined {
+  if (!advances?.length) return undefined
+  return advances.find((row) => row.kind === 'applied' && row.saleId === saleId)
+}
+
+/** Prefer sale field; fall back to ledger applied rows linked to this sale. */
+function saleAdvanceAppliedAmount(
+  sale: Sale,
+  advances?: CustomerAdvanceLedgerEntry[],
+): number {
+  const fromSale = sale.customerAdvanceApplied ?? 0
+  if (fromSale > 0.01) return fromSale
+  if (!advances?.length) return 0
+  const total = advances
+    .filter((row) => row.kind === 'applied' && row.saleId === sale.id)
+    .reduce((sum, row) => sum + row.amount, 0)
+  return Math.round(total * 100) / 100
+}
+
+function withSaleAdvanceApplied(
+  sale: Sale,
+  advances?: CustomerAdvanceLedgerEntry[],
+): Sale {
+  const amount = saleAdvanceAppliedAmount(sale, advances)
+  if (amount <= 0.01 || (sale.customerAdvanceApplied ?? 0) >= amount - 0.01) return sale
+  return { ...sale, customerAdvanceApplied: amount }
+}
+
+function appendAdvanceAppliedReceiptEvents(
+  sale: Sale,
+  drafts: ReceiptEventDraft[],
+  advances?: CustomerAdvanceLedgerEntry[],
+): number {
+  const amount = saleAdvanceAppliedAmount(sale, advances)
+  if (amount <= 0.01) return 0
+  const entry = findAdvanceAppliedForSale(advances, sale.id)
+  const at = entry?.at ?? sale.updatedAt ?? sale.createdAt
+  const pools = advanceAppliedPools(entry, amount)
+  const fromReturnCredit = pools.returnCredit > 0.01
+  createReceiptDraft(drafts, RECEIPT_SEQ.ADVANCE_APPLIED, {
+    label: 'Advance applied',
+    date: at,
+    amount,
+    type: 'collected',
+    detail: fromReturnCredit
+      ? `Return credit applied to this bill · ${formatMoney(amount)}`
+      : `Advance applied to this bill · ${formatMoney(amount)}`,
+  })
+  return amount
+}
+
+function buildAdvanceReceiptLines(
+  entry: CustomerAdvanceLedgerEntry,
+  title: string,
+  detail: string,
+): HistoryReceiptLine[] {
+  const note = entry.note?.trim()
+  const lines: HistoryReceiptLine[] = [
+    {
+      label: title,
+      amount: entry.amount,
+      status: entry.kind === 'from_return' ? 'return' : 'paid',
+      date: entry.at,
+      detail: note ? `${detail} · ${note}` : detail,
+    },
+  ]
+  if (entry.kind === 'from_return') return lines
+
+  const cash = entry.cashAmount ?? 0
+  const bank = entry.bankAmount ?? 0
+  if (cash > 0.01) {
+    lines.push({
+      label: `${title} · Cash`,
+      amount: cash,
+      status: 'paid',
+      date: entry.at,
+      detail: formatDate(entry.at),
+    })
+  }
+  if (bank > 0.01) {
+    lines.push({
+      label: `${title} · Bank`,
+      amount: bank,
+      status: 'paid',
+      date: entry.at,
+      detail: formatDate(entry.at),
+    })
+  }
+  return lines
+}
+
+function buildCustomerAdvanceHistoryItems(data: AppData): HistoryItem[] {
+  const items: HistoryItem[] = []
+
+  for (const entry of data.customerAdvances ?? []) {
+    // Applied advance is shown only on the bill receipt — not as its own history row.
+    if (entry.kind === 'applied') continue
+
+    const paymentMode = advanceEntryPaymentMode(entry)
+    const channel = advanceEntryChannelLabel(entry)
+    const paymentModes: HistoryPaymentMode[] =
+      paymentMode === 'split'
+        ? ['cash', 'bank', 'split']
+        : paymentMode
+          ? [paymentMode]
+          : []
+
+    if (entry.kind === 'refunded') {
+      items.push({
+        type: 'advance',
+        id: `advance-${entry.id}`,
+        amount: entry.amount,
+        name: entry.customerName,
+        date: entry.at,
+        billCreatedAt: entry.at,
+        completedAt: entry.at,
+        paymentMode,
+        paymentModes,
+        sub: `Advance refunded · ${channel}${entry.note ? ` · ${entry.note}` : ''}`,
+        receiptLines: buildAdvanceReceiptLines(
+          entry,
+          'Advance refunded',
+          `Paid out to ${entry.customerName} · ${channel}`,
+        ),
+        receiptTimeline: buildAdvanceReceiptLines(
+          entry,
+          'Advance refunded',
+          `Paid out to ${entry.customerName} · ${channel}`,
+        ).map((line) => ({
+          label: line.label,
+          date: line.date ?? entry.at,
+          amount: line.amount,
+          type: 'collected' as const,
+          detail: line.detail,
+        })),
+      })
+      continue
+    }
+
+    if (entry.kind === 'from_return') {
+      const title = 'Return Credit'
+      const detail = `Return credited to advance for ${entry.customerName} · not cash received`
+      items.push({
+        type: 'advance',
+        id: `advance-${entry.id}`,
+        amount: entry.amount,
+        name: entry.customerName,
+        date: entry.at,
+        billCreatedAt: entry.at,
+        completedAt: entry.at,
+        // No cash/bank payment mode — this is a return credit, not a drawer receipt.
+        sub: `Return Credit · ${formatMoney(entry.amount)}`,
+        receiptLines: buildAdvanceReceiptLines(entry, title, detail),
+        receiptTimeline: buildAdvanceReceiptLines(entry, title, detail).map((line) => ({
+          label: line.label,
+          date: line.date ?? entry.at,
+          amount: line.amount,
+          type: 'return' as const,
+          detail: line.detail,
+        })),
+      })
+      continue
+    }
+
+    if (entry.kind === 'received') {
+      const title = 'Advance created'
+      const detail = `Advance created for ${entry.customerName} · ${channel}`
+      items.push({
+        type: 'advance',
+        id: `advance-${entry.id}`,
+        amount: entry.amount,
+        name: entry.customerName,
+        date: entry.at,
+        billCreatedAt: entry.at,
+        completedAt: entry.at,
+        paymentMode,
+        paymentModes,
+        sub: `Advance created · ${channel}`,
+        receiptLines: buildAdvanceReceiptLines(entry, title, detail),
+        receiptTimeline: buildAdvanceReceiptLines(entry, title, detail).map((line) => ({
+          label: line.label,
+          date: line.date ?? entry.at,
+          amount: line.amount,
+          type: 'collected' as const,
+          detail: line.detail,
+        })),
+      })
+    }
+  }
+  return items
+}
+
+function salePendingOutstandingTotal(item: HistoryItem): number {
+  return (item.receiptLines ?? [])
+    .filter((line) => line.status === 'pending' && (line.amount ?? 0) > 0.01)
+    .reduce((sum, line) => sum + line.amount, 0)
+}
+
+/** Sale row label — Bill Collected when fully paid; Bill Pending only while balance remains. */
+export function getHistoryItemTypeLabel(item: HistoryItem): string {
+  if (item.type === 'advance') {
+    if (item.sub.toLowerCase().includes('refunded')) return 'Advance refunded'
+    if (item.sub.toLowerCase().includes('return credit')) return 'Return Credit'
+    if (item.sub.toLowerCase().includes('return')) return 'Return Credit'
+    return 'Advance created'
+  }
+  if (item.type !== 'sale') return getHistoryTypeLabel(item.type)
+
+  const pendingTotal = salePendingOutstandingTotal(item)
+  if (pendingTotal <= 0.01) {
+    const modes = item.paymentModes ?? (item.paymentMode ? [item.paymentMode] : [])
+    const advanceOnly =
+      modes.length === 0 &&
+      (item.receiptLines?.some((line) => line.label.toLowerCase().includes('advance applied')) ??
+        false)
+    if (advanceOnly) return 'Bill Collected'
+    if (modes.length === 1 && modes[0] === 'cash') return 'Cash Collected'
+    return 'Bill Collected'
+  }
+
+  return 'Bill Pending'
 }
 
 const PAYMENT_MODE_LABELS: Record<HistoryPaymentMode, string> = {
@@ -1365,6 +1785,9 @@ function saleCollectionPaymentModes(sale: Sale): HistoryPaymentMode[] {
     return ['pending']
   }
 
+  // Paid with customer advance only — not a cash/bank receipt.
+  if ((sale.customerAdvanceApplied ?? 0) > 0.01) return []
+
   // Paid cheque → bank (funds cleared).
   if (sale.payType === 'bank' || sale.payType === 'cheque') return ['bank']
   if (sale.payType === 'split') return ['split']
@@ -1372,13 +1795,14 @@ function saleCollectionPaymentModes(sale: Sale): HistoryPaymentMode[] {
   return ['cash']
 }
 
-function salePaymentMode(sale: Sale): HistoryPaymentMode {
+function salePaymentMode(sale: Sale): HistoryPaymentMode | undefined {
   const modes = saleCollectionPaymentModes(sale)
   if (modes.includes('split')) return 'split'
   if (modes.length === 1) return modes[0]
   if (modes.includes('credit')) return 'credit'
   if (modes.includes('cheque')) return 'cheque'
   if (modes.includes('pending')) return 'pending'
+  if ((sale.customerAdvanceApplied ?? 0) > 0.01) return undefined
   return modes[0] ?? 'cash'
 }
 
@@ -1387,7 +1811,7 @@ function paymentModesFromReceiptLines(
 ): HistoryPaymentMode[] {
   const modes = new Set<HistoryPaymentMode>(['split'])
   for (const line of lines) {
-    if (line.label === 'Total collected') continue
+    if (isReceiptTotalCollectedLabel(line.label)) continue
     const lower = line.label.toLowerCase()
     if (
       line.label === 'Cash' ||
@@ -1475,7 +1899,9 @@ function collectedPaymentAmount(sale: Sale): number {
     (event) => event.amount > 0 && !event.cancelled,
   )
   if (events.length > 0) {
-    return Math.round(events.reduce((sum, event) => sum + event.amount, 0) * 100) / 100
+    return Math.round(
+      events.reduce((sum, event) => sum + paymentEventRealizedAmount(sale, event), 0) * 100,
+    ) / 100
   }
   return saleCollectedAmount(sale)
 }
@@ -1613,12 +2039,20 @@ function parentCollectedExcludingChequeChildren(
   return { cash, bank, cheque: 0 }
 }
 
-function buildSplitReceiptLines(parent: Sale, children: Sale[]): HistoryReceiptLine[] {
-  return buildSplitStructuredReceipt(parent, children).lines
+function buildSplitReceiptLines(
+  parent: Sale,
+  children: Sale[],
+  advances?: CustomerAdvanceLedgerEntry[],
+): HistoryReceiptLine[] {
+  return buildSplitStructuredReceipt(parent, children, advances).lines
 }
 
-function buildSplitTimeline(parent: Sale, children: Sale[]): HistoryReceiptEvent[] {
-  return buildSplitStructuredReceipt(parent, children).timeline
+function buildSplitTimeline(
+  parent: Sale,
+  children: Sale[],
+  advances?: CustomerAdvanceLedgerEntry[],
+): HistoryReceiptEvent[] {
+  return buildSplitStructuredReceipt(parent, children, advances).timeline
 }
 
 function splitPartsTarget(parent: Sale, children: Sale[]): number {
@@ -1659,7 +2093,7 @@ function formatSplitPaymentBreakdown(lines: HistoryReceiptLine[]): string {
   const parts: string[] = []
   for (const line of lines) {
     if (line.status !== 'paid') continue
-    if (line.label === 'Total collected') continue
+    if (isReceiptTotalCollectedLabel(line.label)) continue
     const lower = line.label.toLowerCase()
     if (
       line.label === 'Cash' ||
@@ -1780,9 +2214,14 @@ function findOrphanSplitGroups(sales: Sale[], consumedIds: Set<string>): Sale[][
   return groups
 }
 
-function buildSplitGroupItem(parent: Sale, children: Sale[], sales: Sale[]): HistoryItem {
-  const receiptLines = buildSplitReceiptLines(parent, children)
-  const receiptTimeline = buildSplitTimeline(parent, children)
+function buildSplitGroupItem(
+  parent: Sale,
+  children: Sale[],
+  sales: Sale[],
+  advances?: CustomerAdvanceLedgerEntry[],
+): HistoryItem {
+  const receiptLines = buildSplitReceiptLines(parent, children, advances)
+  const receiptTimeline = buildSplitTimeline(parent, children, advances)
   const breakdown = splitGroupCollectionBreakdown(parent, children)
   const fullBill =
     parent.originalBillAmount ??
@@ -1844,15 +2283,21 @@ function buildSplitGroupItem(parent: Sale, children: Sale[], sales: Sale[]): His
   }
 }
 
-function buildSaleReceiptLines(sale: Sale): HistoryReceiptLine[] {
-  return buildStructuredSaleReceipt(sale).lines
+function buildSaleReceiptLines(
+  sale: Sale,
+  advances?: CustomerAdvanceLedgerEntry[],
+): HistoryReceiptLine[] {
+  return buildStructuredSaleReceipt(sale, undefined, advances).lines
 }
 
-function buildSaleTimeline(sale: Sale): HistoryReceiptEvent[] {
-  return buildStructuredSaleReceipt(sale).timeline
+function buildSaleTimeline(
+  sale: Sale,
+  advances?: CustomerAdvanceLedgerEntry[],
+): HistoryReceiptEvent[] {
+  return buildStructuredSaleReceipt(sale, undefined, advances).timeline
 }
 
-function buildSalePaymentCollections(sale: Sale): HistoryItem['paymentCollections'] {
+function buildSalePaymentCollections(sale: Sale): NonNullable<HistoryItem['paymentCollections']> {
   return getSalePaymentEvents(sale)
     .filter((event) => event.amount > 0 && !event.cancelled)
     .map((event) => {
@@ -1875,108 +2320,236 @@ function buildSalePaymentCollections(sale: Sale): HistoryItem['paymentCollection
 function buildMergedBalanceGroupHistoryItem(
   members: Sale[],
   allSales: Sale[],
+  advances?: CustomerAdvanceLedgerEntry[],
 ): HistoryItem {
-  const primary = [...members].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-  )[0]
-  const item = buildSaleHistoryItem(primary, allSales)
-  if (members.length <= 1) return item
+  const primary = balanceGroupPrimary(members)
+  const item = buildSaleHistoryItem(primary, allSales, advances)
+  const uniqueMembers = [...new Map(members.map((row) => [row.id, row])).values()]
 
-  const collected = Math.round(
-    members.reduce((sum, row) => sum + collectedPaymentAmount(row), 0) * 100,
-  ) / 100
-  const paymentCollections = members.flatMap((row) => buildSalePaymentCollections(row) ?? [])
-  const receipt =
-    members.some((row) => isCreditBill(row) || isChequeBill(row))
-      ? buildBalanceGroupStructuredReceipt(members)
-      : buildStructuredSaleReceipt(primary, members)
+  const collected = saleBillGroupRealizedCollected(primary, uniqueMembers)
+  const paymentCollections = uniqueMembers.flatMap((row) => buildSalePaymentCollections(row) ?? [])
+  const receipt = buildBalanceGroupStructuredReceipt(uniqueMembers, advances)
+  const fullBill =
+    primary.originalBillAmount ??
+    uniqueMembers.find((row) => row.originalBillAmount)?.originalBillAmount ??
+    item.originalBillAmount ??
+    item.amount
+  const pendingOnReceipt = receipt.lines
+    .filter((line) => line.status === 'pending' && line.amount > 0.01)
+    .reduce((sum, line) => sum + line.amount, 0)
+  const allPaid =
+    uniqueMembers.every((row) => row.status !== 'pending' || row.billAmount <= 0.01) &&
+    pendingOnReceipt <= 0.01
 
   return {
     ...item,
     id: primary.parentSplitId ?? primary.id,
-    groupSaleIds: members.map((row) => row.id),
+    groupSaleIds: uniqueMembers.map((row) => row.id),
+    originalBillAmount: fullBill,
     collectedAmount: collected > 0 ? collected : item.collectedAmount,
-    amount:
-      primary.status !== 'pending' && collected > 0
-        ? collected
-        : item.amount,
+    amount: collected > 0 ? collected : fullBill,
     paymentCollections: paymentCollections.length > 0 ? paymentCollections : item.paymentCollections,
     receiptLines: receipt.lines,
     receiptTimeline: receipt.timeline,
-    paySummary:
-      collected > 0
-        ? `Paid ${formatMoney(collected)}`
-        : item.paySummary,
+    paymentMode: allPaid ? (item.paymentMode === 'cash' ? 'cash' : item.paymentMode) : item.paymentMode,
+    paymentModes: paymentModesFromReceiptLines(receipt.lines),
+    paySummary: buildBalanceGroupPaySummary(uniqueMembers, collected, receipt.lines, fullBill),
+    completedAt: allPaid ? item.completedAt : undefined,
   }
 }
 
-function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
-  const collected = collectedPaymentAmount(sale)
-  const breakdown = saleCollectionBreakdown(sale)
-  const paymentModes = saleCollectionPaymentModes(sale)
-  const paymentCollections = buildSalePaymentCollections(sale)
-  const lastCollectionAt = saleLastPaymentEventAt(sale)
+function buildBalanceGroupPaySummary(
+  members: Sale[],
+  collected: number,
+  lines: HistoryReceiptLine[],
+  fullBill: number,
+): string | undefined {
+  const pending = lines
+    .filter((line) => line.status === 'pending' && line.amount > 0.01)
+    .map((line) => {
+      const lower = line.label.toLowerCase()
+      if (lower.includes('cheque')) return `Cheque pending ${formatMoney(line.amount)}`
+      if (lower.includes('credit')) return `Credit pending ${formatMoney(line.amount)}`
+      return `Pending ${formatMoney(line.amount)}`
+    })
+  if (pending.length > 0) {
+    return `Bill ${formatMoney(fullBill)} · ${pending.join(' · ')}`
+  }
+  if (collected > 0) return `Paid ${formatMoney(collected)} · Bill collected`
+  if (members.every((row) => row.status !== 'pending')) return `Bill ${formatMoney(fullBill)} · Collected`
+  return undefined
+}
+
+function isBalanceLegSale(sale: Sale): boolean {
+  return (
+    isCreditBill(sale) ||
+    isChequeBill(sale) ||
+    sale.payType === 'credit' ||
+    sale.payType === 'cheque' ||
+    sale.pendingPayType === 'credit' ||
+    sale.pendingPayType === 'cheque' ||
+    Boolean(sale.parentSplitId) ||
+    (sale.pendingBalanceTransfers?.length ?? 0) > 0
+  )
+}
+
+/** Same customer bill across credit/cheque legs — only via split parent/child links. */
+function expandHistoryRelatedSales(sale: Sale, sales: Sale[]): Sale[] {
+  // Never merge unrelated bills that merely share customer name + original amount.
+  // That incorrectly pulls old Credit→Cheque / cheque approvals into a new bill
+  // (e.g. advance + cash + credit on a fresh ₹1000 sale).
+  return saleRelatedBillSales(sale, sales)
+}
+
+function shouldMergeAsBalanceGroup(related: Sale[]): boolean {
+  if (related.length < 2) return false
+
+  // Only merge when rows are actually linked (parentSplitId family).
+  const ids = new Set(related.map((row) => row.id))
+  const linked = related.some(
+    (row) =>
+      (row.parentSplitId != null && ids.has(row.parentSplitId)) ||
+      related.some((other) => other.parentSplitId === row.id),
+  )
+  if (!linked) return false
+
+  const legs = related.filter(isBalanceLegSale)
+  if (legs.length >= 2 || related.some((row) => row.parentSplitId)) return true
+
+  return related.some(
+    (row) =>
+      row.payType === 'credit' ||
+      row.payType === 'cheque' ||
+      row.pendingPayType === 'credit' ||
+      row.pendingPayType === 'cheque' ||
+      (row.pendingBalanceTransfers?.length ?? 0) > 0 ||
+      isCreditBill(row) ||
+      isChequeBill(row),
+  )
+}
+
+function pushBalanceOrSplitHistoryItem(
+  related: Sale[],
+  sales: Sale[],
+  saleItems: HistoryItem[],
+  consumedSaleIds: Set<string>,
+  advances?: CustomerAdvanceLedgerEntry[],
+): void {
+  for (const row of related) consumedSaleIds.add(row.id)
+  const parent =
+    related.find((row) => !row.parentSplitId && related.some((c) => c.parentSplitId === row.id)) ??
+    related.find((row) => !row.parentSplitId) ??
+    related[0]
+  const children = related.filter((row) => row.id !== parent.id)
+  const cashSplit =
+    parent.payType === 'split' &&
+    children.length > 0 &&
+    children.some((row) => row.payType !== 'credit' && row.payType !== 'cheque')
+
+  if (cashSplit) {
+    saleItems.push(buildSplitGroupItem(parent, children, sales, advances))
+  } else {
+    saleItems.push(buildMergedBalanceGroupHistoryItem(related, sales, advances))
+  }
+}
+
+function buildSaleHistoryItem(
+  sale: Sale,
+  sales: Sale[],
+  advances?: CustomerAdvanceLedgerEntry[],
+): HistoryItem {
+  const settledSale = withSaleAdvanceApplied(sale, advances)
+  const collected = collectedPaymentAmount(settledSale)
+  const breakdown = saleCollectionBreakdown(settledSale)
+  const paymentModes = saleCollectionPaymentModes(settledSale)
+  const paymentCollections = buildSalePaymentCollections(settledSale)
+  const lastCollectionAt = saleLastPaymentEventAt(settledSale)
+  const advanceOnSaleEarly = saleAdvanceAppliedAmount(settledSale, advances)
   const historyListDate =
-    sale.status === 'pending' && (isCreditBill(sale) || isChequeBill(sale))
-      ? salePendingBalanceHistoryDate(sale)
-      : lastCollectionAt ?? sale.createdAt
+    settledSale.status === 'pending' && (isCreditBill(settledSale) || isChequeBill(settledSale))
+      ? salePendingBalanceHistoryDate(settledSale)
+      : lastCollectionAt ??
+        (advanceOnSaleEarly > 0.01
+          ? settledSale.updatedAt ?? settledSale.createdAt
+          : settledSale.createdAt)
   const paidAt =
-    sale.status !== 'pending'
-      ? lastCollectionAt ?? saleDisplayCollectionAt(sale)
+    settledSale.status !== 'pending'
+      ? lastCollectionAt ??
+        (advanceOnSaleEarly > 0.01
+          ? settledSale.updatedAt ?? settledSale.createdAt
+          : saleDisplayCollectionAt(settledSale))
       : lastCollectionAt
-  const amount = formatMoney(sale.billAmount)
+  const amount = formatMoney(settledSale.billAmount)
   let sub: string
 
-  if (isCreditBill(sale)) {
+  if (isCreditBill(settledSale)) {
     const paidTime = paidAt ? formatDate(paidAt) : ''
     sub =
-      sale.status === 'pending'
+      settledSale.status === 'pending'
         ? collected > 0
-          ? `Credit · Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
+          ? `Credit · Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(settledSale)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
           : `Credit · ${amount} pending`
-        : `Credit · Paid ${formatMoney(collected)} · ${collectionMethodLabel(sale)}${paidTime ? ` · ${paidTime}` : ''}`
-  } else if (isChequeBill(sale)) {
+        : `Credit · Paid ${formatMoney(collected)} · ${collectionMethodLabel(settledSale)}${paidTime ? ` · ${paidTime}` : ''}`
+  } else if (isChequeBill(settledSale)) {
     const paidTime = paidAt ? formatDate(paidAt) : ''
     sub =
-      sale.status === 'pending'
+      settledSale.status === 'pending'
         ? collected > 0
-          ? `Cheque · Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
+          ? `Cheque · Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(settledSale)} · ${amount} pending${paidTime ? ` · ${paidTime}` : ''}`
           : `Cheque · ${amount} pending`
-        : `Bank · Cheque cleared ${formatMoney(collected)} · ${collectionMethodLabel(sale)}${paidTime ? ` · ${paidTime}` : ''}`
+        : `Bank · Cheque cleared ${formatMoney(collected)} · ${collectionMethodLabel(settledSale)}${paidTime ? ` · ${paidTime}` : ''}`
   } else {
-    const payLabel = salePayLabel(sale)
-    const paidDetail = paidCollectionDetail(sale)
+    const payLabel = salePayLabel(settledSale)
+    const paidDetail = paidCollectionDetail(settledSale)
     const orig =
-      sale.originalBillAmount && sale.originalBillAmount !== sale.billAmount
-        ? `Bill ${formatMoney(sale.originalBillAmount)} · Round ${formatMoney(sale.billAmount)} · `
+      settledSale.originalBillAmount && settledSale.originalBillAmount !== settledSale.billAmount
+        ? `Bill ${formatMoney(settledSale.originalBillAmount)} · Round ${formatMoney(settledSale.billAmount)} · `
         : ''
+    const advanceOnlySettled = advanceOnSaleEarly > 0.01 && collected <= 0.01
     const paidPart =
-      sale.status === 'pending'
-        ? isChequeBill(sale)
+      settledSale.status === 'pending'
+        ? isChequeBill(settledSale)
           ? 'Cheque pending · '
-          : isCreditBill(sale)
+          : isCreditBill(settledSale)
             ? 'Credit pending · '
             : 'Pending · '
-        : sale.payType === 'bank' || sale.payType === 'credit' || sale.payType === 'cheque'
-          ? `Paid ${paidDetail ?? payLabel} · `
-          : `Give ${formatMoney(sale.paidAmount)} · ${paidDetail ?? payLabel} · `
+        : advanceOnlySettled
+          ? 'Settled · '
+          : settledSale.payType === 'bank' || settledSale.payType === 'credit' || settledSale.payType === 'cheque'
+            ? `Paid ${paidDetail ?? payLabel} · `
+            : `Give ${formatMoney(settledSale.paidAmount)} · ${paidDetail ?? payLabel} · `
     const paidTime = paidAt ? formatDate(paidAt) : ''
-    sub = `${orig}${paidPart}${sale.changeAmount > 0 ? `Change ${formatMoney(sale.changeAmount)} · ` : ''}${paidTime}`.replace(/ · $/, '')
+    sub = `${orig}${paidPart}${settledSale.changeAmount > 0 ? `Change ${formatMoney(settledSale.changeAmount)} · ` : ''}${paidTime}`.replace(/ · $/, '')
   }
 
-  const totalBill = saleGrossBillAmount(sale)
-  const netBill = saleNetBillAmount(sale)
-  const returnTotal = saleReturnTotal(sale)
+  const totalBill = saleGrossBillAmount(settledSale)
+  const netBill = saleNetBillAmount(settledSale)
+  const returnTotal = saleReturnTotal(settledSale)
+  const advanceOnSale = advanceOnSaleEarly
+  // List/right amount is cash/bank/cheque received only — never Advance applied.
+  const listAmount =
+    settledSale.status !== 'pending'
+      ? collected > 0
+        ? collected
+        : advanceOnSale > 0
+          ? 0
+          : netBill
+      : isCreditBill(settledSale) || isChequeBill(settledSale)
+        ? netBill
+        : collected || netBill
+  // Keep paySummary simple like a normal bill — advance detail belongs only on the receipt.
   const paySummary =
-    sale.status !== 'pending' && collected > 0
+    settledSale.status !== 'pending' && collected > 0
       ? `Paid ${formatMoney(collected)}`
-      : sale.status === 'pending' && (isCreditBill(sale) || isChequeBill(sale))
-        ? collected > 0
-          ? `Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(sale)} · ${
-              isChequeBill(sale) ? 'Cheque' : 'Credit'
-            } pending ${formatMoney(sale.billAmount)}`
-          : `${isChequeBill(sale) ? 'Cheque' : 'Credit'} pending ${formatMoney(sale.billAmount)}`
-        : undefined
+      : settledSale.status !== 'pending' && advanceOnSale > 0
+        ? 'Advance applied'
+        : settledSale.status === 'pending' && (isCreditBill(settledSale) || isChequeBill(settledSale))
+          ? collected > 0
+            ? `Paid ${formatMoney(collected)} · ${partialCollectionDetailLabel(settledSale)} · ${
+                isChequeBill(settledSale) ? 'Cheque' : 'Credit'
+              } pending ${formatMoney(settledSale.billAmount)}`
+            : `${isChequeBill(settledSale) ? 'Cheque' : 'Credit'} pending ${formatMoney(settledSale.billAmount)}`
+          : undefined
 
   const returnSub =
     returnTotal > 0
@@ -1985,13 +2558,8 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
 
   return {
     type: 'sale',
-    id: sale.id,
-    amount:
-      sale.status !== 'pending' && collected > 0
-        ? collected
-        : isCreditBill(sale) || isChequeBill(sale)
-          ? netBill
-          : collected || netBill,
+    id: settledSale.id,
+    amount: listAmount,
     originalBillAmount: totalBill,
     collectedAmount: collected > 0 ? collected : undefined,
     collectionBreakdown:
@@ -2003,21 +2571,25 @@ function buildSaleHistoryItem(sale: Sale, sales: Sale[]): HistoryItem {
           }
         : undefined,
     sub: `${returnSub}${sub}`.replace(/ · $/, ''),
-    name: getSaleCustomerName(sale, sales),
+    name: getSaleCustomerName(settledSale, sales),
     date: historyListDate,
-    paymentCollections,
-    receiptLines: buildSaleReceiptLines(sale),
-    receiptTimeline: buildSaleTimeline(sale),
-    billCreatedAt: sale.createdAt,
-    completedAt: sale.status !== 'pending' ? paidAt : undefined,
-    paymentMode: salePaymentMode(sale),
+    paymentCollections:
+      (paymentCollections?.length ?? 0) > 0 ? paymentCollections : undefined,
+    receiptLines: buildSaleReceiptLines(settledSale, advances),
+    receiptTimeline: buildSaleTimeline(settledSale, advances),
+    billCreatedAt: settledSale.createdAt,
+    completedAt:
+      settledSale.status !== 'pending'
+        ? paidAt ?? settledSale.updatedAt ?? settledSale.createdAt
+        : undefined,
+    paymentMode: salePaymentMode(settledSale),
     paymentModes,
     paySummary,
     groupSaleIds:
-      isCreditBill(sale) || isChequeBill(sale)
-        ? sale.parentSplitId
-          ? [sale.parentSplitId, sale.id]
-          : [sale.id]
+      isCreditBill(settledSale) || isChequeBill(settledSale)
+        ? settledSale.parentSplitId
+          ? [settledSale.parentSplitId, settledSale.id]
+          : [settledSale.id]
         : undefined,
   }
 }
@@ -2320,6 +2892,7 @@ export function getHistoryItemListPaymentParts(
         line.label === 'Purchase' ||
         line.label === 'Bill created' ||
         line.label === 'Total collected' ||
+        line.label === 'Bill total collected' ||
         line.label === 'Remaining balance' ||
         line.label === 'Balance due' ||
         line.status === 'return'
@@ -2351,6 +2924,8 @@ export function getHistoryItemListPaymentParts(
     }
   }
 
+  // Advance-only bills: no cash/bank parts — list payment text comes from paySummary.
+
   if (item.type === 'transfer') {
     return []
   }
@@ -2371,6 +2946,15 @@ export function historyItemListPaymentTypeText(
   selectedDate = '',
   paymentFilter: HistoryPaymentFilter = 'all',
 ): string | undefined {
+  if (item.type === 'advance') {
+    if (item.sub.toLowerCase().includes('return credit') || item.sub.toLowerCase().includes('return')) {
+      return `↩ ${formatMoney(item.amount)} · Return Credit`
+    }
+    if (item.sub.toLowerCase().includes('refunded')) {
+      return item.paymentMode ? getHistoryPaymentLabel(item.paymentMode) : undefined
+    }
+  }
+
   const cashAmount = historyItemChannelAmount(item, 'cash', dateFilter, selectedDate)
   const bankAmount = historyItemChannelAmount(item, 'bank', dateFilter, selectedDate)
 
@@ -2505,6 +3089,10 @@ export function historyItemListPaymentTypeText(
   }
 
   if (item.type === 'sale') {
+    // Don't surface advance-only settlement text on the list — receipt shows that.
+    if (item.paySummary === 'Advance applied') {
+      return undefined
+    }
     if (item.paySummary) return item.paySummary
     if (item.isSplitGroup) {
       const modes = (item.paymentModes ?? []).filter((mode) => mode !== 'split' && mode !== 'pending')
@@ -2526,7 +3114,7 @@ export function historyItemListRowSub(
   dateFilter: HistoryDateFilter = 'all',
   selectedDate = '',
 ): string {
-  if (item.type === 'sale' || item.type === 'purchase') {
+  if (item.type === 'sale' || item.type === 'purchase' || item.type === 'advance') {
     return historyItemListSubtitle(item, dateFilter, selectedDate)
   }
   return item.sub
@@ -2537,8 +3125,24 @@ export function historyItemListSubtitle(
   dateFilter: HistoryDateFilter = 'all',
   selectedDate = '',
 ): string {
+  if (item.type === 'advance') {
+    return item.sub
+  }
   if (item.type === 'sale') {
     const bill = item.originalBillAmount ?? item.amount
+    const pendingParts = getHistoryItemListPaymentParts(item, dateFilter, selectedDate).filter(
+      (part) => part.status === 'pending' && part.amount > 0.01,
+    )
+    if (pendingParts.length > 0) {
+      const pendingText = pendingParts
+        .map((part) => {
+          if (part.mode === 'cheque') return `Cheque pending ${formatMoney(part.amount)}`
+          if (part.mode === 'credit') return `Credit pending ${formatMoney(part.amount)}`
+          return `Pending ${formatMoney(part.amount)}`
+        })
+        .join(' · ')
+      return `Bill ${formatMoney(bill)} · ${pendingText}`
+    }
     const dayAmount =
       dateFilter === 'all'
         ? 0
@@ -2749,45 +3353,66 @@ function buildLoanReceiptTimeline(loan: Loan): HistoryReceiptEvent[] {
   return events
 }
 
+function emitSaleHistoryItem(
+  sale: Sale,
+  sales: Sale[],
+  childrenByParent: Map<string, Sale[]>,
+  saleItems: HistoryItem[],
+  consumedSaleIds: Set<string>,
+  advances?: CustomerAdvanceLedgerEntry[],
+): void {
+  if (consumedSaleIds.has(sale.id)) return
+
+  const related = expandHistoryRelatedSales(sale, sales).filter((row) => !consumedSaleIds.has(row.id))
+  if (related.length === 0) return
+
+  if (shouldMergeAsBalanceGroup(related)) {
+    pushBalanceOrSplitHistoryItem(related, sales, saleItems, consumedSaleIds, advances)
+    return
+  }
+
+  const root = related.find((row) => !row.parentSplitId) ?? sale
+  if (consumedSaleIds.has(root.id)) return
+
+  const children = childrenByParent.get(root.id) ?? []
+  const isSplitGroup = root.payType === 'split' || children.length > 0
+
+  if (isSplitGroup) {
+    for (const child of children) consumedSaleIds.add(child.id)
+    consumedSaleIds.add(root.id)
+    saleItems.push(buildSplitGroupItem(root, children, sales, advances))
+    return
+  }
+
+  consumedSaleIds.add(root.id)
+  saleItems.push(buildSaleHistoryItem(root, sales, advances))
+}
+
 function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
-  const sales = sanitizeSplitParentChildChequeOverlap(data.sales)
+  const advances = data.customerAdvances ?? []
+  const sales = sanitizeSplitParentChildChequeOverlap(data.sales).map((sale) =>
+    withSaleAdvanceApplied(sale, advances),
+  )
   const childrenByParent = buildChildrenMap(sales)
-  const consumedChildIds = new Set<string>()
+  const consumedSaleIds = new Set<string>()
   const saleItems: HistoryItem[] = []
 
   for (const sale of sales) {
     if (sale.parentSplitId) continue
-
-    const children = childrenByParent.get(sale.id) ?? []
-    const isSplitGroup = sale.payType === 'split' || children.length > 0
-
-    if (isSplitGroup) {
-      for (const child of children) consumedChildIds.add(child.id)
-      saleItems.push(buildSplitGroupItem(sale, children, sales))
-      continue
-    }
-
-    saleItems.push(buildSaleHistoryItem(sale, sales))
+    emitSaleHistoryItem(sale, sales, childrenByParent, saleItems, consumedSaleIds, advances)
   }
 
-  for (const group of findOrphanSplitGroups(sales, consumedChildIds)) {
-    for (const child of group) consumedChildIds.add(child.id)
-    saleItems.push(buildSplitGroupItem(buildSyntheticSplitParent(group), group, sales))
+  for (const group of findOrphanSplitGroups(sales, consumedSaleIds)) {
+    const fresh = group.filter((row) => !consumedSaleIds.has(row.id))
+    if (fresh.length < 2) continue
+    for (const child of fresh) consumedSaleIds.add(child.id)
+    saleItems.push(
+      buildSplitGroupItem(buildSyntheticSplitParent(fresh), fresh, sales, advances),
+    )
   }
 
-  const orphanByLink = new Map<string, Sale[]>()
   for (const sale of sales) {
-    if (!sale.parentSplitId || consumedChildIds.has(sale.id)) continue
-    const linkId = sale.parentSplitId
-    const list = orphanByLink.get(linkId) ?? []
-    list.push(sale)
-    orphanByLink.set(linkId, list)
-  }
-  for (const [linkId, orphans] of orphanByLink) {
-    const parent = sales.find((row) => row.id === linkId)
-    const members = parent ? [parent, ...orphans] : orphans
-    for (const row of members) consumedChildIds.add(row.id)
-    saleItems.push(buildMergedBalanceGroupHistoryItem(members, sales))
+    emitSaleHistoryItem(sale, sales, childrenByParent, saleItems, consumedSaleIds, advances)
   }
 
   const expenseItems: HistoryItem[] = data.expenses
@@ -3036,7 +3661,15 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
     }
   }
 
-  const items: HistoryItem[] = [...saleItems, ...expenseItems, ...purchaseItems, ...loanItems]
+  const advanceItems = buildCustomerAdvanceHistoryItems(data)
+
+  const items: HistoryItem[] = [
+    ...saleItems,
+    ...expenseItems,
+    ...purchaseItems,
+    ...loanItems,
+    ...advanceItems,
+  ]
   for (const item of items) {
     item.searchHaystack = buildHistorySearchHaystack(item)
   }
@@ -3062,15 +3695,13 @@ export function historyItemDisplayAmount(item: HistoryItem, purchasePaidOnly = f
   return item.amount
 }
 
-/** Money actually collected for a history sale row (split-aware). */
+/** Money actually collected for a history sale row (split-aware). Excludes Advance applied. */
 export function historyItemSaleAmount(item: HistoryItem): number {
   if (item.type !== 'sale') return item.amount
   if (item.isSplitGroup) return item.amount
+
   if (item.collectedAmount != null && item.collectedAmount > 0) {
-    const isPending = item.receiptLines?.some((line) => line.status === 'pending') ?? false
-    if (isPending || item.amount === item.originalBillAmount) {
-      return item.collectedAmount
-    }
+    return item.collectedAmount
   }
   return item.amount
 }

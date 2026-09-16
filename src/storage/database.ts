@@ -1,6 +1,14 @@
-import type { AppData, AppTheme, Expense, ExpenseCreditPayment, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, PendingBalanceTransfer, ReminderAlertSettings, Sale, SaleReturnEntry, StaffBonusMemberShare, StaffBonusMonthSettings, StaffBonusPart, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
+import type { AppData, AppTheme, CustomerAdvanceLedgerEntry, Expense, ExpenseCreditPayment, ExpensePayType, Loan, LoanKind, LoanPaySource, PayType, PendingBalanceTransfer, ReminderAlertSettings, Sale, SaleReturnEntry, StaffBonusMemberShare, StaffBonusMonthSettings, StaffBonusPart, StaffLeave, StaffLeaveType, StaffMember, StaffSalaryAdvance, SupplierEntry, TransferDirection, CustomerReminderMap, TrashedRecord, TrashKind } from '../types'
 import { DEFAULT_REMINDER_ALERTS, LOCAL_UPDATED_AT_KEY, LOCAL_USER_UID_KEY, STORAGE_KEY } from '../types'
 import { buildCustomerSummaries } from '../utils/customerLedger'
+import {
+  appendCustomerAdvanceEntry,
+  allocateAdvanceApplication,
+  allocateAdvanceRefund,
+  customerAdvanceBalance,
+  customerAdvanceBalanceBreakdown,
+  customerAdvanceCashBankTotals,
+} from '../utils/customerAdvance'
 import { collectSplitNameTargets, getSaleCustomerName } from '../utils/saleCustomerName'
 import { stripExpenseBillSuffix, isPurchaseExpense } from '../utils/expenseBillLabels'
 import {
@@ -457,7 +465,70 @@ export function mergeCloudAppData(local: AppData, remote: AppData): AppData {
       normalizedRemote.trash,
       mergeTrashPurgedKeys(normalizedLocal.trashPurgedKeys, normalizedRemote.trashPurgedKeys),
     ),
+    customerAdvances: mergeCustomerAdvanceLists(
+      normalizedLocal.customerAdvances ?? [],
+      normalizedRemote.customerAdvances ?? [],
+    ),
   })
+}
+
+function normalizeCustomerAdvanceEntry(raw: unknown): CustomerAdvanceLedgerEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const row = raw as Partial<CustomerAdvanceLedgerEntry>
+  if (!row.id || !row.customerName || !row.at || !row.kind) return null
+  if (
+    row.kind !== 'received' &&
+    row.kind !== 'applied' &&
+    row.kind !== 'from_return' &&
+    row.kind !== 'refunded'
+  ) {
+    return null
+  }
+  const amount = Number(row.amount)
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  return {
+    id: row.id,
+    customerName: row.customerName.trim(),
+    at: row.at,
+    kind: row.kind,
+    amount: Math.round(amount * 100) / 100,
+    cashAmount: row.cashAmount != null ? Number(row.cashAmount) : undefined,
+    bankAmount: row.bankAmount != null ? Number(row.bankAmount) : undefined,
+    saleId: typeof row.saleId === 'string' ? row.saleId : undefined,
+    returnEntryId: typeof row.returnEntryId === 'string' ? row.returnEntryId : undefined,
+    note: typeof row.note === 'string' ? row.note : undefined,
+  }
+}
+
+function normalizeCustomerAdvances(raw: unknown): CustomerAdvanceLedgerEntry[] {
+  if (!Array.isArray(raw)) return []
+  const out: CustomerAdvanceLedgerEntry[] = []
+  for (const row of raw) {
+    const entry = normalizeCustomerAdvanceEntry(row)
+    if (entry) out.push(entry)
+  }
+  return [...out].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+}
+
+function mergeCustomerAdvanceLists(
+  local: CustomerAdvanceLedgerEntry[],
+  remote: CustomerAdvanceLedgerEntry[],
+): CustomerAdvanceLedgerEntry[] {
+  const byId = new Map<string, CustomerAdvanceLedgerEntry>()
+  for (const item of remote) byId.set(item.id, item)
+  for (const item of local) {
+    const other = byId.get(item.id)
+    if (!other) {
+      byId.set(item.id, item)
+      continue
+    }
+    const localTime = new Date(item.at).getTime()
+    const remoteTime = new Date(other.at).getTime()
+    byId.set(item.id, localTime >= remoteTime ? item : other)
+  }
+  return [...Array.from(byId.values())].sort(
+    (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime(),
+  )
 }
 
 function mergeDayBalances(
@@ -543,9 +614,14 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
       ),
     },
     customerReminders: normalizeCustomerReminders(parsed.customerReminders),
-    sales: sanitizeSplitParentChildChequeOverlap(parsed.sales ?? []).map((sale) =>
-      repairSalePaymentEvents(sale),
-    ),
+    sales: (() => {
+      const advances = normalizeCustomerAdvances(parsed.customerAdvances)
+      const hydrated = hydrateSaleAdvanceAppliedFromLedger(
+        sanitizeSplitParentChildChequeOverlap(parsed.sales ?? []),
+        advances,
+      )
+      return hydrated.map((sale) => repairSalePaymentEvents(sale))
+    })(),
     expenses: normalizedExpenses,
     loans: (parsed.loans ?? []).map((loan) => normalizeLoan(loan)),
     staff: (parsed.staff ?? []).map((member) => normalizeStaffMember(member)),
@@ -560,7 +636,32 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
     staffBonusMonthSettings: normalizeStaffBonusMonthSettings(parsed.staffBonusMonthSettings),
     trash: normalizeTrash(parsed.trash, normalizeTrashPurgedKeys(parsed.trashPurgedKeys)),
     trashPurgedKeys: normalizeTrashPurgedKeys(parsed.trashPurgedKeys),
+    customerAdvances: normalizeCustomerAdvances(parsed.customerAdvances),
   }
+}
+
+/** Restore sale.customerAdvanceApplied from ledger when the field was missing on older saves. */
+function hydrateSaleAdvanceAppliedFromLedger(
+  sales: Sale[],
+  advances: CustomerAdvanceLedgerEntry[],
+): Sale[] {
+  if (sales.length === 0 || advances.length === 0) return sales
+  const appliedBySale = new Map<string, number>()
+  for (const row of advances) {
+    if (row.kind !== 'applied' || !row.saleId) continue
+    appliedBySale.set(
+      row.saleId,
+      Math.round(((appliedBySale.get(row.saleId) ?? 0) + row.amount) * 100) / 100,
+    )
+  }
+  if (appliedBySale.size === 0) return sales
+  return sales.map((sale) => {
+    const fromLedger = appliedBySale.get(sale.id) ?? 0
+    if (fromLedger <= 0.01) return sale
+    const existing = sale.customerAdvanceApplied ?? 0
+    if (existing >= fromLedger - 0.01) return sale
+    return { ...sale, customerAdvanceApplied: fromLedger }
+  })
 }
 
 const TRASH_CAP = 200
@@ -1317,9 +1418,11 @@ export function computeDrawerBalances(data: AppData): DrawerBalances {
     loanBank += loanBankToBalance(loan)
   }
 
+  const advanceTotals = customerAdvanceCashBankTotals(data)
+
   return {
-    cash: data.openingBalance + salesCash - expenseCash + loanCash,
-    bank: (data.openingBankBalance ?? 0) + salesBank - expenseBank + loanBank,
+    cash: data.openingBalance + salesCash - expenseCash + loanCash + advanceTotals.cash,
+    bank: (data.openingBankBalance ?? 0) + salesBank - expenseBank + loanBank + advanceTotals.bank,
   }
 }
 
@@ -1409,7 +1512,156 @@ export function addSale(
     newSale.status !== 'pending'
       ? { ...newSale, paymentEvents: buildPaidSalePaymentEvents(newSale, now) }
       : newSale
-  const next = { ...data, sales: [withEvents, ...data.sales] }
+  let next = { ...data, sales: [withEvents, ...data.sales] }
+  next = applyCustomerAdvanceLedgerForSale(next, withEvents)
+  saveData(next)
+  return next
+}
+
+function applyCustomerAdvanceLedgerForSale(data: AppData, sale: Sale): AppData {
+  const applied = sale.customerAdvanceApplied ?? 0
+  if (applied <= 0 || !sale.customerName?.trim()) return data
+  const balance = customerAdvanceBalance(data, sale.customerName)
+  const use = Math.min(Math.round(applied * 100) / 100, balance)
+  if (use <= 0) return data
+  if (
+    (data.customerAdvances ?? []).some(
+      (row) => row.kind === 'applied' && row.saleId === sale.id,
+    )
+  ) {
+    return data
+  }
+  const pools = customerAdvanceBalanceBreakdown(data, sale.customerName)
+  const split = allocateAdvanceApplication(use, pools)
+  const noteParts: string[] = []
+  if (split.credit > 0) noteParts.push(`Return credit ${split.credit}`)
+  if (split.cash > 0 && split.bank > 0) {
+    noteParts.push(`Cash ${split.cash} · Bank ${split.bank}`)
+  }
+  const billNote = `Bill ${Math.round(sale.billAmount * 100) / 100}`
+  const note = [billNote, ...noteParts].filter(Boolean).join(' · ')
+  return appendCustomerAdvanceEntry(data, {
+    customerName: sale.customerName.trim(),
+    at: sale.updatedAt ?? sale.createdAt,
+    kind: 'applied',
+    amount: use,
+    cashAmount: split.cash > 0 ? split.cash : undefined,
+    bankAmount: split.bank > 0 ? split.bank : undefined,
+    saleId: sale.id,
+    note: note || undefined,
+  })
+}
+
+/** Drop applied-advance ledger rows for deleted bills so the balance returns as if never used. */
+function removeCustomerAdvanceAppliedForSales(data: AppData, saleIds: Set<string>): AppData {
+  if (saleIds.size === 0) return data
+  const advances = data.customerAdvances ?? []
+  if (advances.length === 0) return data
+  const nextAdvances = advances.filter(
+    (row) => !(row.kind === 'applied' && row.saleId && saleIds.has(row.saleId)),
+  )
+  if (nextAdvances.length === advances.length) return data
+  return { ...data, customerAdvances: nextAdvances }
+}
+
+/** Pay customer back from advance balance (cash/bank out of drawer). */
+export function refundCustomerAdvance(
+  data: AppData,
+  input: {
+    customerName: string
+    amount: number
+    cashAmount?: number
+    bankAmount?: number
+    note?: string
+  },
+): AppData {
+  const name = input.customerName.trim()
+  if (!name) return data
+  const pools = customerAdvanceBalanceBreakdown(data, name)
+  const maxRefund = pools.total
+  const amount = Math.round(Math.min(input.amount, maxRefund) * 100) / 100
+  if (amount <= 0) return data
+
+  const ledgerAmount = roundMoney(Math.min(amount, maxRefund))
+  if (ledgerAmount <= 0) return data
+
+  let cash = input.cashAmount ?? 0
+  let bank = input.bankAmount ?? 0
+  if (cash <= 0 && bank <= 0) {
+    const auto = allocateAdvanceRefund(ledgerAmount, pools)
+    cash = auto.cash
+    bank = auto.bank
+  }
+
+  const now = new Date().toISOString()
+  const next = appendCustomerAdvanceEntry(data, {
+    customerName: name,
+    at: now,
+    kind: 'refunded',
+    amount: ledgerAmount,
+    cashAmount: cash > 0 ? cash : undefined,
+    bankAmount: bank > 0 ? bank : undefined,
+    note: input.note?.trim() || undefined,
+  })
+  saveData(next)
+  return next
+}
+
+function roundMoney(amount: number): number {
+  return Math.round(amount * 100) / 100
+}
+
+/** Record customer prepayment (cash or bank). */
+export function recordCustomerAdvance(
+  data: AppData,
+  input: {
+    customerName: string
+    amount: number
+    payType: 'cash' | 'bank'
+    note?: string
+  },
+): AppData {
+  const name = input.customerName.trim()
+  const amount = Math.round(input.amount * 100) / 100
+  if (!name || amount <= 0) return data
+  const now = new Date().toISOString()
+  const cashAmount = input.payType === 'cash' ? amount : 0
+  const bankAmount = input.payType === 'bank' ? amount : 0
+  const next = appendCustomerAdvanceEntry(data, {
+    customerName: name,
+    at: now,
+    kind: 'received',
+    amount,
+    cashAmount,
+    bankAmount,
+    note: input.note?.trim() || undefined,
+  })
+  saveData(next)
+  return next
+}
+
+/** Standalone sales return (no open bill) — credit customer advance balance. */
+export function creditCustomerAdvanceFromReturn(
+  data: AppData,
+  input: {
+    customerName: string
+    amount: number
+    returnEntryId?: string
+    note?: string
+  },
+): AppData {
+  const name = input.customerName.trim()
+  const amount = Math.round(input.amount * 100) / 100
+  if (!name || amount <= 0) return data
+  const now = new Date().toISOString()
+  const next = appendCustomerAdvanceEntry(data, {
+    customerName: name,
+    at: now,
+    kind: 'from_return',
+    amount,
+    returnEntryId: input.returnEntryId,
+    note: input.note?.trim() || undefined,
+  })
   saveData(next)
   return next
 }
@@ -1753,10 +2005,15 @@ export function restoreTrashRecord(data: AppData, kind: TrashKind, id: string): 
     (acc, saleId) => clearTrashPurgedKey(acc, trashRecordKey('sale', saleId)),
     nextBase,
   )
-  const next = {
+  let next: AppData = {
     ...cleared,
     sales: [...fresh, ...data.sales],
     trash: trashPool.filter((row) => !(row.kind === 'sale' && ids.includes(row.id))),
+  }
+  for (const row of fresh) {
+    if ((row.customerAdvanceApplied ?? 0) > 0) {
+      next = applyCustomerAdvanceLedgerForSale(next, row)
+    }
   }
   saveData(next, { cloudImmediate: true })
   return next
@@ -1811,7 +2068,9 @@ function removePendingBalanceAnchor(data: AppData, anchorId: string): AppData {
     sales: data.sales
       .filter((s) => s.id !== anchorId)
       .map((s) =>
-        s.parentSplitId === anchorId ? { ...s, updatedAt: now } : s,
+        s.parentSplitId === anchorId
+          ? { ...s, parentSplitId: undefined, updatedAt: now }
+          : s,
       ),
   }
 }
@@ -1866,7 +2125,10 @@ export function deleteSale(
     })
   }
 
-  const next = { ...trashed, sales: data.sales.filter((s) => !idsToRemove.has(s.id)) }
+  const next = removeCustomerAdvanceAppliedForSales(
+    { ...trashed, sales: data.sales.filter((s) => !idsToRemove.has(s.id)) },
+    idsToRemove,
+  )
   saveData(next, { cloudImmediate: true })
   return next
 }
@@ -2453,7 +2715,10 @@ export function updatePendingBill(
       const patched = {
         ...s,
         billAmount: updates.billAmount,
-        originalBillAmount: updates.originalBillAmount ?? s.originalBillAmount,
+        originalBillAmount:
+          updates.originalBillAmount !== undefined
+            ? updates.originalBillAmount
+            : s.originalBillAmount,
         customerName: updates.customerName ?? s.customerName,
         payType: updates.payType ?? s.payType,
         pendingPayType:
@@ -4304,6 +4569,7 @@ export function collectPendingBill(
     creditAmount?: number
     chequeApproved?: boolean
     customerName?: string
+    customerAdvanceApplied?: number
   },
   paymentEvent?: Omit<SalePaymentEvent, 'amount'> & { amount: number },
 ): AppData {
@@ -4417,8 +4683,13 @@ export function collectPendingBill(
     original?.parentSplitId && isCreditPendingSale(original) && settled
       ? syncParentSplitCreditAmount(next, settled, 0)
       : next
-  saveData(synced)
-  return synced
+  const settledSale = synced.sales.find((s) => s.id === id)
+  const withAdvance =
+    settledSale && (settledSale.customerAdvanceApplied ?? 0) > 0
+      ? applyCustomerAdvanceLedgerForSale(synced, settledSale)
+      : synced
+  saveData(withAdvance)
+  return withAdvance
 }
 
 function defaultExpenseName(expense: Expense): string {
@@ -4760,6 +5031,7 @@ export function applySaleReturn(
     rate: number
     discountAmount?: number
     gstPercent?: number
+    taxAmount?: number
   },
 ): AppData {
   const sale = data.sales.find((s) => s.id === saleId)
@@ -4808,19 +5080,29 @@ export function applySaleReturn(
 }
 
 /**
- * Undo a processed sale/credit return and restore the credit balance due.
+ * Replace all return lines on a sale (grid edit / delete) and recalculate balance due.
  */
-export function cancelSaleReturn(data: AppData, saleId: string, returnId: string): AppData {
+export function replaceSaleReturns(
+  data: AppData,
+  saleId: string,
+  nextReturns: SaleReturnEntry[],
+): AppData {
   const sale = data.sales.find((s) => s.id === saleId)
-  if (!sale?.returns?.length) return data
+  if (!sale) return data
 
-  const target = sale.returns.find((row) => row.id === returnId)
-  if (!target) return data
-
-  const returns = sale.returns.filter((row) => row.id !== returnId)
-  const gross = saleGrossBillAmount(sale)
   const collected = saleBillGroupPaidTotal(sale, data.sales)
-  const returnTotal = saleReturnTotal({ returns })
+  const gross = saleGrossBillAmount(sale)
+  const maxTotal = Math.max(0, Math.round((gross - collected) * 100) / 100)
+  let returns = nextReturns.filter((row) => row.amount > 0 && row.itemName.trim())
+  let returnTotal = saleReturnTotal({ returns })
+  if (returnTotal > maxTotal + 0.01 && returnTotal > 0) {
+    const scale = maxTotal / returnTotal
+    returns = returns.map((row) => ({
+      ...row,
+      amount: Math.round(row.amount * scale * 100) / 100,
+    }))
+    returnTotal = saleReturnTotal({ returns })
+  }
   const newDue = Math.max(0, Math.round((gross - collected - returnTotal) * 100) / 100)
   const now = new Date().toISOString()
 
@@ -4847,6 +5129,20 @@ export function cancelSaleReturn(data: AppData, saleId: string, returnId: string
   }
   saveData(next)
   return next
+}
+
+/**
+ * Undo a processed sale/credit return and restore the credit balance due.
+ */
+export function cancelSaleReturn(data: AppData, saleId: string, returnId: string): AppData {
+  const sale = data.sales.find((s) => s.id === saleId)
+  if (!sale?.returns?.length) return data
+
+  const target = sale.returns.find((row) => row.id === returnId)
+  if (!target) return data
+
+  const returns = sale.returns.filter((row) => row.id !== returnId)
+  return replaceSaleReturns(data, saleId, returns)
 }
 
 export function updateExpenseName(data: AppData, id: string, name: string): AppData {

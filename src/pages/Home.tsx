@@ -126,7 +126,7 @@ function Home({ active }: { active: boolean }) {
     setBillReminder,
     updateReminderAlertSettings,
     renameCustomerProfile,
-    applySaleReturn,
+    replaceSaleReturns,
     cancelSaleReturn,
   } = useCashActions()
   const workData = data
@@ -1597,7 +1597,7 @@ function Home({ active }: { active: boolean }) {
           onSetCustomerReminder={setCustomerReminder}
           onSetBillReminder={setBillReminder}
           onSaveAlertSettings={updateReminderAlertSettings}
-          onApplySaleReturn={applySaleReturn}
+          onReplaceSaleReturns={replaceSaleReturns}
           onCancelSaleReturn={cancelSaleReturn}
         />
       ) : null}

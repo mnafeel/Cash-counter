@@ -369,12 +369,42 @@ function pushLoanItems(items: CashActivityItem[], loan: Loan) {
   }
 }
 
+/** Only `received` prepayments count as drawer inflow — not return credits or bill application. */
+function pushCustomerAdvanceCashItems(items: CashActivityItem[], data: AppData) {
+  for (const row of data.customerAdvances ?? []) {
+    if (row.kind === 'received') {
+      const cash = row.cashAmount ?? 0
+      if (cash <= 0) continue
+      items.push({
+        id: `advance-${row.id}-cash`,
+        label: 'Customer advance · cash',
+        amount: cash,
+        direction: 'in',
+        date: row.at,
+        name: row.customerName,
+      })
+    } else if (row.kind === 'refunded') {
+      const cash = row.cashAmount ?? 0
+      if (cash <= 0) continue
+      items.push({
+        id: `advance-${row.id}-cash-refund`,
+        label: 'Advance refund · cash',
+        amount: cash,
+        direction: 'out',
+        date: row.at,
+        name: row.customerName,
+      })
+    }
+  }
+}
+
 function buildCashActivityItemsUncached(data: AppData): CashActivityItem[] {
   const items: CashActivityItem[] = []
   const sales = sanitizeSplitParentChildChequeOverlap(data.sales)
   for (const sale of sales) pushSaleItems(items, sale)
   for (const expense of data.expenses) pushExpenseItems(items, expense)
   for (const loan of data.loans ?? []) pushLoanItems(items, loan)
+  pushCustomerAdvanceCashItems(items, data)
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
 

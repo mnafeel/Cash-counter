@@ -64,16 +64,7 @@ interface CreditDashboardProps {
   ) => void
   onSetBillReminder: (saleId: string, reminderAt: string | null, reminderNote?: string | null) => void
   onSaveAlertSettings?: (settings: ReminderAlertSettings) => void
-  onApplySaleReturn: (
-    saleId: string,
-    input: {
-      itemName: string
-      quantity: number
-      rate: number
-      discountAmount?: number
-      gstPercent?: number
-    },
-  ) => void
+  onReplaceSaleReturns: (saleId: string, returns: SaleReturnEntry[]) => void
   onCancelSaleReturn: (saleId: string, returnId: string) => void
 }
 
@@ -86,7 +77,7 @@ export default function CreditDashboard({
   onSetCustomerReminder,
   onSetBillReminder,
   onSaveAlertSettings,
-  onApplySaleReturn,
+  onReplaceSaleReturns,
   onCancelSaleReturn,
 }: CreditDashboardProps) {
   const { applyBulkSaleCreditPayments } = useCash()
@@ -493,7 +484,7 @@ export default function CreditDashboard({
                 onSetCustomerReminder={onSetCustomerReminder}
                 onSetBillReminder={onSetBillReminder}
                 onSaveAlertSettings={onSaveAlertSettings}
-                onApplySaleReturn={onApplySaleReturn}
+                onReplaceSaleReturns={onReplaceSaleReturns}
                 onCancelSaleReturn={onCancelSaleReturn}
               />
             </div>
@@ -627,7 +618,7 @@ function CreditCustomerDetail({
   onSetCustomerReminder,
   onSetBillReminder,
   onSaveAlertSettings,
-  onApplySaleReturn,
+  onReplaceSaleReturns,
   onCancelSaleReturn,
 }: {
   summary: CustomerSummary
@@ -639,7 +630,7 @@ function CreditCustomerDetail({
   onSetCustomerReminder: CreditDashboardProps['onSetCustomerReminder']
   onSetBillReminder: CreditDashboardProps['onSetBillReminder']
   onSaveAlertSettings?: CreditDashboardProps['onSaveAlertSettings']
-  onApplySaleReturn: CreditDashboardProps['onApplySaleReturn']
+  onReplaceSaleReturns: CreditDashboardProps['onReplaceSaleReturns']
   onCancelSaleReturn: CreditDashboardProps['onCancelSaleReturn']
 }) {
   const creditReminderAt = getCustomerReminderAt(data, summary.name, 'credit')
@@ -892,15 +883,18 @@ function CreditCustomerDetail({
           existingReturns={
             (data.sales.find((row) => row.id === returnSale.id) ?? returnSale).returns ?? []
           }
-          maxReturnable={saleCreditBalanceDue(
-            data.sales.find((row) => row.id === returnSale.id) ?? returnSale,
-            data.sales,
+          maxReturnable={Math.max(
+            0,
+            saleGrossBillAmount(
+              data.sales.find((row) => row.id === returnSale.id) ?? returnSale,
+            ) -
+              saleBillGroupPaidTotal(
+                data.sales.find((row) => row.id === returnSale.id) ?? returnSale,
+                data.sales,
+              ),
           )}
-          onCancelReturn={(returnId) => {
-            onCancelSaleReturn(returnSale.id, returnId)
-          }}
-          onAddItem={(draft) => {
-            onApplySaleReturn(returnSale.id, draft)
+          onChangeReturns={(returns) => {
+            onReplaceSaleReturns(returnSale.id, returns)
           }}
         />
       ) : null}

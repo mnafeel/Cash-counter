@@ -9,6 +9,8 @@ import CounterCustomerNameField, {
 } from '../components/CounterCustomerNameField'
 import RoundTypeChips from '../components/RoundTypeChips'
 import SaleReturnModal from '../components/SaleReturnModal'
+import AdvanceRecordPanel from '../components/AdvanceRecordPanel'
+import AdvanceRefundPanel from '../components/AdvanceRefundPanel'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useCashActions } from '../context/CashContext'
 import { useCashSnapshot } from '../hooks/useCashSnapshot'
@@ -20,11 +22,17 @@ import {
   getEffectiveSaleReminderNote,
 } from '../utils/customerReminders'
 import { buildCustomerSummaries } from '../utils/customerLedger'
+import {
+  allocateAdvanceApplication,
+  buildCustomerAdvanceGroups,
+  customerAdvanceBalance,
+  customerAdvanceBalanceBreakdown,
+  normalizeCustomerAdvanceKey,
+} from '../utils/customerAdvance'
 import { buildChequeCustomerSummaries } from '../utils/chequeLedger'
 import { getSaleCustomerName } from '../utils/saleCustomerName'
 import { saleCollectedAmount, salePendingCreditPaidBreakdown } from '../utils/salePayment'
 import {
-  buildSaleReturnEntry,
   isChequePendingSale,
   isCreditPendingSale,
   saleBalanceLinkId,
@@ -61,10 +69,12 @@ function needsGive(payType: PayType): boolean {
   return payType === 'cash'
 }
 
-function keyboardHint(activeField: ActiveField): string {
+function keyboardHint(activeField: ActiveField, roundOtherTyping?: boolean): string {
   if (activeField === 'bill') return 'Bill Amount'
   if (activeField === 'give') return 'Customer Give'
-  if (activeField === 'paid') return 'Customer Paid'
+  if (activeField === 'paid') {
+    return roundOtherTyping ? 'Custom collect amount' : 'Customer Paid'
+  }
   if (activeField === 'cashSplit') return 'Cash'
   if (activeField === 'bankSplit') return 'Bank'
   if (activeField === 'chequeSplit') return 'Cheque'
@@ -279,8 +289,8 @@ function Counter({ active }: { active: boolean }) {
     collectCreditPayment,
     collectChequePayment,
     editPaidSalePayment,
-    applySaleReturn,
-    cancelSaleReturn,
+    replaceSaleReturns,
+    creditCustomerAdvanceFromReturn,
     transferPendingCreditToCheque,
     transferPendingChequeToCredit,
   } = useCashActions()
@@ -297,6 +307,12 @@ function Counter({ active }: { active: boolean }) {
   const [creditSplitStr, setCreditSplitStr] = useState('')
   const [draftReturns, setDraftReturns] = useState<SaleReturnEntry[]>([])
   const [showReturnModal, setShowReturnModal] = useState(false)
+  /** Locked when Return opens so confirm still credits advance even if bill is typed behind the modal. */
+  const returnCreditAdvanceSessionRef = useRef(false)
+  const returnSessionCustomerRef = useRef('')
+  const [useCustomerAdvance, setUseCustomerAdvance] = useState(true)
+  const [showAdvanceRefundPrompt, setShowAdvanceRefundPrompt] = useState(false)
+  const [showAdvanceCreateModal, setShowAdvanceCreateModal] = useState(false)
   const [roundOffAmount, setRoundOffAmount] = useState<number | null>(null)
   const [roundOtherActive, setRoundOtherActive] = useState(false)
   const [roundCustomStr, setRoundCustomStr] = useState('')
@@ -614,7 +630,7 @@ function Counter({ active }: { active: boolean }) {
     const map = new Map<string, number>()
     for (const summary of customerSummaries) {
       if (summary.totalCreditPending > 0.01) {
-        map.set(summary.name.trim().toLowerCase(), summary.totalCreditPending)
+        map.set(normalizeCustomerAdvanceKey(summary.name), summary.totalCreditPending)
       }
     }
     return map
@@ -625,7 +641,7 @@ function Counter({ active }: { active: boolean }) {
     if (!needsCustomerLedger) return map
     for (const summary of buildChequeCustomerSummaries(tabData)) {
       if (summary.totalChequePending > 0.01) {
-        map.set(summary.name.trim().toLowerCase(), summary.totalChequePending)
+        map.set(normalizeCustomerAdvanceKey(summary.name), summary.totalChequePending)
       }
     }
     return map
@@ -670,26 +686,33 @@ function Counter({ active }: { active: boolean }) {
   const loadedPendingPaidTotal = loadedPendingBill
     ? saleBillGroupPaidTotal(loadedPendingBill, tabSales)
     : 0
-  const hasReturnAdjustments =
-    activeReturnTotal > 0 ||
-    (loadedPendingBill?.originalBillAmount != null &&
-      loadedPendingBill.originalBillAmount > (loadedPendingBill.billAmount ?? 0))
+  const loadedHasReturns = activeReturnTotal > 0.01
+  const loadedGrossAboveSavedDue =
+    loadedPendingBill?.originalBillAmount != null &&
+    loadedPendingBill.originalBillAmount > (loadedPendingBill.billAmount ?? 0) + 0.01
+  const hasReturnAdjustments = loadedHasReturns || loadedGrossAboveSavedDue
+  const loadedHasPartialCollection = loadedPendingPaidTotal > 0.01
   const loadedPendingUsesOpenBalance =
     loadedPendingBill != null &&
     !collectingCreditId &&
     !collectingChequeId &&
     !isCreditPendingBill(loadedPendingBill) &&
     !isChequePendingBill(loadedPendingBill) &&
-    (hasReturnAdjustments ||
-      loadedPendingPaidTotal > 0 ||
-      loadedPendingBill.originalBillAmount != null)
+    (hasReturnAdjustments || loadedHasPartialCollection)
   /** New bill: bill field is gross; deduct returns for pay/credit due. */
   const deductDraftReturns =
     !loadedPendingId && !balanceOnlyMode && draftReturnTotal > 0
   const billAmount = loadedPendingBill
-    ? balanceOnlyMode || loadedPendingUsesOpenBalance
+    ? balanceOnlyMode
       ? saleCreditBalanceDue(loadedPendingBill, tabSales)
-      : typedBillAmount
+      : loadedPendingUsesOpenBalance
+        ? Math.max(
+            0,
+            Math.round(
+              (typedBillAmount - loadedPendingPaidTotal - activeReturnTotal) * 100,
+            ) / 100,
+          )
+        : typedBillAmount
     : deductDraftReturns
       ? Math.max(0, typedBillAmount - draftReturnTotal)
       : typedBillAmount
@@ -698,9 +721,11 @@ function Counter({ active }: { active: boolean }) {
     const returns = draftReturns.length > 0 ? draftReturns : undefined
     if (!returns?.length && !hasReturnAdjustments && !deductDraftReturns) return null
     const gross = loadedPendingBill
-      ? loadedGrossAmount > 0
-        ? loadedGrossAmount
-        : typedBillAmount + activeReturnTotal
+      ? editableLoadedPendingPayType && !balanceOnlyMode
+        ? typedBillAmount
+        : loadedGrossAmount > 0
+          ? loadedGrossAmount
+          : typedBillAmount + activeReturnTotal
       : typedBillAmount
     return {
       gross,
@@ -745,8 +770,89 @@ function Counter({ active }: { active: boolean }) {
   const creditSplitAmount = parseAmount(creditSplitStr)
   const chequeInSplitTotal =
     splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : chequeSplitAmount
-  const dueAmount = roundOffAmount ?? billAmount
-  const billCollectTarget = effectiveCollectTarget(billAmount, roundOffAmount)
+  const customerAdvanceByName = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const group of buildCustomerAdvanceGroups(data)) {
+      if (group.isActive && group.balance > 0.01) {
+        map.set(group.key, group.balance)
+      }
+    }
+    return map
+  }, [data])
+
+  const customerAdvanceAvailable = useMemo(
+    () => customerAdvanceBalance(data, customerNameLedgerKey),
+    [data, customerNameLedgerKey],
+  )
+  /** Advance applies to the gross bill first; round-off is on the remaining payable. */
+  const advanceApplyAmount = useMemo(() => {
+    if (!useCustomerAdvance || balanceOnlyMode) return 0
+    if (
+      collectingCreditId ||
+      effectiveCollectingCreditId ||
+      collectingChequeId ||
+      effectiveCollectingChequeId
+    ) {
+      return 0
+    }
+    if (!customerNameLedgerKey.trim()) return 0
+    if (billAmount <= 0) return 0
+    const bal = customerAdvanceBalance(data, customerNameLedgerKey)
+    return Math.min(bal, billAmount)
+  }, [
+    useCustomerAdvance,
+    balanceOnlyMode,
+    collectingCreditId,
+    effectiveCollectingCreditId,
+    collectingChequeId,
+    effectiveCollectingChequeId,
+    customerNameLedgerKey,
+    data,
+    billAmount,
+  ])
+  const customerAdvanceDisplayed = useMemo(() => {
+    let bal = customerAdvanceAvailable
+    if (bal <= 0.01) return null
+    if (useCustomerAdvance && advanceApplyAmount > 0) {
+      bal = Math.max(0, Math.round((bal - advanceApplyAmount) * 100) / 100)
+    }
+    return bal > 0.01 ? bal : null
+  }, [customerAdvanceAvailable, useCustomerAdvance, advanceApplyAmount])
+  const advancePools = useMemo(
+    () => customerAdvanceBalanceBreakdown(data, customerNameLedgerKey),
+    [data, customerNameLedgerKey],
+  )
+  const advanceApplySplit = useMemo(
+    () => allocateAdvanceApplication(advanceApplyAmount, advancePools),
+    [advanceApplyAmount, advancePools],
+  )
+  const advanceExcessAfterApply = useMemo(() => {
+    if (!useCustomerAdvance || !customerNameLedgerKey.trim()) return 0
+    return Math.max(
+      0,
+      Math.round((customerAdvanceAvailable - advanceApplyAmount) * 100) / 100,
+    )
+  }, [
+    useCustomerAdvance,
+    customerNameLedgerKey,
+    customerAdvanceAvailable,
+    advanceApplyAmount,
+  ])
+  /** Payable after advance, before round-down. */
+  const payableBeforeRound = Math.max(
+    0,
+    Math.round((billAmount - advanceApplyAmount) * 100) / 100,
+  )
+  const paymentDueAmount = useMemo(
+    () => effectiveCollectTarget(payableBeforeRound, roundOffAmount),
+    [payableBeforeRound, roundOffAmount],
+  )
+  /** Settled bill total after advance + optional round-down of the payable. */
+  const billCollectTarget = Math.round((advanceApplyAmount + paymentDueAmount) * 100) / 100
+  const dueAmount = paymentDueAmount
+  const advanceCoversBill =
+    advanceApplyAmount > 0 && paymentDueAmount <= 0.01 && billAmount > 0
+
   const returnGrossDisplay = deductDraftReturns
     ? typedBillAmount
     : balanceOnlyMode && originalBillHint
@@ -798,8 +904,34 @@ function Counter({ active }: { active: boolean }) {
       (paidSoFarDisplay > 0 ||
         returnTotalDisplay > 0 ||
         (returnGrossDisplay > 0 && returnGrossDisplay !== balanceToPayDisplay)))
+  const returnCreditsToAdvance = useMemo(() => {
+    if (!customerNameLedgerKey.trim()) return false
+    if (loadedPendingId || balanceOnlyMode) return false
+    if (
+      collectingCreditId ||
+      effectiveCollectingCreditId ||
+      collectingChequeId ||
+      effectiveCollectingChequeId
+    ) {
+      return false
+    }
+    return typedBillAmount <= 0
+  }, [
+    customerNameLedgerKey,
+    loadedPendingId,
+    balanceOnlyMode,
+    collectingCreditId,
+    effectiveCollectingCreditId,
+    collectingChequeId,
+    effectiveCollectingChequeId,
+    typedBillAmount,
+  ])
+
   const canOpenReturn =
-    typedBillAmount > 0 || balanceOnlyMode || (loadedPendingBill?.billAmount ?? 0) > 0
+    typedBillAmount > 0 ||
+    balanceOnlyMode ||
+    (loadedPendingBill?.billAmount ?? 0) > 0 ||
+    returnCreditsToAdvance
 
   const creditCollectLayout = Boolean(collectingCreditId || effectiveCollectingCreditId)
   const chequeCollectLayout = Boolean(activeChequeCollectId)
@@ -818,6 +950,16 @@ function Counter({ active }: { active: boolean }) {
   const chequeCollectBankMode = chequeCollectLayout && payType === 'bank'
   const chequeCollectChequeMode = chequeCollectLayout && payType === 'cheque'
 
+  const customerPaidNumpadEditable =
+    creditCollectLayout ||
+    chequeCollectLayout ||
+    (Boolean(collectingBalanceBillId) && (payType === 'bank' || payType === 'cheque'))
+
+  const customerPaidRoundOtherMode =
+    roundOtherActive && payType !== 'split' && !customerPaidNumpadEditable
+  const showCustomerPaidAmountEntry =
+    customerPaidNumpadEditable || customerPaidRoundOtherMode
+
   const chequeSplitCountsCredit = false
 
   const showSplitCashGive = showFullSplitGrid && cashSplitAmount > 0
@@ -829,6 +971,80 @@ function Counter({ active }: { active: boolean }) {
 
   const chequeCollectDueAmount =
     chequeCollectDue > 0 ? chequeCollectDue : balanceDueAmount ?? 0
+
+  useEffect(() => {
+    if (customerAdvanceAvailable > 0) {
+      setUseCustomerAdvance(true)
+    }
+  }, [customerNameLedgerKey, customerAdvanceAvailable])
+
+  /** Drop orphan draft returns when the customer changes (avoids prior return sticking on the next bill). */
+  useEffect(() => {
+    if (loadedPendingId || showReturnModal) return
+    setDraftReturns((prev) => (prev.length > 0 ? [] : prev))
+  }, [customerNameLedgerKey])
+
+  useEffect(() => {
+    if (roundOffAmount == null) return
+    const cap =
+      collectingCreditId
+        ? creditCollectDueAmount
+        : collectingChequeId
+          ? chequeCollectDueAmount
+          : payableBeforeRound
+    if (roundOffAmount > cap + 0.01) {
+      setRoundOffAmount(null)
+      setRoundCustomStr('')
+      setRoundOtherActive(false)
+    }
+  }, [
+    billAmount,
+    payableBeforeRound,
+    roundOffAmount,
+    collectingCreditId,
+    collectingChequeId,
+    creditCollectDueAmount,
+    chequeCollectDueAmount,
+  ])
+
+  useEffect(() => {
+    // While editing the bill, never leave a stale tender amount in Customer Give
+    // (e.g. advance briefly covering a partial bill like ₹100 while typing ₹1000).
+    if (activeField === 'bill') setGiveStr('')
+  }, [billAmount, activeField])
+
+  useEffect(() => {
+    if (!paymentStep || balanceOnlyMode) return
+    if (roundOtherActive) return
+    if (
+      collectingCreditId ||
+      effectiveCollectingCreditId ||
+      collectingChequeId ||
+      effectiveCollectingChequeId
+    ) {
+      return
+    }
+    if (payType === 'split') return
+    // Net payable after advance — Customer Paid only. Never auto-fill Customer Give.
+    if (paymentDueAmount > 0) {
+      setPaidStr(String(paymentDueAmount))
+    } else if (advanceApplyAmount > 0) {
+      setPaidStr('')
+    }
+  }, [
+    useCustomerAdvance,
+    advanceApplyAmount,
+    paymentDueAmount,
+    paymentStep,
+    balanceOnlyMode,
+    payType,
+    collectingCreditId,
+    effectiveCollectingCreditId,
+    collectingChequeId,
+    effectiveCollectingChequeId,
+    roundOffAmount,
+    roundOtherActive,
+  ])
 
   const splitTotal =
     payType === 'split'
@@ -1152,7 +1368,9 @@ function Counter({ active }: { active: boolean }) {
       ? cashSplitAmount
       : paymentStep
         ? paidAmount
-        : dueAmount
+        : balanceOnlyMode
+          ? dueAmount
+          : paymentDueAmount
 
   const splitShortfall =
     showFullSplitGrid && splitTotal > 0 && splitPaidTotal > 0 && splitPaidTotal < splitTotal
@@ -1262,6 +1480,7 @@ function Counter({ active }: { active: boolean }) {
 
   const isValid =
     hasCollectDue &&
+    (advanceCoversBill ||
     (collectingCreditId || effectiveCollectingCreditId
       ? payType === 'split'
         ? (cashSplitAmount > 0 || bankSplitAmount > 0 || chequeSplitAmount > 0) &&
@@ -1297,11 +1516,12 @@ function Counter({ active }: { active: boolean }) {
               ? paymentStep && paidAmount > 0
               : false
       : payType === 'bank' || payType === 'cheque'
-        ? paymentStep && paidAmount > 0
+        ? advanceCoversBill || (paymentStep && paidAmount > 0)
         : payType === 'credit'
           ? false
           : payType === 'cash'
-            ? paymentStep && paidAmount > 0 && giveAmount >= paidAmount
+            ? advanceCoversBill ||
+              (paymentStep && paidAmount > 0 && giveAmount >= paidAmount)
             : payType === 'split'
               ? splitTotal > 0 &&
                 splitPaidTotal === splitTotal &&
@@ -1314,7 +1534,7 @@ function Counter({ active }: { active: boolean }) {
                   chequeSplitAmount > 0 ||
                   creditSplitAmount > 0) &&
                 (cashSplitAmount === 0 || giveAmount === 0 || giveAmount >= cashSplitAmount)
-              : false)
+              : false))
 
   const isCreditToChequePendingAction =
     (Boolean(collectingCreditId || effectiveCollectingCreditId) && payType === 'cheque') ||
@@ -1335,7 +1555,8 @@ function Counter({ active }: { active: boolean }) {
       ? paidAmount > 0
       : isChequeToCreditPendingAction
         ? paidAmount > 0
-        : dueAmount > 0)
+        : // Allow pending even when advance fully covers the collectable due.
+          billAmount > 0)
   const isSaving = savedAction !== null
 
   const splitHasCredit = payType === 'split' && creditSplitAmount > 0
@@ -1438,7 +1659,7 @@ function Counter({ active }: { active: boolean }) {
       ? creditCollectDueAmount
       : collectingChequeId
         ? chequeCollectDueAmount
-        : billAmount
+        : payableBeforeRound
 
   const billRoundOptions = useMemo(
     () => getBillRoundOptions(roundBaseAmount),
@@ -1468,24 +1689,45 @@ function Counter({ active }: { active: boolean }) {
     }
   }
 
+  function syncCollectTargetAfterRound(target: number) {
+    if (payType === 'split') {
+      setPaidStr(String(target))
+      if (cashSplitStr) applySplitCash(cashSplitStr, target)
+      else if (bankSplitStr) applySplitBank(bankSplitStr, target)
+      else if (chequeSplitStr) applySplitCheque(chequeSplitStr, target)
+      else if (collectingCreditId || (collectingChequeId && chequeCollectCreditMode)) {
+        reconcileSplitCreditToCollectTarget(target)
+      } else if (creditSplitStr) applySplitCredit(creditSplitStr, target)
+      else openSplitMode()
+      reconcileSplitCreditToCollectTarget(target)
+    } else if (paymentStep) setPaidStr(String(target))
+    else if (needsGive(payType)) setActiveField('give')
+    else openPaymentStep()
+  }
+
+  function clearRoundDown() {
+    setRoundOffAmount(null)
+    setRoundOtherActive(false)
+    setRoundCustomStr('')
+    if (roundBaseAmount > 0) syncCollectTargetAfterRound(roundBaseAmount)
+    else if (paymentStep) setPaidStr('')
+  }
+
+  function toggleRoundCollectAmount(amt: number) {
+    if (!roundOtherActive && roundOffAmount === amt) {
+      clearRoundDown()
+      focusAfterStandardPayment()
+      return
+    }
+    applyRoundCollectAmount(amt)
+  }
+
   function applyRoundCollectAmount(amt: number) {
     if (amt <= 0 || amt > roundBaseAmount) return
     setRoundOffAmount(amt)
     setRoundOtherActive(false)
     setRoundCustomStr('')
-    if (payType === 'split') {
-      setPaidStr(String(amt))
-      if (cashSplitStr) applySplitCash(cashSplitStr, amt)
-      else if (bankSplitStr) applySplitBank(bankSplitStr, amt)
-      else if (chequeSplitStr) applySplitCheque(chequeSplitStr, amt)
-      else if (collectingCreditId || (collectingChequeId && chequeCollectCreditMode)) {
-        reconcileSplitCreditToCollectTarget(amt)
-      } else if (creditSplitStr) applySplitCredit(creditSplitStr, amt)
-      else openSplitMode()
-      reconcileSplitCreditToCollectTarget(amt)
-    } else if (paymentStep) setPaidStr(String(amt))
-    else if (needsGive(payType)) setActiveField('give')
-    else openPaymentStep()
+    syncCollectTargetAfterRound(amt)
   }
 
   function applyCustomRoundAmount() {
@@ -1494,7 +1736,11 @@ function Counter({ active }: { active: boolean }) {
     applyRoundCollectAmount(amt)
     if (payType === 'split') setActiveField('cashSplit')
     else if (needsGive(payType)) setActiveField('give')
-    else if (paymentStep) setActiveField('paid')
+    else setActiveField('bill')
+  }
+
+  function focusAfterStandardPayment() {
+    if (needsGive(payType)) setActiveField('give')
     else setActiveField('bill')
   }
 
@@ -1970,6 +2216,13 @@ function Counter({ active }: { active: boolean }) {
     setActiveField('cashSplit')
   }
 
+  function applyAdvanceCoveredCheckoutAmounts() {
+    if (!advanceCoversBill || billCollectTarget <= 0) return
+    setPaymentStep(true)
+    setPaidStr('')
+    setGiveStr('')
+  }
+
   function openPaymentStep() {
     if (payType === 'split') {
       openSplitMode()
@@ -1977,8 +2230,13 @@ function Counter({ active }: { active: boolean }) {
     }
     if (collectingBalanceBillId) return
     setPaymentStep(true)
-    if (!paidStr && dueAmount > 0) setPaidStr(String(dueAmount))
-    setActiveField('paid')
+    if (advanceCoversBill) {
+      applyAdvanceCoveredCheckoutAmounts()
+      return
+    }
+    if (paymentDueAmount > 0) setPaidStr(String(paymentDueAmount))
+    else setPaidStr('')
+    focusAfterStandardPayment()
   }
 
   function handleEnter() {
@@ -1987,16 +2245,33 @@ function Counter({ active }: { active: boolean }) {
         if (billAmount > 0) openPaymentStep()
         return
       }
+      if (billAmount <= 0) return
+      setPaymentStep(true)
+      setPaidStr(paymentDueAmount > 0 ? String(paymentDueAmount) : '')
+      setGiveStr('')
+      if (advanceCoversBill) {
+        if (advanceExcessAfterApply > 0.01) setShowAdvanceRefundPrompt(true)
+        return
+      }
       if (needsGive(payType)) setActiveField('give')
       else openPaymentStep()
       return
     }
     if (activeField === 'give') {
       if (collectingBalanceBillId) return
+      if (advanceCoversBill) {
+        applyAdvanceCoveredCheckoutAmounts()
+        if (advanceExcessAfterApply > 0.01) setShowAdvanceRefundPrompt(true)
+        return
+      }
       openPaymentStep()
       return
     }
     if (activeField === 'paid') {
+      if (customerPaidRoundOtherMode) {
+        applyCustomRoundAmount()
+        return
+      }
       if (needsGive(payType)) setActiveField('give')
       else setActiveField('bill')
       return
@@ -2176,7 +2451,7 @@ function Counter({ active }: { active: boolean }) {
     if (type === 'split') {
       openSplitMode()
     } else if (paymentStep) {
-      setActiveField('paid')
+      focusAfterStandardPayment()
     } else if (!needsGive(type) && billAmount > 0) {
       setActiveField('bill')
     }
@@ -2280,6 +2555,11 @@ function Counter({ active }: { active: boolean }) {
       setGiveStr((prev) => applyNumpadAction(prev, action))
     } else if (activeField === 'paid') {
       if (balanceOnlyMode && payType === 'cheque' && !collectingBalanceBillId) return
+      if (customerPaidRoundOtherMode) {
+        setRoundCustomStr((prev) => applyNumpadAction(prev, action))
+        return
+      }
+      if (paymentStep && !customerPaidNumpadEditable) return
       setPaidStr((prev) => applyNumpadAction(prev, action))
     } else if (activeField === 'cashSplit') {
       if (isSplitFieldLocked('cashSplit')) return
@@ -2395,6 +2675,16 @@ function Counter({ active }: { active: boolean }) {
   }
 
   function pendingBillGrossAmount(): number {
+    if (
+      loadedPendingBill &&
+      !balanceOnlyMode &&
+      !collectingCreditId &&
+      !collectingChequeId &&
+      !isCreditPendingBill(loadedPendingBill) &&
+      !isChequePendingBill(loadedPendingBill)
+    ) {
+      return typedBillAmount
+    }
     if (pendingReturnMeta?.gross) return pendingReturnMeta.gross
     if (originalBillHint != null && originalBillHint > 0) return originalBillHint
     return typedBillAmount
@@ -2504,7 +2794,7 @@ function Counter({ active }: { active: boolean }) {
 
     const base = {
       billAmount: due,
-      originalBillAmount: gross > 0 ? gross : undefined,
+      originalBillAmount: Math.max(gross, due),
       customerName: name,
       payType,
       pendingPayType:
@@ -2529,7 +2819,7 @@ function Counter({ active }: { active: boolean }) {
       return {
         ...base,
         billAmount: openCheque,
-        originalBillAmount: gross > 0 ? gross : netDue,
+        originalBillAmount: Math.max(gross, openCheque),
         paidAmount: parts.applied,
         paymentEvents: pendingCollectionEvents(parts),
         chequeAmount: openCheque,
@@ -2542,7 +2832,7 @@ function Counter({ active }: { active: boolean }) {
       return {
         ...base,
         billAmount: openCredit,
-        originalBillAmount: gross > 0 ? gross : netDue,
+        originalBillAmount: Math.max(gross, openCredit),
         paidAmount: parts.applied,
         paymentEvents: pendingCollectionEvents(parts),
         creditAmount: openCredit,
@@ -2658,9 +2948,12 @@ function Counter({ active }: { active: boolean }) {
       setCreditCollectDue(0)
     }
 
-    const hasReturns = (bill.returns?.length ?? 0) > 0 || bill.originalBillAmount != null
+    const hasReturns = (bill.returns?.length ?? 0) > 0
     const paidSoFar = saleBillGroupPaidTotal(bill, data.sales)
-    const hasPartialPaid = paidSoFar > 0
+    const hasPartialPaid = paidSoFar > 0.01
+    const grossAboveDue =
+      bill.originalBillAmount != null &&
+      bill.originalBillAmount > (bill.billAmount ?? 0) + 0.01
     const collectedParts = salePendingCreditPaidBreakdown(bill)
     const chequeOpenDue = isCheque ? resolveChequeCollectDue(bill, data.sales) : due
     setLoadedPendingId(bill.id)
@@ -2687,11 +2980,11 @@ function Counter({ active }: { active: boolean }) {
       String(
         isCheque
           ? chequeOpenDue
-          : hasReturns || hasPartialPaid
-            ? original
-            : isBalanceBill
-              ? due
-              : original,
+          : isBalanceBill
+            ? due
+            : hasReturns || hasPartialPaid || grossAboveDue
+              ? original
+              : bill.billAmount ?? original,
       ),
     )
     setGiveStr('')
@@ -3194,21 +3487,26 @@ function Counter({ active }: { active: boolean }) {
     const collected =
       cashSplitAmount +
       bankSplitAmount +
-      (splitChequeApprovedAmount > 0 ? chequeSplitAmount : 0)
+      (chequeSplitAmount > 0 && splitChequeApprovedAmount > 0 ? chequeSplitAmount : 0)
     // Pending legs belong on children — never also on the parent (lists/history double-count).
     const chequeGoesToChild = Boolean(options.cheque && chequeSplitAmount > 0)
     const creditGoesToChild = Boolean(options.credit && creditSplitAmount > 0)
+    const approvedChequeNow =
+      chequeSplitAmount > 0 && splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : 0
     const parentChequeAmount = chequeGoesToChild
-      ? splitChequeApprovedAmount > 0
-        ? splitChequeApprovedAmount
+      ? approvedChequeNow > 0
+        ? approvedChequeNow
         : undefined
-      : chequeSplitAmount || splitChequeApprovedAmount || undefined
+      : chequeSplitAmount > 0
+        ? chequeSplitAmount || approvedChequeNow || undefined
+        : undefined
     const parentCreditAmount = creditGoesToChild
       ? undefined
       : creditSplitAmount > 0
         ? creditSplitAmount
         : undefined
-    const parentChequeApproved = splitChequeApprovedAmount > 0 || undefined
+    const parentChequeApproved =
+      Boolean(parentChequeAmount && approvedChequeNow > 0) || undefined
 
     if (splitSaleId) {
       const parentBill = data.sales.find((sale) => sale.id === splitSaleId)
@@ -3269,19 +3567,30 @@ function Counter({ active }: { active: boolean }) {
     if ((creatingCredit || creatingCheque) && !splitSaleId) {
       splitSaleId = crypto.randomUUID()
       if (collected > 0) {
+        const advanceAppliedNow =
+          useCustomerAdvance && advanceApplyAmount > 0 && !balanceOnlyMode
+            ? advanceApplyAmount
+            : 0
         recordSale({
           id: splitSaleId,
-          billAmount: collected,
-          originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
+          billAmount:
+            advanceAppliedNow > 0
+              ? billCollectTarget
+              : Math.max(collected, creditSplitAmount + chequeSplitAmount + collected),
+          originalBillAmount: deductDraftReturns
+            ? typedBillAmount
+            : Math.max(billAmount, billCollectTarget),
           paidAmount: cashSplitAmount,
           changeAmount: 0,
           payType: 'split',
           cashAmount: cashSplitAmount || undefined,
           bankAmount: bankSplitAmount || undefined,
           chequeAmount: parentChequeAmount,
-          creditAmount: creditSplitAmount || undefined,
+          // Credit/cheque pending live on children — do not also store on parent.
+          creditAmount: creditGoesToChild ? undefined : parentCreditAmount,
           chequeApproved: parentChequeApproved,
           customerName: name,
+          customerAdvanceApplied: advanceAppliedNow > 0 ? advanceAppliedNow : undefined,
           status: 'paid',
         })
       }
@@ -3354,22 +3663,27 @@ function Counter({ active }: { active: boolean }) {
     const chequeToBank = options.chequeToBank ?? false
     const createCreditPending = options.createCreditPending ?? false
     const createChequePending = options.createChequePending ?? false
+    // Only treat cheque as part of THIS save when the user actually entered a cheque slice.
+    const chequeSliceActive = chequeSplitAmount > 0.01 || createChequePending
+    const approvedChequeNow =
+      chequeSliceActive && splitChequeApprovedAmount > 0 ? splitChequeApprovedAmount : 0
     // Cheque pending child owns that leg — parent must not also store it (history/bank 2×).
-    const chequeOnParentOnly = chequeToBank && !createChequePending
+    const chequeOnParentOnly = chequeToBank && !createChequePending && chequeSliceActive
     const bankAmount = chequeOnParentOnly
       ? bankSplitAmount + chequeSplitAmount
       : bankSplitAmount
     const parentChequeAmount = chequeOnParentOnly
-      ? chequeSplitAmount || splitChequeApprovedAmount
+      ? chequeSplitAmount || approvedChequeNow || undefined
       : createChequePending && chequeSplitAmount > 0
-        ? splitChequeApprovedAmount > 0
-          ? splitChequeApprovedAmount
+        ? approvedChequeNow > 0
+          ? approvedChequeNow
           : undefined
-        : splitChequeApprovedAmount > 0
-          ? splitChequeApprovedAmount
+        : approvedChequeNow > 0
+          ? approvedChequeNow
           : undefined
-    const parentChequeApproved =
-      chequeOnParentOnly || splitChequeApprovedAmount > 0
+    const parentChequeApproved = Boolean(
+      parentChequeAmount && (chequeOnParentOnly || approvedChequeNow > 0),
+    )
     const splitSaleId = loadedPendingId ?? crypto.randomUUID()
 
     const splitCashChangeAmount =
@@ -3382,9 +3696,21 @@ function Counter({ active }: { active: boolean }) {
           ? creditSplitAmount
           : undefined
 
+    const advanceAppliedNow =
+      useCustomerAdvance && advanceApplyAmount > 0 && !balanceOnlyMode
+        ? advanceApplyAmount
+        : 0
+    // Settled face = advance + cash/bank/cheque collected + open credit/cheque pending.
+    const splitBillAmount =
+      advanceAppliedNow > 0
+        ? billCollectTarget
+        : splitTotal
+    const settledOriginalBill = deductDraftReturns
+      ? typedBillAmount
+      : Math.max(billAmount, splitBillAmount + advanceAppliedNow)
     const salePayload = {
-      billAmount: splitTotal,
-      originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
+      billAmount: splitBillAmount,
+      originalBillAmount: settledOriginalBill,
       paidAmount: cashSplitAmount,
       changeAmount: splitCashChangeAmount,
       payType: 'split' as const,
@@ -3392,8 +3718,9 @@ function Counter({ active }: { active: boolean }) {
       bankAmount,
       chequeAmount: parentChequeAmount,
       creditAmount: parentCreditOnCollect,
-      chequeApproved: parentChequeApproved,
+      chequeApproved: parentChequeApproved || undefined,
       customerName: name,
+      customerAdvanceApplied: advanceAppliedNow > 0 ? advanceAppliedNow : undefined,
     }
 
     const loadedBill = loadedPendingId
@@ -3424,14 +3751,18 @@ function Counter({ active }: { active: boolean }) {
     const realizedCollect =
       cashSplitAmount +
       bankSplitAmount +
-      (splitChequeApprovedAmount > 0 ? chequeSplitAmount : 0)
+      (chequeSliceActive && approvedChequeNow > 0 ? chequeSplitAmount : 0)
 
     if (loadedPendingOpen && loadedPendingId) {
       if (realizedCollect > 0) {
-        collectPendingSale(loadedPendingId, salePayload)
+        collectPendingSale(loadedPendingId, {
+          ...salePayload,
+          // collectPending must carry advance applied on the settled parent.
+          customerAdvanceApplied: salePayload.customerAdvanceApplied,
+        })
       } else {
         updatePendingSale(loadedPendingId, {
-          billAmount: splitTotal,
+          billAmount: splitBillAmount,
           originalBillAmount: salePayload.originalBillAmount,
           customerName: name,
           payType: 'split',
@@ -3439,7 +3770,7 @@ function Counter({ active }: { active: boolean }) {
           bankAmount: bankSplitAmount || undefined,
           chequeAmount: parentChequeAmount,
           creditAmount: parentCreditOnCollect,
-          chequeApproved: parentChequeApproved,
+          chequeApproved: parentChequeApproved || undefined,
         })
       }
     } else if (!loadedPendingId) {
@@ -3992,17 +4323,33 @@ function Counter({ active }: { active: boolean }) {
       return
     }
 
-    const cashAmount = payType === 'cash' ? paidAmount : 0
-    const bankAmount =
-      payType === 'bank' || payType === 'cheque' ? paidAmount : 0
-    const chequeAmount = payType === 'cheque' ? paidAmount : 0
+    const cashAmount =
+      advanceCoversBill ? 0 : payType === 'cash' ? paidAmount : 0
+    const bankAmount = advanceCoversBill
+      ? 0
+      : payType === 'bank' || payType === 'cheque'
+        ? paidAmount
+        : 0
+    const chequeAmount =
+      advanceCoversBill ? 0 : payType === 'cheque' ? paidAmount : 0
     const creditAmount = 0
+    const promptAdvanceRefundAfterCollect = advanceExcessAfterApply > 0.01
+    const advanceAppliedNow =
+      useCustomerAdvance && advanceApplyAmount > 0 ? advanceApplyAmount : 0
+    // Always store the full settled bill when advance is used (not only the cash/bank balance).
+    const settledBillAmount =
+      advanceAppliedNow > 0 ? billCollectTarget : paidAmount
+    const settledOriginalBill =
+      deductDraftReturns
+        ? typedBillAmount
+        : Math.max(billAmount, settledBillAmount)
 
     const salePayload = {
-      billAmount: paidAmount,
-      originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
-      paidAmount:
-        payType === 'bank' || payType === 'cheque'
+      billAmount: settledBillAmount,
+      originalBillAmount: settledOriginalBill,
+      paidAmount: advanceCoversBill
+        ? settledBillAmount
+        : payType === 'bank' || payType === 'cheque'
           ? paidAmount
           : giveAmount,
       changeAmount: changeAmount,
@@ -4013,6 +4360,7 @@ function Counter({ active }: { active: boolean }) {
       creditAmount,
       chequeApproved: payType === 'cheque' ? true : undefined,
       customerName: name,
+      customerAdvanceApplied: advanceAppliedNow > 0 ? advanceAppliedNow : undefined,
     }
 
     const loadedBill = loadedPendingId
@@ -4021,10 +4369,10 @@ function Counter({ active }: { active: boolean }) {
 
     if (loadedPendingId && loadedBill?.status === 'paid') {
       const collectedTotal = cashAmount + bankAmount + chequeAmount
-      const openCredit = Math.max(0, billCollectTarget - collectedTotal)
+      const openCredit = Math.max(0, settledBillAmount - collectedTotal - advanceAppliedNow)
       savePaidBillEdit(loadedPendingId, name, {
-        originalBillAmount: deductDraftReturns ? typedBillAmount : billAmount,
-        billAmount: payType === 'cash' ? giveAmount : paidAmount,
+        originalBillAmount: settledOriginalBill,
+        billAmount: settledBillAmount,
         paidAmount: payType === 'bank' || payType === 'cheque' ? paidAmount : giveAmount,
         changeAmount,
         payType,
@@ -4040,6 +4388,7 @@ function Counter({ active }: { active: boolean }) {
       recordSale(salePayload)
     }
     flashSaved('collect')
+    if (promptAdvanceRefundAfterCollect) setShowAdvanceRefundPrompt(true)
   }
 
   const saveLabel =
@@ -4113,7 +4462,8 @@ function Counter({ active }: { active: boolean }) {
     if (payType === 'cash') {
       if (billAmount > 0) {
         setPaymentStep(true)
-        if (!paidStr && dueAmount > 0) setPaidStr(String(dueAmount))
+        setPaidStr(dueAmount > 0 ? String(dueAmount) : '')
+        setGiveStr('')
         setActiveField('give')
       } else {
         setActiveField('bill')
@@ -4124,13 +4474,28 @@ function Counter({ active }: { active: boolean }) {
     else setActiveField('bill')
   }
 
-  function handleReturnAddItem(draft: {
-    itemName: string
-    quantity: number
-    rate: number
-    discountAmount?: number
-    gstPercent?: number
-  }) {
+  function openReturnModal() {
+    const name =
+      getCustomerName().trim() ||
+      customerNameLedgerKey.trim() ||
+      (loadedPendingBill
+        ? getSaleCustomerName(loadedPendingBill, data.sales)?.trim() || ''
+        : '')
+    returnCreditAdvanceSessionRef.current = returnCreditsToAdvance
+    returnSessionCustomerRef.current = name
+    if (returnCreditsToAdvance) {
+      setDraftReturns([])
+    }
+    setShowReturnModal(true)
+  }
+
+  function closeReturnModal() {
+    returnCreditAdvanceSessionRef.current = false
+    returnSessionCustomerRef.current = ''
+    setShowReturnModal(false)
+  }
+
+  function handleReturnChange(returns: SaleReturnEntry[]) {
     const targetId =
       collectingCreditId ??
       effectiveCollectingCreditId ??
@@ -4139,13 +4504,68 @@ function Counter({ active }: { active: boolean }) {
       loadedPendingId
 
     if (targetId) {
-      applySaleReturn(targetId, draft)
+      returnCreditAdvanceSessionRef.current = false
+      replaceSaleReturns(targetId, returns)
+      setDraftReturns(returns)
       return
     }
 
-    const entry = buildSaleReturnEntry(draft)
-    if (!entry) return
-    setDraftReturns((prev) => [...prev, entry])
+    const creditAdvanceSession = returnCreditAdvanceSessionRef.current
+    const name =
+      returnSessionCustomerRef.current.trim() ||
+      getCustomerName().trim() ||
+      customerNameLedgerKey.trim()
+
+    const noBill =
+      typedBillAmount <= 0 &&
+      !loadedPendingId &&
+      !balanceOnlyMode &&
+      !collectingCreditId &&
+      !effectiveCollectingCreditId &&
+      !collectingChequeId &&
+      !effectiveCollectingChequeId
+
+    if ((creditAdvanceSession || noBill) && name && returns.length > 0) {
+      const total = Math.round(returns.reduce((sum, row) => sum + row.amount, 0) * 100) / 100
+      creditCustomerAdvanceFromReturn({
+        customerName: name,
+        amount: total,
+        returnEntryId: returns[0]?.id,
+        note: returns.map((row) => row.itemName).filter(Boolean).join(', '),
+      })
+      returnCreditAdvanceSessionRef.current = false
+      returnSessionCustomerRef.current = ''
+      setDraftReturns([])
+      setShowReturnModal(false)
+      // Return → advance only: clear customer and land on bill amount for the next entry.
+      flashSaved('collect', false)
+      clearBillAmounts()
+      setPaymentStep(false)
+      setPayType('cash')
+      setLoadedPendingId(null)
+      setCollectingCreditId(null)
+      setCollectingChequeId(null)
+      setCreditCollectDue(0)
+      setChequeCollectDue(0)
+      setBalanceDueAmount(null)
+      setOriginalBillHint(null)
+      setDraftReturns([])
+      customerNameFieldRef.current?.setValue('')
+      setCustomerNameLedgerKey('')
+      setUseCustomerAdvance(true)
+      setNameSectionFocus(false)
+      clearPendingSection()
+      customerNameFieldRef.current?.blur()
+      setActiveField('bill')
+      return
+    }
+
+    // Advance session without a customer name — keep modal open; do not stash as bill returns.
+    if (creditAdvanceSession) {
+      return
+    }
+
+    setDraftReturns(returns)
   }
 
   function focusNameSection() {
@@ -4586,6 +5006,7 @@ function Counter({ active }: { active: boolean }) {
       if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
 
       if (e.code === 'KeyS') {
+        if (showReturnModal) return
         if (!isValid) return
         e.preventDefault()
         saveHandlerRef.current()
@@ -4638,7 +5059,7 @@ function Counter({ active }: { active: boolean }) {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isSaving, isValid, canSavePending, routeActive])
+  }, [isSaving, isValid, canSavePending, routeActive, showReturnModal])
 
   const payTypeChipValue: PayType = payType
 
@@ -4648,15 +5069,6 @@ function Counter({ active }: { active: boolean }) {
 
   return (
     <div className="counter-page">
-      <button
-        type="button"
-        className="counter-return-corner"
-        onClick={() => setShowReturnModal(true)}
-        disabled={!canOpenReturn || savedAction !== null}
-        title="Sale return"
-      >
-        Return
-      </button>
       <div className="counter-body">
         <div className="counter-main">
           <div className="counter-top">
@@ -5030,27 +5442,55 @@ function Counter({ active }: { active: boolean }) {
                   {formatMoney(balanceDueAmount ?? paidAmount)}
                 </span>
               </div>
-            ) : paymentStep ? (
+            ) : showCustomerPaidAmountEntry ? (
               <AmountDisplay
                 label="Customer Paid"
-                value={paidStr}
+                value={customerPaidRoundOtherMode ? roundCustomStr : paidStr}
                 active={activeField === 'paid'}
-                onSelect={() => setActiveField('paid')}
+                onSelect={() => {
+                  if (customerPaidRoundOtherMode) setRoundOtherActive(true)
+                  setActiveField('paid')
+                }}
                 compact
+                highlightPaid={customerPaidRoundOtherMode && parseAmount(roundCustomStr) > 0}
               />
             ) : (
               <div
                 className={`counter-readonly ${billStr ? 'counter-readonly--mirror' : ''}`}
               >
                 <span className="counter-readonly-label">Customer Paid</span>
-                <span className="counter-readonly-value">{customerPaidPreview}</span>
+                <span className="counter-readonly-value">
+                  {paymentStep
+                    ? paidAmount > 0
+                      ? formatMoney(paidAmount)
+                      : paymentDueAmount > 0
+                        ? formatMoney(paymentDueAmount)
+                        : '—'
+                    : customerPaidPreview}
+                </span>
               </div>
             )}
             <div
-              className={`counter-readonly counter-readonly--return ${showReturnLive && !needMore && !splitShortfall && (changeAmount > 0 || splitCashChange > 0 || (showFullSplitGrid && splitPaidTotal === splitTotal)) ? 'counter-readonly--ready' : ''} ${needMore || splitShortfall ? 'counter-readonly--warn' : ''} ${(activeField === 'give' || activeField === 'paid' || activeField === 'cashSplit' || activeField === 'bankSplit' || activeField === 'chequeSplit' || activeField === 'creditSplit') && showReturnLive ? 'counter-readonly--live' : ''}`}
+              className={`counter-readonly counter-readonly--return ${showReturnLive && !needMore && !splitShortfall && (changeAmount > 0 || splitCashChange > 0 || (showFullSplitGrid && splitPaidTotal === splitTotal)) ? 'counter-readonly--ready' : ''} ${needMore || splitShortfall ? 'counter-readonly--warn' : ''} ${advanceExcessAfterApply > 0.01 ? 'counter-readonly--advance-excess' : ''} ${(activeField === 'give' || activeField === 'paid' || activeField === 'cashSplit' || activeField === 'bankSplit' || activeField === 'chequeSplit' || activeField === 'creditSplit') && showReturnLive ? 'counter-readonly--live' : ''}`}
             >
               <span className="counter-readonly-label">Return</span>
-              <span className="counter-readonly-value">{returnDisplay}</span>
+              <span className="counter-readonly-value counter-readonly-value--return-row">
+                {advanceExcessAfterApply > 0.01 ? (
+                  <>
+                    <span title="Advance balance after this bill">{formatMoney(advanceExcessAfterApply)} adv.</span>
+                    <button
+                      type="button"
+                      className="counter-advance-refund-btn"
+                      title="Refund excess advance"
+                      onClick={() => setShowAdvanceRefundPrompt(true)}
+                    >
+                      ↩
+                    </button>
+                  </>
+                ) : (
+                  returnDisplay
+                )}
+              </span>
             </div>
           </div>
 
@@ -5130,7 +5570,83 @@ function Counter({ active }: { active: boolean }) {
             onNameChange={setCustomerNameLedgerKey}
             onFocusSection={clearPendingSection}
             onFocusChange={setNameSectionFocus}
+            customerAdvanceBalance={customerAdvanceDisplayed}
+            customerAdvanceLedgerKey={customerNameLedgerKey}
+            customerAdvanceByName={customerAdvanceByName}
           />
+
+          {customerAdvanceAvailable > 0 &&
+          !balanceOnlyMode &&
+          !collectingCreditId &&
+          !effectiveCollectingCreditId &&
+          !collectingChequeId &&
+          !effectiveCollectingChequeId ? (
+            <div className="counter-advance-strip">
+              <label className="counter-advance-strip__use">
+                <input
+                  type="checkbox"
+                  checked={useCustomerAdvance}
+                  onChange={(e) => setUseCustomerAdvance(e.target.checked)}
+                />
+                Apply advance
+              </label>
+              <span className="counter-advance-strip__balance">
+                Available {formatMoney(customerAdvanceAvailable)}
+              </span>
+              {billAmount > 0 ? (
+                useCustomerAdvance && advanceApplyAmount > 0 ? (
+                  <span className="counter-advance-strip__apply">
+                    −{formatMoney(advanceApplyAmount)}
+                    {advanceApplySplit.cash > 0 || advanceApplySplit.bank > 0 ? (
+                      <>
+                        {' '}
+                        (
+                        {advanceApplySplit.cash > 0 ? `cash ${formatMoney(advanceApplySplit.cash)}` : ''}
+                        {advanceApplySplit.cash > 0 && advanceApplySplit.bank > 0 ? ' · ' : ''}
+                        {advanceApplySplit.bank > 0 ? `bank ${formatMoney(advanceApplySplit.bank)}` : ''}
+                        {advanceApplySplit.credit > 0
+                          ? `${advanceApplySplit.cash > 0 || advanceApplySplit.bank > 0 ? ' · ' : ''}credit ${formatMoney(advanceApplySplit.credit)}`
+                          : ''}
+                        )
+                      </>
+                    ) : null}
+                    · Pay {formatMoney(paymentDueAmount)}
+                  </span>
+                ) : (
+                  <span className="counter-advance-strip__apply counter-advance-strip__apply--off">
+                    Full bill {formatMoney(billCollectTarget)}
+                  </span>
+                )
+              ) : null}
+              <button
+                type="button"
+                className="counter-advance-strip__link"
+                onClick={() => setShowAdvanceCreateModal(true)}
+              >
+                + Add advance
+              </button>
+            </div>
+          ) : null}
+
+          <div className="counter-actions-inline">
+            <button
+              type="button"
+              className="counter-actions-inline__btn"
+              onClick={() => openReturnModal()}
+              disabled={!canOpenReturn || savedAction !== null}
+              title="Sale return"
+            >
+              Return
+            </button>
+            <button
+              type="button"
+              className="counter-actions-inline__btn"
+              onClick={() => setShowAdvanceCreateModal(true)}
+              title="Record customer advance"
+            >
+              Advance
+            </button>
+          </div>
 
           <div className="counter-pay">
             <PayTypeChips
@@ -5151,7 +5667,7 @@ function Counter({ active }: { active: boolean }) {
           <div className="counter-keyboard-wrap">
             <NumberKeyboard
               onPress={stableNumpadPress}
-              hint={keyboardHint(activeField)}
+              hint={keyboardHint(activeField, customerPaidRoundOtherMode)}
             />
           </div>
 
@@ -5161,11 +5677,30 @@ function Counter({ active }: { active: boolean }) {
               <RoundTypeChips
                 label="Round down"
                 options={billRoundOptions}
-                onSelect={(amt) => applyRoundCollectAmount(amt)}
+                onSelect={(amt) => toggleRoundCollectAmount(amt)}
                 onOtherSelect={() => {
+                  if (roundOtherActive) {
+                    clearRoundDown()
+                    focusAfterStandardPayment()
+                    return
+                  }
                   setRoundOtherActive(true)
-                  setRoundCustomStr(roundOffAmount != null ? String(roundOffAmount) : '')
-                  setActiveField('roundCustom')
+                  const seed =
+                    roundOffAmount != null
+                      ? String(roundOffAmount)
+                      : paymentDueAmount > 0
+                        ? String(paymentDueAmount)
+                        : ''
+                  setRoundCustomStr(seed)
+                  if (
+                    !paymentStep &&
+                    payType !== 'split' &&
+                    !customerPaidNumpadEditable &&
+                    billAmount > 0
+                  ) {
+                    setPaymentStep(true)
+                  }
+                  setActiveField('paid')
                 }}
                 otherActive={roundOtherActive}
                 otherValue={roundCustomStr}
@@ -5502,21 +6037,31 @@ function Counter({ active }: { active: boolean }) {
 
       <SaleReturnModal
         open={showReturnModal}
-        onClose={() => setShowReturnModal(false)}
+        onClose={closeReturnModal}
         customerName={
+          returnSessionCustomerRef.current ||
           getCustomerName() ||
           (loadedPendingBill
             ? getSaleCustomerName(loadedPendingBill, data.sales)
             : undefined)
         }
-        originalBill={Math.max(returnGrossDisplay, typedBillAmount, 0)}
+        originalBill={
+          returnCreditAdvanceSessionRef.current || returnCreditsToAdvance
+            ? 0
+            : Math.max(returnGrossDisplay, typedBillAmount, 0)
+        }
         paidSoFar={
-          loadedPendingBill || collectingCreditBill
-            ? saleBillGroupPaidTotal(
-                (collectingCreditBill ?? loadedPendingBill)!,
-                data.sales,
-              )
-            : 0
+          returnCreditAdvanceSessionRef.current || returnCreditsToAdvance
+            ? 0
+            : loadedPendingBill || collectingCreditBill
+              ? saleBillGroupPaidTotal(
+                  (collectingCreditBill ?? loadedPendingBill)!,
+                  data.sales,
+                )
+              : 0
+        }
+        creditToAdvancePrompt={
+          returnCreditAdvanceSessionRef.current || returnCreditsToAdvance
         }
         paymentLines={
           loadedPendingBill || collectingCreditBill
@@ -5530,27 +6075,78 @@ function Counter({ active }: { active: boolean }) {
         maxReturnable={Math.max(
           0,
           loadedPendingBill || collectingCreditBill
-            ? saleCreditBalanceDue(
-                (collectingCreditBill ?? loadedPendingBill)!,
-                data.sales,
+            ? Math.max(
+                0,
+                saleGrossBillAmount((collectingCreditBill ?? loadedPendingBill)!) -
+                  saleBillGroupPaidTotal(
+                    (collectingCreditBill ?? loadedPendingBill)!,
+                    data.sales,
+                  ),
               )
-            : Math.max(0, typedBillAmount - draftReturnTotal),
+            : Math.max(0, typedBillAmount),
         )}
-        onCancelReturn={(returnId) => {
-          const targetId =
-            collectingCreditId ??
-            effectiveCollectingCreditId ??
-            collectingChequeId ??
-            effectiveCollectingChequeId ??
-            loadedPendingId
-          if (targetId) {
-            cancelSaleReturn(targetId, returnId)
-            return
-          }
-          setDraftReturns((prev) => prev.filter((row) => row.id !== returnId))
-        }}
-        onAddItem={handleReturnAddItem}
+        onChangeReturns={handleReturnChange}
       />
+
+      {showAdvanceCreateModal ? (
+        <div
+          className="counter-advance-refund-overlay"
+          role="presentation"
+          onMouseDown={() => setShowAdvanceCreateModal(false)}
+        >
+          <div
+            className="counter-advance-refund-sheet counter-advance-refund-sheet--create"
+            role="dialog"
+            aria-label="Create advance"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 className="counter-advance-create-title">Create advance</h3>
+            <AdvanceRecordPanel
+              compact
+              formOnly
+              numpadRoutePrefix="/counter"
+              defaultCustomerName={customerNameLedgerKey}
+              onSaved={() => setShowAdvanceCreateModal(false)}
+            />
+            <button
+              type="button"
+              className="counter-advance-refund-close"
+              onClick={() => setShowAdvanceCreateModal(false)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {showAdvanceRefundPrompt ? (
+        <div
+          className="counter-advance-refund-overlay"
+          role="presentation"
+          onMouseDown={() => setShowAdvanceRefundPrompt(false)}
+        >
+          <div
+            className="counter-advance-refund-sheet"
+            role="dialog"
+            aria-label="Refund advance"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <AdvanceRefundPanel
+              compact
+              defaultCustomerName={customerNameLedgerKey}
+              defaultAmount={advanceExcessAfterApply}
+              onRefunded={() => setShowAdvanceRefundPrompt(false)}
+            />
+            <button
+              type="button"
+              className="counter-advance-refund-close"
+              onClick={() => setShowAdvanceRefundPrompt(false)}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

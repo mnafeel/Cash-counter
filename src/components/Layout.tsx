@@ -1,4 +1,5 @@
-import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import UtilitiesNavIcon from './UtilitiesNavIcon'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import MainTabs from './MainTabs'
 import TabPanel from './TabPanel'
@@ -28,11 +29,12 @@ import './Layout.css'
 
 const SIDEBAR_COLLAPSED_KEY = 'sof-sidebar-collapsed'
 
-const navItems = [
+const navItems: { to: string; label: string; icon: ReactNode }[] = [
   { to: '/', label: 'Dashboard', icon: '📊' },
   { to: '/counter', label: 'Counter', icon: '💵' },
   { to: '/expenses', label: 'Expenses', icon: '📤' },
   { to: '/history', label: 'History', icon: '📋' },
+  { to: '/utilities', label: 'Utilities', icon: <UtilitiesNavIcon className="sidebar-utilities-icon" /> },
   { to: '/reports', label: 'Reports', icon: '📈' },
   { to: '/purchase', label: 'Purchase Expense', icon: '🛒' },
   { to: '/loan', label: 'Loan', icon: '🤝' },

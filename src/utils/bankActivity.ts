@@ -205,12 +205,41 @@ function pushLoanItems(items: CashActivityItem[], loan: Loan) {
   }
 }
 
+function pushCustomerAdvanceBankItems(items: CashActivityItem[], data: AppData) {
+  for (const row of data.customerAdvances ?? []) {
+    if (row.kind === 'received') {
+      const bank = row.bankAmount ?? 0
+      if (bank <= 0) continue
+      items.push({
+        id: `advance-${row.id}-bank`,
+        label: 'Customer advance · bank',
+        amount: bank,
+        direction: 'in',
+        date: row.at,
+        name: row.customerName,
+      })
+    } else if (row.kind === 'refunded') {
+      const bank = row.bankAmount ?? 0
+      if (bank <= 0) continue
+      items.push({
+        id: `advance-${row.id}-bank-refund`,
+        label: 'Advance refund · bank',
+        amount: bank,
+        direction: 'out',
+        date: row.at,
+        name: row.customerName,
+      })
+    }
+  }
+}
+
 function buildBankActivityItemsUncached(data: AppData): CashActivityItem[] {
   const items: CashActivityItem[] = []
   const sales = sanitizeSplitParentChildChequeOverlap(data.sales)
   for (const sale of sales) pushSaleItems(items, sale)
   for (const expense of data.expenses) pushExpenseItems(items, expense)
   for (const loan of data.loans ?? []) pushLoanItems(items, loan)
+  pushCustomerAdvanceBankItems(items, data)
   return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
 

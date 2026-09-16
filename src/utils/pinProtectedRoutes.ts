@@ -2,7 +2,7 @@ import { normalizeRoutePath } from './hashRoute'
 import type { MainTabKey } from './mainTab'
 
 /** Never require PIN and never count activity toward the secure-session timer. */
-export const PIN_PUBLIC_ROUTES = ['/counter', '/expenses', '/history'] as const
+export const PIN_PUBLIC_ROUTES = ['/counter', '/expenses', '/history', '/utilities', '/adjustments'] as const
 
 const PIN_PROTECTED_PREFIXES = [
   '/reports',
@@ -14,7 +14,8 @@ const PIN_PROTECTED_PREFIXES = [
 
 export function isPinPublicRoute(pathname: string): boolean {
   const path = normalizeRoutePath(pathname)
-  return (PIN_PUBLIC_ROUTES as readonly string[]).includes(path)
+  if ((PIN_PUBLIC_ROUTES as readonly string[]).includes(path)) return true
+  return PIN_PUBLIC_ROUTES.some((route) => path.startsWith(`${route}/`))
 }
 
 export function isPinProtectedRoute(pathname: string): boolean {

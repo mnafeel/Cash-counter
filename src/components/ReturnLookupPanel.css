@@ -1,0 +1,140 @@
+.return-lookup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  min-height: 0;
+}
+
+.return-lookup-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  opacity: 0.75;
+  line-height: 1.4;
+}
+
+.return-lookup-search-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.return-lookup-search-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.65;
+}
+
+.return-lookup-search {
+  width: 100%;
+  padding: 0.65rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+}
+
+.return-lookup-count {
+  margin: 0;
+  font-size: 0.75rem;
+  opacity: 0.6;
+}
+
+.return-lookup-empty {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.65;
+}
+
+.return-lookup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  overflow: auto;
+  min-height: 0;
+}
+
+.return-lookup--compact .return-lookup-list {
+  max-height: min(52vh, 420px);
+}
+
+.return-lookup-card {
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.return-lookup-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.return-lookup-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.return-lookup-meta {
+  font-size: 0.78rem;
+  opacity: 0.75;
+}
+
+.return-lookup-date {
+  font-size: 0.72rem;
+  opacity: 0.55;
+}
+
+.return-lookup-card__side {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  color: var(--accent, #c9a227);
+}
+
+.return-lookup-chevron {
+  font-size: 0.7rem;
+  opacity: 0.55;
+}
+
+.return-lookup-card__detail {
+  padding: 0 0.7rem 0.7rem;
+}
+
+.return-lookup-card__detail dl {
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.return-lookup-card__detail dt {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.55;
+}
+
+.return-lookup-card__detail dd {
+  margin: 0.08rem 0 0;
+  font-size: 0.88rem;
+}
+
+.return-lookup-mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}

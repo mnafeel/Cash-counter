@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { normalizeCustomerAdvanceKey } from '../utils/customerAdvance'
 import { formatMoney } from '../utils/format'
 import { searchNamesByPrefix } from '../utils/normalExpenseHistory'
 
@@ -15,7 +16,7 @@ type CustomerBalanceTag = {
   key: string
   label: string
   amount: string
-  kind: 'credit' | 'cheque' | 'old-credit' | 'old-cheque'
+  kind: 'credit' | 'cheque' | 'old-credit' | 'old-cheque' | 'advance'
 }
 
 interface CounterCustomerNameFieldProps {
@@ -24,6 +25,10 @@ interface CounterCustomerNameFieldProps {
   customerChequePendingByName: Map<string, number>
   sessionCreditAmount?: number | null
   sessionChequeAmount?: number | null
+  /** Net advance for the customer currently on Counter (after in-progress apply). */
+  customerAdvanceBalance?: number | null
+  customerAdvanceLedgerKey?: string
+  customerAdvanceByName?: Map<string, number>
   onNameChange?: (name: string) => void
   onFocusSection?: () => void
   onFocusChange?: (focused: boolean) => void
@@ -85,6 +90,9 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
       customerChequePendingByName,
       sessionCreditAmount,
       sessionChequeAmount,
+      customerAdvanceBalance,
+      customerAdvanceLedgerKey,
+      customerAdvanceByName,
       onNameChange,
       onFocusSection,
       onFocusChange,
@@ -127,11 +135,11 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
 
     const balanceTags = useMemo(() => {
       const tags: CustomerBalanceTag[] = []
-      const key = draft.trim().toLowerCase()
-      if (!key) return tags
+      const nameKey = normalizeCustomerAdvanceKey(draft)
+      if (!nameKey) return tags
 
-      const ledgerCredit = customerPendingByName.get(key) ?? 0
-      const ledgerCheque = customerChequePendingByName.get(key) ?? 0
+      const ledgerCredit = customerPendingByName.get(nameKey) ?? 0
+      const ledgerCheque = customerChequePendingByName.get(nameKey) ?? 0
       const sessionCredit = (sessionCreditAmount ?? 0) > 0 ? sessionCreditAmount! : 0
       const sessionCheque = (sessionChequeAmount ?? 0) > 0 ? sessionChequeAmount! : 0
       const collectingBill = sessionCredit > 0 || sessionCheque > 0
@@ -156,7 +164,7 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
           })
         }
       } else {
-        if (ledgerCredit > 0) {
+        if (ledgerCredit > 0.01) {
           tags.push({
             key: 'credit',
             label: 'Credit',
@@ -164,7 +172,7 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
             kind: 'credit',
           })
         }
-        if (ledgerCheque > 0) {
+        if (ledgerCheque > 0.01) {
           tags.push({
             key: 'cheque',
             label: 'Cheque',
@@ -174,6 +182,23 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
         }
       }
 
+      const ledgerAdvanceKey = customerAdvanceLedgerKey
+        ? normalizeCustomerAdvanceKey(customerAdvanceLedgerKey)
+        : ''
+      const mapAdvance = customerAdvanceByName?.get(nameKey) ?? 0
+      let advance = mapAdvance
+      if (nameKey === ledgerAdvanceKey && customerAdvanceBalance != null) {
+        advance = Math.max(0, Math.min(mapAdvance, customerAdvanceBalance))
+      }
+      if (advance > 0.01) {
+        tags.push({
+          key: 'advance',
+          label: 'Advance',
+          amount: formatMoney(advance),
+          kind: 'advance',
+        })
+      }
+
       return tags
     }, [
       draft,
@@ -181,6 +206,9 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
       customerChequePendingByName,
       sessionCreditAmount,
       sessionChequeAmount,
+      customerAdvanceBalance,
+      customerAdvanceLedgerKey,
+      customerAdvanceByName,
     ])
 
     useEffect(() => {
@@ -273,7 +301,7 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
               className="counter-customer-balances"
               role="status"
               aria-live="polite"
-              aria-label="Customer credit and cheque pending"
+              aria-label="Customer credit, cheque, and advance"
             >
               {balanceTags.map((tag) => (
                 <span
@@ -299,44 +327,55 @@ const CounterCustomerNameField = forwardRef<CounterCustomerNameFieldHandle, Coun
             onWheel={(event) => event.stopPropagation()}
           >
             {filteredSuggestions.map((name, index) => {
-              const creditDue = customerPendingByName.get(name.toLowerCase()) ?? 0
-              const chequeDue = customerChequePendingByName.get(name.toLowerCase()) ?? 0
+              const nameKey = normalizeCustomerAdvanceKey(name)
+              const creditDue = customerPendingByName.get(nameKey) ?? 0
+              const chequeDue = customerChequePendingByName.get(nameKey) ?? 0
+              const advanceDue = customerAdvanceByName?.get(nameKey) ?? 0
               return (
                 <li key={name}>
-                  <button
-                    type="button"
-                    ref={index === highlightedIndex ? activeSuggestionRef : null}
-                    className={`counter-customer-suggestion ${index === highlightedIndex ? 'counter-customer-suggestion--active' : ''}`}
-                    aria-selected={index === highlightedIndex}
-                    onMouseEnter={() => {
-                      if (!keyboardNavRef.current) setHighlightedIndex(index)
-                    }}
-                    onMouseDown={(e) => {
-                      e.preventDefault()
-                      setDraft(name)
-                      notifyNameChange(onNameChange, name)
-                      setDropdownOpen(false)
-                      setHighlightedIndex(-1)
-                    }}
-                  >
-                    <span className="counter-customer-suggestion-name">{name}</span>
-                    {(creditDue > 0 || chequeDue > 0) ? (
-                      <span className="counter-customer-suggestion-balances">
-                        {creditDue > 0 ? (
-                          <span className="counter-customer-balance counter-customer-balance--credit counter-customer-balance--compact">
-                            <span className="counter-customer-balance-label">Credit</span>
-                            <span className="counter-customer-balance-amount">{formatMoney(creditDue)}</span>
-                          </span>
-                        ) : null}
-                        {chequeDue > 0 ? (
-                          <span className="counter-customer-balance counter-customer-balance--cheque counter-customer-balance--compact">
-                            <span className="counter-customer-balance-label">Cheque</span>
-                            <span className="counter-customer-balance-amount">{formatMoney(chequeDue)}</span>
-                          </span>
-                        ) : null}
-                      </span>
-                    ) : null}
-                  </button>
+                  <div className="counter-customer-suggestion-row">
+                    <span className="counter-customer-suggestion-expand counter-customer-suggestion-expand--spacer" />
+                    <button
+                      type="button"
+                      ref={index === highlightedIndex ? activeSuggestionRef : null}
+                      className={`counter-customer-suggestion ${index === highlightedIndex ? 'counter-customer-suggestion--active' : ''}`}
+                      aria-selected={index === highlightedIndex}
+                      onMouseEnter={() => {
+                        if (!keyboardNavRef.current) setHighlightedIndex(index)
+                      }}
+                      onMouseDown={(e) => {
+                        e.preventDefault()
+                        setDraft(name)
+                        notifyNameChange(onNameChange, name)
+                        setDropdownOpen(false)
+                        setHighlightedIndex(-1)
+                      }}
+                    >
+                      <span className="counter-customer-suggestion-name">{name}</span>
+                      {creditDue > 0.01 || chequeDue > 0.01 || advanceDue > 0.01 ? (
+                        <span className="counter-customer-suggestion-balances">
+                          {creditDue > 0.01 ? (
+                            <span className="counter-customer-balance counter-customer-balance--credit counter-customer-balance--compact">
+                              <span className="counter-customer-balance-label">Credit</span>
+                              <span className="counter-customer-balance-amount">{formatMoney(creditDue)}</span>
+                            </span>
+                          ) : null}
+                          {chequeDue > 0.01 ? (
+                            <span className="counter-customer-balance counter-customer-balance--cheque counter-customer-balance--compact">
+                              <span className="counter-customer-balance-label">Cheque</span>
+                              <span className="counter-customer-balance-amount">{formatMoney(chequeDue)}</span>
+                            </span>
+                          ) : null}
+                          {advanceDue > 0.01 ? (
+                            <span className="counter-customer-balance counter-customer-balance--advance counter-customer-balance--compact">
+                              <span className="counter-customer-balance-label">Advance</span>
+                              <span className="counter-customer-balance-amount">{formatMoney(advanceDue)}</span>
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : null}
+                    </button>
+                  </div>
                 </li>
               )
             })}

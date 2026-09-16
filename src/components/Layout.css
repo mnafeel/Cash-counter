@@ -192,6 +192,11 @@
   box-shadow: 0 4px 16px var(--accent-glow);
 }
 
+.sidebar-utilities-icon {
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+
 .sidebar-nav-icon {
   font-size: 1.1rem;
   line-height: 1;
@@ -415,6 +420,14 @@
 
 .keep-alive-pane[hidden] {
   display: none !important;
+}
+
+.main--fit:has(.utilities-page) {
+  overflow: hidden;
+}
+
+.main--fit:has(.utilities-page) > .keep-alive-pane {
+  overflow: hidden;
 }
 
 .main--fit {

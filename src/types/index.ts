@@ -19,6 +19,22 @@ export interface PendingBalanceTransfer {
   direction: 'credit_to_cheque' | 'cheque_to_credit'
 }
 
+/** Customer prepayment held for future bills (cash or bank only). */
+export type CustomerAdvanceKind = 'received' | 'applied' | 'from_return' | 'refunded'
+
+export interface CustomerAdvanceLedgerEntry {
+  id: string
+  customerName: string
+  at: string
+  kind: CustomerAdvanceKind
+  amount: number
+  cashAmount?: number
+  bankAmount?: number
+  saleId?: string
+  returnEntryId?: string
+  note?: string
+}
+
 /** Item returned against a sales / credit bill — reduces amount due. */
 export interface SaleReturnEntry {
   id: string
@@ -27,11 +43,13 @@ export interface SaleReturnEntry {
   rate: number
   /** Line subtotal before discount/GST (qty × rate). */
   subtotal?: number
-  /** Flat discount in ₹ before GST. */
+  /** Flat discount in ₹ before tax (often stored on the first line for the whole return). */
   discountAmount?: number
-  /** GST % applied on (subtotal − discount). */
+  /** GST % applied on (subtotal − discount) — legacy; prefer taxAmount when set. */
   gstPercent?: number
-  /** Final deducted amount after discount + GST. */
+  /** Flat tax in ₹ for the return (often stored on the first line). */
+  taxAmount?: number
+  /** Final deducted amount after discount + tax. */
   amount: number
   createdAt: string
 }
@@ -77,6 +95,8 @@ export interface Sale {
   reminderNote?: string
   /** Staff member who made / owns this sale (for commission). */
   staffId?: string
+  /** Advance balance applied when this bill was paid (not cash/bank again). */
+  customerAdvanceApplied?: number
 }
 
 export type ExpensePayType = Extract<PayType, 'cash' | 'bank' | 'credit' | 'split' | 'cheque'>
@@ -317,6 +337,8 @@ export interface AppData {
   trash?: TrashedRecord[]
   /** Permanently purged recycle-bin keys (`kind:id`) — survives cloud merge. */
   trashPurgedKeys?: string[]
+  /** Customer advance ledger (prepayments and applications). */
+  customerAdvances?: CustomerAdvanceLedgerEntry[]
 }
 
 export type TrashKind = 'sale' | 'expense' | 'loan'

@@ -1,0 +1,53 @@
+.customer-name-ac {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.customer-name-ac__label {
+  font-size: 0.78rem;
+  opacity: 0.85;
+}
+
+.customer-name-ac__input {
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  background: rgba(0, 0, 0, 0.15);
+  color: inherit;
+}
+
+.customer-name-ac__list {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 200px;
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  background: var(--surface, #1a1f2a);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+.customer-name-ac__option {
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.customer-name-ac__option:hover {
+  background: rgba(255, 255, 255, 0.08);
+}

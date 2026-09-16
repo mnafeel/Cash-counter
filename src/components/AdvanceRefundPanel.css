@@ -1,0 +1,83 @@
+.advance-refund {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.advance-refund-customer-locked {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.advance-refund-customer-locked strong {
+  color: var(--accent, #c9a227);
+}
+
+.advance-refund-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  opacity: 0.72;
+  line-height: 1.35;
+}
+
+.advance-refund-field label {
+  display: block;
+  font-size: 0.76rem;
+  opacity: 0.85;
+  margin-bottom: 0.2rem;
+}
+
+.advance-refund-field input {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  background: rgba(0, 0, 0, 0.12);
+  color: inherit;
+}
+
+.advance-refund-pay-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.advance-refund-pay-chips button {
+  flex: 1;
+  min-width: 4.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  background: transparent;
+  color: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.advance-refund-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.advance-refund-pill {
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.advance-refund-save {
+  padding: 0.6rem 0.85rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, #e8a0a0 40%, transparent);
+  background: color-mix(in srgb, #e8a0a0 18%, transparent);
+  color: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.advance-refund-save:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

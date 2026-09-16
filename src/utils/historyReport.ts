@@ -57,6 +57,7 @@ function summarizeByType(items: HistoryItem[]) {
     deposit: { count: 0, sum: 0 },
     transfer: { count: 0, sum: 0 },
     loan: { count: 0, sum: 0 },
+    advance: { count: 0, sum: 0 },
   }
   for (const item of items) {
     totals[item.type].count += 1

@@ -73,6 +73,8 @@ const ROUTE_LABELS: Record<string, string> = {
   '/loan': 'Loan',
   '/staff': 'Staff',
   '/reports': 'Reports',
+  '/adjustments': 'Utilities',
+  '/utilities': 'Utilities',
   '/settings': 'Settings',
 }
 

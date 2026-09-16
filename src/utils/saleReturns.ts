@@ -9,21 +9,15 @@ export function saleReturnTotal(
   return sale.returns.reduce((sum, entry) => sum + Math.max(0, entry.amount), 0)
 }
 
-/** Parent + split children that share one customer bill. */
+/** Parent + split children that share one customer bill (includes siblings when anchor row was removed). */
 export function saleRelatedBillSales(sale: Sale, allSales: Sale[]): Sale[] {
   const byId = new Map<string, Sale>()
   byId.set(sale.id, sale)
 
-  const linkId = sale.parentSplitId ?? null
-  if (linkId) {
-    const parent = allSales.find((row) => row.id === linkId)
-    if (parent) byId.set(parent.id, parent)
-    for (const row of allSales) {
-      if (row.parentSplitId === linkId || row.id === linkId) byId.set(row.id, row)
-    }
-  } else {
-    for (const row of allSales) {
-      if (row.parentSplitId === sale.id) byId.set(row.id, row)
+  const anchorId = sale.parentSplitId ?? sale.id
+  for (const row of allSales) {
+    if (row.id === anchorId || row.parentSplitId === anchorId) {
+      byId.set(row.id, row)
     }
   }
 
@@ -59,6 +53,18 @@ export function saleBillGroupPaidTotal(sale: Sale, allSales: Sale[] = []): numbe
     total += saleCollectedAmount(row)
   }
   return total
+}
+
+/** Cash / bank / approved cheque received on the bill — excludes open credit & pending cheque. */
+export function saleBillGroupRealizedCollected(sale: Sale, allSales: Sale[] = []): number {
+  const gross = saleOpenBalanceGroupGross(sale, allSales)
+  const returns = saleOpenBalanceGroupReturns(sale, allSales)
+  const openCredit = linkedPendingCreditTotal(sale, allSales)
+  const openCheque = linkedPendingChequeTotal(sale, allSales)
+  return Math.max(
+    0,
+    Math.round((gross - returns - openCredit - openCheque) * 100) / 100,
+  )
 }
 
 export type SaleBillPaymentLine = {
@@ -266,6 +272,7 @@ export type SaleReturnDraft = {
   rate: number
   discountAmount?: number
   gstPercent?: number
+  taxAmount?: number
 }
 
 export function calculateSaleReturnAmount(input: {
@@ -273,16 +280,27 @@ export function calculateSaleReturnAmount(input: {
   rate: number
   discountAmount?: number
   gstPercent?: number
-}): { subtotal: number; discountAmount: number; gstPercent: number; amount: number } {
+  taxAmount?: number
+}): {
+  subtotal: number
+  discountAmount: number
+  gstPercent: number
+  taxAmount: number
+  amount: number
+} {
   const quantity = Math.max(0, input.quantity)
   const rate = Math.max(0, input.rate)
   const subtotal = Math.round(quantity * rate * 100) / 100
   const discountAmount = Math.max(0, Math.min(subtotal, input.discountAmount ?? 0))
   const gstPercent = Math.max(0, input.gstPercent ?? 0)
   const taxable = Math.max(0, subtotal - discountAmount)
-  const gstAmount = Math.round(taxable * (gstPercent / 100) * 100) / 100
-  const amount = Math.round((taxable + gstAmount) * 100) / 100
-  return { subtotal, discountAmount, gstPercent, amount }
+  const taxFromPercent = Math.round(taxable * (gstPercent / 100) * 100) / 100
+  const taxAmount =
+    input.taxAmount != null && input.taxAmount >= 0
+      ? Math.round(input.taxAmount * 100) / 100
+      : taxFromPercent
+  const amount = Math.round((taxable + taxAmount) * 100) / 100
+  return { subtotal, discountAmount, gstPercent, taxAmount, amount }
 }
 
 export function formatSaleReturnLine(entry: SaleReturnEntry): string {
@@ -290,7 +308,8 @@ export function formatSaleReturnLine(entry: SaleReturnEntry): string {
   const qtyLabel = Number.isInteger(qty) ? String(qty) : String(qty)
   const parts = [`${entry.itemName} · ${qtyLabel} × ${formatMoney(entry.rate)}`]
   if ((entry.discountAmount ?? 0) > 0) parts.push(`disc ${formatMoney(entry.discountAmount!)}`)
-  if ((entry.gstPercent ?? 0) > 0) parts.push(`GST ${entry.gstPercent}%`)
+  if ((entry.taxAmount ?? 0) > 0) parts.push(`tax ${formatMoney(entry.taxAmount!)}`)
+  else if ((entry.gstPercent ?? 0) > 0) parts.push(`GST ${entry.gstPercent}%`)
   return parts.join(' · ')
 }
 
@@ -313,8 +332,131 @@ export function buildSaleReturnEntry(input: SaleReturnDraft & {
     rate,
     subtotal: calc.subtotal,
     discountAmount: calc.discountAmount > 0 ? calc.discountAmount : undefined,
-    gstPercent: calc.gstPercent > 0 ? calc.gstPercent : undefined,
+    gstPercent: calc.gstPercent > 0 && (input.taxAmount == null) ? calc.gstPercent : undefined,
+    taxAmount: calc.taxAmount > 0 ? calc.taxAmount : undefined,
     amount: calc.amount,
     createdAt: input.createdAt ?? new Date().toISOString(),
   }
+}
+
+export type SaleReturnGridRow = {
+  id: string
+  itemName: string
+  quantity: number
+  rate: number
+  createdAt: string
+}
+
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+export function saleReturnLineSubtotal(quantity: number, rate: number): number {
+  return roundMoney(Math.max(0, quantity) * Math.max(0, rate))
+}
+
+/** Pull grid rows + footer discount/tax from saved return entries. */
+export function saleReturnGridFromEntries(entries: SaleReturnEntry[]): {
+  rows: SaleReturnGridRow[]
+  discountAmount: number
+  taxAmount: number
+} {
+  let discountAmount = 0
+  let taxAmount = 0
+  const rows: SaleReturnGridRow[] = []
+  for (const entry of entries) {
+    discountAmount = roundMoney(discountAmount + Math.max(0, entry.discountAmount ?? 0))
+    if ((entry.taxAmount ?? 0) > 0) {
+      taxAmount = roundMoney(taxAmount + (entry.taxAmount ?? 0))
+    } else if ((entry.gstPercent ?? 0) > 0) {
+      const sub = entry.subtotal ?? saleReturnLineSubtotal(entry.quantity, entry.rate)
+      const disc = Math.max(0, entry.discountAmount ?? 0)
+      taxAmount = roundMoney(
+        taxAmount + Math.max(0, sub - disc) * ((entry.gstPercent ?? 0) / 100),
+      )
+    }
+    rows.push({
+      id: entry.id,
+      itemName: entry.itemName,
+      quantity: entry.quantity,
+      rate: entry.rate,
+      createdAt: entry.createdAt,
+    })
+  }
+  return { rows, discountAmount, taxAmount }
+}
+
+/**
+ * Build persisted return lines from the billing grid.
+ * Discount + tax are document-level (footer) and stored on the first line;
+ * line amounts are scaled so they sum to the final return total.
+ */
+export function buildSaleReturnEntriesFromGrid(
+  rows: SaleReturnGridRow[],
+  footer: { discountAmount: number; taxAmount: number },
+): SaleReturnEntry[] {
+  const valid = rows.filter(
+    (row) => row.itemName.trim() && row.quantity > 0 && row.rate >= 0,
+  )
+  if (valid.length === 0) return []
+
+  const bases = valid.map((row) => ({
+    row,
+    subtotal: saleReturnLineSubtotal(row.quantity, row.rate),
+  }))
+  const itemsSubtotal = roundMoney(bases.reduce((sum, row) => sum + row.subtotal, 0))
+  if (itemsSubtotal <= 0) return []
+
+  const discountAmount = Math.max(0, Math.min(itemsSubtotal, footer.discountAmount))
+  const taxable = roundMoney(Math.max(0, itemsSubtotal - discountAmount))
+  const taxAmount = Math.max(0, roundMoney(footer.taxAmount))
+  const grandTotal = roundMoney(taxable + taxAmount)
+  if (grandTotal <= 0) return []
+
+  const entries: SaleReturnEntry[] = []
+  let allocated = 0
+  for (let i = 0; i < bases.length; i += 1) {
+    const { row, subtotal } = bases[i]
+    const isLast = i === bases.length - 1
+    const share = isLast
+      ? roundMoney(grandTotal - allocated)
+      : roundMoney((subtotal / itemsSubtotal) * grandTotal)
+    allocated = roundMoney(allocated + share)
+    entries.push({
+      id: row.id,
+      itemName: row.itemName.trim(),
+      quantity: row.quantity,
+      rate: row.rate,
+      subtotal,
+      discountAmount: i === 0 && discountAmount > 0 ? discountAmount : undefined,
+      taxAmount: i === 0 && taxAmount > 0 ? taxAmount : undefined,
+      amount: share,
+      createdAt: row.createdAt,
+    })
+  }
+  return entries
+}
+
+export function saleReturnGridTotals(
+  rows: SaleReturnGridRow[],
+  footer: { discountAmount: number; taxAmount: number },
+): {
+  itemsSubtotal: number
+  discountAmount: number
+  taxAmount: number
+  grandTotal: number
+} {
+  const itemsSubtotal = roundMoney(
+    rows.reduce(
+      (sum, row) =>
+        row.itemName.trim() && row.quantity > 0
+          ? sum + saleReturnLineSubtotal(row.quantity, row.rate)
+          : sum,
+      0,
+    ),
+  )
+  const discountAmount = Math.max(0, Math.min(itemsSubtotal, footer.discountAmount))
+  const taxAmount = Math.max(0, roundMoney(footer.taxAmount))
+  const grandTotal = roundMoney(Math.max(0, itemsSubtotal - discountAmount) + taxAmount)
+  return { itemsSubtotal, discountAmount, taxAmount, grandTotal }
 }

@@ -104,6 +104,7 @@ const PAYMENT_FILTER_OPTIONS: { id: HistoryPaymentFilter; label: string }[] = [
 function historyIcon(type: HistoryItemType): string {
   if (type === 'sale') return '💵'
   if (type === 'deposit') return '📥'
+  if (type === 'advance') return '💰'
   if (type === 'transfer') return '🔄'
   if (type === 'purchase') return '🛒'
   if (type === 'loan') return '🤝'
@@ -113,6 +114,7 @@ function historyIcon(type: HistoryItemType): string {
 function nameLabel(type: HistoryItemType): string {
   if (type === 'sale') return 'Customer name'
   if (type === 'purchase') return 'Supplier name'
+  if (type === 'advance') return 'Customer name'
   return 'Note / name'
 }
 
@@ -335,6 +337,7 @@ function History({ active }: { active: boolean }) {
       deposit: { sum: 0, count: 0 },
       transfer: { sum: 0, count: 0 },
       loan: { sum: 0, count: 0 },
+      advance: { sum: 0, count: 0 },
     }
     const items = showPurchaseHistory ? combinedItems : normalItems
     for (const item of items) {
@@ -912,6 +915,9 @@ function History({ active }: { active: boolean }) {
 
             {(() => {
               const receiptPaymentParts = getHistoryItemListPaymentParts(receiptItem, 'all', '')
+              const advanceLine = receiptItem.receiptLines?.find(
+                (line) => line.label === 'Advance applied',
+              )
               return (
                 <div className="history-receipt-top">
                   <h4 className="history-receipt-top-name">{receiptItem.name || 'No name'}</h4>
@@ -928,6 +934,20 @@ function History({ active }: { active: boolean }) {
                       Bill amount reduced by returns — see lines below for original, return, and
                       balance.
                     </p>
+                  ) : null}
+                  {advanceLine && advanceLine.amount > 0.01 ? (
+                    <div className="history-receipt-split">
+                      <div className="history-receipt-split-grid">
+                        <div className="history-receipt-split-item history-receipt-split-item--advance">
+                          <span className="history-receipt-split-item-label">
+                            {advanceLine.label}
+                          </span>
+                          <strong className="history-receipt-split-item-amount">
+                            {formatMoney(advanceLine.amount)}
+                          </strong>
+                        </div>
+                      </div>
+                    </div>
                   ) : null}
                   {receiptPaymentParts.length > 0 ? (
                     <div className="history-receipt-split">
