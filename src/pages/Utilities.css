@@ -124,6 +124,31 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+  align-items: center;
+}
+
+.utilities-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  border-radius: 10px;
+  border: 1px solid var(--util-border);
+  background: var(--util-surface);
+  color: inherit;
+  cursor: pointer;
+}
+
+.utilities-icon-btn:hover {
+  border-color: color-mix(in srgb, var(--util-accent) 45%, transparent);
+  background: var(--util-accent-soft);
+}
+
+.utilities-icon-btn__svg {
+  width: 1.15rem;
+  height: 1.15rem;
 }
 
 .utilities-create-btn {
@@ -174,6 +199,10 @@
   border: 1px solid var(--util-border);
   background: var(--util-surface);
   box-shadow: var(--util-shadow);
+}
+
+.utilities-modal-sheet--settings {
+  width: min(100%, 520px);
 }
 
 .utilities-modal-head {

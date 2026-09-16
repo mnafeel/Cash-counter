@@ -10,6 +10,7 @@ import {
   paymentEventBankInflow,
   salePaidCollectedBreakdown,
   salePendingBalanceHistoryDate,
+  saleLastPaymentEventAt,
   normalizeCollectedBreakdown,
 } from './salePayment'
 import {
@@ -17,6 +18,7 @@ import {
   saleCreditBalanceDue,
   salePendingLegAmount,
 } from './saleReturns'
+import { listAdvanceSalesForReport, saleAdvanceSalesCountAmount } from './customerAdvance'
 
 export type ReportPeriod = 'day' | 'week' | 'month'
 export type ReportSort = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
@@ -28,6 +30,8 @@ export interface SalesReportFilter {
   dateMode?: SaleDateMode
   /** Collected mode: bill created and paid on the same day (within filter dates). */
   sameDayCreatedAndPaid?: boolean
+  /** When on_receive, applied advance is not added again to sales totals. */
+  advanceSalesCountMode?: 'on_bill' | 'on_receive'
 }
 
 export interface SalesPeriodRow {
@@ -40,7 +44,7 @@ export interface SalesPeriodRow {
   bankTotal: number
 }
 
-export interface SalesBillRow {
+export type SalesBillRow = {
   id: string
   date: string
   dateLabel: string
@@ -70,6 +74,12 @@ export interface SalesBillRow {
   /** Last update on the credit/cheque leg (for pending updated today). */
   updatedDate?: string
   updatedDateLabel?: string
+  /** Synthetic row for a customer advance payment. */
+  isAdvanceRow?: boolean
+  /** Open advance still held (not yet applied to a bill). */
+  advanceRemaining?: number
+  /** Portion of this advance already applied to bills. */
+  advanceApplied?: number
 }
 
 export interface SalesBillSummary {
@@ -178,6 +188,45 @@ export function saleCollectedForFilter(
 /** Approved cheque → bank only for sales list / summary display. */
 function collectedForSalesDisplay(breakdown: SaleCollectedBreakdown): SaleCollectedBreakdown {
   return normalizeCollectedBreakdown(breakdown)
+}
+
+/**
+ * Advance applied counts toward Sales on the bill day for the portion that was not
+ * already counted when the advance was received.
+ */
+function saleAdvanceAppliedForSalesTotal(
+  sale: Sale,
+  filter?: SalesReportFilter,
+  data?: AppData,
+): number {
+  const advance = data
+    ? saleAdvanceSalesCountAmount(data, sale)
+    : filter?.advanceSalesCountMode === 'on_receive'
+      ? 0
+      : (sale.customerAdvanceApplied ?? 0)
+  if (advance <= 0.01) return 0
+
+  if (!filter?.fromDate && !filter?.toDate) return advance
+
+  if (filter.sameDayCreatedAndPaid) {
+    if (!isInDateRange(sale.createdAt, filter)) return 0
+    const createdDay = localDayTimestamp(sale.createdAt)
+    const appliedAt = saleLastPaymentEventAt(sale) ?? sale.updatedAt ?? sale.createdAt
+    return localDayTimestamp(appliedAt) === createdDay ? advance : 0
+  }
+
+  const mode = filter.dateMode ?? 'collected'
+  if (mode === 'created') {
+    return isInDateRange(sale.createdAt, filter) ? advance : 0
+  }
+
+  if (getSalePaymentEvents(sale).length > 0) {
+    const events = salePaymentEventsInRange(sale, filter.fromDate, filter.toDate)
+    if (events.length > 0) return advance
+  }
+
+  const appliedAt = saleLastPaymentEventAt(sale) ?? sale.updatedAt ?? sale.createdAt
+  return isInDateRange(appliedAt, filter) ? advance : 0
 }
 
 export function toInputDate(d: Date = new Date()): string {
@@ -585,13 +634,19 @@ function saleHasSameDayCreatedAndPaid(sale: Sale, filter?: SalesReportFilter): b
   if (sale.status !== 'pending') {
     const paidAt = sale.updatedAt ?? sale.createdAt
     if (localDayTimestamp(paidAt) === createdDay) {
-      return sameDaySalesCollectedBreakdown(sale).total > 0
+      if (sameDaySalesCollectedBreakdown(sale).total > 0) return true
+      // Advance-only settlement same day still counts as a paid sale.
+      return (sale.customerAdvanceApplied ?? 0) > 0.01
     }
   }
   return false
 }
 
-function saleMatchesReportFilter(sale: Sale, filter?: SalesReportFilter): boolean {
+function saleMatchesReportFilter(
+  sale: Sale,
+  filter?: SalesReportFilter,
+  data?: AppData,
+): boolean {
   const mode = filter?.dateMode ?? 'collected'
   if (filter?.sameDayCreatedAndPaid) {
     return saleHasSameDayCreatedAndPaid(sale, filter)
@@ -601,6 +656,11 @@ function saleMatchesReportFilter(sale: Sale, filter?: SalesReportFilter): boolea
   }
 
   if (saleHasCollectionInRange(sale, filter?.fromDate, filter?.toDate)) {
+    return true
+  }
+
+  // Advance applied on this day — sale value belongs here even with no drawer cash/bank.
+  if (saleAdvanceAppliedForSalesTotal(sale, filter, data) > 0.01) {
     return true
   }
 
@@ -679,13 +739,19 @@ function saleWasOpenedAsCreditOrCheque(sale: Sale): boolean {
   )
 }
 
-function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesBillRow {
+function buildSingleSalesBillRow(
+  sale: Sale,
+  filter?: SalesReportFilter,
+  data?: AppData,
+): SalesBillRow {
   const mode = filter?.dateMode ?? 'collected'
   const hasDateFilter = Boolean(filter?.fromDate || filter?.toDate)
   const events = filter ? salePaymentEventsInRange(sale, filter.fromDate, filter.toDate) : []
   const date =
     events.length > 0 ? events[events.length - 1].at : saleReportDate(sale, mode)
   const collected = collectedForSalesDisplay(saleCollectedForFilter(sale, filter))
+  const advanceApplied = saleAdvanceAppliedForSalesTotal(sale, filter, data)
+  const collectedTotal = Math.round((collected.total + advanceApplied) * 100) / 100
   const billAmount = saleOriginalBillAmount(sale)
   const creditPendingAll = saleCreditPendingAmount(sale)
   const chequePendingAll = saleChequePendingAmount(sale)
@@ -699,6 +765,22 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
   const hasCheque = saleIsChequeRelated(sale)
   const hasCreditOrCheque = hasCredit || hasCheque || saleWasOpenedAsCreditOrCheque(sale)
   const updatedAt = saleSalesRowUpdatedAt(sale)
+  const advanceOnBillNote =
+    advanceApplied > 0.01
+      ? ` · Advance in sale ${formatMoney(advanceApplied)}`
+      : (sale.customerAdvanceApplied ?? 0) > 0.01
+        ? ` · Advance applied ${formatMoney(sale.customerAdvanceApplied ?? 0)} (already in Sales when received)`
+        : ''
+  const baseDetail =
+    hasDateFilter && mode === 'collected'
+      ? buildGroupedSalesBillDetailLabel(
+          sale,
+          billAmount,
+          collectedTotal,
+          creditPendingAll,
+          chequePendingAll,
+        )
+      : `Bill ${formatMoney(billAmount)} · ${payLabel}`
   return {
     id: sale.id,
     groupId: saleBillGroupId(sale),
@@ -707,7 +789,7 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
     createdDate: sale.createdAt,
     createdDateLabel: formatDate(sale.createdAt),
     billAmount,
-    collectedTotal: collected.total,
+    collectedTotal,
     creditPending,
     chequePending,
     cashTotal: collected.cash,
@@ -724,16 +806,8 @@ function buildSingleSalesBillRow(sale: Sale, filter?: SalesReportFilter): SalesB
     chequeDateLabel: hasCheque ? formatDate(sale.createdAt) : undefined,
     updatedDate: hasCredit || hasCheque ? updatedAt : undefined,
     updatedDateLabel: hasCredit || hasCheque ? formatDate(updatedAt) : undefined,
-    detailLabel:
-      hasDateFilter && mode === 'collected'
-        ? buildGroupedSalesBillDetailLabel(
-            sale,
-            billAmount,
-            collected.total,
-            creditPendingAll,
-            chequePendingAll,
-          )
-        : `Bill ${formatMoney(billAmount)} · ${payLabel}`,
+    detailLabel: `${baseDetail}${advanceOnBillNote}`,
+    advanceApplied: advanceApplied > 0.01 ? advanceApplied : undefined,
   }
 }
 
@@ -742,9 +816,10 @@ function buildGroupedSalesBillRow(
   children: Sale[],
   filter: SalesReportFilter | undefined,
   mode: SaleDateMode,
+  data?: AppData,
 ): SalesBillRow | null {
   const members = [parent, ...children]
-  const inRange = members.filter((member) => saleMatchesReportFilter(member, filter))
+  const inRange = members.filter((member) => saleMatchesReportFilter(member, filter, data))
   if (inRange.length === 0) return null
 
   const billAmount = groupOriginalBillAmount(parent, children)
@@ -760,7 +835,11 @@ function buildGroupedSalesBillRow(
     cheque: chequeTotal,
     total: cashTotal + bankTotal + chequeTotal,
   })
-  const collectedTotal = collected.total
+  const advanceApplied = inRange.reduce(
+    (sum, member) => sum + saleAdvanceAppliedForSalesTotal(member, filter, data),
+    0,
+  )
+  const collectedTotal = Math.round((collected.total + advanceApplied) * 100) / 100
   const creditPendingAll =
     saleCreditPendingAmount(parent) + children.reduce((sum, c) => sum + saleCreditPendingAmount(c), 0)
   const chequePendingAll =
@@ -861,7 +940,7 @@ export function sumSalesCollectedForFilter(data: AppData, filter?: SalesReportFi
     if (isSplitGroup) {
       for (const child of children) consumedChildIds.add(child.id)
       const members = [sale, ...children]
-      const inRange = members.filter((member) => saleMatchesReportFilter(member, filter))
+      const inRange = members.filter((member) => saleMatchesReportFilter(member, filter, data))
       if (inRange.length === 0) continue
 
       const cashTotal = inRange.reduce(
@@ -876,12 +955,17 @@ export function sumSalesCollectedForFilter(data: AppData, filter?: SalesReportFi
         (sum, member) => sum + saleCollectedForFilter(member, filter).cheque,
         0,
       )
-      const collectedTotal = collectedForSalesDisplay({
-        cash: cashTotal,
-        bank: bankTotal,
-        cheque: chequeTotal,
-        total: cashTotal + bankTotal + chequeTotal,
-      }).total
+      const collectedTotal =
+        collectedForSalesDisplay({
+          cash: cashTotal,
+          bank: bankTotal,
+          cheque: chequeTotal,
+          total: cashTotal + bankTotal + chequeTotal,
+        }).total +
+        inRange.reduce(
+          (sum, member) => sum + saleAdvanceAppliedForSalesTotal(member, filter, data),
+          0,
+        )
       const creditPending = groupCreditPending(sale, children, filter)
       const chequePending = groupChequePending(sale, children, filter)
       if (includeCollected(collectedTotal, creditPending, chequePending)) {
@@ -890,8 +974,10 @@ export function sumSalesCollectedForFilter(data: AppData, filter?: SalesReportFi
       continue
     }
 
-    if (!saleMatchesReportFilter(sale, filter)) continue
-    const collectedTotal = collectedForSalesDisplay(saleCollectedForFilter(sale, filter)).total
+    if (!saleMatchesReportFilter(sale, filter, data)) continue
+    const collectedTotal =
+      collectedForSalesDisplay(saleCollectedForFilter(sale, filter)).total +
+      saleAdvanceAppliedForSalesTotal(sale, filter, data)
     const creditPending = saleCreditPendingForFilter(sale, filter)
     const chequePending = saleChequePendingForFilter(sale, filter)
     if (includeCollected(collectedTotal, creditPending, chequePending)) {
@@ -901,8 +987,10 @@ export function sumSalesCollectedForFilter(data: AppData, filter?: SalesReportFi
 
   for (const sale of data.sales) {
     if (!sale.parentSplitId || consumedChildIds.has(sale.id)) continue
-    if (!saleMatchesReportFilter(sale, filter)) continue
-    const collectedTotal = collectedForSalesDisplay(saleCollectedForFilter(sale, filter)).total
+    if (!saleMatchesReportFilter(sale, filter, data)) continue
+    const collectedTotal =
+      collectedForSalesDisplay(saleCollectedForFilter(sale, filter)).total +
+      saleAdvanceAppliedForSalesTotal(sale, filter, data)
     const creditPending = saleCreditPendingForFilter(sale, filter)
     const chequePending = saleChequePendingForFilter(sale, filter)
     if (includeCollected(collectedTotal, creditPending, chequePending)) {
@@ -938,21 +1026,69 @@ export function buildSalesBillList(
 
     if (isSplitGroup) {
       for (const child of children) consumedChildIds.add(child.id)
-      const row = buildGroupedSalesBillRow(sale, children, filter, mode)
+      const row = buildGroupedSalesBillRow(sale, children, filter, mode, data)
       if (row && includeBillRow(row)) rows.push(row)
       continue
     }
 
-    if (!saleMatchesReportFilter(sale, filter)) continue
-    const row = buildSingleSalesBillRow(sale, filter)
+    if (!saleMatchesReportFilter(sale, filter, data)) continue
+    const row = buildSingleSalesBillRow(sale, filter, data)
     if (includeBillRow(row)) rows.push(row)
   }
 
   for (const sale of data.sales) {
     if (!sale.parentSplitId || consumedChildIds.has(sale.id)) continue
-    if (!saleMatchesReportFilter(sale, filter)) continue
-    const row = buildSingleSalesBillRow(sale, filter)
+    if (!saleMatchesReportFilter(sale, filter, data)) continue
+    const row = buildSingleSalesBillRow(sale, filter, data)
     if (includeBillRow(row)) rows.push(row)
+  }
+
+  // Advance payments that count in Sales — listed with remaining after bill apply.
+  if (!filter?.sameDayCreatedAndPaid) {
+    for (const advance of listAdvanceSalesForReport(data, filter?.fromDate, filter?.toDate)) {
+      const cash = advance.cashAmount
+      const bank = advance.bankAmount
+      const payBits: string[] = []
+      if (cash > 0) payBits.push(`Cash ${formatMoney(cash)}`)
+      if (bank > 0) payBits.push(`Bank ${formatMoney(bank)}`)
+      const remainLabel =
+        advance.remaining > 0.01
+          ? `Remaining ${formatMoney(advance.remaining)}`
+          : 'Fully applied to bill'
+      const appliedLabel =
+        advance.applied > 0.01 ? `Applied ${formatMoney(advance.applied)}` : 'Not applied yet'
+      rows.push({
+        id: `advance-sale-${advance.id}`,
+        groupId: `advance-sale-${advance.id}`,
+        date: advance.at,
+        dateLabel: formatDate(advance.at),
+        createdDate: advance.at,
+        createdDateLabel: formatDate(advance.at),
+        billAmount: advance.amount,
+        collectedTotal: advance.amount,
+        creditPending: 0,
+        chequePending: 0,
+        cashTotal: cash,
+        bankTotal: bank,
+        chequeTotal: 0,
+        customerName: advance.customerName,
+        payLabel: 'Advance',
+        detailLabel: [
+          payBits.join(' · ') || 'Advance',
+          appliedLabel,
+          remainLabel,
+          advance.note,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+        hasCreditOrCheque: false,
+        hasCredit: false,
+        hasCheque: false,
+        isAdvanceRow: true,
+        advanceRemaining: advance.remaining,
+        advanceApplied: advance.applied,
+      })
+    }
   }
 
   return sortSalesBillRows(rows, sort)

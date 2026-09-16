@@ -1,5 +1,6 @@
 import type { HistoryItem, HistoryItemType } from './historyItems'
-import { historyItemDisplayAmount } from './historyItems'
+import { historyItemDisplayAmount, historyItemSaleSalesTotal } from './historyItems'
+import type { AppData } from '../types'
 
 export interface HistoryTotalsSummary {
   recordCount: number
@@ -77,6 +78,7 @@ function addPaymentAmount(
 export function buildHistoryTotals(
   items: HistoryItem[],
   purchasePaidMode = false,
+  data?: AppData,
 ): HistoryTotalsSummary {
   const totals: HistoryTotalsSummary = {
     recordCount: items.length,
@@ -100,7 +102,10 @@ export function buildHistoryTotals(
   }
 
   for (const item of items) {
-    const amount = historyItemDisplayAmount(item, purchasePaidMode && item.type === 'purchase')
+    const amount =
+      item.type === 'sale'
+        ? historyItemSaleSalesTotal(item, data)
+        : historyItemDisplayAmount(item, purchasePaidMode && item.type === 'purchase')
 
     if (item.type === 'sale') {
       totals.billsCollected += amount
@@ -137,6 +142,15 @@ export function buildHistoryTotals(
       } else {
         totals.moneyAdded += amount
         totals.addedCount += 1
+        if (data && item.sub?.includes('Advance created')) {
+          const entryId = item.id.replace(/^advance-/, '')
+          const entry = data.customerAdvances?.find((row) => row.id === entryId)
+          const counts =
+            entry?.countInSalesOnReceive === true ||
+            (entry?.countInSalesOnReceive == null &&
+              data.advanceSalesCountMode === 'on_receive')
+          if (counts) totals.billsCollected += amount
+        }
       }
     } else if (item.type === 'transfer') {
       totals.transferCount += 1
@@ -144,7 +158,9 @@ export function buildHistoryTotals(
   }
 
   totals.netTotal =
-    totals.billsCollected +
+    // Net cash uses drawer collections only — advance cash already in moneyAdded when received.
+    totals.salesCash +
+    totals.salesBank +
     totals.moneyAdded -
     totals.expenses -
     totals.purchases -

@@ -77,6 +77,8 @@ import {
   setHomePin,
   setPinLength,
   setTheme,
+  setAdvanceSalesCountMode,
+  setCustomerAdvanceCountInSales,
   setOpeningBalance,
   setOpeningBankBalance,
   setLoanReminder,
@@ -100,7 +102,9 @@ import {
   replaceSaleReturns,
   creditCustomerAdvanceFromReturn,
   recordCustomerAdvance,
+  unapplyCustomerAdvanceFromSale,
   refundCustomerAdvance,
+  deleteCustomerAdvanceEntry,
   renameCustomer,
   renameSupplier,
 } from '../storage/database'
@@ -148,6 +152,8 @@ interface CashContextValue {
   setProtectedRouteActive: (active: boolean) => void
   touchProtectedSession: () => void
   updatePinLength: (pinLength: 4 | 6) => void
+  updateAdvanceSalesCountMode: (mode: 'on_bill' | 'on_receive') => void
+  setCustomerAdvanceCountInSales: (entryId: string, countInSalesOnReceive: boolean) => void
   recordSale: (sale: {
     id?: string
     billAmount: number
@@ -166,6 +172,7 @@ interface CashContextValue {
     status?: SaleStatus
     returns?: SaleReturnEntry[]
     staffId?: string
+    customerAdvanceApplied?: number
   }) => void
   updatePendingSale: (
     id: string,
@@ -201,6 +208,7 @@ interface CashContextValue {
       creditAmount?: number
       chequeApproved?: boolean
       customerName?: string
+      customerAdvanceApplied?: number
     },
   ) => void
   transferPendingCreditToCheque: (
@@ -231,7 +239,11 @@ interface CashContextValue {
     amount: number
     payType: 'cash' | 'bank'
     note?: string
+    countInSalesOnReceive?: boolean
+    applyToSaleId?: string
   }) => boolean
+  unapplyCustomerAdvanceFromSale: (appliedEntryId: string) => boolean
+  deleteCustomerAdvanceEntry: (entryId: string) => boolean
   creditCustomerAdvanceFromReturn: (input: {
     customerName: string
     amount: number
@@ -1169,6 +1181,17 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => setPinLength(prev, pinLength))
   }, [])
 
+  const updateAdvanceSalesCountMode = useCallback((mode: 'on_bill' | 'on_receive') => {
+    setData((prev) => setAdvanceSalesCountMode(prev, mode))
+  }, [])
+
+  const setCustomerAdvanceCountInSalesHandler = useCallback(
+    (entryId: string, countInSalesOnReceive: boolean) => {
+      setData((prev) => setCustomerAdvanceCountInSales(prev, entryId, countInSalesOnReceive))
+    },
+    [],
+  )
+
   const setAppTheme = useCallback((theme: AppTheme) => {
     setData((prev) => setTheme(prev, theme))
     applyTheme(theme)
@@ -1775,6 +1798,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       amount: number
       payType: 'cash' | 'bank'
       note?: string
+      countInSalesOnReceive?: boolean
+      applyToSaleId?: string
     }) => {
       let ok = false
       setData((prev) => {
@@ -1786,6 +1811,26 @@ export function CashProvider({ children }: { children: ReactNode }) {
     },
     [],
   )
+
+  const unapplyCustomerAdvanceFromSaleHandler = useCallback((appliedEntryId: string) => {
+    let ok = false
+    setData((prev) => {
+      const next = unapplyCustomerAdvanceFromSale(prev, appliedEntryId)
+      ok = next !== prev
+      return next
+    })
+    return ok
+  }, [])
+
+  const deleteCustomerAdvanceEntryHandler = useCallback((entryId: string) => {
+    let ok = false
+    setData((prev) => {
+      const next = deleteCustomerAdvanceEntry(prev, entryId)
+      ok = next !== prev
+      return next
+    })
+    return ok
+  }, [])
 
   const creditCustomerAdvanceFromReturnHandler = useCallback(
     (input: {
@@ -1950,6 +1995,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBankBalance,
       updateHomePin,
       updatePinLength,
+      updateAdvanceSalesCountMode,
+      setCustomerAdvanceCountInSales: setCustomerAdvanceCountInSalesHandler,
       setAppTheme,
       removeSale,
       removeExpense,
@@ -1997,6 +2044,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       replaceSaleReturns: replaceSaleReturnsHandler,
       cancelSaleReturn: cancelSaleReturnHandler,
       recordCustomerAdvance: recordCustomerAdvanceHandler,
+      unapplyCustomerAdvanceFromSale: unapplyCustomerAdvanceFromSaleHandler,
+      deleteCustomerAdvanceEntry: deleteCustomerAdvanceEntryHandler,
       creditCustomerAdvanceFromReturn: creditCustomerAdvanceFromReturnHandler,
       refundCustomerAdvance: refundCustomerAdvanceHandler,
       editPaidSalePayment: editPaidSalePaymentHandler,
@@ -2035,6 +2084,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       updateOpeningBankBalance,
       updateHomePin,
       updatePinLength,
+      updateAdvanceSalesCountMode,
+      setCustomerAdvanceCountInSalesHandler,
       setAppTheme,
       removeSale,
       removeExpense,
@@ -2081,6 +2132,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       replaceSaleReturnsHandler,
       cancelSaleReturnHandler,
       recordCustomerAdvanceHandler,
+      unapplyCustomerAdvanceFromSaleHandler,
+      deleteCustomerAdvanceEntryHandler,
       creditCustomerAdvanceFromReturnHandler,
       refundCustomerAdvanceHandler,
       editPaidSalePaymentHandler,

@@ -122,6 +122,7 @@ function Home({ active }: { active: boolean }) {
     removeSale,
     removeExpense,
     removeLoan,
+    deleteCustomerAdvanceEntry,
     setCustomerReminder,
     setBillReminder,
     updateReminderAlertSettings,
@@ -605,6 +606,11 @@ function Home({ active }: { active: boolean }) {
   ) {
     if (type === 'sale') {
       removeSale(id, groupSaleIds)
+      return
+    }
+    if (type === 'advance') {
+      const entryId = id.startsWith('advance-') ? id.slice('advance-'.length) : id
+      deleteCustomerAdvanceEntry(entryId)
       return
     }
     const loanId = resolveLoanIdFromHistoryItemId(id, data.loans ?? [])

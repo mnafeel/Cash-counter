@@ -19,6 +19,7 @@ import {
   summarizeLoanOutflows,
 } from './loanLedger'
 import { buildNotSaleInflowItems, summarizeNotSaleInflow } from './notSaleInflow'
+import { getAdvanceSalesCountMode } from './customerAdvance'
 
 export interface DailyTotalsSummary {
   fromDate: string
@@ -114,10 +115,12 @@ export function buildDailyTotals(
   fromDate: string = toInputDate(),
   toDate: string = fromDate,
 ): DailyTotalsSummary {
+  const advanceSalesCountMode = getAdvanceSalesCountMode(data)
   const salesFilter: SalesReportFilter = {
     fromDate,
     toDate,
     dateMode: 'collected',
+    advanceSalesCountMode,
   }
   const salesRows = buildSalesBillList(data, 'date-desc', salesFilter)
   const salesTotals = summarizeSalesBillRows(salesRows, salesFilter)
@@ -158,19 +161,22 @@ export function buildDailyTotals(
   const creditOverview = buildCreditOverview(data)
   const chequeOverview = buildChequeOverview(data)
 
+  const salesCollected = Math.round(salesTotals.totalBills * 100) / 100
+  const salesDrawerCollected = cashCollected + bankCollected
   const netInflow =
-    salesTotals.totalBills +
+    salesDrawerCollected +
     notSaleTotals.total -
     expenseTotals.total -
     purchasePaidTotals.total -
     loanOutflowTotals.cashOutflowTotal
 
-  const totalCollected = salesTotals.totalBills + notSaleTotals.total
+  // Sales figure may include advance rows; cash-in / net use drawer + not-sale only.
+  const totalCollected = salesDrawerCollected + notSaleTotals.total
 
   return {
     fromDate,
     toDate,
-    salesCollected: salesTotals.totalBills,
+    salesCollected,
     salesBillTotal: salesTotals.billTotal,
     salesBillCount: salesTotals.billCount,
     cashCollected,

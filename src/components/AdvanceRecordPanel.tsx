@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useCash } from '../context/CashContext'
 import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
 import { useNumpadKeyboard } from '../hooks/useNumpadKeyboard'
@@ -6,7 +6,11 @@ import AmountDisplay from './AmountDisplay'
 import NumberKeyboard from './NumberKeyboard'
 import AdvanceCustomerLedgerList from './AdvanceCustomerLedgerList'
 import CustomerNameAutocomplete from './CustomerNameAutocomplete'
-import { buildCustomerAdvanceGroups, customerAdvanceBalance } from '../utils/customerAdvance'
+import {
+  buildCustomerAdvanceGroups,
+  customerAdvanceBalance,
+  getAdvanceSalesCountMode,
+} from '../utils/customerAdvance'
 import { buildCustomerSummaries } from '../utils/customerLedger'
 import { formatMoney, parseAmount } from '../utils/format'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
@@ -14,11 +18,12 @@ import './AdvanceRecordPanel.css'
 
 export interface AdvanceRecordPanelProps {
   defaultCustomerName?: string
+  preferredSaleId?: string | null
   numpadRoutePrefix?: string
   compact?: boolean
   /** Form only (e.g. inside create modal). */
   formOnly?: boolean
-  onSaved?: () => void
+  onSaved?: (result: { amount: number; customerName: string }) => void
 }
 
 export default function AdvanceRecordPanel({
@@ -35,10 +40,28 @@ export default function AdvanceRecordPanel({
   const [note, setNote] = useState('')
   const [amountFocused, setAmountFocused] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [addToSales, setAddToSales] = useState(
+    () => getAdvanceSalesCountMode(data) === 'on_receive',
+  )
+  const amountInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (defaultCustomerName) setCustomerName(defaultCustomerName)
   }, [defaultCustomerName])
+
+  useEffect(() => {
+    setAddToSales(getAdvanceSalesCountMode(data) === 'on_receive')
+  }, [data.advanceSalesCountMode])
+
+  useEffect(() => {
+    if (!compact || !formOnly) return
+    const id = window.setTimeout(() => {
+      amountInputRef.current?.focus()
+      amountInputRef.current?.select()
+      setAmountFocused(true)
+    }, 40)
+    return () => window.clearTimeout(id)
+  }, [compact, formOnly, defaultCustomerName])
 
   const nameSuggestions = useMemo(() => {
     const seen = new Map<string, string>()
@@ -79,14 +102,19 @@ export default function AdvanceRecordPanel({
       amount,
       payType,
       note: note.trim() || undefined,
+      countInSalesOnReceive: addToSales,
     })
     if (ok) {
+      const savedName = customerName.trim()
+      const savedAmount = amount
       setAmountStr('')
       setNote('')
       setAmountFocused(false)
-      setSaved(true)
-      onSaved?.()
-      window.setTimeout(() => setSaved(false), 1400)
+      onSaved?.({ amount: savedAmount, customerName: savedName })
+      if (!formOnly) {
+        setSaved(true)
+        window.setTimeout(() => setSaved(false), 1400)
+      }
     }
   }
 
@@ -118,11 +146,13 @@ export default function AdvanceRecordPanel({
           <div className="advance-record-field">
             <label htmlFor="advance-record-amount-compact">Amount</label>
             <input
+              ref={amountInputRef}
               id="advance-record-amount-compact"
               className="advance-record-amount-input"
               inputMode="decimal"
               value={amountStr}
               onChange={(e) => setAmountStr(e.target.value.replace(/[^\d.]/g, ''))}
+              onFocus={() => setAmountFocused(true)}
               placeholder="0"
             />
           </div>
@@ -149,6 +179,26 @@ export default function AdvanceRecordPanel({
             Bank
           </button>
         </div>
+
+        <button
+          type="button"
+          className={`advance-sales-toggle ${addToSales ? 'advance-sales-toggle--on' : ''}`}
+          aria-pressed={addToSales}
+          onClick={() => setAddToSales((on) => !on)}
+        >
+          <span className="advance-sales-toggle__track" aria-hidden="true">
+            <span className="advance-sales-toggle__thumb" />
+          </span>
+          <span className="advance-sales-toggle__copy">
+            <span className="advance-sales-toggle__title">Add to sales</span>
+            <span className="advance-sales-toggle__detail">
+              {addToSales
+                ? 'ON — counts in Sales now; later bills only use remaining balance'
+                : 'OFF — not in Sales yet; amount is added into the bill when you generate it'}
+            </span>
+          </span>
+        </button>
+
         <div className="advance-record-field">
           <label htmlFor="advance-record-note">Note (optional)</label>
           <input

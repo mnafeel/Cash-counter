@@ -15,6 +15,9 @@ import {
   type SalesBillSummary,
 } from '../utils/salesReport'
 import {
+  getAdvanceSalesCountMode,
+} from '../utils/customerAdvance'
+import {
   buildChequeReportItems,
   buildCreditReportItems,
   filterChequeReportItems,
@@ -323,27 +326,35 @@ export default function ReportsPanel({
   const needsLoan = isOverview || activeSection === 'loan'
   const needsNotSale = isOverview || activeSection === 'not-sale'
 
+  const advanceSalesCountMode = getAdvanceSalesCountMode(data)
+
   const salesFilter = useMemo(
     () =>
       needsSales
-        ? salesFilterForPreset(datePreset, filterDateArg, rangeTo, salesDateMode)
+        ? {
+            ...salesFilterForPreset(datePreset, filterDateArg, rangeTo, salesDateMode),
+            advanceSalesCountMode,
+          }
         : undefined,
-    [needsSales, datePreset, filterDateArg, rangeTo, salesDateMode],
+    [needsSales, datePreset, filterDateArg, rangeTo, salesDateMode, advanceSalesCountMode],
   )
   const salesBills = useMemo(
     () => (needsSales ? buildSalesBillList(data, salesSort, salesFilter) : EMPTY_SALES_BILLS),
     [data, salesFilter, salesSort, needsSales],
   )
-  const salesTotals = useMemo(
-    () => (needsSales ? summarizeSalesBillRows(salesBills, salesFilter) : EMPTY_SALES_TOTALS),
-    [salesBills, salesFilter, needsSales],
-  )
+  const salesTotals = useMemo(() => {
+    if (!needsSales) return EMPTY_SALES_TOTALS
+    return summarizeSalesBillRows(salesBills, salesFilter)
+  }, [salesBills, salesFilter, needsSales])
   const overviewSalesFilter = useMemo(
     () =>
       needsOverviewSales
-        ? salesFilterForPreset(datePreset, filterDateArg, rangeTo, 'collected')
+        ? {
+            ...salesFilterForPreset(datePreset, filterDateArg, rangeTo, 'collected'),
+            advanceSalesCountMode,
+          }
         : undefined,
-    [needsOverviewSales, datePreset, filterDateArg, rangeTo],
+    [needsOverviewSales, datePreset, filterDateArg, rangeTo, advanceSalesCountMode],
   )
   const overviewSalesBills = useMemo(
     () =>
@@ -352,13 +363,10 @@ export default function ReportsPanel({
         : EMPTY_SALES_BILLS,
     [data, overviewSalesFilter, needsOverviewSales],
   )
-  const overviewSalesTotals = useMemo(
-    () =>
-      needsOverviewSales
-        ? summarizeSalesBillRows(overviewSalesBills, overviewSalesFilter)
-        : EMPTY_SALES_TOTALS,
-    [overviewSalesBills, overviewSalesFilter, needsOverviewSales],
-  )
+  const overviewSalesTotals = useMemo(() => {
+    if (!needsOverviewSales) return EMPTY_SALES_TOTALS
+    return summarizeSalesBillRows(overviewSalesBills, overviewSalesFilter)
+  }, [overviewSalesBills, overviewSalesFilter, needsOverviewSales])
   const salesRowsForView = useMemo(
     () => (activeSection === 'all' ? overviewSalesBills : salesBills),
     [activeSection, overviewSalesBills, salesBills],
@@ -693,7 +701,9 @@ export default function ReportsPanel({
     return { cash, bank }
   }, [overviewSalesBills])
   const totalCollectedWithNotSale =
-    overviewSalesTotals.totalBills + notSaleInflowTotals.total
+    overviewSalesChannelTotals.cash +
+    overviewSalesChannelTotals.bank +
+    notSaleInflowTotals.total
   const overviewReportNet = useMemo(
     () => buildReportNetSummary(totalCollectedWithNotSale, expenseTimelineSummary),
     [totalCollectedWithNotSale, expenseTimelineSummary],
@@ -1320,7 +1330,11 @@ export default function ReportsPanel({
                   {(selectedSalesCustomer ? selectedCustomerSales : salesRowsForView).map((row) => (
                     <li key={row.id} className="reports-item app-receipt-card">
                       <div className="reports-item-head">
-                        <span className="reports-item-title">{row.customerName || 'Sale'}</span>
+                        <span className="reports-item-title">
+                          {row.isAdvanceRow
+                            ? `${row.customerName || 'Customer'} · Advance`
+                            : row.customerName || 'Sale'}
+                        </span>
                         <span className="reports-item-amount">
                           {formatMoney(
                             salesUseCollected ? row.collectedTotal : row.billAmount,
@@ -1328,16 +1342,32 @@ export default function ReportsPanel({
                         </span>
                       </div>
                       <div className="reports-item-meta">
-                        {salesDateMode === 'created' ? (
+                        {row.isAdvanceRow ? (
+                          <>
+                            {row.dateLabel} · Advance {formatMoney(row.billAmount)}
+                            {row.advanceApplied != null && row.advanceApplied > 0.01
+                              ? ` · Applied ${formatMoney(row.advanceApplied)}`
+                              : ''}
+                            {row.advanceRemaining != null
+                              ? ` · Remaining ${formatMoney(row.advanceRemaining)}`
+                              : ''}
+                          </>
+                        ) : salesDateMode === 'created' ? (
                           <>
                             Created {row.createdDateLabel} · Bill {formatMoney(row.billAmount)} ·{' '}
                             {formatCollectedSalesBreakdown(row.cashTotal, row.bankTotal)}
+                            {row.advanceApplied != null && row.advanceApplied > 0.01
+                              ? ` · Advance in sale ${formatMoney(row.advanceApplied)}`
+                              : ''}
                           </>
                         ) : (
                           <>
                             Created {row.createdDateLabel} · Collected {row.dateLabel} · Bill{' '}
                             {formatMoney(row.billAmount)} ·{' '}
                             {formatCollectedSalesBreakdown(row.cashTotal, row.bankTotal)}
+                            {row.advanceApplied != null && row.advanceApplied > 0.01
+                              ? ` · Advance in sale ${formatMoney(row.advanceApplied)}`
+                              : ''}
                           </>
                         )}
                       </div>
@@ -1920,8 +1950,8 @@ function groupSalesByCustomer(rows: SalesBillRow[], useCollected: boolean) {
     { key: string; name: string; total: number; count: number; rows: SalesBillRow[] }
   >()
   for (const row of rows) {
-    const name = row.customerName?.trim() || 'Walk-in'
-    const key = name.toLowerCase()
+    const name = row.isAdvanceRow ? 'Advance sales' : row.customerName?.trim() || 'Walk-in'
+    const key = row.isAdvanceRow ? '__advance_sales__' : name.toLowerCase()
     const amount = useCollected ? row.collectedTotal : row.billAmount
     const existing = map.get(key)
     if (existing) {
@@ -1932,7 +1962,11 @@ function groupSalesByCustomer(rows: SalesBillRow[], useCollected: boolean) {
       map.set(key, { key, name, total: amount, count: 1, rows: [row] })
     }
   }
-  return [...map.values()].sort((a, b) => b.total - a.total)
+  return [...map.values()].sort((a, b) => {
+    if (a.key === '__advance_sales__') return -1
+    if (b.key === '__advance_sales__') return 1
+    return b.total - a.total
+  })
 }
 
 function SalesBillList({
@@ -1956,13 +1990,31 @@ function SalesBillList({
           {rows.map((row) => (
             <li key={row.id} className="reports-item">
               <div className="reports-item-head">
-                <span className="reports-item-title">{row.customerName || 'Sale'}</span>
+                <span className="reports-item-title">
+                  {row.isAdvanceRow
+                    ? `${row.customerName || 'Customer'} · Advance`
+                    : row.customerName || 'Sale'}
+                </span>
                 <span className="reports-item-amount">{formatMoney(row.collectedTotal)}</span>
               </div>
               <div className="reports-item-meta">
-                Created {row.createdDateLabel} · Collected {row.dateLabel} · Bill{' '}
-                {formatMoney(row.billAmount)} ·{' '}
-                {formatCollectedSalesBreakdown(row.cashTotal, row.bankTotal)}
+                {row.isAdvanceRow ? (
+                  <>
+                    {row.dateLabel} · Advance {formatMoney(row.billAmount)}
+                    {row.advanceApplied != null && row.advanceApplied > 0.01
+                      ? ` · Applied ${formatMoney(row.advanceApplied)}`
+                      : ''}
+                    {row.advanceRemaining != null
+                      ? ` · Remaining ${formatMoney(row.advanceRemaining)}`
+                      : ''}
+                  </>
+                ) : (
+                  <>
+                    Created {row.createdDateLabel} · Collected {row.dateLabel} · Bill{' '}
+                    {formatMoney(row.billAmount)} ·{' '}
+                    {formatCollectedSalesBreakdown(row.cashTotal, row.bankTotal)}
+                  </>
+                )}
               </div>
               <div className="reports-item-meta reports-item-meta--detail">{row.detailLabel}</div>
             </li>

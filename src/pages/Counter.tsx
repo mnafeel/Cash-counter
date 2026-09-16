@@ -23,10 +23,9 @@ import {
 } from '../utils/customerReminders'
 import { buildCustomerSummaries } from '../utils/customerLedger'
 import {
-  allocateAdvanceApplication,
   buildCustomerAdvanceGroups,
   customerAdvanceBalance,
-  customerAdvanceBalanceBreakdown,
+  advanceSalesCountOnApplyAmount,
   normalizeCustomerAdvanceKey,
 } from '../utils/customerAdvance'
 import { buildChequeCustomerSummaries } from '../utils/chequeLedger'
@@ -818,14 +817,6 @@ function Counter({ active }: { active: boolean }) {
     }
     return bal > 0.01 ? bal : null
   }, [customerAdvanceAvailable, useCustomerAdvance, advanceApplyAmount])
-  const advancePools = useMemo(
-    () => customerAdvanceBalanceBreakdown(data, customerNameLedgerKey),
-    [data, customerNameLedgerKey],
-  )
-  const advanceApplySplit = useMemo(
-    () => allocateAdvanceApplication(advanceApplyAmount, advancePools),
-    [advanceApplyAmount, advancePools],
-  )
   const advanceExcessAfterApply = useMemo(() => {
     if (!useCustomerAdvance || !customerNameLedgerKey.trim()) return 0
     return Math.max(
@@ -838,6 +829,13 @@ function Counter({ active }: { active: boolean }) {
     customerAdvanceAvailable,
     advanceApplyAmount,
   ])
+  /** Portion of applied advance that will count in Sales on this bill (Add-to-sales OFF). */
+  const advanceSalesOnThisBill = useMemo(() => {
+    if (!useCustomerAdvance || advanceApplyAmount <= 0.01 || !customerNameLedgerKey.trim()) {
+      return 0
+    }
+    return advanceSalesCountOnApplyAmount(data, customerNameLedgerKey, advanceApplyAmount)
+  }, [useCustomerAdvance, advanceApplyAmount, customerNameLedgerKey, data])
   /** Payable after advance, before round-down. */
   const payableBeforeRound = Math.max(
     0,
@@ -852,6 +850,29 @@ function Counter({ active }: { active: boolean }) {
   const dueAmount = paymentDueAmount
   const advanceCoversBill =
     advanceApplyAmount > 0 && paymentDueAmount <= 0.01 && billAmount > 0
+
+  /** Keep advance already credited on the open bill; add any newly applied now. */
+  function mergedCustomerAdvanceApplied(newApply: number): number | undefined {
+    const priorSale =
+      (loadedPendingId
+        ? data.sales.find((sale) => sale.id === loadedPendingId)
+        : undefined) ??
+      (collectingCreditId
+        ? data.sales.find((sale) => sale.id === collectingCreditId)
+        : undefined) ??
+      (effectiveCollectingCreditId
+        ? data.sales.find((sale) => sale.id === effectiveCollectingCreditId)
+        : undefined) ??
+      (collectingChequeId
+        ? data.sales.find((sale) => sale.id === collectingChequeId)
+        : undefined) ??
+      (effectiveCollectingChequeId
+        ? data.sales.find((sale) => sale.id === effectiveCollectingChequeId)
+        : undefined)
+    const prior = priorSale?.customerAdvanceApplied ?? 0
+    const total = Math.round((prior + Math.max(0, newApply)) * 100) / 100
+    return total > 0.01 ? total : undefined
+  }
 
   const returnGrossDisplay = deductDraftReturns
     ? typedBillAmount
@@ -2596,6 +2617,12 @@ function Counter({ active }: { active: boolean }) {
     }
   }
 
+  function openAdvanceCreateModal() {
+    const name = customerNameFieldRef.current?.getValue().trim() ?? ''
+    if (name) setCustomerNameLedgerKey(name)
+    setShowAdvanceCreateModal(true)
+  }
+
   function clearBillAmounts() {
     setBillStr('')
     setGiveStr('')
@@ -2607,6 +2634,38 @@ function Counter({ active }: { active: boolean }) {
     setRoundOffAmount(null)
     setRoundOtherActive(false)
     setRoundCustomStr('')
+  }
+
+  /** After recording advance: clear everything so a fresh bill can start. */
+  function resetBillingAfterAdvanceSaved() {
+    cancelCreditExitTimer()
+    clearBillAmounts()
+    clearPendingSection()
+    setNameSectionFocus(false)
+    customerNameFieldRef.current?.blur()
+    setPaymentStep(false)
+    setPayType('cash')
+    customerNameFieldRef.current?.setValue('')
+    setCustomerNameLedgerKey('')
+    setUseCustomerAdvance(true)
+    setSavedAction(null)
+    setLoadedPendingId(null)
+    setCollectingCreditId(null)
+    setCollectingChequeId(null)
+    setCreditCollectDue(0)
+    setChequeCollectDue(0)
+    setSplitChequeApprovedAmount(0)
+    setSplitSiblingChequePending(0)
+    setSplitSiblingCreditPending(0)
+    clearSplitCreditPaidBreakdown()
+    setSiblingChequePendingId(null)
+    setBalanceDueAmount(null)
+    setOriginalBillHint(null)
+    setDraftReturns([])
+    setShowReturnModal(false)
+    setChequeListOpen(false)
+    setCreditListOpen(false)
+    setActiveField('bill')
   }
 
   function resetForm() {
@@ -3590,7 +3649,7 @@ function Counter({ active }: { active: boolean }) {
           creditAmount: creditGoesToChild ? undefined : parentCreditAmount,
           chequeApproved: parentChequeApproved,
           customerName: name,
-          customerAdvanceApplied: advanceAppliedNow > 0 ? advanceAppliedNow : undefined,
+          customerAdvanceApplied: mergedCustomerAdvanceApplied(advanceAppliedNow),
           status: 'paid',
         })
       }
@@ -3720,7 +3779,7 @@ function Counter({ active }: { active: boolean }) {
       creditAmount: parentCreditOnCollect,
       chequeApproved: parentChequeApproved || undefined,
       customerName: name,
-      customerAdvanceApplied: advanceAppliedNow > 0 ? advanceAppliedNow : undefined,
+      customerAdvanceApplied: mergedCustomerAdvanceApplied(advanceAppliedNow),
     }
 
     const loadedBill = loadedPendingId
@@ -4360,7 +4419,7 @@ function Counter({ active }: { active: boolean }) {
       creditAmount,
       chequeApproved: payType === 'cheque' ? true : undefined,
       customerName: name,
-      customerAdvanceApplied: advanceAppliedNow > 0 ? advanceAppliedNow : undefined,
+      customerAdvanceApplied: mergedCustomerAdvanceApplied(advanceAppliedNow),
     }
 
     const loadedBill = loadedPendingId
@@ -4369,7 +4428,8 @@ function Counter({ active }: { active: boolean }) {
 
     if (loadedPendingId && loadedBill?.status === 'paid') {
       const collectedTotal = cashAmount + bankAmount + chequeAmount
-      const openCredit = Math.max(0, settledBillAmount - collectedTotal - advanceAppliedNow)
+      const advanceOnBill = mergedCustomerAdvanceApplied(advanceAppliedNow) ?? 0
+      const openCredit = Math.max(0, settledBillAmount - collectedTotal - advanceOnBill)
       savePaidBillEdit(loadedPendingId, name, {
         originalBillAmount: settledOriginalBill,
         billAmount: settledBillAmount,
@@ -5582,48 +5642,36 @@ function Counter({ active }: { active: boolean }) {
           !collectingChequeId &&
           !effectiveCollectingChequeId ? (
             <div className="counter-advance-strip">
-              <label className="counter-advance-strip__use">
-                <input
-                  type="checkbox"
-                  checked={useCustomerAdvance}
-                  onChange={(e) => setUseCustomerAdvance(e.target.checked)}
-                />
-                Apply advance
-              </label>
-              <span className="counter-advance-strip__balance">
-                Available {formatMoney(customerAdvanceAvailable)}
-              </span>
-              {billAmount > 0 ? (
-                useCustomerAdvance && advanceApplyAmount > 0 ? (
-                  <span className="counter-advance-strip__apply">
-                    −{formatMoney(advanceApplyAmount)}
-                    {advanceApplySplit.cash > 0 || advanceApplySplit.bank > 0 ? (
-                      <>
-                        {' '}
-                        (
-                        {advanceApplySplit.cash > 0 ? `cash ${formatMoney(advanceApplySplit.cash)}` : ''}
-                        {advanceApplySplit.cash > 0 && advanceApplySplit.bank > 0 ? ' · ' : ''}
-                        {advanceApplySplit.bank > 0 ? `bank ${formatMoney(advanceApplySplit.bank)}` : ''}
-                        {advanceApplySplit.credit > 0
-                          ? `${advanceApplySplit.cash > 0 || advanceApplySplit.bank > 0 ? ' · ' : ''}credit ${formatMoney(advanceApplySplit.credit)}`
-                          : ''}
-                        )
-                      </>
-                    ) : null}
-                    · Pay {formatMoney(paymentDueAmount)}
-                  </span>
-                ) : (
-                  <span className="counter-advance-strip__apply counter-advance-strip__apply--off">
-                    Full bill {formatMoney(billCollectTarget)}
-                  </span>
-                )
+              <button
+                type="button"
+                className={`counter-advance-strip__btn ${useCustomerAdvance ? 'counter-advance-strip__btn--on' : ''}`}
+                aria-pressed={useCustomerAdvance}
+                onClick={() => setUseCustomerAdvance((on) => !on)}
+              >
+                {useCustomerAdvance ? 'Unapply' : 'Apply'}
+              </button>
+              {useCustomerAdvance ? (
+                <span className="counter-advance-strip__status" aria-label="Advance applied">
+                  Applied
+                </span>
               ) : null}
+              <span className="counter-advance-strip__balance">
+                {formatMoney(customerAdvanceAvailable)}
+                {useCustomerAdvance && advanceApplyAmount > 0
+                  ? ` · −${formatMoney(advanceApplyAmount)}`
+                  : ''}
+                {useCustomerAdvance && advanceApplyAmount > 0.01
+                  ? advanceSalesOnThisBill > 0.01
+                    ? ` · in bill sale ${formatMoney(advanceSalesOnThisBill)}`
+                    : ' · balance only (already in Sales)'
+                  : ''}
+              </span>
               <button
                 type="button"
                 className="counter-advance-strip__link"
-                onClick={() => setShowAdvanceCreateModal(true)}
+                onClick={openAdvanceCreateModal}
               >
-                + Add advance
+                + Add
               </button>
             </div>
           ) : null}
@@ -5641,7 +5689,7 @@ function Counter({ active }: { active: boolean }) {
             <button
               type="button"
               className="counter-actions-inline__btn"
-              onClick={() => setShowAdvanceCreateModal(true)}
+              onClick={openAdvanceCreateModal}
               title="Record customer advance"
             >
               Advance
@@ -6106,7 +6154,17 @@ function Counter({ active }: { active: boolean }) {
               formOnly
               numpadRoutePrefix="/counter"
               defaultCustomerName={customerNameLedgerKey}
-              onSaved={() => setShowAdvanceCreateModal(false)}
+              preferredSaleId={
+                collectingCreditId ??
+                effectiveCollectingCreditId ??
+                collectingChequeId ??
+                effectiveCollectingChequeId ??
+                loadedPendingId
+              }
+              onSaved={() => {
+                setShowAdvanceCreateModal(false)
+                resetBillingAfterAdvanceSaved()
+              }}
             />
             <button
               type="button"

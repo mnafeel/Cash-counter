@@ -23,8 +23,12 @@ import {
   type ReportPeriod,
   type ReportSort,
   type SaleDateMode,
+  type SalesBillSummary,
   type SalesReportFilter,
 } from './salesReport'
+import {
+  getAdvanceSalesCountMode,
+} from './customerAdvance'
 import { saleCollectedAmount } from './salePayment'
 import { UNNAMED_CREDIT_CUSTOMER } from './customerLedger'
 import { matchesCashDateFilter, type CashDateFilter } from './cashActivity'
@@ -385,8 +389,20 @@ export function salesBillsForPreset(
   dateMode: SaleDateMode = 'collected',
   options?: SalesPresetOptions,
 ) {
-  const filter = salesFilterForPreset(preset, selectedDate, rangeTo, dateMode, options)
+  const filter: SalesReportFilter = {
+    ...salesFilterForPreset(preset, selectedDate, rangeTo, dateMode, options),
+    advanceSalesCountMode: getAdvanceSalesCountMode(data),
+  }
   return buildSalesBillList(data, sort, filter)
+}
+
+function withReceivedAdvancesInSalesSummary(
+  _data: AppData,
+  summary: SalesBillSummary,
+  _filter?: SalesReportFilter,
+): SalesBillSummary {
+  // Advance rows are already merged into buildSalesBillList.
+  return summary
 }
 
 export function salesSummaryForPreset(
@@ -397,8 +413,15 @@ export function salesSummaryForPreset(
   dateMode: SaleDateMode = 'collected',
   options?: SalesPresetOptions,
 ) {
-  const filter = salesFilterForPreset(preset, selectedDate, rangeTo, dateMode, options)
-  return summarizeSalesBillRows(buildSalesBillList(data, 'date-desc', filter), filter)
+  const filter: SalesReportFilter = {
+    ...salesFilterForPreset(preset, selectedDate, rangeTo, dateMode, options),
+    advanceSalesCountMode: getAdvanceSalesCountMode(data),
+  }
+  return withReceivedAdvancesInSalesSummary(
+    data,
+    summarizeSalesBillRows(buildSalesBillList(data, 'date-desc', filter), filter),
+    filter,
+  )
 }
 
 export function salesSameDaySummaryForPreset(

@@ -6,6 +6,7 @@ import { normalExpensePaidChannels } from './normalExpenseHistory'
 import { buildPurchaseHistoryItems, purchaseExpensePaymentModes, buildPurchaseLedgerPaymentEvents, type PurchaseHistoryItem, type PurchaseLedgerPaymentEvent } from './purchaseHistory'
 import { getSaleCustomerName } from './saleCustomerName'
 import { memoByDataRef } from './memoByDataRef'
+import { saleAdvanceSalesCountAmount } from './customerAdvance'
 import {
   formatSaleReturnLine,
   saleBillGroupRealizedCollected,
@@ -1411,7 +1412,8 @@ export function historyItemChannelAmount(
 }
 
 /**
- * Amount for History list/totals — when Cash or Bank filter is on, only that channel.
+ * Amount for History list rows / channel filters — drawer cash/bank only for sales.
+ * Sales-section totals use historyItemSalesTotalForDateFilter separately.
  */
 export function historyItemFilteredAmount(
   item: HistoryItem,
@@ -1621,6 +1623,16 @@ function buildCustomerAdvanceHistoryItems(data: AppData): HistoryItem[] {
           : []
 
     if (entry.kind === 'refunded') {
+      // Internal write-off when a bill with advance is deleted → credit (no cash movement).
+      const cash = entry.cashAmount ?? 0
+      const bank = entry.bankAmount ?? 0
+      if (
+        cash <= 0.01 &&
+        bank <= 0.01 &&
+        (entry.note ?? '').includes('Converted to credit')
+      ) {
+        continue
+      }
       items.push({
         type: 'advance',
         id: `advance-${entry.id}`,
@@ -3695,6 +3707,13 @@ export function historyItemDisplayAmount(item: HistoryItem, purchasePaidOnly = f
   return item.amount
 }
 
+/** Advance applied on a sale receipt (cash or return-credit). */
+export function historyItemAdvanceAppliedAmount(item: HistoryItem): number {
+  if (item.type !== 'sale') return 0
+  const line = (item.receiptLines ?? []).find((row) => row.label === 'Advance applied')
+  return line && line.amount > 0.01 ? line.amount : 0
+}
+
 /** Money actually collected for a history sale row (split-aware). Excludes Advance applied. */
 export function historyItemSaleAmount(item: HistoryItem): number {
   if (item.type !== 'sale') return item.amount
@@ -3704,6 +3723,78 @@ export function historyItemSaleAmount(item: HistoryItem): number {
     return item.collectedAmount
   }
   return item.amount
+}
+
+/**
+ * Sale value for Sales totals: drawer cash/bank/cheque + Advance applied (bill portion only).
+ * History list rows stay on historyItemSaleAmount (drawer only).
+ */
+export function historyItemSaleSalesTotal(
+  item: HistoryItem,
+  data?: AppData,
+): number {
+  if (item.type !== 'sale') return item.amount
+  const drawer = historyItemSaleAmount(item)
+  const sale = data?.sales.find((row) => row.id === item.id)
+  const advance = sale && data
+    ? saleAdvanceSalesCountAmount(data, sale)
+    : historyItemAdvanceAppliedAmount(item)
+  if (advance <= 0.01) return drawer
+  return Math.round((drawer + advance) * 100) / 100
+}
+
+function historyItemAdvanceAppliedOnFilterDay(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter,
+  selectedDate: string,
+): number {
+  const advance = historyItemAdvanceAppliedAmount(item)
+  if (advance <= 0.01) return 0
+  if (dateFilter === 'all') return advance
+
+  const advanceEvent = (item.receiptTimeline ?? []).find((event) => event.label === 'Advance applied')
+  const advanceAt =
+    advanceEvent?.date ||
+    item.completedAt ||
+    item.billCreatedAt ||
+    item.date
+  if (isoMatchesHistoryDateFilter(advanceAt, dateFilter, selectedDate)) return advance
+
+  // Fall back when timeline lacks an advance stamp but the bill is active that day.
+  if (
+    historySaleActivityDates(item).some((iso) =>
+      isoMatchesHistoryDateFilter(iso, dateFilter, selectedDate),
+    )
+  ) {
+    return advance
+  }
+  return 0
+}
+
+/** Sales-section amount for a day filter — includes bill-counted advance on that day. */
+export function historyItemSalesTotalForDateFilter(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter,
+  selectedDate: string,
+  purchasePaidOnly = false,
+  data?: AppData,
+): number {
+  if (item.type !== 'sale') {
+    return historyItemAmountForDateFilter(item, dateFilter, selectedDate, purchasePaidOnly)
+  }
+  const drawer = historyItemAmountForDateFilter(item, dateFilter, selectedDate, false)
+  const onDay = historyItemAdvanceAppliedOnFilterDay(item, dateFilter, selectedDate)
+  if (onDay <= 0.01) return drawer
+  const sale = data?.sales.find((row) => row.id === item.id)
+  const advance =
+    sale && data ? saleAdvanceSalesCountAmount(data, sale) : onDay
+  if (advance <= 0.01) return drawer
+  return Math.round((drawer + advance) * 100) / 100
+}
+
+/** True when an advance history row is cash collected (counts toward Sales in on_receive mode). */
+export function historyItemIsAdvanceReceivedCash(item: HistoryItem): boolean {
+  return item.type === 'advance' && Boolean(item.sub?.includes('Advance created'))
 }
 
 export function buildHistorySearchHaystack(item: HistoryItem): string {

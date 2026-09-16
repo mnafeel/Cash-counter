@@ -24,6 +24,7 @@ import {
   type NormalExpenseHistoryItem,
 } from './normalExpenseHistory'
 import { buildSalesBillList, summarizeSalesBillRows } from './salesReport'
+import { getAdvanceSalesCountMode } from './customerAdvance'
 import { formatMoney, formatReportTime } from './format'
 import { printHtmlReport } from './printHtmlReport'
 
@@ -502,10 +503,12 @@ export function buildDailySummaryTable(input: DailyReportInput): DailySummaryTab
   const cashSummary = summarizeCashActivity(dailyCashItems(data, selectedDate))
   const bankSummary = summarizeBankActivity(dailyBankItems(data, selectedDate))
   const expenseSummary = summarizeNormalExpenses(dailyExpenseItems(data, selectedDate))
+  const advanceSalesCountMode = getAdvanceSalesCountMode(data)
   const salesFilter = {
     fromDate: selectedDate,
     toDate: selectedDate,
     dateMode: 'collected' as const,
+    advanceSalesCountMode,
   }
   const salesSummary = summarizeSalesBillRows(
     buildSalesBillList(data, 'date-desc', salesFilter),

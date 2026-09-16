@@ -3,6 +3,152 @@ import { formatMoney } from './format'
 import { formatSaleReturnLine } from './saleReturns'
 import { memoByDataRef } from './memoByDataRef'
 
+export function getAdvanceSalesCountMode(data: AppData): 'on_bill' | 'on_receive' {
+  return data.advanceSalesCountMode === 'on_receive' ? 'on_receive' : 'on_bill'
+}
+
+function localDayTimestamp(iso: string): number {
+  const d = new Date(iso)
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
+
+function inputDateTimestamp(value: string): number {
+  const [y, m, d] = value.split('-').map(Number)
+  return new Date(y, m - 1, d).getTime()
+}
+
+/** Cash advances collected in range that should count toward Sales when received. */
+export function sumCustomerAdvancesReceivedInRange(
+  data: AppData,
+  fromDate?: string,
+  toDate?: string,
+): number {
+  const legacyCountAll = getAdvanceSalesCountMode(data) === 'on_receive'
+  let total = 0
+  for (const row of data.customerAdvances ?? []) {
+    if (row.kind !== 'received' || row.amount <= 0) continue
+    const counts =
+      row.countInSalesOnReceive === true ||
+      (row.countInSalesOnReceive == null && legacyCountAll)
+    if (!counts) continue
+    if (fromDate || toDate) {
+      const day = localDayTimestamp(row.at)
+      if (fromDate && day < inputDateTimestamp(fromDate)) continue
+      if (toDate && day > inputDateTimestamp(toDate)) continue
+    }
+    total += row.amount
+  }
+  return roundMoney(total)
+}
+
+/**
+ * Of `applyAmount` drawn from open advance balance, how much should still count toward Sales
+ * when applied on the bill (FIFO over open lots).
+ */
+export function advanceSalesCountOnApplyAmount(
+  data: AppData,
+  customerName: string,
+  applyAmount: number,
+): number {
+  const want = roundMoney(Math.max(0, applyAmount))
+  if (want <= 0) return 0
+
+  const rows = [...customerAdvanceEntriesForName(data, customerName)].sort(
+    (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+  )
+
+  type Lot = { remaining: number; alreadyInSales: boolean }
+  const lots: Lot[] = []
+
+  for (const row of rows) {
+    if (row.kind === 'received') {
+      lots.push({
+        remaining: row.amount,
+        alreadyInSales: receivedAdvanceCountsInSales(data, row),
+      })
+    } else if (row.kind === 'from_return') {
+      // Return credit was never counted as Sales cash — count when applied on a bill.
+      lots.push({ remaining: row.amount, alreadyInSales: false })
+    } else if (row.kind === 'applied' || row.kind === 'refunded') {
+      let need = row.amount
+      for (const lot of lots) {
+        if (need <= 0.01) break
+        if (lot.remaining <= 0.01) continue
+        const take = Math.min(lot.remaining, need)
+        lot.remaining = roundMoney(lot.remaining - take)
+        need = roundMoney(need - take)
+      }
+    }
+  }
+
+  let remaining = want
+  let countOnApply = 0
+  for (const lot of lots) {
+    if (remaining <= 0.01) break
+    if (lot.remaining <= 0.01) continue
+    const take = Math.min(lot.remaining, remaining)
+    if (!lot.alreadyInSales) countOnApply = roundMoney(countOnApply + take)
+    remaining = roundMoney(remaining - take)
+  }
+  return countOnApply
+}
+
+/**
+ * How much of a sale's applied advance should count in Sales on the bill.
+ * Replays the ledger so toggling Add-to-sales on a receive updates bill figures.
+ * — Add to sales ON  → already counted when received → 0 on the bill
+ * — Add to sales OFF → not counted yet → full applied amount on the bill
+ */
+export function saleAdvanceSalesCountAmount(data: AppData, sale: Sale): number {
+  const appliedTarget = sale.customerAdvanceApplied ?? 0
+  if (appliedTarget <= 0.01 || !sale.customerName?.trim()) return 0
+
+  const rows = [...customerAdvanceEntriesForName(data, sale.customerName)].sort(
+    (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+  )
+
+  type Lot = { remaining: number; alreadyInSales: boolean }
+  const lots: Lot[] = []
+  let countedOnBill = 0
+
+  for (const row of rows) {
+    if (row.kind === 'received') {
+      lots.push({
+        remaining: row.amount,
+        alreadyInSales: receivedAdvanceCountsInSales(data, row),
+      })
+    } else if (row.kind === 'from_return') {
+      lots.push({ remaining: row.amount, alreadyInSales: false })
+    } else if (row.kind === 'applied' || row.kind === 'refunded') {
+      let need = row.amount
+      let fromNotYetInSales = 0
+      for (const lot of lots) {
+        if (need <= 0.01) break
+        if (lot.remaining <= 0.01) continue
+        const take = Math.min(lot.remaining, need)
+        if (!lot.alreadyInSales) fromNotYetInSales = roundMoney(fromNotYetInSales + take)
+        lot.remaining = roundMoney(lot.remaining - take)
+        need = roundMoney(need - take)
+      }
+      if (row.kind === 'applied' && row.saleId === sale.id) {
+        countedOnBill = roundMoney(countedOnBill + fromNotYetInSales)
+      }
+    }
+  }
+
+  // Sale has advance applied but ledger row not written yet (in-flight save).
+  if (countedOnBill <= 0.01) {
+    const ledgerApplied = rows
+      .filter((row) => row.kind === 'applied' && row.saleId === sale.id)
+      .reduce((sum, row) => sum + row.amount, 0)
+    if (ledgerApplied <= 0.01 && appliedTarget > 0.01) {
+      return advanceSalesCountOnApplyAmount(data, sale.customerName, appliedTarget)
+    }
+  }
+
+  return countedOnBill
+}
+
 export function normalizeCustomerAdvanceKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ')
 }
@@ -247,7 +393,7 @@ export function advanceEntryIsOutflow(kind: CustomerAdvanceKind): boolean {
   return kind === 'applied' || kind === 'refunded'
 }
 
-export type AdvanceStatementStatusTag = 'Open' | 'Refund' | 'Advance' | 'Adjusted' | 'Return'
+export type AdvanceStatementStatusTag = 'Open' | 'Refund' | 'Advance' | 'Applied' | 'Return'
 
 export interface AdvanceStatementRow {
   id: string
@@ -268,7 +414,7 @@ function statementStatusTag(
   if (isLastOpen) return 'Open'
   if (kind === 'received') return 'Advance'
   if (kind === 'refunded') return 'Refund'
-  if (kind === 'applied') return 'Adjusted'
+  if (kind === 'applied') return 'Applied'
   if (kind === 'from_return') return 'Return'
   return undefined
 }
@@ -302,8 +448,8 @@ function statementLabel(
     const billPart =
       bill != null && bill > 0 ? `Bill ${formatMoney(bill)}` : 'Bill'
     return {
-      label: 'Bill adjustment',
-      detail: `Advance adjusted against ${billPart}${entry.note ? ` · ${entry.note}` : ''}`,
+      label: 'Applied to bill',
+      detail: `Advance applied against ${billPart}${entry.note ? ` · ${entry.note}` : ''}`,
     }
   }
   return { label: customerAdvanceKindLabel(entry.kind), detail: entry.note }
@@ -452,6 +598,254 @@ export function appendCustomerAdvanceEntry(
     ...data,
     customerAdvances: [row, ...(data.customerAdvances ?? [])],
   }
+}
+
+export type AdvanceApplySaleOption = {
+  id: string
+  label: string
+  due: number
+}
+
+/** Open pending bills for a customer that can receive an advance credit. */
+export function customerOpenSalesForAdvanceApply(
+  data: AppData,
+  customerName: string,
+  preferredSaleId?: string | null,
+): AdvanceApplySaleOption[] {
+  const key = normalizeCustomerAdvanceKey(customerName)
+  const options: AdvanceApplySaleOption[] = []
+  const seen = new Set<string>()
+
+  function pushSale(sale: (typeof data.sales)[number], force = false) {
+    if (seen.has(sale.id)) return
+    if (sale.status !== 'pending' && !force) return
+    const isCredit = sale.payType === 'credit' || sale.pendingPayType === 'credit'
+    const isCheque = sale.payType === 'cheque' || sale.pendingPayType === 'cheque'
+    const due = Math.max(
+      0,
+      Math.round(
+        (sale.status === 'pending'
+          ? isCredit
+            ? Math.max(sale.billAmount ?? 0, sale.creditAmount ?? 0)
+            : isCheque
+              ? Math.max(sale.billAmount ?? 0, sale.chequeAmount ?? 0)
+              : sale.billAmount
+          : Math.max(
+              0,
+              (sale.originalBillAmount ?? sale.billAmount) - (sale.customerAdvanceApplied ?? 0),
+            )) * 100,
+      ) / 100,
+    )
+    if (due <= 0.01 && !force) return
+    const kind =
+      sale.status !== 'pending'
+        ? 'Sale'
+        : isCredit
+          ? 'Credit'
+          : isCheque
+            ? 'Cheque'
+            : 'Pending'
+    const when = new Date(sale.createdAt).toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+    })
+    const who = (sale.customerName ?? '').trim()
+    options.push({
+      id: sale.id,
+      due: Math.max(due, 0.01),
+      label: `${who ? `${who} · ` : ''}${kind} · ${formatMoney(due)} · ${when}`,
+    })
+    seen.add(sale.id)
+  }
+
+  if (preferredSaleId) {
+    const preferred = data.sales.find((sale) => sale.id === preferredSaleId)
+    if (preferred) pushSale(preferred, true)
+  }
+
+  if (key) {
+    for (const sale of data.sales) {
+      const name = (sale.customerName ?? '').trim()
+      if (normalizeCustomerAdvanceKey(name) !== key) continue
+      pushSale(sale)
+    }
+  }
+
+  return options.sort((a, b) => b.due - a.due)
+}
+
+export type ReceivedAdvanceSettingsRow = {
+  id: string
+  customerName: string
+  amount: number
+  remaining: number
+  applied: number
+  at: string
+  payLabel: string
+  note?: string
+  countInSalesOnReceive: boolean
+}
+
+/** FIFO remaining open amount for each received / return-credit advance entry. */
+export function receivedAdvanceRemainingById(data: AppData): Map<string, number> {
+  const byCustomer = new Map<string, CustomerAdvanceLedgerEntry[]>()
+  for (const row of data.customerAdvances ?? []) {
+    const key = normalizeCustomerAdvanceKey(row.customerName)
+    if (!key) continue
+    const list = byCustomer.get(key) ?? []
+    list.push(row)
+    byCustomer.set(key, list)
+  }
+
+  const remainingById = new Map<string, number>()
+
+  for (const entries of byCustomer.values()) {
+    const sorted = [...entries].sort(
+      (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+    )
+    type Lot = { id: string; remaining: number }
+    const lots: Lot[] = []
+    for (const row of sorted) {
+      if (row.kind === 'received' || row.kind === 'from_return') {
+        lots.push({ id: row.id, remaining: row.amount })
+        remainingById.set(row.id, row.amount)
+      } else if (row.kind === 'applied' || row.kind === 'refunded') {
+        let need = row.amount
+        for (const lot of lots) {
+          if (need <= 0.01) break
+          if (lot.remaining <= 0.01) continue
+          const take = Math.min(lot.remaining, need)
+          lot.remaining = roundMoney(lot.remaining - take)
+          remainingById.set(lot.id, lot.remaining)
+          need = roundMoney(need - take)
+        }
+      }
+    }
+  }
+
+  return remainingById
+}
+
+export function receivedAdvanceCountsInSales(
+  data: AppData,
+  entry: CustomerAdvanceLedgerEntry,
+): boolean {
+  if (entry.kind !== 'received') return false
+  if (entry.countInSalesOnReceive === true) return true
+  if (entry.countInSalesOnReceive === false) return false
+  return getAdvanceSalesCountMode(data) === 'on_receive'
+}
+
+/** All cash advances received — for Advance Settings list + toggles. */
+export function listReceivedAdvancesForSettings(data: AppData): ReceivedAdvanceSettingsRow[] {
+  const remainingById = receivedAdvanceRemainingById(data)
+  const rows: ReceivedAdvanceSettingsRow[] = []
+  for (const entry of data.customerAdvances ?? []) {
+    if (entry.kind !== 'received' || entry.amount <= 0.01) continue
+    const remaining = remainingById.get(entry.id) ?? 0
+    const applied = roundMoney(Math.max(0, entry.amount - remaining))
+    const cash = entry.cashAmount ?? 0
+    const bank = entry.bankAmount ?? 0
+    const payLabel =
+      cash > 0 && bank > 0 ? 'Cash + Bank' : bank > 0 ? 'Bank' : 'Cash'
+    rows.push({
+      id: entry.id,
+      customerName: entry.customerName.trim(),
+      amount: entry.amount,
+      remaining,
+      applied,
+      at: entry.at,
+      payLabel,
+      note: entry.note,
+      countInSalesOnReceive: receivedAdvanceCountsInSales(data, entry),
+    })
+  }
+  return rows.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+}
+
+export type AdvanceSalesBillBuild = {
+  id: string
+  customerName: string
+  at: string
+  amount: number
+  remaining: number
+  applied: number
+  cashAmount: number
+  bankAmount: number
+  note?: string
+}
+
+/** Advance payments that count toward Sales in a date range (for report list). */
+export function listAdvanceSalesForReport(
+  data: AppData,
+  fromDate?: string,
+  toDate?: string,
+): AdvanceSalesBillBuild[] {
+  const remainingById = receivedAdvanceRemainingById(data)
+  const rows: AdvanceSalesBillBuild[] = []
+  for (const entry of data.customerAdvances ?? []) {
+    if (entry.kind !== 'received' || entry.amount <= 0.01) continue
+    if (!receivedAdvanceCountsInSales(data, entry)) continue
+    if (fromDate || toDate) {
+      const day = localDayTimestamp(entry.at)
+      if (fromDate && day < inputDateTimestamp(fromDate)) continue
+      if (toDate && day > inputDateTimestamp(toDate)) continue
+    }
+    const remaining = remainingById.get(entry.id) ?? 0
+    const applied = roundMoney(Math.max(0, entry.amount - remaining))
+    rows.push({
+      id: entry.id,
+      customerName: entry.customerName.trim(),
+      at: entry.at,
+      amount: entry.amount,
+      remaining,
+      applied,
+      cashAmount: entry.cashAmount ?? 0,
+      bankAmount: entry.bankAmount ?? 0,
+      note: entry.note,
+    })
+  }
+  return rows.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+}
+
+export type AppliedAdvanceSettingsRow = {
+  id: string
+  customerName: string
+  amount: number
+  at: string
+  saleId: string
+  saleLabel: string
+  note?: string
+}
+
+/** Applied advances linked to sales — for Advance Settings unapply list. */
+export function listAppliedAdvancesForSettings(data: AppData): AppliedAdvanceSettingsRow[] {
+  const rows: AppliedAdvanceSettingsRow[] = []
+  for (const entry of data.customerAdvances ?? []) {
+    if (entry.kind !== 'applied' || !entry.saleId || entry.amount <= 0.01) continue
+    const sale = data.sales.find((row) => row.id === entry.saleId)
+    const when = new Date(entry.at).toLocaleDateString(undefined, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    })
+    const saleDue = sale
+      ? sale.status === 'pending'
+        ? sale.billAmount
+        : sale.originalBillAmount ?? sale.billAmount
+      : entry.amount
+    const saleStatus = sale?.status === 'pending' ? 'Open' : sale ? 'Settled' : 'Missing bill'
+    rows.push({
+      id: entry.id,
+      customerName: entry.customerName.trim(),
+      amount: entry.amount,
+      at: entry.at,
+      saleId: entry.saleId,
+      saleLabel: `${saleStatus} · ${formatMoney(saleDue)} · ${when}`,
+      note: entry.note,
+    })
+  }
+  return rows.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
 }
 
 export function customerAdvanceKindLabel(kind: CustomerAdvanceKind): string {

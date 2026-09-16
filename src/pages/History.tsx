@@ -25,6 +25,8 @@ import {
   getHistoryItemTypeLabel,
   historyItemCreatedTime,
   historyItemFilteredAmount,
+  historyItemSalesTotalForDateFilter,
+  historyItemIsAdvanceReceivedCash,
   historyItemSortTime,
   historyItemActivityLabel,
   historyItemListDateLabel,
@@ -38,6 +40,7 @@ import {
   type HistoryItemType,
   type HistoryPaymentFilter,
 } from '../utils/historyItems'
+import { getAdvanceSalesCountMode } from '../utils/customerAdvance'
 import './History.css'
 
 type HistorySort =
@@ -301,19 +304,24 @@ function History({ active }: { active: boolean }) {
     [purchaseItems],
   )
 
+  const advanceSalesCountMode = getAdvanceSalesCountMode(data)
+
   const activityTrendPoints = useMemo(() => {
     const sorted = [...normalItems]
       .filter((item) => item.type !== 'transfer')
       .sort((a, b) => historyItemSortTime(a) - historyItemSortTime(b))
 
     return sorted.map((item) => {
-      const raw = historyItemFilteredAmount(
-        item,
-        dateFilter,
-        selectedDate,
-        paymentFilter,
-        false,
-      )
+      const raw =
+        item.type === 'sale' && paymentFilter === 'all'
+          ? historyItemSalesTotalForDateFilter(item, dateFilter, selectedDate, false, data)
+          : historyItemFilteredAmount(
+              item,
+              dateFilter,
+              selectedDate,
+              paymentFilter,
+              false,
+            )
       const amount =
         item.type === 'expense' || item.type === 'purchase' || item.type === 'loan'
           ? -Math.abs(raw)
@@ -327,7 +335,7 @@ function History({ active }: { active: boolean }) {
         label,
       }
     })
-  }, [normalItems, dateFilter, selectedDate, paymentFilter])
+  }, [normalItems, dateFilter, selectedDate, paymentFilter, data])
 
   const typeTotals = useMemo(() => {
     const totals: Record<HistoryItemType, { sum: number; count: number }> = {
@@ -341,17 +349,38 @@ function History({ active }: { active: boolean }) {
     }
     const items = showPurchaseHistory ? combinedItems : normalItems
     for (const item of items) {
-      totals[item.type].sum += historyItemFilteredAmount(
-        item,
-        dateFilter,
-        selectedDate,
-        paymentFilter,
-        showPurchaseHistory && item.type === 'purchase',
-      )
+      const amount =
+        item.type === 'sale' && paymentFilter === 'all'
+          ? historyItemSalesTotalForDateFilter(item, dateFilter, selectedDate, false, data)
+          : historyItemFilteredAmount(
+              item,
+              dateFilter,
+              selectedDate,
+              paymentFilter,
+              showPurchaseHistory && item.type === 'purchase',
+            )
+      totals[item.type].sum += amount
       totals[item.type].count += 1
+      if (paymentFilter === 'all' && historyItemIsAdvanceReceivedCash(item)) {
+        const entryId = item.id.replace(/^advance-/, '')
+        const entry = data.customerAdvances?.find((row) => row.id === entryId)
+        const counts =
+          entry?.countInSalesOnReceive === true ||
+          (entry?.countInSalesOnReceive == null && advanceSalesCountMode === 'on_receive')
+        if (counts) totals.sale.sum += amount
+      }
     }
     return totals
-  }, [combinedItems, normalItems, showPurchaseHistory, dateFilter, selectedDate, paymentFilter])
+  }, [
+    combinedItems,
+    normalItems,
+    showPurchaseHistory,
+    dateFilter,
+    selectedDate,
+    paymentFilter,
+    advanceSalesCountMode,
+    data,
+  ])
 
   const summaryTypes =
     filter === 'all'

@@ -5,9 +5,14 @@ import { useOpenTiming } from '../hooks/useOpenTiming'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import AdvanceCustomerLedgerList from '../components/AdvanceCustomerLedgerList'
 import AdvanceRecordPanel from '../components/AdvanceRecordPanel'
+import AdvanceSettingsPanel from '../components/AdvanceSettingsPanel'
 import ReturnLookupPanel from '../components/ReturnLookupPanel'
 import UtilitiesNavIcon from '../components/UtilitiesNavIcon'
-import { UtilitiesAdvanceIcon, UtilitiesReturnIcon } from '../components/UtilitiesHubIcons'
+import {
+  UtilitiesAdvanceIcon,
+  UtilitiesAdvanceSettingsIcon,
+  UtilitiesReturnIcon,
+} from '../components/UtilitiesHubIcons'
 import './Utilities.css'
 
 function UtilitiesShell({ children, showBack }: { children: ReactNode; showBack?: boolean }) {
@@ -80,6 +85,7 @@ function AdvancePage() {
   const [historyDateFilter, setHistoryDateFilter] = useState<AdvanceHistoryDateFilter>('all')
   const [historySelectedDate, setHistorySelectedDate] = useState('')
   const [showCreateAdvance, setShowCreateAdvance] = useState(false)
+  const [showAdvanceSettings, setShowAdvanceSettings] = useState(false)
   const deferredHistorySearch = useDeferredValue(historySearch)
 
   return (
@@ -88,6 +94,15 @@ function AdvancePage() {
         <div className="utilities-pane-toolbar">
           <h2 className="utilities-pane-title">Advance</h2>
           <div className="utilities-pane-actions">
+            <button
+              type="button"
+              className="utilities-icon-btn"
+              aria-label="Advance settings"
+              title="Advance settings"
+              onClick={() => setShowAdvanceSettings(true)}
+            >
+              <UtilitiesAdvanceSettingsIcon className="utilities-icon-btn__svg" />
+            </button>
             <button
               type="button"
               className="utilities-create-btn"
@@ -148,6 +163,34 @@ function AdvancePage() {
                 numpadRoutePrefix="/utilities"
                 onSaved={() => setShowCreateAdvance(false)}
               />
+            </div>
+          </div>
+        ) : null}
+
+        {showAdvanceSettings ? (
+          <div
+            className="utilities-modal-overlay"
+            role="presentation"
+            onMouseDown={() => setShowAdvanceSettings(false)}
+          >
+            <div
+              className="utilities-modal-sheet utilities-modal-sheet--settings"
+              role="dialog"
+              aria-label="Advance settings"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="utilities-modal-head">
+                <h3>Advance settings</h3>
+                <button
+                  type="button"
+                  className="utilities-modal-close"
+                  aria-label="Close"
+                  onClick={() => setShowAdvanceSettings(false)}
+                >
+                  ×
+                </button>
+              </div>
+              <AdvanceSettingsPanel />
             </div>
           </div>
         ) : null}

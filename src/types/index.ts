@@ -33,6 +33,16 @@ export interface CustomerAdvanceLedgerEntry {
   saleId?: string
   returnEntryId?: string
   note?: string
+  /**
+   * Received advances only: when true, this cash counts toward Sales as soon as it is collected.
+   * When false/omitted (and not legacy on_receive), it counts when applied to a bill instead.
+   */
+  countInSalesOnReceive?: boolean
+  /**
+   * Applied advances only: portion of `amount` that should count toward Sales on the bill
+   * (exclude cash that already counted when the advance was received).
+   */
+  salesCountAmount?: number
 }
 
 /** Item returned against a sales / credit bill — reduces amount due. */
@@ -339,6 +349,12 @@ export interface AppData {
   trashPurgedKeys?: string[]
   /** Customer advance ledger (prepayments and applications). */
   customerAdvances?: CustomerAdvanceLedgerEntry[]
+  /**
+   * When advance cash counts toward Sales totals:
+   * - on_bill: include when advance is used on a generated bill (default)
+   * - on_receive: include when the advance is first collected
+   */
+  advanceSalesCountMode?: 'on_bill' | 'on_receive'
 }
 
 export type TrashKind = 'sale' | 'expense' | 'loan'

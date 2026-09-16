@@ -5,6 +5,7 @@ import {
   appendCustomerAdvanceEntry,
   allocateAdvanceApplication,
   allocateAdvanceRefund,
+  advanceSalesCountOnApplyAmount,
   customerAdvanceBalance,
   customerAdvanceBalanceBreakdown,
   customerAdvanceCashBankTotals,
@@ -497,6 +498,12 @@ function normalizeCustomerAdvanceEntry(raw: unknown): CustomerAdvanceLedgerEntry
     saleId: typeof row.saleId === 'string' ? row.saleId : undefined,
     returnEntryId: typeof row.returnEntryId === 'string' ? row.returnEntryId : undefined,
     note: typeof row.note === 'string' ? row.note : undefined,
+    countInSalesOnReceive:
+      typeof row.countInSalesOnReceive === 'boolean' ? row.countInSalesOnReceive : undefined,
+    salesCountAmount:
+      row.salesCountAmount != null && Number.isFinite(Number(row.salesCountAmount))
+        ? Math.round(Number(row.salesCountAmount) * 100) / 100
+        : undefined,
   }
 }
 
@@ -594,6 +601,8 @@ export function normalizeData(parsed: Partial<AppData>): AppData {
     homePin: normalizePin(parsed.homePin, '0000'),
     pinLength: parsed.pinLength === 6 ? 6 : 4,
     theme: normalizeTheme(parsed.theme),
+    advanceSalesCountMode:
+      parsed.advanceSalesCountMode === 'on_receive' ? 'on_receive' : 'on_bill',
     suppliers: normalizeSuppliers(parsed.suppliers),
     reminderAlerts: {
       creditDaysBefore: Math.max(0, alerts?.creditDaysBefore ?? DEFAULT_REMINDER_ALERTS.creditDaysBefore),
@@ -1519,26 +1528,28 @@ export function addSale(
 }
 
 function applyCustomerAdvanceLedgerForSale(data: AppData, sale: Sale): AppData {
-  const applied = sale.customerAdvanceApplied ?? 0
-  if (applied <= 0 || !sale.customerName?.trim()) return data
+  const appliedTarget = sale.customerAdvanceApplied ?? 0
+  if (appliedTarget <= 0 || !sale.customerName?.trim()) return data
+
+  const alreadyApplied = (data.customerAdvances ?? [])
+    .filter((row) => row.kind === 'applied' && row.saleId === sale.id)
+    .reduce((sum, row) => sum + row.amount, 0)
+  const need = Math.round((appliedTarget - alreadyApplied) * 100) / 100
+  if (need <= 0.01) return data
+
   const balance = customerAdvanceBalance(data, sale.customerName)
-  const use = Math.min(Math.round(applied * 100) / 100, balance)
+  const use = Math.min(need, balance)
   if (use <= 0) return data
-  if (
-    (data.customerAdvances ?? []).some(
-      (row) => row.kind === 'applied' && row.saleId === sale.id,
-    )
-  ) {
-    return data
-  }
+
   const pools = customerAdvanceBalanceBreakdown(data, sale.customerName)
   const split = allocateAdvanceApplication(use, pools)
+  const salesCountAmount = advanceSalesCountOnApplyAmount(data, sale.customerName, use)
   const noteParts: string[] = []
   if (split.credit > 0) noteParts.push(`Return credit ${split.credit}`)
   if (split.cash > 0 && split.bank > 0) {
     noteParts.push(`Cash ${split.cash} · Bank ${split.bank}`)
   }
-  const billNote = `Bill ${Math.round(sale.billAmount * 100) / 100}`
+  const billNote = `Bill ${Math.round((sale.originalBillAmount ?? sale.billAmount) * 100) / 100}`
   const note = [billNote, ...noteParts].filter(Boolean).join(' · ')
   return appendCustomerAdvanceEntry(data, {
     customerName: sale.customerName.trim(),
@@ -1549,7 +1560,189 @@ function applyCustomerAdvanceLedgerForSale(data: AppData, sale: Sale): AppData {
     bankAmount: split.bank > 0 ? split.bank : undefined,
     saleId: sale.id,
     note: note || undefined,
+    salesCountAmount,
   })
+}
+
+/**
+ * Credit an open sale with advance just received (or existing balance).
+ * Reduces pending due so bill collection does not apply the same amount again.
+ */
+export function applyAdvanceBalanceToSale(
+  data: AppData,
+  saleId: string,
+  amount: number,
+): AppData {
+  const sale = data.sales.find((row) => row.id === saleId)
+  if (!sale || !sale.customerName?.trim()) return data
+  const want = Math.round(Math.max(0, amount) * 100) / 100
+  if (want <= 0) return data
+
+  const isCredit =
+    sale.status === 'pending' &&
+    (sale.payType === 'credit' || sale.pendingPayType === 'credit')
+  const isCheque =
+    sale.status === 'pending' &&
+    (sale.payType === 'cheque' || sale.pendingPayType === 'cheque')
+  const isPending = sale.status === 'pending'
+
+  const due = isPending
+    ? Math.max(
+        0,
+        Math.round(
+          (isCredit || isCheque
+            ? Math.max(sale.billAmount ?? 0, isCredit ? sale.creditAmount ?? 0 : sale.chequeAmount ?? 0)
+            : sale.billAmount) * 100,
+        ) / 100,
+      )
+    : Math.max(
+        0,
+        Math.round(
+          ((sale.originalBillAmount ?? sale.billAmount) -
+            saleCollectedAmount(sale) -
+            (sale.customerAdvanceApplied ?? 0)) *
+            100,
+        ) / 100,
+      )
+
+  const use = Math.min(want, due, customerAdvanceBalance(data, sale.customerName))
+  if (use <= 0.01) return data
+
+  const now = new Date().toISOString()
+  const prevApplied = sale.customerAdvanceApplied ?? 0
+  const nextApplied = Math.round((prevApplied + use) * 100) / 100
+  const remaining = Math.round(Math.max(0, due - use) * 100) / 100
+  const originalBillAmount =
+    sale.originalBillAmount ??
+    Math.round((due + saleCollectedAmount(sale) + prevApplied) * 100) / 100
+
+  let patched: Sale
+  if (isPending && remaining <= 0.01) {
+    patched = {
+      ...sale,
+      status: 'paid',
+      billAmount: originalBillAmount,
+      originalBillAmount,
+      paidAmount: saleCollectedAmount(sale),
+      changeAmount: 0,
+      customerAdvanceApplied: nextApplied,
+      creditAmount: undefined,
+      pendingPayType: undefined,
+      updatedAt: now,
+    }
+  } else if (isPending) {
+    patched = {
+      ...sale,
+      billAmount: remaining,
+      originalBillAmount,
+      customerAdvanceApplied: nextApplied,
+      creditAmount: isCredit ? remaining : sale.creditAmount,
+      chequeAmount: isCheque ? remaining : sale.chequeAmount,
+      updatedAt: now,
+    }
+  } else {
+    patched = {
+      ...sale,
+      customerAdvanceApplied: nextApplied,
+      updatedAt: now,
+    }
+  }
+
+  let next: AppData = {
+    ...data,
+    sales: data.sales.map((row) => (row.id === saleId ? patched : row)),
+  }
+  next = applyCustomerAdvanceLedgerForSale(next, patched)
+  return next
+}
+
+/**
+ * Remove an applied-advance ledger row and restore that amount onto the sale due / balance.
+ */
+export function unapplyCustomerAdvanceFromSale(
+  data: AppData,
+  appliedEntryId: string,
+): AppData {
+  const entry = (data.customerAdvances ?? []).find(
+    (row) => row.id === appliedEntryId && row.kind === 'applied',
+  )
+  if (!entry?.saleId || entry.amount <= 0.01) return data
+
+  const sale = data.sales.find((row) => row.id === entry.saleId)
+  if (!sale) {
+    const nextAdvances = (data.customerAdvances ?? []).filter((row) => row.id !== appliedEntryId)
+    const next = { ...data, customerAdvances: nextAdvances }
+    saveData(next)
+    return next
+  }
+
+  const amount = Math.round(entry.amount * 100) / 100
+  const now = new Date().toISOString()
+  const prevApplied = sale.customerAdvanceApplied ?? 0
+  const nextApplied = Math.round(Math.max(0, prevApplied - amount) * 100) / 100
+  const drawerCollected = saleCollectedAmount(sale)
+  const wasCredit =
+    sale.pendingPayType === 'credit' ||
+    sale.payType === 'credit' ||
+    (sale.status === 'paid' && drawerCollected <= 0.01 && prevApplied > 0.01)
+  const wasCheque =
+    sale.pendingPayType === 'cheque' || sale.payType === 'cheque'
+
+  let patched: Sale
+  if (sale.status === 'pending') {
+    const restoredDue = Math.round((sale.billAmount + amount) * 100) / 100
+    patched = {
+      ...sale,
+      billAmount: restoredDue,
+      customerAdvanceApplied: nextApplied > 0.01 ? nextApplied : undefined,
+      creditAmount: wasCredit || sale.payType === 'credit' ? restoredDue : sale.creditAmount,
+      chequeAmount: wasCheque || sale.payType === 'cheque' ? restoredDue : sale.chequeAmount,
+      updatedAt: now,
+    }
+  } else if (drawerCollected <= 0.01 && nextApplied <= 0.01) {
+    // Fully advance-settled bill — reopen as pending credit for the unapplied amount.
+    const reopenDue = Math.round(
+      Math.max(amount, (sale.originalBillAmount ?? sale.billAmount) - drawerCollected) * 100,
+    ) / 100
+    patched = {
+      ...sale,
+      status: 'pending',
+      billAmount: reopenDue,
+      originalBillAmount: sale.originalBillAmount ?? sale.billAmount,
+      paidAmount: 0,
+      changeAmount: 0,
+      payType: wasCheque ? 'cheque' : 'credit',
+      pendingPayType: wasCheque ? 'cheque' : 'credit',
+      creditAmount: wasCheque ? undefined : reopenDue,
+      chequeAmount: wasCheque ? reopenDue : undefined,
+      customerAdvanceApplied: undefined,
+      paymentEvents: undefined,
+      updatedAt: now,
+    }
+  } else {
+    // Paid bill with drawer cash — reopen only the unapplied slice as credit pending on same row.
+    const reopenDue = amount
+    patched = {
+      ...sale,
+      status: 'pending',
+      billAmount: reopenDue,
+      originalBillAmount: sale.originalBillAmount ?? sale.billAmount,
+      payType: 'credit',
+      pendingPayType: 'credit',
+      creditAmount: reopenDue,
+      customerAdvanceApplied: nextApplied > 0.01 ? nextApplied : undefined,
+      updatedAt: now,
+    }
+  }
+
+  const nextAdvances = (data.customerAdvances ?? []).filter((row) => row.id !== appliedEntryId)
+  const next: AppData = {
+    ...data,
+    sales: data.sales.map((row) => (row.id === sale.id ? patched : row)),
+    customerAdvances: nextAdvances,
+  }
+  saveData(next)
+  return next
 }
 
 /** Drop applied-advance ledger rows for deleted bills so the balance returns as if never used. */
@@ -1562,6 +1755,92 @@ function removeCustomerAdvanceAppliedForSales(data: AppData, saleIds: Set<string
   )
   if (nextAdvances.length === advances.length) return data
   return { ...data, customerAdvances: nextAdvances }
+}
+
+/**
+ * Delete an advance ledger entry. Applied amounts become pending credit so money
+ * is not lost from both the bill and the advance book.
+ */
+export function deleteCustomerAdvanceEntry(data: AppData, entryId: string): AppData {
+  const entry = (data.customerAdvances ?? []).find((row) => row.id === entryId)
+  if (!entry) return data
+
+  if (entry.kind === 'applied') {
+    return unapplyCustomerAdvanceFromSale(data, entryId)
+  }
+
+  if (entry.kind === 'refunded') {
+    const next = {
+      ...data,
+      customerAdvances: (data.customerAdvances ?? []).filter((row) => row.id !== entryId),
+    }
+    saveData(next)
+    return next
+  }
+
+  if (entry.kind === 'received' || entry.kind === 'from_return') {
+    const remainingById = (() => {
+      // inline remaining for this entry via FIFO replay
+      const key = entry.customerName.trim().toLowerCase().replace(/\s+/g, ' ')
+      const sorted = [...(data.customerAdvances ?? [])].sort(
+        (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+      )
+      type Lot = { id: string; remaining: number }
+      const lots: Lot[] = []
+      const rem = new Map<string, number>()
+      for (const row of sorted) {
+        const rowKey = row.customerName.trim().toLowerCase().replace(/\s+/g, ' ')
+        if (rowKey !== key) continue
+        if (row.kind === 'received' || row.kind === 'from_return') {
+          lots.push({ id: row.id, remaining: row.amount })
+          rem.set(row.id, row.amount)
+        } else if (row.kind === 'applied' || row.kind === 'refunded') {
+          let need = row.amount
+          for (const lot of lots) {
+            if (need <= 0.01) break
+            if (lot.remaining <= 0.01) continue
+            const take = Math.min(lot.remaining, need)
+            lot.remaining = Math.round((lot.remaining - take) * 100) / 100
+            rem.set(lot.id, lot.remaining)
+            need = Math.round((need - take) * 100) / 100
+          }
+        }
+      }
+      return rem
+    })()
+
+    const remaining = remainingById.get(entry.id) ?? 0
+    const appliedAmount = Math.round(Math.max(0, entry.amount - remaining) * 100) / 100
+    let next = data
+
+    if (appliedAmount > 0.01) {
+      // Unapply related bill applications into credit, then remove this receive lot.
+      const appliedRows = (next.customerAdvances ?? [])
+        .filter(
+          (row) =>
+            row.kind === 'applied' &&
+            row.customerName.trim().toLowerCase().replace(/\s+/g, ' ') ===
+              entry.customerName.trim().toLowerCase().replace(/\s+/g, ' '),
+        )
+        .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+      let left = appliedAmount
+      for (const row of appliedRows) {
+        if (left <= 0.01) break
+        next = unapplyCustomerAdvanceFromSale(next, row.id)
+        left = Math.round((left - row.amount) * 100) / 100
+      }
+    }
+
+    // Remove whatever remains of this receive / return entry.
+    next = {
+      ...next,
+      customerAdvances: (next.customerAdvances ?? []).filter((row) => row.id !== entryId),
+    }
+    saveData(next)
+    return next
+  }
+
+  return data
 }
 
 /** Pay customer back from advance balance (cash/bank out of drawer). */
@@ -1619,6 +1898,10 @@ export function recordCustomerAdvance(
     amount: number
     payType: 'cash' | 'bank'
     note?: string
+    /** When true, count this advance toward Sales immediately. */
+    countInSalesOnReceive?: boolean
+    /** @deprecated Prefer countInSalesOnReceive; apply-at-create removed from UI. */
+    applyToSaleId?: string
   },
 ): AppData {
   const name = input.customerName.trim()
@@ -1627,7 +1910,11 @@ export function recordCustomerAdvance(
   const now = new Date().toISOString()
   const cashAmount = input.payType === 'cash' ? amount : 0
   const bankAmount = input.payType === 'bank' ? amount : 0
-  const next = appendCustomerAdvanceEntry(data, {
+  const countInSalesOnReceive =
+    typeof input.countInSalesOnReceive === 'boolean'
+      ? input.countInSalesOnReceive
+      : data.advanceSalesCountMode === 'on_receive'
+  let next = appendCustomerAdvanceEntry(data, {
     customerName: name,
     at: now,
     kind: 'received',
@@ -1635,7 +1922,12 @@ export function recordCustomerAdvance(
     cashAmount,
     bankAmount,
     note: input.note?.trim() || undefined,
+    countInSalesOnReceive,
   })
+  const applyToSaleId = input.applyToSaleId?.trim()
+  if (applyToSaleId) {
+    next = applyAdvanceBalanceToSale(next, applyToSaleId, amount)
+  }
   saveData(next)
   return next
 }
@@ -1947,6 +2239,36 @@ export function setPinLength(data: AppData, pinLength: 4 | 6): AppData {
     ...data,
     pinLength: len,
   }
+  saveData(next)
+  return next
+}
+
+export function setAdvanceSalesCountMode(
+  data: AppData,
+  mode: 'on_bill' | 'on_receive',
+): AppData {
+  const next: AppData = {
+    ...data,
+    advanceSalesCountMode: mode === 'on_receive' ? 'on_receive' : 'on_bill',
+  }
+  saveData(next)
+  return next
+}
+
+/** Toggle whether a received advance counts toward Sales when collected. */
+export function setCustomerAdvanceCountInSales(
+  data: AppData,
+  entryId: string,
+  countInSalesOnReceive: boolean,
+): AppData {
+  const advances = data.customerAdvances ?? []
+  const index = advances.findIndex((row) => row.id === entryId && row.kind === 'received')
+  if (index < 0) return data
+  const current = advances[index]
+  if (current.countInSalesOnReceive === countInSalesOnReceive) return data
+  const nextAdvances = [...advances]
+  nextAdvances[index] = { ...current, countInSalesOnReceive }
+  const next = { ...data, customerAdvances: nextAdvances }
   saveData(next)
   return next
 }
