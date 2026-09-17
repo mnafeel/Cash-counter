@@ -149,7 +149,8 @@ function tallyApiProxy(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
-  base: command === 'build' ? '/SFCC-Admin/' : '/',
+  // Hosted at https://cc.shalimarfashions.com/ (subdomain root)
+  base: '/',
   server: {
     host: '127.0.0.1',
     port: 5173,

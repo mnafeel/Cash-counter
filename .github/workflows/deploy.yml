@@ -5,9 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Publishes the app under /SFCC-Admin/ for custom domain hosting
-# (e.g. https://shalimarfashions.com/SFCC-Admin/).
+# Publishes the cash counter app on the subdomain:
+# https://cc.shalimarfashions.com/
 # GitHub → Settings → Pages → Deploy from a branch → main → / (root)
+#
+# DNS: CNAME record  cc  →  mnafeel.github.io
 permissions:
   contents: write
 
@@ -44,42 +46,44 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build
 
-      - name: Publish SFCC-Admin build to main branch
+      - name: Publish app to main branch (subdomain root)
         run: |
           set -euo pipefail
           ls -la dist
 
-          printf 'shalimarfashions.com\n' > CNAME
+          printf 'cc.shalimarfashions.com\n' > CNAME
 
-          # Public Coming Soon homepage — never redirect or link to SFCC-Admin.
-          cp -f pages-root/index.html index.html
-          cp -f pages-root/styles.css styles.css
-          cp -f pages-root/scene.js scene.js
-          cp -f pages-root/main.js main.js
-          rm -rf assets
-          mkdir -p assets
-          cp -R pages-root/assets/. assets/
-          # Safety: strip any accidental admin redirect if the source is edited wrongly.
-          if grep -Eq 'SFCC-Admin|http-equiv="refresh"' index.html; then
-            echo "Refusing to publish root index.html that redirects to SFCC-Admin" >&2
-            exit 1
-          fi
+          # Remove previous Coming Soon / path-based publish leftovers
+          rm -rf assets styles.css scene.js main.js SFCC-Admin docs
 
-          # Replace published app folders (admin stays under /SFCC-Admin/)
-          rm -rf SFCC-Admin docs
-          mkdir -p SFCC-Admin docs
-          cp -R dist/. SFCC-Admin/
-          cp -R dist/. docs/
-          # Keep app favicon/logo filenames available for the admin build paths;
-          # Coming Soon uses assets/logo.png as its favicon.
-          cp -f SFCC-Admin/favicon.png favicon.png
-          cp -f SFCC-Admin/logo.png logo.png
-          touch .nojekyll SFCC-Admin/.nojekyll docs/.nojekyll
+          # Publish built app at repository root for subdomain hosting
+          # Keep source files (src/, package.json, etc.) — only replace site outputs.
+          find dist -mindepth 1 -maxdepth 1 -exec cp -R {} . \;
+
+          # Legacy path redirect folder so old /SFCC-Admin bookmarks still work on the subdomain
+          mkdir -p SFCC-Admin
+          cat > SFCC-Admin/index.html <<'EOF'
+          <!doctype html>
+          <html lang="en">
+            <head>
+              <meta charset="UTF-8" />
+              <meta http-equiv="refresh" content="0; url=/" />
+              <link rel="canonical" href="/" />
+              <title>Redirecting…</title>
+              <script>location.replace("/")</script>
+            </head>
+            <body></body>
+          </html>
+          EOF
+
+          touch .nojekyll
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add -f -- index.html styles.css scene.js main.js assets CNAME SFCC-Admin docs favicon.png logo.png .nojekyll
+          git add -f -- CNAME index.html .nojekyll favicon.png logo.png apple-touch-icon.png icon.png assets SFCC-Admin
+          # Drop obsolete Coming Soon files if they reappear
+          git rm -f --ignore-unmatch styles.css scene.js main.js pages-root/styles.css pages-root/scene.js pages-root/main.js 2>/dev/null || true
           git add -u
 
           if git diff --staged --quiet; then
@@ -87,9 +91,8 @@ jobs:
             exit 0
           fi
 
-          git commit -m "deploy: publish SFCC-Admin build [skip ci]"
+          git commit -m "deploy: publish cash counter to cc subdomain [skip ci]"
 
-          # Working tree must stay clean for rebase; autostash covers race updates
           for attempt in 1 2 3 4 5; do
             git pull --rebase --autostash origin main
             if git push origin main; then
