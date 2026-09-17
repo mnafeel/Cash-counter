@@ -1,1 +1,0 @@
-import{o as e}from"./rolldown-runtime-DAXXjFlN.js";import{l as t,p as n}from"./vendor-D7tWGQ-x.js";import{N as r,ft as i}from"./index-GV0W-qxQ.js";var a=e(n(),1);function o(e=`/`){let n=t();return(0,a.useCallback)(()=>{if(window.history.length>1){n(-1);return}n(e)},[n,e])}function s(e=`/`,t){let n=o(e);return r(n,t?.route?i(t.route):!0),n}export{s as t};
