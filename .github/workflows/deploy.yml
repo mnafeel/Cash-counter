@@ -5,11 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Main domain: Coming Soon at https://shalimarfashions.com/
-# Cash Counter: https://shalimarfashions.com/cash-counter/
-# Aliases: /SFCC-Admin/index.html and /sfcc-admin/index.html → /cash-counter/
-#
-# Note: /SFCC-Admin/ (folder URL) was stuck on a CDN 404; use /cash-counter/ as canonical.
+# Cash Counter only: https://cash-counter.shalimarfashions.com/
+# Main site (shalimarfashions.com) is separate — leave blank / other repo.
+
 permissions:
   contents: write
 
@@ -36,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Cash Counter for /cash-counter/
+      - name: Build Cash Counter
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -46,48 +44,24 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build
 
-      - name: Publish Coming Soon root + cash-counter app
+      - name: Publish app to Pages root
         run: |
           set -euo pipefail
-          test -f pages-root/index.html
           test -d dist
           ls -la dist
 
-          printf 'shalimarfashions.com\n' > CNAME
+          printf 'cash-counter.shalimarfashions.com\n' > CNAME
 
-          # Clear previous publish outputs (keep source tree)
+          # Remove old path-based / Coming Soon publish leftovers
           rm -rf cash-counter SFCC-Admin sfcc-admin docs
+          rm -f SFCC-Admin.html sfcc-admin.html
           rm -rf assets styles.css scene.js main.js
           rm -f favicon.svg icons.svg
 
-          # 1) Public Coming Soon homepage at domain root
-          cp -f pages-root/index.html index.html
-          cp -f pages-root/styles.css styles.css
-          cp -f pages-root/scene.js scene.js
-          cp -f pages-root/main.js main.js
-          mkdir -p assets
-          cp -f pages-root/assets/* assets/
-
-          if grep -Eqi 'cash-counter|SFCC-Admin|http-equiv="refresh"' index.html; then
-            echo "Root Coming Soon page must not redirect to the admin app" >&2
-            exit 1
-          fi
-
-          # 2) Cash Counter under /cash-counter/ (fresh path; avoids stale CDN 404)
-          mkdir -p cash-counter
-          cp -R dist/. cash-counter/
-          touch cash-counter/.nojekyll
-          test -f cash-counter/index.html
-          test -d cash-counter/assets
-
-          # 3) Legacy aliases → /cash-counter/ (SFCC-Admin folder URLs were CDN-404 cached)
-          mkdir -p SFCC-Admin sfcc-admin
-          cp -f pages-root/redirect-cash-counter.html SFCC-Admin/index.html
-          cp -f pages-root/redirect-cash-counter.html sfcc-admin/index.html
-          cp -f pages-root/redirect-cash-counter.html SFCC-Admin.html
-          cp -f pages-root/redirect-cash-counter.html sfcc-admin.html
-
+          # App at subdomain root
+          cp -R dist/. .
           touch .nojekyll
+          test -f index.html
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -95,21 +69,12 @@ jobs:
           git add -f -- \
             CNAME \
             index.html \
-            styles.css \
-            scene.js \
-            main.js \
             assets \
-            cash-counter \
-            SFCC-Admin \
-            sfcc-admin \
-            SFCC-Admin.html \
-            sfcc-admin.html \
             .nojekyll \
             favicon.png \
             logo.png \
             apple-touch-icon.png \
-            icon.png \
-            pages-root
+            icon.png
 
           git add -u
 
@@ -118,7 +83,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "deploy: Coming Soon root + cash-counter app [skip ci]"
+          git commit -m "deploy: cash-counter.shalimarfashions.com [skip ci]"
 
           for attempt in 1 2 3 4 5; do
             git pull --rebase --autostash origin main
