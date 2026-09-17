@@ -51,19 +51,27 @@ jobs:
 
           printf 'shalimarfashions.com\n' > CNAME
 
-          # Public homepage only — never redirect or link to SFCC-Admin.
+          # Public Coming Soon homepage — never redirect or link to SFCC-Admin.
           cp -f pages-root/index.html index.html
+          cp -f pages-root/styles.css styles.css
+          cp -f pages-root/scene.js scene.js
+          cp -f pages-root/main.js main.js
+          rm -rf assets
+          mkdir -p assets
+          cp -R pages-root/assets/. assets/
           # Safety: strip any accidental admin redirect if the source is edited wrongly.
           if grep -Eq 'SFCC-Admin|http-equiv="refresh"' index.html; then
             echo "Refusing to publish root index.html that redirects to SFCC-Admin" >&2
             exit 1
           fi
 
-          # Replace published folders (drop old root /assets from previous Pages layout)
+          # Replace published app folders (admin stays under /SFCC-Admin/)
           rm -rf SFCC-Admin docs
           mkdir -p SFCC-Admin docs
           cp -R dist/. SFCC-Admin/
           cp -R dist/. docs/
+          # Keep app favicon/logo filenames available for the admin build paths;
+          # Coming Soon uses assets/logo.png as its favicon.
           cp -f SFCC-Admin/favicon.png favicon.png
           cp -f SFCC-Admin/logo.png logo.png
           touch .nojekyll SFCC-Admin/.nojekyll docs/.nojekyll
@@ -71,14 +79,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Stage publish outputs + delete obsolete root assets if present
-          if [ -d assets ]; then
-            git rm -rf --ignore-unmatch assets
-            rm -rf assets
-          fi
-          git add -f -- index.html CNAME SFCC-Admin docs favicon.png logo.png .nojekyll
-          # Catch deletions of obsolete root /assets from older Pages layout
-          git add -u -- assets || true
+          git add -f -- index.html styles.css scene.js main.js assets CNAME SFCC-Admin docs favicon.png logo.png .nojekyll
           git add -u
 
           if git diff --staged --quiet; then
