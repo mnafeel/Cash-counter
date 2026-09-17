@@ -51,27 +51,13 @@ jobs:
 
           printf 'shalimarfashions.com\n' > CNAME
 
-          # Public homepage only — do NOT link or redirect to SFCC-Admin.
-          cat > index.html <<'EOF'
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="robots" content="noindex, nofollow" />
-    <title>Shalimar Fashions</title>
-    <style>
-      html,
-      body {
-        margin: 0;
-        min-height: 100%;
-        background: #f7f4ef;
-      }
-    </style>
-  </head>
-  <body></body>
-</html>
-EOF
+          # Public homepage only — never redirect or link to SFCC-Admin.
+          cp -f pages-root/index.html index.html
+          # Safety: strip any accidental admin redirect if the source is edited wrongly.
+          if grep -Eq 'SFCC-Admin|http-equiv="refresh"' index.html; then
+            echo "Refusing to publish root index.html that redirects to SFCC-Admin" >&2
+            exit 1
+          fi
 
           # Replace published folders (drop old root /assets from previous Pages layout)
           rm -rf SFCC-Admin docs
