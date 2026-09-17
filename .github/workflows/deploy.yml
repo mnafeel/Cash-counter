@@ -80,28 +80,12 @@ jobs:
           test -f cash-counter/index.html
           test -d cash-counter/assets
 
-          # 3) Legacy aliases → open index.html directly (folder URLs were CDN-404 cached)
-          write_alias() {
-            local dir="$1"
-            mkdir -p "$dir"
-            cat > "$dir/index.html" <<'EOF'
-          <!doctype html>
-          <html lang="en">
-            <head>
-              <meta charset="UTF-8" />
-              <meta http-equiv="refresh" content="0; url=/cash-counter/" />
-              <link rel="canonical" href="/cash-counter/" />
-              <title>Redirecting…</title>
-              <script>location.replace("/cash-counter/")</script>
-            </head>
-            <body>
-              <p><a href="/cash-counter/">Open Cash Counter</a></p>
-            </body>
-          </html>
-          EOF
-          }
-          write_alias SFCC-Admin
-          write_alias sfcc-admin
+          # 3) Legacy aliases → /cash-counter/ (SFCC-Admin folder URLs were CDN-404 cached)
+          mkdir -p SFCC-Admin sfcc-admin
+          cp -f pages-root/redirect-cash-counter.html SFCC-Admin/index.html
+          cp -f pages-root/redirect-cash-counter.html sfcc-admin/index.html
+          cp -f pages-root/redirect-cash-counter.html SFCC-Admin.html
+          cp -f pages-root/redirect-cash-counter.html sfcc-admin.html
 
           touch .nojekyll
 
@@ -118,6 +102,8 @@ jobs:
             cash-counter \
             SFCC-Admin \
             sfcc-admin \
+            SFCC-Admin.html \
+            sfcc-admin.html \
             .nojekyll \
             favicon.png \
             logo.png \
