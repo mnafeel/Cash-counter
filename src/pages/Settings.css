@@ -14,19 +14,19 @@
 
 .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 6px;
   flex-shrink: 0;
 }
 
 .settings-tab {
   min-height: 34px;
-  padding: 6px 8px;
+  padding: 6px 4px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--brown-dark);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  font-size: 0.62rem;
   font-weight: 700;
   cursor: pointer;
 }

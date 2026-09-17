@@ -113,9 +113,10 @@ import CloudPinSettings from '../components/CloudPinSettings'
 import './Settings.css'
 
 const WebsiteApiSettings = lazy(() => import('../components/WebsiteApiSettings'))
+const SiteAccessSettings = lazy(() => import('../components/SiteAccessSettings'))
 
 type SettingsField = 'openingCash' | 'openingBank'
-type SettingsTab = 'general' | 'tally' | 'pinelabs' | 'cloud' | 'website'
+type SettingsTab = 'general' | 'tally' | 'pinelabs' | 'cloud' | 'website' | 'site'
 type GeneralSubTab = 'basics' | 'reports' | 'credit' | 'cheque' | 'data'
 
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
@@ -124,6 +125,7 @@ const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: 'pinelabs', label: 'Pine Labs' },
   { id: 'cloud', label: 'Cloud' },
   { id: 'website', label: 'Website API' },
+  { id: 'site', label: 'Site Access' },
 ]
 
 const GENERAL_SUB_TABS: { id: GeneralSubTab; label: string }[] = [
@@ -202,7 +204,11 @@ const DAILY_REPORT_DOWNLOAD_GROUPS: {
   { kind: 'expense', label: 'Expense', countKey: 'expense' },
 ]
 
-export default function Settings() {
+export default function Settings({
+  onSiteGateLogout,
+}: {
+  onSiteGateLogout?: () => void
+} = {}) {
   useOpenTiming('Settings', true, false)
   const {
     data,
@@ -2808,6 +2814,16 @@ export default function Settings() {
               <WebsiteApiSettings data={data} cloudLoggedIn={Boolean(cloudUser)} />
             </Suspense>
           </div>
+        )}
+
+        {tab === 'site' && (
+          <Suspense fallback={<p className="settings-backup-meta">Loading Site Access…</p>}>
+            <SiteAccessSettings
+              onLoggedOut={() => {
+                onSiteGateLogout?.()
+              }}
+            />
+          </Suspense>
         )}
       </div>
 

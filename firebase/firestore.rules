@@ -36,5 +36,17 @@ service cloud.firestore {
       allow delete: if request.auth != null
         && resource.data.storeId == request.auth.uid;
     }
+    // Site gatekeeper credentials (hashed). Public read so login works without cloud auth.
+    // Writes require signed-in cloud user (sync from Settings after cloud login).
+    match /siteAccess/{docId} {
+      allow read: if true;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasAll(['username', 'passwordHash', 'salt', 'updatedAt'])
+        && request.resource.data.username is string
+        && request.resource.data.passwordHash is string
+        && request.resource.data.salt is string
+        && request.resource.data.updatedAt is string;
+      allow delete: if request.auth != null;
+    }
   }
 }

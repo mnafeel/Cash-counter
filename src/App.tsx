@@ -1,9 +1,11 @@
-import { lazy, Suspense, useEffect, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react'
 import { HashRouter, Route, Routes } from 'react-router-dom'
 import { CashProvider } from './context/CashContext'
 import Layout from './components/Layout'
 import HashRouteFix from './components/HashRouteFix'
 import AppBootScreen from './components/AppBootScreen'
+import SiteGateScreen from './components/SiteGateScreen'
+import { isSiteGateUnlocked } from './utils/siteGate'
 
 const PurchaseExpense = lazy(() => import('./pages/PurchaseExpense'))
 const Loan = lazy(() => import('./pages/Loan'))
@@ -30,14 +32,24 @@ function MainTabRoute() {
 }
 
 export default function App() {
+  const [gateOpen, setGateOpen] = useState(() => isSiteGateUnlocked())
+
+  const handleUnlocked = useCallback(() => setGateOpen(true), [])
+  const handleGateLogout = useCallback(() => setGateOpen(false), [])
+
   useEffect(() => {
+    if (!gateOpen) return
     if (typeof window.requestIdleCallback === 'function') {
       const id = window.requestIdleCallback(() => prefetchLazyRoutes(), { timeout: 4000 })
       return () => window.cancelIdleCallback(id)
     }
     const timer = window.setTimeout(prefetchLazyRoutes, 1500)
     return () => window.clearTimeout(timer)
-  }, [])
+  }, [gateOpen])
+
+  if (!gateOpen) {
+    return <SiteGateScreen onUnlocked={handleUnlocked} />
+  }
 
   return (
     <CashProvider>
@@ -85,7 +97,7 @@ export default function App() {
                 path="settings"
                 element={
                   <LazyPage>
-                    <Settings />
+                    <Settings onSiteGateLogout={handleGateLogout} />
                   </LazyPage>
                 }
               />
