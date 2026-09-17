@@ -84,8 +84,9 @@ jobs:
             git rm -rf --ignore-unmatch assets
             rm -rf assets
           fi
-          git add -A -- index.html CNAME SFCC-Admin docs favicon.png logo.png .nojekyll
-          # Catch any leftover deletions (e.g. old asset paths)
+          git add -f -- index.html CNAME SFCC-Admin docs favicon.png logo.png .nojekyll
+          # Catch deletions of obsolete root /assets from older Pages layout
+          git add -u -- assets || true
           git add -u
 
           if git diff --staged --quiet; then

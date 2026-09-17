@@ -12,8 +12,9 @@ dist
 dist-ssr
 functions/lib
 functions/node_modules
-index.html
-assets
+# Only ignore Vite's generated root publish leftovers — not SFCC-Admin/ or docs/
+/index.html
+/assets/
 *.local
 .env
 .env.*
