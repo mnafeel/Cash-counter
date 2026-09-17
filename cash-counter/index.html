@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en" data-theme="premium">
+  <head>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <!-- build 2026-09-17T17:08:19.548Z -->
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/cash-counter/favicon.png" />
+    <link rel="apple-touch-icon" href="/cash-counter/logo.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#131316" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Shalimar Fashions · Cash Counter</title>
+    <style>
+      #app-boot {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        min-height: 100dvh;
+        margin: 0;
+        padding: 28px 24px;
+        text-align: center;
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+        background: linear-gradient(165deg, #0f0f12 0%, #1a1a20 45%, #141418 100%);
+        color: #f4f4f5;
+      }
+      #app-boot-title {
+        margin: 0;
+        font-size: 1.1rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+      #app-boot-sub {
+        margin: 0;
+        font-size: 0.82rem;
+        color: #a1a1aa;
+      }
+      #app-boot-spinner {
+        width: 36px;
+        height: 36px;
+        margin-top: 8px;
+        border: 3px solid rgba(212, 168, 75, 0.2);
+        border-top-color: #d4a84b;
+        border-radius: 50%;
+        animation: app-boot-spin 0.85s linear infinite;
+      }
+      @keyframes app-boot-spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+    <script>
+      (function () {
+        window.addEventListener(
+          'error',
+          function (event) {
+            var target = event.target
+            if (!target || target.tagName !== 'SCRIPT') return
+            var boot = document.getElementById('app-boot')
+            if (!boot) return
+            boot.innerHTML =
+              '<p id="app-boot-title">Could not load app</p>' +
+              '<p id="app-boot-sub">After an update, hard refresh the page (Ctrl+Shift+R or clear cache).</p>'
+          },
+          true,
+        )
+      })()
+    </script>
+    <script>
+      (function () {
+        var hash = location.hash ? location.hash.slice(1) : ''
+        if (hash) {
+          var path = hash
+          try {
+            if (path.indexOf('%') >= 0) path = decodeURIComponent(path)
+          } catch (e) {}
+          path = path.replace(/\/+/g, '/')
+          if (path !== hash) {
+            location.replace(location.pathname + location.search + '#' + path)
+            return
+          }
+        }
+        if (!location.hash) {
+          var base = location.pathname.replace(/\/?index\.html$/i, '').replace(/\/$/, '')
+          location.replace((base || '') + '/#/' + location.search)
+        }
+      })()
+    </script>
+    <script>
+      (function () {
+        var w = innerWidth
+        var h = innerHeight
+        var t = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1
+        var s = w < 768 ? 'phone' : w < 1280 || (t && w < 1400) ? 'tablet' : 'desktop'
+        var d = document.documentElement
+        d.dataset.screen = s
+        var short = (s === 'phone' && h < 700) || (s === 'tablet' && h < 850) || (s === 'desktop' && h < 750)
+        var uiPad = s === 'phone' ? (short ? 4 : 6) : s === 'tablet' ? (short || w > h ? 5 : 8) : 10
+        var hdr = s === 'phone' ? (short ? 72 : 82) : s === 'tablet' ? (short ? 62 : 70) : (short ? 72 : 80)
+        d.style.setProperty('--app-width', w + 'px')
+        d.style.setProperty('--app-height', h + 'px')
+        d.style.setProperty('--counter-height', Math.max(320, h - hdr - uiPad * 2) + 'px')
+      })()
+    </script>
+    <script type="module" crossorigin src="/cash-counter/assets/index-10H-3rup.js"></script>
+    <link rel="modulepreload" crossorigin href="/cash-counter/assets/rolldown-runtime-DAXXjFlN.js">
+    <link rel="modulepreload" crossorigin href="/cash-counter/assets/pdfjs-C-G57qum.js">
+    <link rel="modulepreload" crossorigin href="/cash-counter/assets/vendor-8aYSiN1X.js">
+    <link rel="modulepreload" crossorigin href="/cash-counter/assets/firebase-asnz_dAH.js">
+    <link rel="modulepreload" crossorigin href="/cash-counter/assets/sync-DsypHG26.js">
+    <link rel="stylesheet" crossorigin href="/cash-counter/assets/index-Brt1302R.css">
+  </head>
+  <body>
+    <div id="root">
+      <div id="app-boot" aria-live="polite" aria-busy="true">
+        <p id="app-boot-title">Shalimar Fashions</p>
+        <p id="app-boot-sub">Cash Counter</p>
+        <div id="app-boot-spinner" aria-hidden="true"></div>
+      </div>
+    </div>
+  </body>
+</html>
