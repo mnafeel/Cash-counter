@@ -5,11 +5,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Publishes the cash counter app on the subdomain:
-# https://cc.shalimarfashions.com/
+# Main domain: Coming Soon at https://shalimarfashions.com/
+# Cash Counter:     https://shalimarfashions.com/SFCC-Admin/
 # GitHub → Settings → Pages → Deploy from a branch → main → / (root)
 #
-# DNS: CNAME record  cc  →  mnafeel.github.io
+# DNS (apex): A records @ → 185.199.108.153 / .109.153 / .110.153 / .111.153
+# DNS (www):  CNAME www → mnafeel.github.io
 permissions:
   contents: write
 
@@ -36,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build Cash Counter for /SFCC-Admin/
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -46,33 +47,57 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build
 
-      - name: Publish app to main branch (subdomain root)
+      - name: Publish Coming Soon root + SFCC-Admin
         run: |
           set -euo pipefail
+          test -f pages-root/index.html
+          test -d dist
           ls -la dist
 
-          printf 'cc.shalimarfashions.com\n' > CNAME
+          printf 'shalimarfashions.com\n' > CNAME
 
-          # Remove previous Coming Soon / path-based publish leftovers
-          rm -rf assets styles.css scene.js main.js SFCC-Admin docs
+          # Clear previous publish outputs (keep source tree)
+          rm -rf SFCC-Admin sfcc-admin docs
+          rm -rf assets styles.css scene.js main.js
+          # Remove any previous root Vite publish leftovers (not source)
+          rm -f favicon.svg icons.svg
 
-          # Publish built app at repository root for subdomain hosting
-          # Keep source files (src/, package.json, etc.) — only replace site outputs.
-          find dist -mindepth 1 -maxdepth 1 -exec cp -R {} . \;
+          # 1) Public Coming Soon homepage at domain root
+          cp -f pages-root/index.html index.html
+          cp -f pages-root/styles.css styles.css
+          cp -f pages-root/scene.js scene.js
+          cp -f pages-root/main.js main.js
+          mkdir -p assets
+          cp -f pages-root/assets/* assets/
 
-          # Legacy path redirect folder so old /SFCC-Admin bookmarks still work on the subdomain
+          if grep -Eq 'SFCC-Admin|http-equiv="refresh"' index.html; then
+            echo "Root Coming Soon page must not redirect to SFCC-Admin" >&2
+            exit 1
+          fi
+
+          # 2) Cash Counter under /SFCC-Admin/
           mkdir -p SFCC-Admin
-          cat > SFCC-Admin/index.html <<'EOF'
+          cp -R dist/. SFCC-Admin/
+          touch SFCC-Admin/.nojekyll
+
+          test -f SFCC-Admin/index.html
+          test -d SFCC-Admin/assets
+
+          # Optional lowercase alias → canonical path
+          mkdir -p sfcc-admin
+          cat > sfcc-admin/index.html <<'EOF'
           <!doctype html>
           <html lang="en">
             <head>
               <meta charset="UTF-8" />
-              <meta http-equiv="refresh" content="0; url=/" />
-              <link rel="canonical" href="/" />
+              <meta http-equiv="refresh" content="0; url=/SFCC-Admin/" />
+              <link rel="canonical" href="/SFCC-Admin/" />
               <title>Redirecting…</title>
-              <script>location.replace("/")</script>
+              <script>location.replace("/SFCC-Admin/")</script>
             </head>
-            <body></body>
+            <body>
+              <p><a href="/SFCC-Admin/">Continue to SFCC Admin</a></p>
+            </body>
           </html>
           EOF
 
@@ -81,9 +106,22 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add -f -- CNAME index.html .nojekyll favicon.png logo.png apple-touch-icon.png icon.png assets SFCC-Admin
-          # Drop obsolete Coming Soon files if they reappear
-          git rm -f --ignore-unmatch styles.css scene.js main.js pages-root/styles.css pages-root/scene.js pages-root/main.js 2>/dev/null || true
+          git add -f -- \
+            CNAME \
+            index.html \
+            styles.css \
+            scene.js \
+            main.js \
+            assets \
+            SFCC-Admin \
+            sfcc-admin \
+            .nojekyll \
+            favicon.png \
+            logo.png \
+            apple-touch-icon.png \
+            icon.png \
+            pages-root
+
           git add -u
 
           if git diff --staged --quiet; then
@@ -91,7 +129,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "deploy: publish cash counter to cc subdomain [skip ci]"
+          git commit -m "deploy: Coming Soon root + SFCC-Admin app [skip ci]"
 
           for attempt in 1 2 3 4 5; do
             git pull --rebase --autostash origin main
