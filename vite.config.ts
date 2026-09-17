@@ -149,8 +149,8 @@ function tallyApiProxy(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
-  // Production: https://shalimarfashions.com/SFCC-Admin/
-  base: command === 'build' ? '/SFCC-Admin/' : '/',
+  // Production: https://shalimarfashions.com/cash-counter/
+  base: command === 'build' ? '/cash-counter/' : '/',
   server: {
     host: '127.0.0.1',
     port: 5173,

@@ -6,11 +6,10 @@ on:
   workflow_dispatch:
 
 # Main domain: Coming Soon at https://shalimarfashions.com/
-# Cash Counter:     https://shalimarfashions.com/SFCC-Admin/
-# GitHub → Settings → Pages → Deploy from a branch → main → / (root)
+# Cash Counter: https://shalimarfashions.com/cash-counter/
+# Aliases: /SFCC-Admin/index.html and /sfcc-admin/index.html → /cash-counter/
 #
-# DNS (apex): A records @ → 185.199.108.153 / .109.153 / .110.153 / .111.153
-# DNS (www):  CNAME www → mnafeel.github.io
+# Note: /SFCC-Admin/ (folder URL) was stuck on a CDN 404; use /cash-counter/ as canonical.
 permissions:
   contents: write
 
@@ -37,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Cash Counter for /SFCC-Admin/
+      - name: Build Cash Counter for /cash-counter/
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
@@ -47,7 +46,7 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build
 
-      - name: Publish Coming Soon root + SFCC-Admin
+      - name: Publish Coming Soon root + cash-counter app
         run: |
           set -euo pipefail
           test -f pages-root/index.html
@@ -57,9 +56,8 @@ jobs:
           printf 'shalimarfashions.com\n' > CNAME
 
           # Clear previous publish outputs (keep source tree)
-          rm -rf SFCC-Admin sfcc-admin docs
+          rm -rf cash-counter SFCC-Admin sfcc-admin docs
           rm -rf assets styles.css scene.js main.js
-          # Remove any previous root Vite publish leftovers (not source)
           rm -f favicon.svg icons.svg
 
           # 1) Public Coming Soon homepage at domain root
@@ -70,36 +68,40 @@ jobs:
           mkdir -p assets
           cp -f pages-root/assets/* assets/
 
-          if grep -Eq 'SFCC-Admin|http-equiv="refresh"' index.html; then
-            echo "Root Coming Soon page must not redirect to SFCC-Admin" >&2
+          if grep -Eqi 'cash-counter|SFCC-Admin|http-equiv="refresh"' index.html; then
+            echo "Root Coming Soon page must not redirect to the admin app" >&2
             exit 1
           fi
 
-          # 2) Cash Counter under /SFCC-Admin/
-          mkdir -p SFCC-Admin
-          cp -R dist/. SFCC-Admin/
-          touch SFCC-Admin/.nojekyll
+          # 2) Cash Counter under /cash-counter/ (fresh path; avoids stale CDN 404)
+          mkdir -p cash-counter
+          cp -R dist/. cash-counter/
+          touch cash-counter/.nojekyll
+          test -f cash-counter/index.html
+          test -d cash-counter/assets
 
-          test -f SFCC-Admin/index.html
-          test -d SFCC-Admin/assets
-
-          # Optional lowercase alias → canonical path
-          mkdir -p sfcc-admin
-          cat > sfcc-admin/index.html <<'EOF'
+          # 3) Legacy aliases → open index.html directly (folder URLs were CDN-404 cached)
+          write_alias() {
+            local dir="$1"
+            mkdir -p "$dir"
+            cat > "$dir/index.html" <<'EOF'
           <!doctype html>
           <html lang="en">
             <head>
               <meta charset="UTF-8" />
-              <meta http-equiv="refresh" content="0; url=/SFCC-Admin/" />
-              <link rel="canonical" href="/SFCC-Admin/" />
+              <meta http-equiv="refresh" content="0; url=/cash-counter/" />
+              <link rel="canonical" href="/cash-counter/" />
               <title>Redirecting…</title>
-              <script>location.replace("/SFCC-Admin/")</script>
+              <script>location.replace("/cash-counter/")</script>
             </head>
             <body>
-              <p><a href="/SFCC-Admin/">Continue to SFCC Admin</a></p>
+              <p><a href="/cash-counter/">Open Cash Counter</a></p>
             </body>
           </html>
           EOF
+          }
+          write_alias SFCC-Admin
+          write_alias sfcc-admin
 
           touch .nojekyll
 
@@ -113,6 +115,7 @@ jobs:
             scene.js \
             main.js \
             assets \
+            cash-counter \
             SFCC-Admin \
             sfcc-admin \
             .nojekyll \
@@ -129,7 +132,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "deploy: Coming Soon root + SFCC-Admin app [skip ci]"
+          git commit -m "deploy: Coming Soon root + cash-counter app [skip ci]"
 
           for attempt in 1 2 3 4 5; do
             git pull --rebase --autostash origin main
