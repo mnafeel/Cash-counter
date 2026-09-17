@@ -51,21 +51,27 @@ jobs:
 
           printf 'shalimarfashions.com\n' > CNAME
 
+          # Public homepage only — do NOT link or redirect to SFCC-Admin.
           cat > index.html <<'EOF'
-          <!doctype html>
-          <html lang="en">
-            <head>
-              <meta charset="UTF-8" />
-              <meta http-equiv="refresh" content="0; url=/SFCC-Admin/" />
-              <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-              <title>Shalimar Fashions</title>
-              <link rel="canonical" href="/SFCC-Admin/" />
-            </head>
-            <body>
-              <p><a href="/SFCC-Admin/">Open SFCC Admin</a></p>
-            </body>
-          </html>
-          EOF
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Shalimar Fashions</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #f7f4ef;
+      }
+    </style>
+  </head>
+  <body></body>
+</html>
+EOF
 
           # Replace published folders (drop old root /assets from previous Pages layout)
           rm -rf SFCC-Admin docs
