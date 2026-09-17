@@ -46,13 +46,11 @@ jobs:
 
       - name: Publish SFCC-Admin build to main branch
         run: |
-          set -e
+          set -euo pipefail
           ls -la dist
 
-          # Custom domain for GitHub Pages
           printf 'shalimarfashions.com\n' > CNAME
 
-          # Root landing → admin app
           cat > index.html <<'EOF'
           <!doctype html>
           <html lang="en">
@@ -69,29 +67,40 @@ jobs:
           </html>
           EOF
 
-          rm -rf SFCC-Admin assets docs
-          mkdir -p SFCC-Admin
+          # Replace published folders (drop old root /assets from previous Pages layout)
+          rm -rf SFCC-Admin docs
+          mkdir -p SFCC-Admin docs
           cp -R dist/. SFCC-Admin/
-          # Keep a docs mirror for /docs Pages option if ever used
-          mkdir -p docs
           cp -R dist/. docs/
-          cp SFCC-Admin/favicon.png favicon.png 2>/dev/null || true
-          cp SFCC-Admin/logo.png logo.png 2>/dev/null || true
-          touch .nojekyll
-          touch SFCC-Admin/.nojekyll
-          touch docs/.nojekyll
+          cp -f SFCC-Admin/favicon.png favicon.png
+          cp -f SFCC-Admin/logo.png logo.png
+          touch .nojekyll SFCC-Admin/.nojekyll docs/.nojekyll
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f index.html CNAME SFCC-Admin docs favicon.png logo.png .nojekyll
+
+          # Stage publish outputs + delete obsolete root assets if present
+          if [ -d assets ]; then
+            git rm -rf --ignore-unmatch assets
+            rm -rf assets
+          fi
+          git add -A -- index.html CNAME SFCC-Admin docs favicon.png logo.png .nojekyll
+          # Catch any leftover deletions (e.g. old asset paths)
+          git add -u
+
           if git diff --staged --quiet; then
             echo "No changes to publish"
             exit 0
           fi
+
           git commit -m "deploy: publish SFCC-Admin build [skip ci]"
+
+          # Working tree must stay clean for rebase; autostash covers race updates
           for attempt in 1 2 3 4 5; do
-            git pull --rebase origin main
-            git push origin main && exit 0
+            git pull --rebase --autostash origin main
+            if git push origin main; then
+              exit 0
+            fi
             echo "Push failed, retry ${attempt}..."
             sleep 8
           done
