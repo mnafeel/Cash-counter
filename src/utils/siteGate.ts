@@ -5,7 +5,41 @@ import { formatFirebaseError } from '../firebase/utils'
 
 const CREDS_KEY = 'sfcc-site-gate-credentials'
 const SESSION_KEY = 'sfcc-site-gate-session'
+const DURATION_PREF_KEY = 'sfcc-site-gate-session-duration'
 const PBKDF2_ITERATIONS = 120_000
+
+export type SiteGateSessionDuration =
+  | '1m'
+  | '1d'
+  | '1w'
+  | '1mo'
+  | '1y'
+  | '2y'
+  | 'never'
+
+export const SITE_GATE_SESSION_DURATION_OPTIONS: ReadonlyArray<{
+  id: SiteGateSessionDuration
+  label: string
+}> = [
+  { id: '1m', label: '1 minute' },
+  { id: '1d', label: '1 day' },
+  { id: '1w', label: '1 week' },
+  { id: '1mo', label: '1 month' },
+  { id: '1y', label: '1 year' },
+  { id: '2y', label: '2 years' },
+  { id: 'never', label: 'Never' },
+]
+
+export const DEFAULT_SITE_GATE_SESSION_DURATION: SiteGateSessionDuration = '1d'
+
+const DURATION_MS: Record<Exclude<SiteGateSessionDuration, 'never'>, number> = {
+  '1m': 60_000,
+  '1d': 86_400_000,
+  '1w': 7 * 86_400_000,
+  '1mo': 30 * 86_400_000,
+  '1y': 365 * 86_400_000,
+  '2y': 2 * 365 * 86_400_000,
+}
 
 export interface SiteGateCredentials {
   username: string
@@ -17,6 +51,10 @@ export interface SiteGateCredentials {
 export interface SiteGateSession {
   username: string
   unlockedAt: string
+  /** Session length chosen for this unlock. Missing on legacy sessions → treat as never. */
+  duration?: SiteGateSessionDuration
+  /** ISO expiry; null means never. Missing on legacy sessions → never. */
+  expiresAt?: string | null
 }
 
 function bytesToHex(bytes: ArrayBuffer | Uint8Array): string {
@@ -37,6 +75,22 @@ function randomSaltHex(): string {
   const bytes = new Uint8Array(16)
   crypto.getRandomValues(bytes)
   return bytesToHex(bytes)
+}
+
+export function isSiteGateSessionDuration(value: unknown): value is SiteGateSessionDuration {
+  return SITE_GATE_SESSION_DURATION_OPTIONS.some((o) => o.id === value)
+}
+
+export function labelForSiteGateSessionDuration(duration: SiteGateSessionDuration): string {
+  return SITE_GATE_SESSION_DURATION_OPTIONS.find((o) => o.id === duration)?.label ?? duration
+}
+
+export function computeSiteGateExpiresAt(
+  unlockedAt: Date,
+  duration: SiteGateSessionDuration,
+): string | null {
+  if (duration === 'never') return null
+  return new Date(unlockedAt.getTime() + DURATION_MS[duration]).toISOString()
 }
 
 export async function hashSiteGatePassword(password: string, saltHex: string): Promise<string> {
@@ -80,6 +134,20 @@ export function clearLocalSiteGateCredentials(): void {
   localStorage.removeItem(CREDS_KEY)
 }
 
+export function readSiteGateSessionDurationPreference(): SiteGateSessionDuration {
+  try {
+    const raw = localStorage.getItem(DURATION_PREF_KEY)
+    if (isSiteGateSessionDuration(raw)) return raw
+  } catch {
+    /* ignore */
+  }
+  return DEFAULT_SITE_GATE_SESSION_DURATION
+}
+
+export function writeSiteGateSessionDurationPreference(duration: SiteGateSessionDuration): void {
+  localStorage.setItem(DURATION_PREF_KEY, duration)
+}
+
 export function readSiteGateSession(): SiteGateSession | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY)
@@ -92,23 +160,80 @@ export function readSiteGateSession(): SiteGateSession | null {
   }
 }
 
-export function writeSiteGateSession(username: string): void {
+export function writeSiteGateSession(
+  username: string,
+  duration: SiteGateSessionDuration = readSiteGateSessionDurationPreference(),
+): void {
+  const unlockedAt = new Date()
   const session: SiteGateSession = {
     username: username.trim(),
-    unlockedAt: new Date().toISOString(),
+    unlockedAt: unlockedAt.toISOString(),
+    duration,
+    expiresAt: computeSiteGateExpiresAt(unlockedAt, duration),
   }
+  writeSiteGateSessionDurationPreference(duration)
   localStorage.setItem(SESSION_KEY, JSON.stringify(session))
+}
+
+/** Update duration for the current unlock without requiring a new login. */
+export function updateSiteGateSessionDuration(duration: SiteGateSessionDuration): void {
+  const session = readSiteGateSession()
+  if (!session) {
+    writeSiteGateSessionDurationPreference(duration)
+    return
+  }
+  writeSiteGateSession(session.username, duration)
 }
 
 export function clearSiteGateSession(): void {
   localStorage.removeItem(SESSION_KEY)
 }
 
+export function getActiveSiteGateSessionDuration(): SiteGateSessionDuration {
+  const session = readSiteGateSession()
+  if (session && isSiteGateSessionDuration(session.duration)) return session.duration
+  return readSiteGateSessionDurationPreference()
+}
+
+export function formatSiteGateSessionExpiry(session: SiteGateSession | null = readSiteGateSession()): string {
+  if (!session) return 'Not signed in'
+  const duration = isSiteGateSessionDuration(session.duration)
+    ? session.duration
+    : 'never'
+
+  if (duration === 'never' || session.expiresAt == null) {
+    return 'Never expires (until you log out or clear browser data)'
+  }
+  const expires = new Date(session.expiresAt)
+  if (Number.isNaN(expires.getTime())) return 'Unknown'
+  if (expires.getTime() <= Date.now()) return 'Expired — log in again'
+  return `Expires ${expires.toLocaleString()}`
+}
+
 export function isSiteGateUnlocked(): boolean {
   const session = readSiteGateSession()
   const creds = readLocalSiteGateCredentials()
   if (!session || !creds) return false
-  return session.username.trim().toLowerCase() === creds.username.trim().toLowerCase()
+  if (session.username.trim().toLowerCase() !== creds.username.trim().toLowerCase()) return false
+
+  // Pre–session-timeout unlocks had no expiry. Force a fresh login under the new policy
+  // (default 1 day) instead of silently keeping forever access.
+  if (session.expiresAt === undefined && session.duration == null) {
+    clearSiteGateSession()
+    return false
+  }
+  if (session.expiresAt == null) return true
+
+  const expiresMs = Date.parse(session.expiresAt)
+  if (Number.isNaN(expiresMs)) {
+    clearSiteGateSession()
+    return false
+  }
+  if (Date.now() >= expiresMs) {
+    clearSiteGateSession()
+    return false
+  }
+  return true
 }
 
 function siteAccessDocRef() {
@@ -177,6 +302,7 @@ async function persistCredentialsEverywhere(creds: SiteGateCredentials): Promise
 export async function setupSiteGateCredentials(
   username: string,
   password: string,
+  duration: SiteGateSessionDuration = DEFAULT_SITE_GATE_SESSION_DURATION,
 ): Promise<SiteGateCredentials> {
   const name = username.trim()
   if (name.length < 3) throw new Error('Username must be at least 3 characters.')
@@ -193,13 +319,14 @@ export async function setupSiteGateCredentials(
     updatedAt: new Date().toISOString(),
   }
   await persistCredentialsEverywhere(creds)
-  writeSiteGateSession(name)
+  writeSiteGateSession(name, duration)
   return creds
 }
 
 export async function verifySiteGateLogin(
   username: string,
   password: string,
+  duration: SiteGateSessionDuration = DEFAULT_SITE_GATE_SESSION_DURATION,
 ): Promise<boolean> {
   const creds = await loadSiteGateCredentials()
   if (!creds) return false
@@ -207,7 +334,7 @@ export async function verifySiteGateLogin(
   const hash = await hashSiteGatePassword(password, creds.salt)
   if (hash !== creds.passwordHash) return false
   writeLocalSiteGateCredentials(creds)
-  writeSiteGateSession(creds.username)
+  writeSiteGateSession(creds.username, duration)
   return true
 }
 
@@ -241,7 +368,7 @@ export async function changeSiteGateCredentials(input: {
     updatedAt: new Date().toISOString(),
   }
   await persistCredentialsEverywhere(next)
-  writeSiteGateSession(newUsername)
+  writeSiteGateSession(newUsername, getActiveSiteGateSessionDuration())
 }
 
 export function logoutSiteGate(): void {

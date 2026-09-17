@@ -38,6 +38,24 @@ export default function App() {
   const handleGateLogout = useCallback(() => setGateOpen(false), [])
 
   useEffect(() => {
+    const syncGate = () => {
+      if (!isSiteGateUnlocked()) setGateOpen(false)
+    }
+    syncGate()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') syncGate()
+    }
+    window.addEventListener('focus', syncGate)
+    document.addEventListener('visibilitychange', onVisible)
+    const timer = window.setInterval(syncGate, 30_000)
+    return () => {
+      window.removeEventListener('focus', syncGate)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.clearInterval(timer)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!gateOpen) return
     if (typeof window.requestIdleCallback === 'function') {
       const id = window.requestIdleCallback(() => prefetchLazyRoutes(), { timeout: 4000 })

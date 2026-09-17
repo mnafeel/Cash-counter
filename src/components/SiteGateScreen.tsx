@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  DEFAULT_SITE_GATE_SESSION_DURATION,
   isSiteGateUnlocked,
   loadSiteGateCredentials,
   setupSiteGateCredentials,
@@ -46,11 +47,11 @@ export default function SiteGateScreen({ onUnlocked }: SiteGateScreenProps) {
         if (password !== confirmPassword) {
           throw new Error('Password confirmation does not match.')
         }
-        await setupSiteGateCredentials(username, password)
+        await setupSiteGateCredentials(username, password, DEFAULT_SITE_GATE_SESSION_DURATION)
         onUnlocked()
         return
       }
-      const ok = await verifySiteGateLogin(username, password)
+      const ok = await verifySiteGateLogin(username, password, DEFAULT_SITE_GATE_SESSION_DURATION)
       if (!ok) throw new Error('Incorrect username or password.')
       onUnlocked()
     } catch (err) {
