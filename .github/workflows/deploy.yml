@@ -5,7 +5,7 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Cash Counter only: https://cash-counter.shalimarfashions.com/
+# Cash Counter / Dashboard: https://dashboard.shalimarfashions.com/
 # Main site (shalimarfashions.com) is separate — leave blank / other repo.
 
 permissions:
@@ -50,7 +50,7 @@ jobs:
           test -d dist
           ls -la dist
 
-          printf 'cash-counter.shalimarfashions.com\n' > CNAME
+          printf 'dashboard.shalimarfashions.com\n' > CNAME
 
           # Remove old path-based / Coming Soon publish leftovers
           rm -rf cash-counter SFCC-Admin sfcc-admin docs
@@ -83,7 +83,7 @@ jobs:
             exit 0
           fi
 
-          git commit -m "deploy: cash-counter.shalimarfashions.com [skip ci]"
+          git commit -m "deploy: dashboard.shalimarfashions.com [skip ci]"
 
           for attempt in 1 2 3 4 5; do
             git pull --rebase --autostash origin main

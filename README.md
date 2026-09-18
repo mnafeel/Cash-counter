@@ -12,13 +12,13 @@ A responsive cash counter app for phone, tablet, and desktop. Track bills, custo
 
 ## Live app (GitHub Pages)
 
-**https://cash-counter.shalimarfashions.com/**
+**https://dashboard.shalimarfashions.com/**
 
-Hosted on its own subdomain. The public Shalimar Fashions site (`shalimarfashions.com`) is separate.
+Hosted on the `dashboard` subdomain. The public Shalimar Fashions site (`shalimarfashions.com`) is separate.
 
-Every push to `main` builds and publishes the app to the `main` branch. In repo **Settings → Pages**, set source to **Deploy from a branch** → `main` → `/ (root)`, custom domain `cash-counter.shalimarfashions.com`.
+Every push to `main` builds and publishes the app to the `main` branch. In repo **Settings → Pages**, set source to **Deploy from a branch** → `main` → `/ (root)`, custom domain `dashboard.shalimarfashions.com`.
 
-DNS: `cash-counter` CNAME → `mnafeel.github.io`
+DNS: `dashboard` CNAME → `mnafeel.github.io`
 
 ### Run locally
 

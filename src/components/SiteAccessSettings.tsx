@@ -97,7 +97,8 @@ export default function SiteAccessSettings({ onLoggedOut }: SiteAccessSettingsPr
         <div className="settings-header">
           <h2>Site access</h2>
           <p>
-            Main gatekeeper for this website. Separate from Cloud login and App PIN.
+            Gatekeeper for <strong>dashboard.shalimarfashions.com</strong>. Separate from Cloud login
+            and App PIN.
           </p>
         </div>
 

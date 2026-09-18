@@ -74,12 +74,12 @@ export default function SiteGateScreen({ onUnlocked }: SiteGateScreenProps) {
   return (
     <div className="site-gate">
       <div className="site-gate-card">
-        <p className="site-gate-brand">SFCC Admin</p>
-        <h1>{needsSetup ? 'Create site access' : 'Admin login'}</h1>
+        <p className="site-gate-brand">Dashboard</p>
+        <h1>{needsSetup ? 'Create site access' : 'Dashboard login'}</h1>
         <p className="site-gate-meta">
           {needsSetup
-            ? 'Set the main username and password for this site. This is separate from cloud login.'
-            : 'Enter the site admin username and password to continue.'}
+            ? 'Set the main username and password for dashboard.shalimarfashions.com. This is separate from cloud login.'
+            : 'Enter the site admin username and password to open the dashboard.'}
         </p>
         <form className="site-gate-form" onSubmit={(e) => void handleSubmit(e)}>
           <label>
