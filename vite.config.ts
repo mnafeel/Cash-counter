@@ -1,7 +1,44 @@
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import fs from 'node:fs'
+import path from 'node:path'
 import http from 'node:http'
 import https from 'node:https'
+
+/**
+ * After deploy/rebase, git often leaves production `index.html` (hashed /assets/*).
+ * Local Vite must serve `/src/main.tsx` or Git source updates never appear.
+ */
+function ensureDevIndexHtml(): Plugin {
+  const sync = (root: string) => {
+    const viteIndex = path.join(root, 'index.vite.html')
+    const index = path.join(root, 'index.html')
+    if (!fs.existsSync(viteIndex)) return
+    let current = ''
+    try {
+      current = fs.readFileSync(index, 'utf8')
+    } catch {
+      current = ''
+    }
+    if (!current.includes('/src/main.tsx')) {
+      fs.copyFileSync(viteIndex, index)
+    }
+  }
+
+  return {
+    name: 'ensure-dev-index-html',
+    configureServer(server) {
+      sync(server.config.root)
+      server.middlewares.use((req, _res, next) => {
+        const url = req.url?.split('?')[0] ?? ''
+        if (url === '/' || url === '/index.html') {
+          sync(server.config.root)
+        }
+        next()
+      })
+    },
+  }
+}
 
 /** Forwards /__pinelabs-api → Pine Labs cloud (X-Pinelabs-Target header). Dev/preview only. */
 function pinelabsApiProxy(): Plugin {
@@ -208,6 +245,7 @@ export default defineConfig(({ command }) => ({
   },
   plugins: [
     react(),
+    ...(command === 'serve' ? [ensureDevIndexHtml()] : []),
     pinelabsApiProxy(),
     tallyApiProxy(),
     {

@@ -69,9 +69,6 @@ import {
   type PurchaseHistoryItem,
 } from '../utils/purchaseHistory'
 import { NO1_BILL_LABEL, NO2_BILL_LABEL } from '../utils/expenseBillLabels'
-import Portal from './Portal'
-import BalanceFlowChart from './BalanceFlowChart'
-import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
 import type { CreditReportItem, ChequeReportItem } from '../utils/reportsHub'
 import { buildCreditOverview } from '../utils/customerLedger'
 import { buildChequeOverview } from '../utils/chequeLedger'
@@ -101,6 +98,12 @@ import {
   type NotSaleInflowItem,
 } from '../utils/notSaleInflow'
 import { collectAppDataMonthDates, currentMonthKey, listMonthPickerOptions } from '../utils/monthPicker'
+import { buildReportShareSummary } from '../utils/reportShareCard'
+import { useCash } from '../context/CashContext'
+import Portal from './Portal'
+import BalanceFlowChart from './BalanceFlowChart'
+import ReportSharePanel from './ReportSharePanel'
+import { PageBackButton, PageCloseButton, PageCorners } from './PageCorners'
 import '../pages/Reports.css'
 
 export type ReportSection =
@@ -252,6 +255,7 @@ export default function ReportsPanel({
   variant = 'overlay',
 }: ReportsPanelProps) {
   const isPage = variant === 'page'
+  const { balance, bankBalance } = useCash()
   const [datePreset, setDatePreset] = useState<ReportDatePreset>(initialPreset)
   const [selectedDate, setSelectedDate] = useState(toInputDate())
   const [selectedMonth, setSelectedMonth] = useState('')
@@ -268,6 +272,7 @@ export default function ReportsPanel({
   const [selectedExpenseNameKey, setSelectedExpenseNameKey] = useState<string | null>(null)
   const [selectedSalesCustomer, setSelectedSalesCustomer] = useState<string | null>(null)
   const [showAdvancedDates, setShowAdvancedDates] = useState(false)
+  const [showSharePanel, setShowSharePanel] = useState(false)
   const [expensePayChannel, setExpensePayChannel] = useState<ExpensePayChannelFilter>('all')
   const [expenseTimelineSort, setExpenseTimelineSort] = useState<ExpenseTimelineSort>('time-desc')
   const {
@@ -317,14 +322,14 @@ export default function ReportsPanel({
 
   const isOverview = activeSection === 'all'
   const needsSales = isOverview || activeSection === 'sales'
-  const needsOverviewSales = needsSales || activeSection === 'not-sale'
-  const needsExpense =
-    isOverview || activeSection === 'expense' || activeSection === 'expense-report'
-  const needsPurchase = isOverview || activeSection === 'purchase'
-  const needsCredit = isOverview || activeSection === 'credit'
-  const needsCheque = isOverview || activeSection === 'cheque'
+  // Keep share snapshot complete from any tab (Send is always available).
+  const needsOverviewSales = true
+  const needsExpense = true
+  const needsPurchase = true
+  const needsCredit = true
+  const needsCheque = true
   const needsLoan = isOverview || activeSection === 'loan'
-  const needsNotSale = isOverview || activeSection === 'not-sale'
+  const needsNotSale = true
 
   const advanceSalesCountMode = getAdvanceSalesCountMode(data)
 
@@ -388,11 +393,8 @@ export default function ReportsPanel({
   // Same-period box: bills created in the period with money actually received in that period.
   const showSameDaySalesBox = needsSales && salesDateMode === 'collected'
   const sameDaySales = useMemo(
-    () =>
-      showSameDaySalesBox
-        ? salesSameDaySummaryForPreset(data, datePreset, filterDateArg, rangeTo)
-        : null,
-    [data, datePreset, filterDateArg, rangeTo, showSameDaySalesBox],
+    () => salesSameDaySummaryForPreset(data, datePreset, filterDateArg, rangeTo),
+    [data, datePreset, filterDateArg, rangeTo],
   )
   const sameDaySalesLabel = sameDaySalesCollectedLabel(datePreset, filterDateArg, rangeTo)
   const salesCollectedLabel = salesCollectedPeriodLabel(datePreset, filterDateArg, rangeTo)
@@ -663,10 +665,12 @@ export default function ReportsPanel({
 
   const creditChequeOpenTotal = creditTotals.pendingTotal + chequeTotals.pendingTotal
   const showSection = (section: Exclude<ReportSection, 'all'>) => {
+    // Overview uses window cards only — avoid duplicate section heads/lists (nested scroll feel).
+    if (activeSection === 'all') return false
     if (section === 'expense-report') return activeSection === 'expense-report'
-    if (section === 'expense') return activeSection === 'expense' || activeSection === 'all'
-    if (section === 'not-sale') return activeSection === 'not-sale' || activeSection === 'all'
-    return activeSection === section || activeSection === 'all'
+    if (section === 'expense') return activeSection === 'expense'
+    if (section === 'not-sale') return activeSection === 'not-sale'
+    return activeSection === section
   }
 
   const loanItems = useMemo(() => {
@@ -728,6 +732,70 @@ export default function ReportsPanel({
   const periodLabel = formatReportPresetLabel(datePreset, filterDateArg, rangeTo)
   const showAllSections = !focusSection
   const visibleSection = focusSection ? activeSection : activeSection
+
+  const overviewGrowthSeries = useMemo(() => {
+    const total = Math.max(overviewSalesTotals.totalBills, 1)
+    const expense = Math.max(combinedExpenseTotal, 0)
+    return Array.from({ length: 20 }, (_, index) => {
+      const t = (index + 1) / 20
+      return total * t - expense * t * 0.35
+    })
+  }, [overviewSalesTotals.totalBills, combinedExpenseTotal])
+
+  const shareSummary = useMemo(
+    () =>
+      buildReportShareSummary({
+        data,
+        preset: datePreset,
+        selectedDate: filterDateArg,
+        rangeTo,
+        currentCash: balance,
+        currentBank: bankBalance,
+        salesCollected: overviewSalesTotals.totalBills,
+        salesCash: overviewSalesChannelTotals.cash,
+        salesBank: overviewSalesChannelTotals.bank,
+        withCreditSales: overviewSalesTotals.withCreditSales,
+        oldCreditChequeCollected: overviewSalesTotals.oldCreditChequeCollected,
+        sameDaySales: sameDaySales?.totalBills ?? 0,
+        expenseTotal: combinedExpenseTotal,
+        expenseNormal: expenseTimelineSummary.expenseTotal,
+        expenseNormalCash: expenseTimelineSummary.expenseCash,
+        expenseNormalBank: expenseTimelineSummary.expenseBank,
+        expensePurchase: expenseTimelineSummary.purchaseTotal,
+        expensePurchaseCash: expenseTimelineSummary.purchaseCash,
+        expensePurchaseBank: expenseTimelineSummary.purchaseBank,
+        notSaleTotal: notSaleInflowTotals.total,
+        net: overviewReportNet.netCurrent,
+        creditPending: creditTotals.pendingTotal,
+        chequePending: chequeTotals.pendingTotal,
+        purchaseTotal: expenseTimelineSummary.purchaseTotal,
+      }),
+    [
+      data,
+      datePreset,
+      filterDateArg,
+      rangeTo,
+      balance,
+      bankBalance,
+      overviewSalesTotals.totalBills,
+      overviewSalesTotals.withCreditSales,
+      overviewSalesTotals.oldCreditChequeCollected,
+      overviewSalesChannelTotals.cash,
+      overviewSalesChannelTotals.bank,
+      sameDaySales?.totalBills,
+      combinedExpenseTotal,
+      expenseTimelineSummary.expenseTotal,
+      expenseTimelineSummary.expenseCash,
+      expenseTimelineSummary.expenseBank,
+      expenseTimelineSummary.purchaseTotal,
+      expenseTimelineSummary.purchaseCash,
+      expenseTimelineSummary.purchaseBank,
+      notSaleInflowTotals.total,
+      overviewReportNet.netCurrent,
+      creditTotals.pendingTotal,
+      chequeTotals.pendingTotal,
+    ],
+  )
 
   const activeAlertCount =
     activeSection === 'credit'
@@ -819,7 +887,12 @@ export default function ReportsPanel({
     )
 
   const panel = (
-      <div className={`reports-page reports-panel page-shell${isPage ? ' reports-panel--page' : ''}`}>
+    <>
+      <div
+        className={`reports-page reports-panel page-shell${isPage ? ' reports-panel--page' : ''}${
+          activeSection === 'all' ? ' reports-page--overview' : ''
+        }${activeSection === 'sales' ? ' reports-page--sales' : ''}`}
+      >
         {!isPage ? (
           <PageCorners
             left={
@@ -860,7 +933,7 @@ export default function ReportsPanel({
                 <button
                   key={preset.id}
                   type="button"
-                  className={`app-date-chip ${datePreset === preset.id ? 'app-date-chip--active' : ''}`}
+                  className={`app-date-chip app-date-chip--3d ${datePreset === preset.id ? 'app-date-chip--active' : ''}`}
                   onClick={() => {
                     setDatePreset(preset.id)
                     setShowAdvancedDates(false)
@@ -873,10 +946,19 @@ export default function ReportsPanel({
               ))}
               <button
                 type="button"
-                className={`app-date-chip app-date-chip--ghost ${showAdvancedDates || datePreset === 'date' || datePreset === 'range' || datePreset === 'monthPick' ? 'app-date-chip--active' : ''}`}
+                className={`app-date-chip app-date-chip--ghost app-date-chip--3d ${showAdvancedDates || datePreset === 'date' || datePreset === 'range' || datePreset === 'monthPick' ? 'app-date-chip--active' : ''}`}
                 onClick={() => setShowAdvancedDates((v) => !v)}
               >
                 More
+              </button>
+              <button
+                type="button"
+                className="reports-send-btn"
+                onClick={() => setShowSharePanel(true)}
+                aria-label={`Send ${periodLabel} summary`}
+              >
+                <span className="reports-send-btn__shine" aria-hidden="true" />
+                Send
               </button>
             </div>
 
@@ -1030,103 +1112,212 @@ export default function ReportsPanel({
                 ) : null}
               </div>
             )}
+          </div>
+        </div>
 
+        <div ref={bodyRef} className="reports-body">
             {activeSection === 'all' ? (
-              <div className="reports-summary reports-summary--all reports-summary--overview reports-summary--overview-stats">
-                <div className="reports-summary-card reports-summary-card--green reports-summary-card--stat">
-                  <span>{salesCollectedLabel}</span>
-                  <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
-                  <small>
-                    {overviewSalesTotals.billCount} bills · 💵 {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
-                    {formatMoney(overviewSalesChannelTotals.bank)}
-                  </small>
+              <section className="reports-overview-stage" aria-label={`${periodLabel} overview`}>
+                <div className="reports-overview-hero app-surface">
+                  <div className="reports-overview-hero__chart" aria-hidden="true">
+                    <BalanceFlowChart series={overviewGrowthSeries} tone="sales" blend />
+                  </div>
+                  <div className="reports-overview-hero__body">
+                    <p className="reports-overview-hero__kicker">{periodLabel}</p>
+                    <h2 className="reports-overview-hero__title">Business snapshot</h2>
+                    <div className="reports-overview-lanes">
+                      <div className="reports-overview-lane reports-overview-lane--cash">
+                        <span>Cash in counter</span>
+                        <strong>{formatMoney(balance)}</strong>
+                        <small>
+                          Opening {formatMoney(shareSummary.openingCash)} · Sales{' '}
+                          {formatMoney(overviewSalesTotals.totalBills)}
+                        </small>
+                      </div>
+                      <div className="reports-overview-lane reports-overview-lane--bank">
+                        <span>Cash at bank</span>
+                        <strong>{formatMoney(bankBalance)}</strong>
+                        <small>
+                          Opening {formatMoney(shareSummary.openingBank)} · To bank{' '}
+                          {formatMoney(shareSummary.cashToBank)} · To cash{' '}
+                          {formatMoney(shareSummary.bankToCash)}
+                        </small>
+                      </div>
+                    </div>
+                    <div className="reports-overview-hero__metrics">
+                      <div>
+                        <span>{salesCollectedLabel}</span>
+                        <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
+                      </div>
+                      <div>
+                        <span>Expenses</span>
+                        <strong>{formatMoney(combinedExpenseTotal)}</strong>
+                      </div>
+                      <div>
+                        <span>Net</span>
+                        <strong className={overviewReportNet.netCurrent >= 0 ? 'is-up' : 'is-down'}>
+                          {formatMoney(overviewReportNet.netCurrent)}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="reports-overview-hero__send"
+                    onClick={() => setShowSharePanel(true)}
+                  >
+                    Send
+                  </button>
                 </div>
-                <div className="reports-summary-card reports-summary-card--orange reports-summary-card--stat">
-                  <span>Total expense</span>
-                  {expenseHasLoanActivity(expenseTimelineSummary) ? (
-                    <ExpenseAfterLoanSummary
-                      grossTotal={combinedExpenseTotal}
-                      afterTotal={expenseTotalAfterLoanSettlement(expenseTimelineSummary)}
-                      closedTotal={expenseTotalIfLoansFullyClosed(expenseTimelineSummary)}
-                      variant="card"
-                    />
-                  ) : (
-                    <strong>{formatMoney(combinedExpenseTotal)}</strong>
-                  )}
-                  <small>
-                    Normal {formatMoney(expenseTimelineSummary.expenseTotal)} · Purchase{' '}
-                    {formatMoney(expenseTimelineSummary.purchaseTotal)}
-                  </small>
-                </div>
-                <div className="reports-summary-card reports-summary-card--not-sale reports-summary-card--stat">
-                  <span>Not sale</span>
-                  <strong>{formatMoney(notSaleInflowTotals.total)}</strong>
-                  <small>
-                    {notSaleInflowTotals.count} items · 💵 {formatMoney(notSaleInflowTotals.cashTotal)} · 🏦{' '}
-                    {formatMoney(notSaleInflowTotals.bankTotal)}
-                  </small>
-                </div>
-                <div className="reports-summary-card reports-summary-card--collected">
-                  <span>Sales + not sale</span>
-                  <strong>{formatMoney(totalCollectedWithNotSale)}</strong>
-                  <small>
-                    Sales {formatMoney(overviewSalesTotals.totalBills)} + Not sale{' '}
-                    {formatMoney(notSaleInflowTotals.total)}
-                  </small>
-                </div>
-                <div className="reports-summary-card">
-                  <span>Credit + Cheque</span>
-                  <strong>{formatMoney(creditChequeOpenTotal)}</strong>
-                  <small>
-                    Credit {formatMoney(creditTotals.pendingTotal)} · Cheque{' '}
-                    {formatMoney(chequeTotals.pendingTotal)}
-                  </small>
-                </div>
-                <ReportsNetSummaryCard net={overviewReportNet} />
-              </div>
-            ) : null}
 
-            {showSalesCollectedAccordion ? (
-              <SalesCollectedSummaryCards
-                expanded={expandedSalesPanel}
-                onToggle={toggleSalesPanel}
-                salesTotals={salesTotals}
-                salesCollectedLabel={salesCollectedLabel}
-                sameDaySales={sameDaySales}
-                sameDaySalesLabel={sameDaySalesLabel}
-                samePeriodHint={samePeriodHint}
-                showSameDaySalesBox={showSameDaySalesBox}
-                oldCreditChequeCount={oldCreditChequeBills.length}
-              />
-            ) : null}
-
-            {activeSection === 'sales' && salesDateMode === 'created' ? (
-              <div className="reports-summary">
-                <div className="reports-summary-card reports-summary-card--green">
-                  <span>Bills created</span>
-                  <strong>{formatMoney(salesTotals.billTotal)}</strong>
-                  <small>
-                    {salesTotals.billCount} bills · Collected {formatMoney(salesTotals.totalBills)} ·{' '}
-                    {formatCollectedSalesBreakdown(
-                      salesTotals.cashTotal,
-                      salesTotals.bankTotal,
+                <div className="reports-summary reports-summary--all reports-summary--overview reports-summary--overview-stats reports-summary--windows">
+                  <button
+                    type="button"
+                    className="reports-summary-card reports-summary-card--green reports-summary-card--stat reports-summary-card--window"
+                    onClick={() => selectSection('sales')}
+                  >
+                    <span>{salesCollectedLabel}</span>
+                    <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
+                    <small>
+                      {overviewSalesTotals.billCount} bills · 💵 {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
+                      {formatMoney(overviewSalesChannelTotals.bank)}
+                    </small>
+                  </button>
+                  <button
+                    type="button"
+                    className="reports-summary-card reports-summary-card--orange reports-summary-card--stat reports-summary-card--window"
+                    onClick={() => selectSection('expense')}
+                  >
+                    <span>Total expense</span>
+                    {expenseHasLoanActivity(expenseTimelineSummary) ? (
+                      <ExpenseAfterLoanSummary
+                        grossTotal={combinedExpenseTotal}
+                        afterTotal={expenseTotalAfterLoanSettlement(expenseTimelineSummary)}
+                        closedTotal={expenseTotalIfLoansFullyClosed(expenseTimelineSummary)}
+                        variant="card"
+                      />
+                    ) : (
+                      <strong>{formatMoney(combinedExpenseTotal)}</strong>
                     )}
-                  </small>
+                    <small>
+                      Purchase {formatMoney(expenseTimelineSummary.purchaseTotal)} · Normal{' '}
+                      {formatMoney(expenseTimelineSummary.expenseTotal)}
+                    </small>
+                  </button>
+                  <button
+                    type="button"
+                    className="reports-summary-card reports-summary-card--not-sale reports-summary-card--stat reports-summary-card--window"
+                    onClick={() => selectSection('not-sale')}
+                  >
+                    <span>Not sale</span>
+                    <strong>{formatMoney(notSaleInflowTotals.total)}</strong>
+                    <small>
+                      {notSaleInflowTotals.count} items · 💵 {formatMoney(notSaleInflowTotals.cashTotal)} · 🏦{' '}
+                      {formatMoney(notSaleInflowTotals.bankTotal)}
+                    </small>
+                  </button>
+                  <div className="reports-summary-card reports-summary-card--collected reports-summary-card--window">
+                    <span>Sales + not sale</span>
+                    <strong>{formatMoney(totalCollectedWithNotSale)}</strong>
+                    <small>
+                      Sales {formatMoney(overviewSalesTotals.totalBills)} + Not sale{' '}
+                      {formatMoney(notSaleInflowTotals.total)}
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="reports-summary-card reports-summary-card--stat reports-summary-card--window"
+                    onClick={() => selectSection('purchase')}
+                  >
+                    <span>Purchases</span>
+                    <strong>{formatMoney(expenseTimelineSummary.purchaseTotal)}</strong>
+                    <small>
+                      💵 {formatMoney(expenseTimelineSummary.purchaseCash)} · 🏦{' '}
+                      {formatMoney(expenseTimelineSummary.purchaseBank)}
+                    </small>
+                  </button>
+                  <button
+                    type="button"
+                    className="reports-summary-card reports-summary-card--stat reports-summary-card--window"
+                    onClick={() => selectSection('credit')}
+                  >
+                    <span>Credit + Cheque</span>
+                    <strong>{formatMoney(creditChequeOpenTotal)}</strong>
+                    <small>
+                      Credit {formatMoney(creditTotals.pendingTotal)} · Cheque{' '}
+                      {formatMoney(chequeTotals.pendingTotal)}
+                    </small>
+                  </button>
+                  <ReportsNetSummaryCard net={overviewReportNet} />
                 </div>
-              </div>
+              </section>
             ) : null}
 
-            {activeSection === 'sales' && salesDateMode === 'created' ? (
-              <div className="reports-summary reports-summary--sales-double">
-                <div className="reports-summary-card">
-                  <span>Cash collected</span>
-                  <strong>{formatMoney(salesTotals.cashTotal)}</strong>
-                  <small>On bills created in this period</small>
-                </div>
-                <div className="reports-summary-card">
-                  <span>Bank collected</span>
-                  <strong>{formatMoney(salesTotals.bankTotal)}</strong>
-                  <small>On bills created in this period</small>
+            {activeSection === 'sales' ? (
+              <div className="reports-sales-fit">
+                {showSalesCollectedAccordion ? (
+                  <section className="reports-sales-stage" aria-label="Sales collected">
+                    <div className="reports-sales-stage__head">
+                      <h2>Sales</h2>
+                      <p>Tap a card · list opens below</p>
+                    </div>
+                    <SalesCollectedSummaryCards
+                      expanded={expandedSalesPanel}
+                      onToggle={toggleSalesPanel}
+                      salesTotals={salesTotals}
+                      salesCollectedLabel={salesCollectedLabel}
+                      sameDaySales={sameDaySales}
+                      sameDaySalesLabel={sameDaySalesLabel}
+                      samePeriodHint={samePeriodHint}
+                      showSameDaySalesBox={showSameDaySalesBox}
+                      oldCreditChequeCount={oldCreditChequeBills.length}
+                    />
+                  </section>
+                ) : null}
+
+                {salesDateMode === 'created' ? (
+                  <>
+                    <div className="reports-summary">
+                      <div className="reports-summary-card reports-summary-card--green">
+                        <span>Bills created</span>
+                        <strong>{formatMoney(salesTotals.billTotal)}</strong>
+                        <small>
+                          {salesTotals.billCount} bills · Collected {formatMoney(salesTotals.totalBills)} ·{' '}
+                          {formatCollectedSalesBreakdown(
+                            salesTotals.cashTotal,
+                            salesTotals.bankTotal,
+                          )}
+                        </small>
+                      </div>
+                    </div>
+                    <div className="reports-summary reports-summary--sales-double">
+                      <div className="reports-summary-card">
+                        <span>Cash collected</span>
+                        <strong>{formatMoney(salesTotals.cashTotal)}</strong>
+                        <small>On bills created in this period</small>
+                      </div>
+                      <div className="reports-summary-card">
+                        <span>Bank collected</span>
+                        <strong>{formatMoney(salesTotals.bankTotal)}</strong>
+                        <small>On bills created in this period</small>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
+
+                <div className="reports-sales-detail">
+                  {showSalesCollectedAccordion && expandedSalesPanel ? (
+                    <SalesCollectedHistoryList
+                      panel={expandedSalesPanel}
+                      collectedRows={salesBills}
+                      withCreditRows={withCreditSalesBills}
+                      oldCreditChequeRows={oldCreditChequeBills}
+                      sameDayRows={sameDaySalesBills}
+                      sameDaySalesLabel={sameDaySalesLabel}
+                      salesCollectedLabel={salesCollectedLabel}
+                      salesTotals={salesTotals}
+                    />
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -1255,23 +1446,6 @@ export default function ReportsPanel({
                 )}
               </div>
             ) : null}
-          </div>
-        </div>
-
-        <div ref={bodyRef} className="reports-body">
-          {activeSection === 'sales' && showSalesCollectedAccordion && expandedSalesPanel ? (
-            <SalesCollectedHistoryList
-              panel={expandedSalesPanel}
-              collectedRows={salesBills}
-              withCreditRows={withCreditSalesBills}
-              oldCreditChequeRows={oldCreditChequeBills}
-              sameDayRows={sameDaySalesBills}
-              sameDaySalesLabel={sameDaySalesLabel}
-              salesCollectedLabel={salesCollectedLabel}
-              salesTotals={salesTotals}
-            />
-          ) : null}
-
           {showSection('sales') && !showSalesCollectedAccordion && (
             <>
               {activeSection === 'all' ? (
@@ -1947,6 +2121,13 @@ export default function ReportsPanel({
           )}
         </div>
       </div>
+      <ReportSharePanel
+        open={showSharePanel}
+        onClose={() => setShowSharePanel(false)}
+        summary={shareSummary}
+        growthSeries={overviewGrowthSeries}
+      />
+    </>
   )
 
   if (isPage) return panel
@@ -2174,7 +2355,7 @@ function ExpenseAfterLoanSummary({
 
 function ReportsNetSummaryCard({ net }: { net: ReportNetSummary }) {
   return (
-    <div className="reports-summary-card reports-summary-card--net">
+    <div className="reports-summary-card reports-summary-card--net reports-summary-card--window">
       <span>Net</span>
       <ReportsNetSummaryInline net={net} />
     </div>
