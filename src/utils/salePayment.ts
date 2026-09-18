@@ -457,8 +457,13 @@ export function normalizePaymentEvent(event: SalePaymentEvent): SalePaymentEvent
 /** Bank drawer credit for one payment event (cheque approvals are not bank+cheque). */
 export function paymentEventBankInflow(event: SalePaymentEvent): number {
   const cheque = event.cheque ?? 0
-  if (cheque > 0) return cheque
-  return event.bank ?? 0
+  const bank = event.bank ?? 0
+  if (cheque > 0) {
+    // Cheque marker may already be folded into bank; never double-count.
+    if (bank >= cheque) return bank
+    return bank + cheque
+  }
+  return bank
 }
 
 function isPendingUnapprovedChequeSale(sale: Sale): boolean {
@@ -471,15 +476,66 @@ function isPendingUnapprovedChequeSale(sale: Sale): boolean {
 
 /** Cash / approved bank only — pending cheque instruments are not money yet. */
 export function paymentEventRealizedAmount(sale: Sale, event: SalePaymentEvent): number {
-  if (event.cancelled || event.amount <= 0) return 0
+  return paymentEventRealizedBreakdown(sale, event).total
+}
+
+/**
+ * Amount-only payment events on open credit bills are not drawer money —
+ * only explicit cash/bank (or approved cheque) counts as Sales Collected.
+ */
+export function paymentEventRealizedBreakdown(
+  sale: Sale,
+  event: SalePaymentEvent,
+): SaleCollectedBreakdown {
+  if (event.cancelled || event.amount <= 0) {
+    return { cash: 0, bank: 0, cheque: 0, total: 0 }
+  }
   if (isPendingUnapprovedChequeSale(sale)) {
-    return event.cash ?? 0
+    const cash = event.cash ?? 0
+    return { cash, bank: 0, cheque: 0, total: cash }
   }
   const cash = event.cash ?? 0
   const bankIn = paymentEventBankInflow(event)
   const parts = cash + bankIn
-  if (parts > 0) return Math.round(parts * 100) / 100
-  return event.amount
+  if (parts > 0.01) {
+    return {
+      cash,
+      bank: bankIn,
+      cheque: 0,
+      total: Math.round(parts * 100) / 100,
+    }
+  }
+  // Amount-only: count only on settled (non-pending) bills. Open credit/cheque
+  // face values must never inflate Sales Collected.
+  if (sale.status === 'pending') {
+    return { cash: 0, bank: 0, cheque: 0, total: 0 }
+  }
+  const amount = event.amount
+  return { cash: amount, bank: 0, cheque: 0, total: amount }
+}
+
+/** Sum only money actually received (cash + bank / approved cheque). */
+export function sumRealizedPaymentEvents(
+  sale: Sale,
+  events: SalePaymentEvent[],
+): SaleCollectedBreakdown {
+  const raw = events.reduce(
+    (acc, event) => {
+      if (!isActivePaymentEvent(event)) return acc
+      const part = paymentEventRealizedBreakdown(sale, event)
+      acc.cash += part.cash
+      acc.bank += part.bank
+      acc.total += part.total
+      return acc
+    },
+    { cash: 0, bank: 0, cheque: 0, total: 0 },
+  )
+  return {
+    cash: Math.round(raw.cash * 100) / 100,
+    bank: Math.round(raw.bank * 100) / 100,
+    cheque: 0,
+    total: Math.round(raw.total * 100) / 100,
+  }
 }
 
 export function isActivePaymentEvent(event: SalePaymentEvent): boolean {
@@ -574,6 +630,15 @@ export function salePaidCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
   }
   if (sale.billAmount > 0) {
     if (advanceApplied > 0.01) {
+      return { cash: 0, bank: 0, cheque: 0, total: 0 }
+    }
+    // Never invent "collected" money from an open credit / pending cheque bill total.
+    if (
+      sale.payType === 'credit' ||
+      sale.pendingPayType === 'credit' ||
+      (sale.payType === 'cheque' && sale.chequeApproved !== true) ||
+      (sale.pendingPayType === 'cheque' && sale.chequeApproved !== true)
+    ) {
       return { cash: 0, bank: 0, cheque: 0, total: 0 }
     }
     if (sale.payType === 'bank' || sale.payType === 'cheque') {
@@ -680,13 +745,16 @@ export function inferLegacyPaymentEvents(sale: Sale): SalePaymentEvent[] {
   if (sale.status === 'pending') {
     const prior = salePendingCreditPaidBreakdown(sale)
     if (prior.total <= 0) return []
-    return [paymentEventFromBreakdown(sale.updatedAt ?? sale.createdAt, prior)]
+    // Prefer createdAt so later edits (rename, link, note) do not move old collections
+    // into Today / This Week. Real part-payments should already have paymentEvents.
+    return [paymentEventFromBreakdown(sale.createdAt, prior)]
   }
 
   const collected = salePaidCollectedBreakdown(sale)
   if (collected.total <= 0) return []
 
-  return [paymentEventFromBreakdown(sale.updatedAt ?? sale.createdAt, collected)]
+  // Settled legacy bills: attribute collection to the bill day, never updatedAt.
+  return [paymentEventFromBreakdown(sale.createdAt, collected)]
 }
 
 export function getSalePaymentEvents(sale: Sale): SalePaymentEvent[] {
@@ -854,21 +922,10 @@ export function saleCollectedComponentBreakdown(sale: Sale): SaleCollectedBreakd
   const events = getSalePaymentEvents(sale)
   let result: SaleCollectedBreakdown
   if (events.length > 0) {
-    const raw = events
-      .filter(isActivePaymentEvent)
-      .reduce(
-        (acc, event) => {
-          acc.cash += event.cash ?? 0
-          acc.bank += event.bank ?? 0
-          acc.cheque += event.cheque ?? 0
-          acc.total += event.amount
-          return acc
-        },
-        { cash: 0, bank: 0, cheque: 0, total: 0 },
-      )
-    result = normalizeCollectedBreakdown(raw)
+    // Only cash + bank / approved cheque — never unpaid credit or pending cheque face value.
+    result = sumRealizedPaymentEvents(sale, events)
   } else if (sale.status === 'pending') {
-    result = normalizeCollectedBreakdown(salePendingCreditPaidBreakdown(sale))
+    result = salePendingCreditPaidBreakdown(sale)
   } else {
     result = salePaidCollectedBreakdown(sale)
   }

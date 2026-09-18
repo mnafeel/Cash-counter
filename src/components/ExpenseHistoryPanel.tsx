@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import type { AppData } from '../types'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import { NO1_EXPENSE_LABEL } from '../utils/expenseBillLabels'
@@ -30,10 +30,7 @@ import { buildPurchaseHistoryItems, filterPurchaseHistoryItems } from '../utils/
 import { toInputDate } from '../utils/salesReport'
 import {
   collectAppDataMonthDates,
-  currentMonthKey,
-  defaultMonthPickerKey,
   listMonthPickerOptions,
-  monthKeyFromIso,
   monthRangeFromKey,
 } from '../utils/monthPicker'
 import './PurchaseHistoryPanel.css'
@@ -79,7 +76,7 @@ export default function ExpenseHistoryPanel({
   const embedded = variant === 'embedded'
   const [rangeFrom, setRangeFrom] = useState(() => toInputDate())
   const [rangeTo, setRangeTo] = useState(() => toInputDate())
-  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey)
+  const [selectedMonth, setSelectedMonth] = useState('')
   const [sort, setSort] = useState<ExpenseTimelineSort>('time-desc')
   const [payChannel, setPayChannel] = useState<ExpensePayChannelFilter>('all')
   const [expandedKey, setExpandedKey] = useState<string | null>(null)
@@ -165,12 +162,6 @@ export default function ExpenseHistoryPanel({
     [data],
   )
 
-  useEffect(() => {
-    if (!open && !embedded) return
-    if (monthOptions.length === 0) return
-    setSelectedMonth((prev) => defaultMonthPickerKey(monthOptions, prev))
-  }, [open, embedded, monthOptions])
-
   if (!open && !embedded) return null
 
   function handleClose() {
@@ -186,14 +177,12 @@ export default function ExpenseHistoryPanel({
 
   function setToday() {
     const today = toInputDate()
-    const todayMonth = monthKeyFromIso(today)
-    if (monthOptions.some((option) => option.key === todayMonth)) {
-      setSelectedMonth(todayMonth)
-    }
+    setSelectedMonth('')
     setPreset(today, today)
   }
 
   function setMonthPick(monthKey: string) {
+    if (!monthKey) return
     const range = monthRangeFromKey(monthKey)
     if (!range) return
     setSelectedMonth(monthKey)
@@ -204,7 +193,7 @@ export default function ExpenseHistoryPanel({
     const y = new Date()
     y.setDate(y.getDate() - 1)
     const d = toInputDate(y)
-    setSelectedMonth(monthKeyFromIso(d))
+    setSelectedMonth('')
     setPreset(d, d)
   }
 
@@ -212,7 +201,7 @@ export default function ExpenseHistoryPanel({
     const today = toInputDate()
     const start = new Date()
     start.setDate(start.getDate() - 6)
-    setSelectedMonth(currentMonthKey())
+    setSelectedMonth('')
     setPreset(toInputDate(start), today)
   }
 
@@ -301,20 +290,19 @@ export default function ExpenseHistoryPanel({
               <span>Month</span>
               <select
                 className="purchase-hist-month-select"
-                value={selectedMonth}
+                value={monthRangeActive ? selectedMonth : ''}
                 onChange={(e) => setMonthPick(e.target.value)}
                 disabled={monthOptions.length === 0}
                 aria-label="Pick month for expense history"
               >
-                {monthOptions.length === 0 ? (
-                  <option value="">No data yet</option>
-                ) : (
-                  monthOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))
-                )}
+                <option value="">
+                  {monthOptions.length === 0 ? 'No data yet' : 'Select month…'}
+                </option>
+                {monthOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
             <button

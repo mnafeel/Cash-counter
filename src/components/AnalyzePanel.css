@@ -107,6 +107,41 @@
   gap: 8px;
 }
 
+.analyze-date-advanced {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.analyze-chip--ghost {
+  opacity: 0.9;
+}
+
+.analyze-date-pick--month {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.14));
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.analyze-date-pick--active {
+  border-color: color-mix(in srgb, var(--accent, #c9a227) 55%, transparent);
+}
+
+.analyze-month-select {
+  min-height: 28px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .analyze-body {
   flex: 1;
   min-height: 0;

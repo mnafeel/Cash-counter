@@ -23,10 +23,11 @@ import {
   filterChequeReportItems,
   filterCreditReportItems,
   formatReportPresetLabel,
-  isSingleDaySalesPreset,
   salesBillsForPreset,
+  salesCollectedPeriodLabel,
   salesSameDaySummaryForPreset,
   sameDaySalesCollectedLabel,
+  samePeriodSalesHint,
   salesSummaryForPreset,
   salesFilterForPreset,
   summarizeChequeItems,
@@ -99,7 +100,7 @@ import {
   summarizeNotSaleInflow,
   type NotSaleInflowItem,
 } from '../utils/notSaleInflow'
-import { collectAppDataMonthDates, currentMonthKey, defaultMonthPickerKey, listMonthPickerOptions } from '../utils/monthPicker'
+import { collectAppDataMonthDates, currentMonthKey, listMonthPickerOptions } from '../utils/monthPicker'
 import '../pages/Reports.css'
 
 export type ReportSection =
@@ -132,6 +133,7 @@ const DATE_PRESETS: { id: ReportDatePreset; label: string }[] = [
   { id: 'today', label: 'Today' },
   { id: 'yesterday', label: 'Yesterday' },
   { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
   { id: 'all', label: 'All' },
 ]
 
@@ -252,7 +254,7 @@ export default function ReportsPanel({
   const isPage = variant === 'page'
   const [datePreset, setDatePreset] = useState<ReportDatePreset>(initialPreset)
   const [selectedDate, setSelectedDate] = useState(toInputDate())
-  const [selectedMonth, setSelectedMonth] = useState(currentMonthKey)
+  const [selectedMonth, setSelectedMonth] = useState('')
   const [rangeTo, setRangeTo] = useState(toInputDate())
   const [activeSection, setActiveSection] = useState<ReportSection>(
     focusSection ? (initialSection ?? 'sales') : 'all',
@@ -282,8 +284,9 @@ export default function ReportsPanel({
 
   useEffect(() => {
     if (!open) return
-    if (initialPreset === 'monthPick' || initialPreset === 'month') {
+    if (initialPreset === 'monthPick') {
       setDatePreset('monthPick')
+      setShowAdvancedDates(true)
       setSelectedMonth(
         initialSelectedDate && initialSelectedDate.length === 7
           ? initialSelectedDate
@@ -291,6 +294,8 @@ export default function ReportsPanel({
       )
     } else {
       setDatePreset(initialPreset)
+      setShowAdvancedDates(false)
+      setSelectedMonth('')
     }
     if (initialSection) setActiveSection(initialSection)
     else if (!focusSection) setActiveSection('all')
@@ -309,11 +314,6 @@ export default function ReportsPanel({
   const filterDateArg = datePreset === 'monthPick' ? selectedMonth : selectedDate
 
   const monthOptions = useMemo(() => listMonthPickerOptions(collectAppDataMonthDates(data)), [data])
-
-  useEffect(() => {
-    if (monthOptions.length === 0) return
-    setSelectedMonth((prev) => defaultMonthPickerKey(monthOptions, prev))
-  }, [monthOptions])
 
   const isOverview = activeSection === 'all'
   const needsSales = isOverview || activeSection === 'sales'
@@ -385,19 +385,22 @@ export default function ReportsPanel({
     const group = salesByCustomer.find((g) => g.key === selectedSalesCustomer)
     return group?.rows ?? []
   }, [salesByCustomer, selectedSalesCustomer])
-  const showSameDaySalesBox = isSingleDaySalesPreset(datePreset, filterDateArg, rangeTo)
+  // Same-period box: bills created in the period with money actually received in that period.
+  const showSameDaySalesBox = needsSales && salesDateMode === 'collected'
   const sameDaySales = useMemo(
     () =>
-      needsSales && showSameDaySalesBox
+      showSameDaySalesBox
         ? salesSameDaySummaryForPreset(data, datePreset, filterDateArg, rangeTo)
         : null,
-    [data, datePreset, filterDateArg, rangeTo, showSameDaySalesBox, needsSales],
+    [data, datePreset, filterDateArg, rangeTo, showSameDaySalesBox],
   )
   const sameDaySalesLabel = sameDaySalesCollectedLabel(datePreset, filterDateArg, rangeTo)
+  const salesCollectedLabel = salesCollectedPeriodLabel(datePreset, filterDateArg, rangeTo)
+  const samePeriodHint = samePeriodSalesHint(datePreset)
 
   const sameDaySalesBills = useMemo(
     () =>
-      needsSales && showSameDaySalesBox
+      showSameDaySalesBox
         ? salesBillsForPreset(
             data,
             datePreset,
@@ -408,7 +411,7 @@ export default function ReportsPanel({
             { sameDayCreatedAndPaid: true },
           )
         : [],
-    [data, datePreset, filterDateArg, salesSort, rangeTo, showSameDaySalesBox, needsSales],
+    [data, datePreset, filterDateArg, salesSort, rangeTo, showSameDaySalesBox],
   )
 
   const withCreditSalesBills = useMemo(() => {
@@ -861,6 +864,8 @@ export default function ReportsPanel({
                   onClick={() => {
                     setDatePreset(preset.id)
                     setShowAdvancedDates(false)
+                    setSalesDateMode('collected')
+                    setSelectedMonth('')
                   }}
                 >
                   {preset.label}
@@ -871,7 +876,7 @@ export default function ReportsPanel({
                 className={`app-date-chip app-date-chip--ghost ${showAdvancedDates || datePreset === 'date' || datePreset === 'range' || datePreset === 'monthPick' ? 'app-date-chip--active' : ''}`}
                 onClick={() => setShowAdvancedDates((v) => !v)}
               >
-                More dates
+                More
               </button>
             </div>
 
@@ -880,40 +885,49 @@ export default function ReportsPanel({
                 <button
                   type="button"
                   className={`app-date-chip ${datePreset === 'date' ? 'app-date-chip--active' : ''}`}
-                  onClick={() => setDatePreset('date')}
+                  onClick={() => {
+                    setDatePreset('date')
+                    setSalesDateMode('collected')
+                  }}
                 >
                   Pick day
                 </button>
                 <button
                   type="button"
                   className={`app-date-chip ${datePreset === 'range' ? 'app-date-chip--active' : ''}`}
-                  onClick={() => setDatePreset('range')}
+                  onClick={() => {
+                    setDatePreset('range')
+                    setSalesDateMode('collected')
+                  }}
                 >
                   Range
                 </button>
                 <label
                   className={`reports-date-pick reports-date-pick--month ${datePreset === 'monthPick' ? 'reports-date-pick--active' : ''}`}
                 >
-                  <span>Month</span>
+                  <span>Pick month</span>
                   <select
                     className="reports-month-select"
-                    value={selectedMonth}
+                    value={datePreset === 'monthPick' ? selectedMonth : ''}
                     onChange={(e) => {
-                      setSelectedMonth(e.target.value)
+                      const value = e.target.value
+                      if (!value) return
+                      setSelectedMonth(value)
                       setDatePreset('monthPick')
+                      setSalesDateMode('collected')
+                      setShowAdvancedDates(true)
                     }}
                     disabled={monthOptions.length === 0}
                     aria-label="Pick month for report"
                   >
-                    {monthOptions.length === 0 ? (
-                      <option value="">No data yet</option>
-                    ) : (
-                      monthOptions.map((option) => (
-                        <option key={option.key} value={option.key}>
-                          {option.label}
-                        </option>
-                      ))
-                    )}
+                    <option value="">
+                      {monthOptions.length === 0 ? 'No data yet' : 'Select month…'}
+                    </option>
+                    {monthOptions.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>
@@ -1020,7 +1034,7 @@ export default function ReportsPanel({
             {activeSection === 'all' ? (
               <div className="reports-summary reports-summary--all reports-summary--overview reports-summary--overview-stats">
                 <div className="reports-summary-card reports-summary-card--green reports-summary-card--stat">
-                  <span>Sales collected</span>
+                  <span>{salesCollectedLabel}</span>
                   <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
                   <small>
                     {overviewSalesTotals.billCount} bills · 💵 {formatMoney(overviewSalesChannelTotals.cash)} · 🏦{' '}
@@ -1077,8 +1091,10 @@ export default function ReportsPanel({
                 expanded={expandedSalesPanel}
                 onToggle={toggleSalesPanel}
                 salesTotals={salesTotals}
+                salesCollectedLabel={salesCollectedLabel}
                 sameDaySales={sameDaySales}
                 sameDaySalesLabel={sameDaySalesLabel}
+                samePeriodHint={samePeriodHint}
                 showSameDaySalesBox={showSameDaySalesBox}
                 oldCreditChequeCount={oldCreditChequeBills.length}
               />
@@ -1122,7 +1138,7 @@ export default function ReportsPanel({
                 {activeSection === 'not-sale' && (
                   <>
                     <div className="reports-summary-card reports-summary-card--green">
-                      <span>Sales collected</span>
+                      <span>{salesCollectedLabel}</span>
                       <strong>{formatMoney(overviewSalesTotals.totalBills)}</strong>
                       <small>
                         {overviewSalesTotals.billCount} bill
@@ -1251,6 +1267,7 @@ export default function ReportsPanel({
               oldCreditChequeRows={oldCreditChequeBills}
               sameDayRows={sameDaySalesBills}
               sameDaySalesLabel={sameDaySalesLabel}
+              salesCollectedLabel={salesCollectedLabel}
               salesTotals={salesTotals}
             />
           ) : null}
@@ -1267,13 +1284,12 @@ export default function ReportsPanel({
             <section className="reports-section">
               {activeSection === 'sales' ? (
                 <div className="reports-sales-hero app-surface">
-                  <span className="reports-sales-hero__label">Sales collected</span>
+                  <span className="reports-sales-hero__label">{salesCollectedLabel}</span>
                   <strong className="reports-sales-hero__value">
                     {formatMoney(salesTotalsForView.totalBills)}
                   </strong>
                   <p className="reports-sales-hero__meta">
-                    {salesTotalsForView.billCount} bills · Bill total{' '}
-                    {formatMoney(salesTotalsForView.billTotal)} · 💵{' '}
+                    {salesTotalsForView.billCount} bills · money collected in this period · 💵{' '}
                     {formatMoney(salesTotalsForView.cashTotal)} · 🏦{' '}
                     {formatMoney(salesTotalsForView.bankTotal)}
                   </p>
@@ -2317,16 +2333,20 @@ function SalesCollectedSummaryCards({
   expanded,
   onToggle,
   salesTotals,
+  salesCollectedLabel,
   sameDaySales,
   sameDaySalesLabel,
+  samePeriodHint,
   showSameDaySalesBox,
   oldCreditChequeCount,
 }: {
   expanded: SalesExpandPanel | null
   onToggle: (panel: SalesExpandPanel) => void
   salesTotals: ReturnType<typeof salesSummaryForPreset>
+  salesCollectedLabel: string
   sameDaySales: ReturnType<typeof salesSameDaySummaryForPreset> | null
   sameDaySalesLabel: string
+  samePeriodHint: string
   showSameDaySalesBox: boolean
   oldCreditChequeCount: number
 }) {
@@ -2345,10 +2365,10 @@ function SalesCollectedSummaryCards({
         aria-expanded={expanded === 'collected'}
         onClick={() => onToggle('collected')}
       >
-        <span>Sales collected</span>
+        <span>{salesCollectedLabel}</span>
         <strong>{formatMoney(salesTotals.totalBills)}</strong>
         <small>
-          {salesTotals.billCount} bills · tap to list ·{' '}
+          {salesTotals.billCount} bills · cash + bank received in this period (not open credit/cheque) ·{' '}
           {formatCollectedSalesBreakdown(salesTotals.cashTotal, salesTotals.bankTotal)}
         </small>
         <span className="reports-summary-card-chevron" aria-hidden="true">
@@ -2389,7 +2409,7 @@ function SalesCollectedSummaryCards({
         <span>Old Credit &amp; Cheque &amp; Pending</span>
         <strong>{formatMoney(salesTotals.oldCreditChequeCollected)}</strong>
         <small>
-          {oldCreditChequeCount} from earlier pending · already in Sales collected
+          {oldCreditChequeCount} from earlier pending · already in {salesCollectedLabel}
         </small>
         <span className="reports-summary-card-chevron" aria-hidden="true">
           {expanded === 'oldCreditCheque' ? '▾' : '▸'}
@@ -2408,7 +2428,7 @@ function SalesCollectedSummaryCards({
           <span>{sameDaySalesLabel}</span>
           <strong>{formatMoney(sameDaySales.totalBills)}</strong>
           <small>
-            {sameDaySales.billCount} bills · created &amp; paid same day ·{' '}
+            {sameDaySales.billCount} bills · {samePeriodHint} ·{' '}
             {formatCollectedSalesBreakdown(sameDaySales.cashTotal, sameDaySales.bankTotal)}
           </small>
           <span className="reports-summary-card-chevron" aria-hidden="true">
@@ -2612,6 +2632,7 @@ function SalesCollectedHistoryList({
   oldCreditChequeRows,
   sameDayRows,
   sameDaySalesLabel,
+  salesCollectedLabel,
   salesTotals,
 }: {
   panel: SalesExpandPanel
@@ -2620,13 +2641,14 @@ function SalesCollectedHistoryList({
   oldCreditChequeRows: SalesBillRow[]
   sameDayRows: SalesBillRow[]
   sameDaySalesLabel: string
+  salesCollectedLabel: string
   salesTotals: ReturnType<typeof salesSummaryForPreset>
 }) {
   if (panel === 'collected') {
     return (
       <SalesBillList
         rows={collectedRows}
-        meta={`${collectedRows.length} sale${collectedRows.length === 1 ? '' : 's'} · Sales collected · by collected date`}
+        meta={`${collectedRows.length} sale${collectedRows.length === 1 ? '' : 's'} · ${salesCollectedLabel} · by collected date`}
         emptyMessage="No collected sales for this period."
       />
     )
@@ -2645,8 +2667,8 @@ function SalesCollectedHistoryList({
   return (
     <SalesBillList
       rows={sameDayRows}
-      meta={`${sameDayRows.length} sale${sameDayRows.length === 1 ? '' : 's'} · ${sameDaySalesLabel} · by collected · same day only`}
-      emptyMessage="No same-day collected sales for this date."
+      meta={`${sameDayRows.length} sale${sameDayRows.length === 1 ? '' : 's'} · ${sameDaySalesLabel} · created & paid in this period`}
+      emptyMessage="No same-period sales for this filter."
     />
   )
 }

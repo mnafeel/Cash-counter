@@ -12,6 +12,7 @@ import {
   salePendingBalanceHistoryDate,
   saleLastPaymentEventAt,
   normalizeCollectedBreakdown,
+  sumRealizedPaymentEvents,
 } from './salePayment'
 import {
   linkedPendingCreditTotal,
@@ -28,7 +29,11 @@ export interface SalesReportFilter {
   fromDate?: string
   toDate?: string
   dateMode?: SaleDateMode
-  /** Collected mode: bill created and paid on the same day (within filter dates). */
+  /**
+   * Same-period sales: bill created in the selected period AND money collected in that
+   * same period (Today = same calendar day; Week/Month/Range = within that window;
+   * All = every past collection on every bill from the start).
+   */
   sameDayCreatedAndPaid?: boolean
   /** When on_receive, applied advance is not added again to sales totals. */
   advanceSalesCountMode?: 'on_bill' | 'on_receive'
@@ -110,60 +115,59 @@ function emptyCollectedBreakdown(): SaleCollectedBreakdown {
 }
 
 function sumPaymentEvents(
+  sale: Sale,
   events: ReturnType<typeof salePaymentEventsInRange>,
 ): SaleCollectedBreakdown {
-  const raw = events.reduce(
-    (acc, event) => {
-      acc.cash += event.cash ?? 0
-      acc.bank += event.bank ?? 0
-      acc.cheque += event.cheque ?? 0
-      acc.total += event.amount
-      return acc
-    },
-    emptyCollectedBreakdown(),
-  )
-  return normalizeCollectedBreakdown(raw)
+  return sumRealizedPaymentEvents(sale, events)
 }
 
-/** Same-day sales: cash + bank only; approved cheques count as bank, pending cheques excluded. */
+/** Same-period / same-day sales: cash + bank only; pending cheques excluded. */
 function sumSameDaySalesCollectedEvents(
   sale: Sale,
   events: ReturnType<typeof getSalePaymentEvents>,
 ): SaleCollectedBreakdown {
-  const raw = events.reduce(
-    (acc, event) => {
-      acc.cash += event.cash ?? 0
-      acc.bank += event.bank ?? 0
-      const eventCheque = event.cheque ?? 0
-      if (eventCheque > 0 && sale.chequeApproved) {
-        acc.bank += eventCheque
-      }
-      return acc
-    },
-    emptyCollectedBreakdown(),
-  )
-  raw.total = raw.cash + raw.bank
-  return raw
+  return sumRealizedPaymentEvents(sale, events)
 }
 
-function sameDaySalesCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
+function samePeriodSalesCollectedBreakdown(sale: Sale): SaleCollectedBreakdown {
   return normalizeCollectedBreakdown(salePaidCollectedBreakdown(sale))
 }
 
+/**
+ * Same-period sales amount for a bill:
+ * - Bill must be created in the filter window (any time when All / unbounded).
+ * - Count only money collected inside that same window (all collections when All).
+ */
 export function saleCollectedForFilter(
   sale: Sale,
   filter?: SalesReportFilter,
 ): SaleCollectedBreakdown {
   if (filter?.sameDayCreatedAndPaid) {
     if (!isInDateRange(sale.createdAt, filter)) return emptyCollectedBreakdown()
-    const createdDay = localDayTimestamp(sale.createdAt)
-    const sameDayEvents = getSalePaymentEvents(sale).filter(
-      (event) => localDayTimestamp(event.at) === createdDay,
-    )
-    if (sameDayEvents.length > 0) return sumSameDaySalesCollectedEvents(sale, sameDayEvents)
+
+    const bounded = Boolean(filter.fromDate || filter.toDate)
+    const allEvents = getSalePaymentEvents(sale)
+
+    if (bounded) {
+      const periodEvents = allEvents.filter((event) =>
+        isInDateRange(event.at, filter),
+      )
+      if (periodEvents.length > 0) {
+        return sumSameDaySalesCollectedEvents(sale, periodEvents)
+      }
+      // Legacy paid bill with no events: treat full collection as on created day.
+      if (allEvents.length === 0 && sale.status !== 'pending') {
+        return samePeriodSalesCollectedBreakdown(sale)
+      }
+      return emptyCollectedBreakdown()
+    }
+
+    // All-time: every past collection on this bill (from the beginning).
+    if (allEvents.length > 0) {
+      return sumSameDaySalesCollectedEvents(sale, allEvents)
+    }
     if (sale.status !== 'pending') {
-      const paidAt = sale.updatedAt ?? sale.createdAt
-      if (localDayTimestamp(paidAt) === createdDay) return sameDaySalesCollectedBreakdown(sale)
+      return samePeriodSalesCollectedBreakdown(sale)
     }
     return emptyCollectedBreakdown()
   }
@@ -175,7 +179,7 @@ export function saleCollectedForFilter(
 
   if (getSalePaymentEvents(sale).length > 0) {
     const events = salePaymentEventsInRange(sale, filter.fromDate, filter.toDate)
-    return events.length > 0 ? sumPaymentEvents(events) : emptyCollectedBreakdown()
+    return events.length > 0 ? sumPaymentEvents(sale, events) : emptyCollectedBreakdown()
   }
 
   if (!saleMatchesReportFilter(sale, filter)) {
@@ -191,8 +195,8 @@ function collectedForSalesDisplay(breakdown: SaleCollectedBreakdown): SaleCollec
 }
 
 /**
- * Advance applied counts toward Sales on the bill day for the portion that was not
- * already counted when the advance was received.
+ * Advance applied counts toward Sales on the bill day (when it was applied), once —
+ * never again on every later payment day in Week / Month filters.
  */
 function saleAdvanceAppliedForSalesTotal(
   sale: Sale,
@@ -209,24 +213,17 @@ function saleAdvanceAppliedForSalesTotal(
   if (!filter?.fromDate && !filter?.toDate) return advance
 
   if (filter.sameDayCreatedAndPaid) {
-    if (!isInDateRange(sale.createdAt, filter)) return 0
-    const createdDay = localDayTimestamp(sale.createdAt)
-    const appliedAt = saleLastPaymentEventAt(sale) ?? sale.updatedAt ?? sale.createdAt
-    return localDayTimestamp(appliedAt) === createdDay ? advance : 0
-  }
-
-  const mode = filter.dateMode ?? 'collected'
-  if (mode === 'created') {
+    // Advance belongs with the bill's create period (same as period collections).
     return isInDateRange(sale.createdAt, filter) ? advance : 0
   }
 
-  if (getSalePaymentEvents(sale).length > 0) {
-    const events = salePaymentEventsInRange(sale, filter.fromDate, filter.toDate)
-    if (events.length > 0) return advance
+  const mode = filter.dateMode ?? 'collected'
+  // Bill-day attribution keeps Today / Week / Month additive and avoids double-count.
+  if (mode === 'created' || mode === 'collected') {
+    return isInDateRange(sale.createdAt, filter) ? advance : 0
   }
 
-  const appliedAt = saleLastPaymentEventAt(sale) ?? sale.updatedAt ?? sale.createdAt
-  return isInDateRange(appliedAt, filter) ? advance : 0
+  return 0
 }
 
 export function toInputDate(d: Date = new Date()): string {
@@ -269,7 +266,8 @@ export function saleReportDate(sale: Sale, mode: SaleDateMode = 'collected'): st
     if (saleHasPartialCollection(sale) && sale.updatedAt) return sale.updatedAt
     return sale.createdAt
   }
-  return sale.updatedAt ?? sale.createdAt
+  // Paid bills: last real payment day, never a later edit bump on updatedAt.
+  return saleLastPaymentEventAt(sale) ?? sale.createdAt
 }
 
 function localDayTimestamp(iso: string): number {
@@ -622,24 +620,38 @@ function buildChildrenMap(sales: Sale[]): Map<string, Sale[]> {
   return map
 }
 
-function saleHasSameDayCreatedAndPaid(sale: Sale, filter?: SalesReportFilter): boolean {
+/**
+ * Same-period sales: bill created in the selected period, and money collected in
+ * that same period (Today/Yesterday = that day; Week/Month/Range = that window;
+ * All = any bill with collection from the start of business).
+ */
+function saleHasSamePeriodCreatedAndPaid(sale: Sale, filter?: SalesReportFilter): boolean {
   if (!filter?.sameDayCreatedAndPaid || !isInDateRange(sale.createdAt, filter)) return false
-  const createdDay = localDayTimestamp(sale.createdAt)
-  const sameDayEvents = getSalePaymentEvents(sale).filter(
-    (event) => localDayTimestamp(event.at) === createdDay,
-  )
-  if (sameDayEvents.length > 0) {
-    return sumSameDaySalesCollectedEvents(sale, sameDayEvents).total > 0
-  }
-  if (sale.status !== 'pending') {
-    const paidAt = sale.updatedAt ?? sale.createdAt
-    if (localDayTimestamp(paidAt) === createdDay) {
-      if (sameDaySalesCollectedBreakdown(sale).total > 0) return true
-      // Advance-only settlement same day still counts as a paid sale.
+
+  const bounded = Boolean(filter.fromDate || filter.toDate)
+  const allEvents = getSalePaymentEvents(sale)
+
+  if (bounded) {
+    const periodEvents = allEvents.filter((event) => isInDateRange(event.at, filter))
+    if (periodEvents.length > 0) {
+      if (sumSameDaySalesCollectedEvents(sale, periodEvents).total > 0) return true
       return (sale.customerAdvanceApplied ?? 0) > 0.01
     }
+    if (allEvents.length === 0 && sale.status !== 'pending') {
+      if (samePeriodSalesCollectedBreakdown(sale).total > 0) return true
+      return (sale.customerAdvanceApplied ?? 0) > 0.01
+    }
+    // Advance-only settlement created in this period.
+    return (sale.customerAdvanceApplied ?? 0) > 0.01 && allEvents.length === 0
   }
-  return false
+
+  // All-time: include every past collected bill.
+  if (allEvents.length > 0) {
+    if (sumSameDaySalesCollectedEvents(sale, allEvents).total > 0) return true
+  } else if (sale.status !== 'pending' && samePeriodSalesCollectedBreakdown(sale).total > 0) {
+    return true
+  }
+  return (sale.customerAdvanceApplied ?? 0) > 0.01
 }
 
 function saleMatchesReportFilter(
@@ -649,7 +661,7 @@ function saleMatchesReportFilter(
 ): boolean {
   const mode = filter?.dateMode ?? 'collected'
   if (filter?.sameDayCreatedAndPaid) {
-    return saleHasSameDayCreatedAndPaid(sale, filter)
+    return saleHasSamePeriodCreatedAndPaid(sale, filter)
   }
   if (mode === 'created') {
     return isInDateRange(sale.createdAt, filter)

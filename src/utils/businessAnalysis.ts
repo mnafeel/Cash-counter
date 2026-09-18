@@ -8,14 +8,20 @@ import {
   buildChequeCustomerSummaries,
   filterCustomersWithCheque,
 } from './chequeLedger'
+import { listAdvanceSalesForReport, saleAdvanceSalesCountAmount } from './customerAdvance'
 import { buildNormalExpenseHistoryItems } from './normalExpenseHistory'
 import { buildPurchaseHistoryItems } from './purchaseHistory'
 import {
   formatReportPresetLabel,
-  salesBillsForPreset,
   type ReportDatePreset,
 } from './reportsHub'
-import { toInputDate } from './salesReport'
+import {
+  getSalePaymentEvents,
+  isActivePaymentEvent,
+  paymentEventRealizedAmount,
+  saleCollectedAmount,
+} from './salePayment'
+import { saleReportDate, toInputDate } from './salesReport'
 import { memoByDataRef } from './memoByDataRef'
 
 export type AnalyzeTopic =
@@ -249,21 +255,90 @@ function buildAnalyzeCacheUncached(data: AppData): AnalyzeCache {
   const expenseMap = new Map<string, number>()
 
   const sales: AnalyzeCache['sales'] = []
-  for (const bill of salesBillsForPreset(data, 'all', '', 'date-desc', undefined, 'collected')) {
-    if (bill.collectedTotal <= 0) continue
-    const day = dayKey(bill.date || bill.createdDate)
+  for (const sale of data.sales) {
+    const customer = sale.customerName?.trim() || 'Unnamed customer'
+    const customerKey = customer.toLowerCase()
+    const events = getSalePaymentEvents(sale).filter(isActivePaymentEvent)
+    let pushed = false
+
+    // Attribute each payment to the day it was collected (same rule as Reports “Sales collected”).
+    for (const event of events) {
+      const amount = paymentEventRealizedAmount(sale, event)
+      if (amount <= 0.01) continue
+      const day = dayKey(event.at)
+      if (!day) continue
+      const month = monthKeyFromDay(day)
+      sales.push({
+        day,
+        month,
+        customerKey,
+        customer,
+        amount,
+      })
+      if (monthKeySet.has(month)) {
+        salesMap.set(month, (salesMap.get(month) ?? 0) + amount)
+      }
+      pushed = true
+    }
+
+    // Legacy paid bills with no payment-event history: count once on collection/report day.
+    if (!pushed) {
+      const amount = saleCollectedAmount(sale)
+      if (amount > 0.01) {
+        const day = dayKey(saleReportDate(sale, 'collected'))
+        if (day) {
+          const month = monthKeyFromDay(day)
+          sales.push({
+            day,
+            month,
+            customerKey,
+            customer,
+            amount,
+          })
+          if (monthKeySet.has(month)) {
+            salesMap.set(month, (salesMap.get(month) ?? 0) + amount)
+          }
+        }
+      }
+    }
+
+    // Advances counted toward Sales when applied on the bill (on_apply mode).
+    // Always on the bill's created day — never last payment / updatedAt — so Week/Month stay correct.
+    const advanceOnBill = saleAdvanceSalesCountAmount(data, sale)
+    if (advanceOnBill > 0.01) {
+      const day = dayKey(sale.createdAt)
+      if (day) {
+        const month = monthKeyFromDay(day)
+        sales.push({
+          day,
+          month,
+          customerKey,
+          customer,
+          amount: advanceOnBill,
+        })
+        if (monthKeySet.has(month)) {
+          salesMap.set(month, (salesMap.get(month) ?? 0) + advanceOnBill)
+        }
+      }
+    }
+  }
+
+  // Advances that count toward Sales when received (same as Reports list).
+  for (const advance of listAdvanceSalesForReport(data)) {
+    if (advance.amount <= 0.01) continue
+    const day = dayKey(advance.at)
     if (!day) continue
     const month = monthKeyFromDay(day)
-    const customer = bill.customerName?.trim() || 'Unnamed customer'
+    const customer = advance.customerName?.trim() || 'Unnamed customer'
     sales.push({
       day,
       month,
       customerKey: customer.toLowerCase(),
       customer,
-      amount: bill.collectedTotal,
+      amount: advance.amount,
     })
     if (monthKeySet.has(month)) {
-      salesMap.set(month, (salesMap.get(month) ?? 0) + bill.collectedTotal)
+      salesMap.set(month, (salesMap.get(month) ?? 0) + advance.amount)
     }
   }
 

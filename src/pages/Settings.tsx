@@ -249,7 +249,7 @@ export default function Settings({
   const [generalSubTab, setGeneralSubTab] = useState<GeneralSubTab>('basics')
   const [openingStr, setOpeningStr] = useState(String(data.openingBalance))
   const [openingBankStr, setOpeningBankStr] = useState(String(data.openingBankBalance ?? 0))
-  const [activeField, setActiveField] = useState<SettingsField>('openingCash')
+  const [activeField, setActiveField] = useState<SettingsField | null>(null)
   const [saved, setSaved] = useState(false)
 
   const [cloudUsername, setCloudUsername] = useState(() => getLastCloudUsername() ?? '')
@@ -566,24 +566,55 @@ export default function Settings({
   }, [])
 
   function activeValue(): string {
-    if (activeField === 'openingCash') return openingStr
-    return openingBankStr
+    if (activeField === 'openingBank') return openingBankStr
+    return openingStr
   }
 
   function setActiveValue(next: string) {
-    if (activeField === 'openingCash') setOpeningStr(next)
-    else setOpeningBankStr(next)
+    if (activeField === 'openingBank') setOpeningBankStr(next)
+    else if (activeField === 'openingCash') setOpeningStr(next)
   }
 
   function handleNumpad(action: NumpadAction) {
-    if (tab !== 'general' || action === 'enter') return
+    if (tab !== 'general' || generalSubTab !== 'basics' || !activeField || action === 'enter') {
+      return
+    }
     const prev = activeValue()
     setActiveValue(applyNumpadAction(prev, action))
   }
 
   const numpadHandlerRef = useRef(handleNumpad)
   numpadHandlerRef.current = handleNumpad
-  useRouteNumpadKeyboard('/settings', (action) => numpadHandlerRef.current(action))
+  const numpadEnabled =
+    tab === 'general' && generalSubTab === 'basics' && activeField !== null
+  useRouteNumpadKeyboard('/settings', (action) => numpadHandlerRef.current(action), numpadEnabled)
+
+  useEffect(() => {
+    if (generalSubTab !== 'basics') setActiveField(null)
+  }, [generalSubTab])
+
+  useEffect(() => {
+    if (tab !== 'general') setActiveField(null)
+  }, [tab])
+
+  const openingDirty =
+    parseAmount(openingStr) !== data.openingBalance ||
+    parseAmount(openingBankStr) !== (data.openingBankBalance ?? 0)
+
+  function selectOpeningField(field: SettingsField) {
+    setActiveField(field)
+  }
+
+  function cancelOpeningEdit() {
+    setOpeningStr(String(data.openingBalance))
+    setOpeningBankStr(String(data.openingBankBalance ?? 0))
+    setActiveField(null)
+  }
+
+  function confirmOpeningEdit() {
+    handleSave()
+    setActiveField(null)
+  }
 
   function historyReportMeta() {
     return {
@@ -1415,32 +1446,62 @@ export default function Settings({
               <h2>General</h2>
               <p>Opening balances & appearance</p>
             </div>
-            <div className="settings-fields">
-              <AmountDisplay
-                label="Opening Cash"
-                value={openingStr}
-                active={activeField === 'openingCash'}
-                onSelect={() => setActiveField('openingCash')}
-                compact
-              />
-              <AmountDisplay
-                label="Opening Bank"
-                value={openingBankStr}
-                active={activeField === 'openingBank'}
-                onSelect={() => setActiveField('openingBank')}
-                compact
-              />
-            </div>
-            <div className="settings-info">
-              <div className="settings-row">
-                <span>Current cash</span>
-                <span className="settings-highlight">{formatMoney(balance)}</span>
+            <section
+              className={`settings-opening-card app-surface${activeField ? ' settings-opening-card--editing' : ''}`}
+              aria-label="Opening balances"
+            >
+              <div className="settings-opening-card__head">
+                <h3>Opening balances</h3>
+                {openingDirty || activeField ? (
+                  <div className="settings-opening-action-row">
+                    <button
+                      type="button"
+                      className="btn btn-secondary settings-opening-cancel-btn"
+                      onClick={cancelOpeningEdit}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-primary settings-opening-update-btn ${saved ? 'btn-saved' : ''}`}
+                      onClick={confirmOpeningEdit}
+                      disabled={!openingDirty}
+                    >
+                      {saved ? '✓' : 'Update'}
+                    </button>
+                  </div>
+                ) : null}
               </div>
-              <div className="settings-row">
-                <span>Current bank</span>
-                <span className="settings-highlight">{formatMoney(bankBalance)}</span>
+
+              <div className="settings-fields">
+                <AmountDisplay
+                  label="Cash"
+                  value={openingStr}
+                  active={activeField === 'openingCash'}
+                  onSelect={() => selectOpeningField('openingCash')}
+                  compact
+                />
+                <AmountDisplay
+                  label="Bank"
+                  value={openingBankStr}
+                  active={activeField === 'openingBank'}
+                  onSelect={() => selectOpeningField('openingBank')}
+                  compact
+                />
               </div>
-            </div>
+
+              <div className="settings-opening-live" aria-label="Current balances">
+                <span>
+                  Now cash <strong>{formatMoney(balance)}</strong>
+                </span>
+                <span className="settings-opening-live__dot" aria-hidden="true">
+                  ·
+                </span>
+                <span>
+                  Bank <strong>{formatMoney(bankBalance)}</strong>
+                </span>
+              </div>
+            </section>
 
             <section className="settings-theme app-surface" aria-label="Appearance">
               <span className="settings-theme-label">Theme</span>
@@ -2389,16 +2450,15 @@ export default function Settings({
             </div>
 
             <div className="settings-general-footer">
-            <div className="settings-keyboard-wrap">
-              <NumberKeyboard onPress={handleNumpad} showEnter={false} />
-            </div>
-            <button
-              type="button"
-              className={`btn btn-primary settings-save-btn ${saved ? 'btn-saved' : ''}`}
-              onClick={handleSave}
-            >
-              {saved ? '✓ Saved!' : 'Save Settings'}
-            </button>
+            {generalSubTab === 'basics' && activeField ? (
+              <div className="settings-keyboard-wrap" aria-label="Opening balance number pad">
+                <NumberKeyboard
+                  onPress={handleNumpad}
+                  showEnter={false}
+                  hint={activeField === 'openingBank' ? 'Bank opening' : 'Cash opening'}
+                />
+              </div>
+            ) : null}
             </div>
           </div>
         )}

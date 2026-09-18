@@ -62,7 +62,9 @@ export function matchesCashDateFilter(
     const start = new Date(now)
     start.setDate(now.getDate() - 6)
     start.setHours(0, 0, 0, 0)
-    return d.getTime() >= start.getTime()
+    const end = new Date(now)
+    end.setHours(23, 59, 59, 999)
+    return d.getTime() >= start.getTime() && d.getTime() <= end.getTime()
   }
 
   if (dateFilter === 'month') {

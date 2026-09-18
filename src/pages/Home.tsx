@@ -959,7 +959,15 @@ function Home({ active }: { active: boolean }) {
               <BalanceFlowChart series={salesFlowSeries} tone="sales" blend />
             </div>
             <div className="stat-card-body">
-            <span className="stat-label">Sales collected</span>
+            <span className="stat-label">
+              {homeDayFilter === 'today'
+                ? "Today's Sales Collected"
+                : homeDayFilter === 'yesterday'
+                  ? "Yesterday's Sales Collected"
+                  : homePeriodLabel
+                    ? `${homePeriodLabel} · Sales Collected`
+                    : 'Sales Collected'}
+            </span>
             <span className="stat-value stat-value--green">
               {formatMoney(salesSummary.totalBills)}
             </span>

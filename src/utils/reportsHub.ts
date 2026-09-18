@@ -161,8 +161,7 @@ function saleChequeAmount(sale: Sale): number {
 
 export function buildReportOverview(data: AppData): ReportOverview {
   const todaySales = getTodaySalesSummary(data).totalBills
-  const monthSalesRows = buildSalesReport(data, 'month', 'date-desc', monthFilter())
-  const monthSales = summarizeSales(monthSalesRows).totalBills
+  const monthSales = salesSummaryForPreset(data, 'month', toInputDate()).totalBills
 
   const purchases = buildPurchaseHistoryItems(data)
   const todayPurchases = purchasePeriodPaymentsToSummary(
@@ -369,9 +368,12 @@ export function salesFilterForPreset(
 ): SalesReportFilter | undefined {
   const base = presetToSalesFilter(preset, selectedDate, rangeTo)
   const sameDayCreatedAndPaid =
-    options?.sameDayCreatedAndPaid === true && dateMode === 'collected' && Boolean(base)
+    options?.sameDayCreatedAndPaid === true && dateMode === 'collected'
   if (!base) {
-    return { dateMode }
+    return {
+      dateMode,
+      sameDayCreatedAndPaid: sameDayCreatedAndPaid ? true : undefined,
+    }
   }
   return {
     ...base,
@@ -461,9 +463,70 @@ export function sameDaySalesCollectedLabel(
   selectedDate: string,
   rangeTo?: string,
 ): string {
+  if (preset === 'today') return "Today's Same-Day Sales"
+  if (preset === 'yesterday') return "Yesterday's Same-Day Sales"
+  if (preset === 'week') return "This Week's Same-Period Sales"
+  if (preset === 'month') return "This Month's Same-Period Sales"
+  if (preset === 'monthPick' && selectedDate) {
+    return `${formatMonthKeyLabel(selectedDate)} · Same-Period Sales`
+  }
+  if (preset === 'date' && selectedDate) {
+    return `${formatDate(selectedDate)} · Same-Day Sales`
+  }
+  if (preset === 'range' && selectedDate && rangeTo) {
+    const from = selectedDate <= rangeTo ? selectedDate : rangeTo
+    const to = selectedDate <= rangeTo ? rangeTo : selectedDate
+    if (from === to) return `${formatDate(from)} · Same-Day Sales`
+    return `${formatDate(from)} – ${formatDate(to)} · Same-Period Sales`
+  }
+  if (preset === 'all') return 'All-Time Same-Period Sales'
+  return `${formatReportPresetLabel(preset, selectedDate, rangeTo)} · Same-Period Sales`
+}
+
+/** Short explanation under the same-period sales card. */
+export function samePeriodSalesHint(preset: ReportDatePreset): string {
+  if (preset === 'today' || preset === 'yesterday' || preset === 'date') {
+    return 'bills created and paid on this day'
+  }
+  if (preset === 'week') {
+    return 'bills created this week and paid this week'
+  }
+  if (preset === 'month' || preset === 'monthPick') {
+    return 'bills created in this month and paid in this month'
+  }
+  if (preset === 'range') {
+    return 'bills created and paid inside this range'
+  }
+  if (preset === 'all') {
+    return 'all bills from the start with money collected'
+  }
+  return 'bills created and paid in this period'
+}
+
+/** Main Sales collected title — follows the active date filter. */
+export function salesCollectedPeriodLabel(
+  preset: ReportDatePreset,
+  selectedDate: string,
+  rangeTo?: string,
+): string {
   if (preset === 'today') return "Today's Sales Collected"
   if (preset === 'yesterday') return "Yesterday's Sales Collected"
-  return `${formatReportPresetLabel(preset, selectedDate, rangeTo)} · same day sales`
+  if (preset === 'week') return "This Week's Sales Collected"
+  if (preset === 'month') return "This Month's Sales Collected"
+  if (preset === 'monthPick' && selectedDate) {
+    return `${formatMonthKeyLabel(selectedDate)} · Sales Collected`
+  }
+  if (preset === 'date' && selectedDate) {
+    return `${formatDate(selectedDate)} · Sales Collected`
+  }
+  if (preset === 'range' && selectedDate && rangeTo) {
+    const from = selectedDate <= rangeTo ? selectedDate : rangeTo
+    const to = selectedDate <= rangeTo ? rangeTo : selectedDate
+    if (from === to) return `${formatDate(from)} · Sales Collected`
+    return `${formatDate(from)} – ${formatDate(to)} · Sales Collected`
+  }
+  if (preset === 'all') return 'All-Time Sales Collected'
+  return 'Sales Collected'
 }
 
 export function presetToSalesFilter(

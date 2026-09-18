@@ -4,6 +4,7 @@ import { usePageEscape } from '../hooks/usePageEscape'
 import { formatMoney } from '../utils/format'
 import { toInputDate } from '../utils/salesReport'
 import type { ReportDatePreset } from '../utils/reportsHub'
+import { collectAppDataMonthDates, listMonthPickerOptions } from '../utils/monthPicker'
 import {
   ANALYZE_DATE_PRESETS,
   ANALYZE_TOPICS,
@@ -189,27 +190,42 @@ function MonthTrend({ points }: { points: AnalyzeMonthPoint[] }) {
 }
 
 export default function AnalyzePanel({ open, onClose, data }: AnalyzePanelProps) {
-  const [datePreset, setDatePreset] = useState<ReportDatePreset>('month')
+  const [datePreset, setDatePreset] = useState<ReportDatePreset>('today')
   const [selectedDate, setSelectedDate] = useState(() => toInputDate())
+  const [selectedMonth, setSelectedMonth] = useState('')
   const [rangeTo, setRangeTo] = useState(() => toInputDate())
+  const [showMoreDates, setShowMoreDates] = useState(false)
   const [topic, setTopic] = useState<AnalyzeTopic>('overview')
   const [cache, setCache] = useState<AnalyzeCache | null>(null)
   const [cacheReady, setCacheReady] = useState(false)
 
+  const filterDateArg = datePreset === 'monthPick' ? selectedMonth : selectedDate
   const deferredPreset = useDeferredValue(datePreset)
-  const deferredSelectedDate = useDeferredValue(selectedDate)
+  const deferredSelectedDate = useDeferredValue(filterDateArg)
   const deferredRangeTo = useDeferredValue(rangeTo)
 
+  const monthOptions = useMemo(
+    () => listMonthPickerOptions(collectAppDataMonthDates(data)),
+    [data],
+  )
+
+  // Reset period chips only when Analyze opens — not on every data refresh.
   useEffect(() => {
     if (!open) {
       setCache(null)
       setCacheReady(false)
       return
     }
-    setDatePreset('month')
+    setDatePreset('today')
     setSelectedDate(toInputDate())
+    setSelectedMonth('')
     setRangeTo(toInputDate())
+    setShowMoreDates(false)
     setTopic('overview')
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
     setCacheReady(false)
     setCache(null)
 
@@ -239,12 +255,24 @@ export default function AnalyzePanel({ open, onClose, data }: AnalyzePanelProps)
     cacheReady &&
     analysis != null &&
     (deferredPreset !== datePreset ||
-      deferredSelectedDate !== selectedDate ||
+      deferredSelectedDate !== filterDateArg ||
       deferredRangeTo !== rangeTo)
 
   function setPresetFast(next: ReportDatePreset) {
-    startTransition(() => setDatePreset(next))
+    startTransition(() => {
+      setDatePreset(next)
+      if (next !== 'date' && next !== 'range' && next !== 'monthPick') {
+        setShowMoreDates(false)
+        setSelectedMonth('')
+      }
+    })
   }
+
+  const moreActive =
+    showMoreDates ||
+    datePreset === 'date' ||
+    datePreset === 'range' ||
+    datePreset === 'monthPick'
 
   if (!open) return null
 
@@ -279,19 +307,60 @@ export default function AnalyzePanel({ open, onClose, data }: AnalyzePanelProps)
               ))}
               <button
                 type="button"
-                className={`analyze-chip ${datePreset === 'date' ? 'analyze-chip--active' : ''}`}
-                onClick={() => setPresetFast('date')}
+                className={`analyze-chip analyze-chip--ghost ${moreActive ? 'analyze-chip--active' : ''}`}
+                onClick={() => setShowMoreDates((v) => !v)}
               >
-                Pick
-              </button>
-              <button
-                type="button"
-                className={`analyze-chip ${datePreset === 'range' ? 'analyze-chip--active' : ''}`}
-                onClick={() => setPresetFast('range')}
-              >
-                Range
+                More
               </button>
             </div>
+
+            {moreActive ? (
+              <div className="analyze-date-advanced">
+                <button
+                  type="button"
+                  className={`analyze-chip ${datePreset === 'date' ? 'analyze-chip--active' : ''}`}
+                  onClick={() => setPresetFast('date')}
+                >
+                  Pick day
+                </button>
+                <button
+                  type="button"
+                  className={`analyze-chip ${datePreset === 'range' ? 'analyze-chip--active' : ''}`}
+                  onClick={() => setPresetFast('range')}
+                >
+                  Range
+                </button>
+                <label
+                  className={`analyze-date-pick analyze-date-pick--month ${datePreset === 'monthPick' ? 'analyze-date-pick--active' : ''}`}
+                >
+                  <span>Pick month</span>
+                  <select
+                    className="analyze-month-select"
+                    value={datePreset === 'monthPick' ? selectedMonth : ''}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      if (!value) return
+                      startTransition(() => {
+                        setSelectedMonth(value)
+                        setDatePreset('monthPick')
+                        setShowMoreDates(true)
+                      })
+                    }}
+                    disabled={monthOptions.length === 0}
+                    aria-label="Pick month for analyze"
+                  >
+                    <option value="">
+                      {monthOptions.length === 0 ? 'No data yet' : 'Select month…'}
+                    </option>
+                    {monthOptions.map((option) => (
+                      <option key={option.key} value={option.key}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
 
             {datePreset === 'date' ? (
               <label className="analyze-date-pick">

@@ -34,7 +34,7 @@ import {
   type SupplierPurchaseFileSummary,
 } from '../utils/purchaseHistory'
 import { toInputDate } from '../utils/salesReport'
-import { collectAppDataMonthDates, currentMonthKey, defaultMonthPickerKey, listMonthPickerOptions } from '../utils/monthPicker'
+import { collectAppDataMonthDates, listMonthPickerOptions } from '../utils/monthPicker'
 import PurchaseCreditPanel, { type PurchaseCreditPanelHandle } from './PurchaseCreditPanel'
 import './PurchaseHistoryPanel.css'
 import './PurchaseHistoryPanel.light.css'
@@ -102,7 +102,7 @@ export default function PurchaseHistoryPanel({
     if (!open) return
     setDateFilter('today')
     setSelectedDate('')
-    setSelectedMonth(currentMonthKey())
+    setSelectedMonth('')
   }, [open])
 
   const allItems = useMemo(() => buildPurchaseHistoryItems(data), [data])
@@ -111,10 +111,6 @@ export default function PurchaseHistoryPanel({
     [data],
   )
 
-  useEffect(() => {
-    if (!open || monthOptions.length === 0) return
-    setSelectedMonth((prev) => defaultMonthPickerKey(monthOptions, prev))
-  }, [open, monthOptions])
   const purchaseCreditItems = useMemo(() => buildPurchaseCreditItems(data), [data])
   const purchaseCreditTotal = useMemo(
     () => purchaseCreditItems.reduce((sum, item) => sum + item.amount, 0),
@@ -940,24 +936,25 @@ export default function PurchaseHistoryPanel({
               <span>Month</span>
               <select
                 className="purchase-hist-month-select"
-                value={selectedMonth}
+                value={dateFilter === 'monthPick' ? selectedMonth : ''}
                 onChange={(e) => {
-                  setSelectedMonth(e.target.value)
+                  const value = e.target.value
+                  if (!value) return
+                  setSelectedMonth(value)
                   setDateFilter('monthPick')
                   setSelectedDate('')
                 }}
                 disabled={monthOptions.length === 0}
                 aria-label="Pick month for purchase history"
               >
-                {monthOptions.length === 0 ? (
-                  <option value="">No purchases yet</option>
-                ) : (
-                  monthOptions.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))
-                )}
+                <option value="">
+                  {monthOptions.length === 0 ? 'No purchases yet' : 'Select month…'}
+                </option>
+                {monthOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label

@@ -104,38 +104,148 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
+.settings-opening-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.55rem 0.7rem 0.6rem;
+  border-radius: 12px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.settings-opening-card--editing {
+  border-color: color-mix(in srgb, var(--accent, var(--cream)) 32%, var(--border));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.settings-opening-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 1.6rem;
+}
+
+.settings-opening-card__head h3 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted, var(--cream-dim));
+}
+
+.settings-opening-action-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.settings-opening-cancel-btn,
+.settings-opening-update-btn {
+  min-height: 1.7rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.settings-opening-update-btn {
+  min-width: 3.6rem;
+}
+
 .settings-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 0.4rem;
   flex-shrink: 0;
 }
 
 .settings-fields .amount-display {
   min-height: 0;
   overflow: hidden;
+  cursor: pointer;
+  padding: 0.4rem 0.35rem 0.45rem;
+  border-width: 1px;
+  border-radius: 10px;
+  gap: 0.1rem;
+}
+
+.settings-fields .amount-display-label {
+  font-size: 0.55rem;
+  letter-spacing: 0.05em;
 }
 
 .settings-fields .amount-display-value {
-  font-size: clamp(0.7rem, 3.2vw, 1rem);
+  font-size: clamp(0.85rem, 3.4vw, 1.15rem);
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.settings-opening-card--editing .settings-fields .amount-display--active {
+  border-color: color-mix(in srgb, var(--accent, var(--cream)) 50%, var(--border));
+  background: color-mix(in srgb, var(--surface-2) 90%, var(--accent, var(--cream)));
+  box-shadow: none;
+}
+
+.settings-opening-live {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.35rem;
+  padding: 0.15rem 0.1rem 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted, var(--cream-dim));
+  line-height: 1.25;
+}
+
+.settings-opening-live strong {
+  font-weight: 800;
+  color: var(--text, var(--cream));
+}
+
+.settings-opening-live__dot {
+  opacity: 0.55;
+}
+
 .settings-keyboard-wrap {
   flex: 1 1 0;
   min-height: 0;
-  max-height: min(40vh, 240px);
+  max-height: min(38vh, 250px);
   display: flex;
   flex-direction: column;
+  padding: 0.3rem 0.2rem 0.2rem;
+  border-radius: 14px 14px 10px 10px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.1);
 }
 
 .settings-keyboard-wrap .number-keyboard {
   flex: 1;
   min-height: 0;
   max-height: 100%;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0.3rem 0.4rem 0.4rem;
+  gap: 0.35rem;
+}
+
+.settings-keyboard-wrap .number-keyboard-hint {
+  margin-bottom: 0;
+  padding: 3px 6px;
+  border-radius: 7px;
+  font-size: 0.62rem;
+}
+
+.settings-keyboard-wrap .number-keyboard-label {
+  display: none;
 }
 
 .settings-panel {
@@ -1880,7 +1990,7 @@ html[data-screen='tablet'] .settings-info {
 
 @media (max-width: 520px) {
   .settings-fields {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 
   .settings-daily-report-layout {
