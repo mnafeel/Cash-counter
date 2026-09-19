@@ -2749,7 +2749,11 @@ function Counter({ active }: { active: boolean }) {
     return typedBillAmount
   }
 
-  /** Pending save only — cheque/credit face in paid field is not a collection/approval. */
+  /**
+   * Pending save only — the paid field is the collect target (auto-filled on Enter /
+   * round-off), not money received. Do not treat that prefill as a collection or the
+   * open pending balance becomes zero.
+   */
   function pendingSaveCollection(netDue: number): {
     cash: number
     bank: number
@@ -2762,6 +2766,22 @@ function Counter({ active }: { active: boolean }) {
       if (giveAmount > 0) {
         const applied = Math.min(netDue, giveAmount)
         return { cash: applied, bank: 0, cheque: 0, applied }
+      }
+      return empty
+    }
+    if (payType === 'cash') {
+      // Only cash handed over (give) counts; paid is the bill/round target.
+      if (giveAmount > 0 && giveAmount < netDue - 0.01) {
+        const applied = Math.min(netDue, giveAmount)
+        return { cash: applied, bank: 0, cheque: 0, applied }
+      }
+      return empty
+    }
+    if (payType === 'bank') {
+      // Count bank paid only when it is a clear partial below the pending face.
+      if (paidAmount > 0 && paidAmount < netDue - 0.01) {
+        const applied = Math.min(netDue, paidAmount)
+        return { cash: 0, bank: applied, cheque: 0, applied }
       }
       return empty
     }
@@ -2786,27 +2806,25 @@ function Counter({ active }: { active: boolean }) {
       return { cash, bank, cheque, applied }
     }
     if (payType === 'cash') {
-      const applied =
-        paidAmount > 0
-          ? Math.min(netDue, paidAmount)
-          : giveAmount > 0
-            ? Math.min(netDue, giveAmount)
-            : 0
-      return applied > 0
-        ? { cash: applied, bank: 0, cheque: 0, applied }
-        : empty
+      if (giveAmount > 0 && giveAmount < netDue - 0.01) {
+        const applied = Math.min(netDue, giveAmount)
+        return { cash: applied, bank: 0, cheque: 0, applied }
+      }
+      return empty
     }
     if (payType === 'bank') {
-      const applied = paidAmount > 0 ? Math.min(netDue, paidAmount) : 0
-      return applied > 0
-        ? { cash: 0, bank: applied, cheque: 0, applied }
-        : empty
+      if (paidAmount > 0 && paidAmount < netDue - 0.01) {
+        const applied = Math.min(netDue, paidAmount)
+        return { cash: 0, bank: applied, cheque: 0, applied }
+      }
+      return empty
     }
     if (payType === 'cheque') {
-      const applied = paidAmount > 0 ? Math.min(netDue, paidAmount) : 0
-      return applied > 0
-        ? { cash: 0, bank: 0, cheque: applied, applied }
-        : empty
+      if (giveAmount > 0) {
+        const applied = Math.min(netDue, giveAmount)
+        return { cash: applied, bank: 0, cheque: 0, applied }
+      }
+      return empty
     }
     return empty
   }
@@ -2836,7 +2854,13 @@ function Counter({ active }: { active: boolean }) {
     const returnsAmount = pendingReturnMeta?.returns
       ? saleReturnTotal({ returns: pendingReturnMeta.returns })
       : draftReturnTotal
-    const netDue = Math.max(0, gross - returnsAmount)
+    const rawNet = Math.max(0, Math.round((gross - returnsAmount) * 100) / 100)
+    // Park the customer-facing amount after round-off (and advance when applied),
+    // not only the typed gross — so Enter → round → Bill Pending keeps the rounded face.
+    const netDue = Math.max(
+      0,
+      billCollectTarget > 0 ? billCollectTarget : effectiveCollectTarget(rawNet, roundOffAmount),
+    )
     const parts = pendingSaveCollection(netDue)
     const openBalance =
       parts.applied > 0
