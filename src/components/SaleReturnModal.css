@@ -186,12 +186,39 @@
   min-width: 0;
 }
 
-.sale-return-field span {
+.sale-return-field-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 0.52rem;
   font-weight: 700;
   color: var(--cream-dim);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.sale-return-mode-toggle {
+  flex-shrink: 0;
+  min-width: 28px;
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--brown-dark) 70%, var(--accent) 18%);
+  color: var(--cream);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.sale-return-mode-toggle:hover,
+.sale-return-mode-toggle:focus-visible {
+  border-color: var(--accent);
+  outline: none;
 }
 
 .sale-return-field input {

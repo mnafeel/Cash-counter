@@ -3,11 +3,13 @@ import type { SaleReturnEntry } from '../types'
 import { formatMoney } from '../utils/format'
 import {
   buildSaleReturnEntriesFromGrid,
+  resolveSaleReturnFooterAmounts,
   saleReturnGridFromEntries,
   saleReturnGridTotals,
   saleReturnLineSubtotal,
   type SaleReturnDraft,
   type SaleReturnGridRow,
+  type SaleReturnMoneyMode,
 } from '../utils/saleReturns'
 import type { SaleBillPaymentLine } from '../utils/saleReturns'
 import './SaleReturnModal.css'
@@ -84,6 +86,19 @@ function focusDiscountField() {
   })
 }
 
+function focusTaxField() {
+  window.requestAnimationFrame(() => {
+    const el = document.querySelector<HTMLInputElement>('[data-return-field="tax"]')
+    el?.focus()
+    el?.select()
+  })
+}
+
+function parsePositiveInput(raw: string): number {
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
 export default function SaleReturnModal({
   open,
   onClose,
@@ -99,6 +114,8 @@ export default function SaleReturnModal({
   const [rows, setRows] = useState<SaleReturnGridRow[]>([emptyRow()])
   const [discountStr, setDiscountStr] = useState('')
   const [taxStr, setTaxStr] = useState('')
+  const [discountMode, setDiscountMode] = useState<SaleReturnMoneyMode>('percent')
+  const [taxMode, setTaxMode] = useState<SaleReturnMoneyMode>('percent')
   const [error, setError] = useState('')
   const [advanceConfirm, setAdvanceConfirm] = useState(false)
   const skipNextSync = useRef(false)
@@ -111,6 +128,8 @@ export default function SaleReturnModal({
     setRows([emptyRow()])
     setDiscountStr('')
     setTaxStr('')
+    setDiscountMode('percent')
+    setTaxMode('percent')
     setError('')
     setAdvanceConfirm(false)
   }
@@ -142,8 +161,23 @@ export default function SaleReturnModal({
     if (existingReturns.length > 0) {
       const state = saleReturnGridFromEntries(existingReturns)
       setRows(state.rows.length > 0 ? state.rows : [emptyRow()])
-      setDiscountStr(state.discountAmount > 0 ? String(state.discountAmount) : '')
-      setTaxStr(state.taxAmount > 0 ? String(state.taxAmount) : '')
+      if (state.discountAmount > 0) {
+        setDiscountMode('amount')
+        setDiscountStr(String(state.discountAmount))
+      } else {
+        setDiscountMode('percent')
+        setDiscountStr('')
+      }
+      if (state.gstPercent != null && state.gstPercent > 0) {
+        setTaxMode('percent')
+        setTaxStr(String(state.gstPercent))
+      } else if (state.taxAmount > 0) {
+        setTaxMode('amount')
+        setTaxStr(String(state.taxAmount))
+      } else {
+        setTaxMode('percent')
+        setTaxStr('')
+      }
     } else {
       resetGridLocal()
       return
@@ -152,14 +186,39 @@ export default function SaleReturnModal({
     setAdvanceConfirm(false)
   }, [open, existingReturns])
 
-  const discountAmount = Number(discountStr)
-  const taxAmount = Number(taxStr)
+  const itemsSubtotal = useMemo(
+    () =>
+      Math.round(
+        rows.reduce((sum, row) => sum + saleReturnLineSubtotal(row.quantity, row.rate), 0) * 100,
+      ) / 100,
+    [rows],
+  )
+
+  const resolvedFooter = useMemo(() => {
+    const resolved = resolveSaleReturnFooterAmounts(
+      itemsSubtotal,
+      parsePositiveInput(discountStr),
+      discountMode,
+      parsePositiveInput(taxStr),
+      taxMode,
+    )
+    return {
+      discountAmount: resolved.discountAmount,
+      taxAmount: resolved.taxAmount,
+      gstPercent: taxMode === 'percent' ? resolved.gstPercent : undefined,
+    }
+  }, [itemsSubtotal, discountStr, discountMode, taxStr, taxMode])
+
   const footer = {
-    discountAmount: Number.isFinite(discountAmount) && discountAmount > 0 ? discountAmount : 0,
-    taxAmount: Number.isFinite(taxAmount) && taxAmount > 0 ? taxAmount : 0,
+    discountAmount: resolvedFooter.discountAmount,
+    taxAmount: resolvedFooter.taxAmount,
+    gstPercent: resolvedFooter.gstPercent,
   }
 
-  const totals = useMemo(() => saleReturnGridTotals(rows, footer), [rows, footer.discountAmount, footer.taxAmount])
+  const totals = useMemo(
+    () => saleReturnGridTotals(rows, footer),
+    [rows, footer.discountAmount, footer.taxAmount],
+  )
 
   const balanceCap = Math.max(0, maxReturnable)
   const creditBeforeReturn = Math.max(0, originalBill - paidSoFar)
@@ -184,6 +243,36 @@ export default function SaleReturnModal({
     markCommitted(built)
     onChangeReturns(built)
     return built
+  }
+
+  function toggleDiscountMode() {
+    const next: SaleReturnMoneyMode = discountMode === 'percent' ? 'amount' : 'percent'
+    const raw = parsePositiveInput(discountStr)
+    if (raw > 0 && itemsSubtotal > 0) {
+      if (next === 'amount') {
+        const pct = Math.min(100, raw)
+        setDiscountStr(String(Math.round(itemsSubtotal * (pct / 100) * 100) / 100))
+      } else {
+        const pct = Math.min(100, Math.round((raw / itemsSubtotal) * 10000) / 100)
+        setDiscountStr(String(pct))
+      }
+    }
+    setDiscountMode(next)
+  }
+
+  function toggleTaxMode() {
+    const next: SaleReturnMoneyMode = taxMode === 'percent' ? 'amount' : 'percent'
+    const raw = parsePositiveInput(taxStr)
+    const taxable = Math.max(0, itemsSubtotal - footer.discountAmount)
+    if (raw > 0 && taxable > 0) {
+      if (next === 'amount') {
+        setTaxStr(String(Math.round(taxable * (raw / 100) * 100) / 100))
+      } else {
+        const pct = Math.round((raw / taxable) * 10000) / 100
+        setTaxStr(String(pct))
+      }
+    }
+    setTaxMode(next)
   }
 
   function updateRow(id: string, patch: Partial<SaleReturnGridRow>, commit = false) {
@@ -220,26 +309,32 @@ export default function SaleReturnModal({
     focusCell(row.id, 'rate')
   }
 
+  function finishGridToDiscount(row: SaleReturnGridRow, qty: number) {
+    setError('')
+    setRows((prev) => {
+      const mapped = prev.map((r) =>
+        r.id === row.id ? { ...row, quantity: qty, rate: 0 } : r,
+      )
+      const next = stripTrailingIncompleteRows(mapped)
+      commitReturns(next)
+      return next
+    })
+    focusDiscountField()
+  }
+
   function handleRateEnter(row: SaleReturnGridRow) {
-    if (!row.itemName.trim()) {
-      setError('Enter item name.')
-      return
-    }
     const qty = row.quantity > 0 ? row.quantity : 1
     const rate = Math.max(0, row.rate)
 
-    // Rate left at 0 → finish grid and move to discount (drop incomplete trailing lines).
+    // Empty / zero price → leave the item grid and go to discount.
     if (!(rate > 0)) {
-      setError('')
-      setRows((prev) => {
-        const mapped = prev.map((r) =>
-          r.id === row.id ? { ...row, quantity: qty, rate: 0 } : r,
-        )
-        const next = stripTrailingIncompleteRows(mapped)
-        commitReturns(next)
-        return next
-      })
-      focusDiscountField()
+      finishGridToDiscount(row, qty)
+      return
+    }
+
+    if (!row.itemName.trim()) {
+      setError('Enter item name.')
+      focusCell(row.id, 'item')
       return
     }
 
@@ -272,8 +367,26 @@ export default function SaleReturnModal({
     commitReturns(pruned, footer)
   }
 
+  function handleDiscountEnter() {
+    handleFooterCommit()
+    focusTaxField()
+  }
+
+  function handleTaxEnter() {
+    handleFooterCommit()
+    window.requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLInputElement>('[data-return-field="tax"]')
+      el?.blur()
+    })
+  }
+
   function ensureDraftRow() {
     setRows((prev) => (prev.length === 0 ? [emptyRow()] : prev))
+  }
+
+  function handleDone() {
+    handleFooterCommit()
+    onClose()
   }
 
   function handleContinueToAdvanceConfirm() {
@@ -300,22 +413,28 @@ export default function SaleReturnModal({
 
   const continueHandlerRef = useRef(handleContinueToAdvanceConfirm)
   const advanceConfirmHandlerRef = useRef(handleAdvanceConfirm)
+  const doneHandlerRef = useRef(handleDone)
   continueHandlerRef.current = handleContinueToAdvanceConfirm
   advanceConfirmHandlerRef.current = handleAdvanceConfirm
+  doneHandlerRef.current = handleDone
 
   useEffect(() => {
-    if (!open || !noBillMode) return
+    if (!open) return
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
       if (e.code !== 'KeyS') return
       e.preventDefault()
       e.stopPropagation()
-      if (advanceConfirm) {
-        advanceConfirmHandlerRef.current()
+      if (noBillMode) {
+        if (advanceConfirm) {
+          advanceConfirmHandlerRef.current()
+          return
+        }
+        continueHandlerRef.current()
         return
       }
-      continueHandlerRef.current()
+      doneHandlerRef.current()
     }
 
     window.addEventListener('keydown', onKeyDown, true)
@@ -333,8 +452,8 @@ export default function SaleReturnModal({
             <h3>{noBillMode ? 'Return → advance' : 'Sale return'}</h3>
             <p>
               {noBillMode
-                ? `${customerName?.trim() || 'Customer'} · Item → Qty (1) → Rate · Enter with rate adds next row · confirm to credit advance`
-                : `${customerName?.trim() || 'Customer'} · Item → Qty (1) → Rate · Enter with rate adds next row · Enter on 0 goes to discount`}
+                ? `${customerName?.trim() || 'Customer'} · Enter: name → qty → rate · empty rate → discount → tax · Alt+S to save`
+                : `${customerName?.trim() || 'Customer'} · Enter: name → qty → rate · empty rate → discount → tax · Alt+S when done`}
             </p>
           </div>
           <button type="button" className="sale-return-close" onClick={onClose} aria-label="Close">
@@ -424,6 +543,7 @@ export default function SaleReturnModal({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault()
+                            // Empty or filled name — always advance to quantity.
                             if (!(row.quantity > 0)) {
                               updateRow(row.id, { quantity: 1 })
                             }
@@ -521,7 +641,25 @@ export default function SaleReturnModal({
 
         <div className="sale-return-footer-fields">
           <label className="sale-return-field">
-            <span>Discount (₹)</span>
+            <span className="sale-return-field-label">
+              Discount
+              <button
+                type="button"
+                className="sale-return-mode-toggle"
+                onClick={(e) => {
+                  e.preventDefault()
+                  toggleDiscountMode()
+                }}
+                aria-label={
+                  discountMode === 'percent'
+                    ? 'Discount as percentage. Click for amount.'
+                    : 'Discount as amount. Click for percentage.'
+                }
+                title={discountMode === 'percent' ? 'Percentage — click for ₹' : 'Amount — click for %'}
+              >
+                {discountMode === 'percent' ? '%' : '₹'}
+              </button>
+            </span>
             <input
               data-return-field="discount"
               type="number"
@@ -529,20 +667,38 @@ export default function SaleReturnModal({
               min={0}
               step="any"
               value={discountStr}
-              placeholder="0"
+              placeholder={discountMode === 'percent' ? '0%' : '0'}
               onFocus={handleFooterFocus}
               onChange={(e) => setDiscountStr(e.target.value)}
               onBlur={handleFooterCommit}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault()
-                  handleFooterCommit()
+                  handleDiscountEnter()
                 }
               }}
             />
           </label>
           <label className="sale-return-field">
-            <span>Tax amount (₹)</span>
+            <span className="sale-return-field-label">
+              Tax
+              <button
+                type="button"
+                className="sale-return-mode-toggle"
+                onClick={(e) => {
+                  e.preventDefault()
+                  toggleTaxMode()
+                }}
+                aria-label={
+                  taxMode === 'percent'
+                    ? 'Tax as percentage. Click for amount.'
+                    : 'Tax as amount. Click for percentage.'
+                }
+                title={taxMode === 'percent' ? 'Percentage — click for ₹' : 'Amount — click for %'}
+              >
+                {taxMode === 'percent' ? '%' : '₹'}
+              </button>
+            </span>
             <input
               data-return-field="tax"
               type="number"
@@ -550,14 +706,14 @@ export default function SaleReturnModal({
               min={0}
               step="any"
               value={taxStr}
-              placeholder="0"
+              placeholder={taxMode === 'percent' ? '0%' : '0'}
               onFocus={handleFooterFocus}
               onChange={(e) => setTaxStr(e.target.value)}
               onBlur={handleFooterCommit}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault()
-                  handleFooterCommit()
+                  handleTaxEnter()
                 }
               }}
             />
@@ -615,8 +771,15 @@ export default function SaleReturnModal({
             </>
           ) : (
             <>
-              <button type="button" className="sale-return-btn sale-return-btn--ghost" onClick={onClose}>
-                Done
+              <button
+                type="button"
+                className={`sale-return-btn sale-return-btn--ghost${
+                  noBillMode ? '' : ' sale-return-btn--with-shortcut'
+                }`}
+                onClick={handleDone}
+              >
+                <span>Done</span>
+                {!noBillMode ? <span className="sale-return-btn-shortcut">Alt+S</span> : null}
               </button>
               {noBillMode ? (
                 <button

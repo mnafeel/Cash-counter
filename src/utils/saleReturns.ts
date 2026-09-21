@@ -355,17 +355,59 @@ export function saleReturnLineSubtotal(quantity: number, rate: number): number {
   return roundMoney(Math.max(0, quantity) * Math.max(0, rate))
 }
 
+export type SaleReturnMoneyMode = 'percent' | 'amount'
+
+/** Resolve footer discount/tax inputs (₹ or %) into money amounts. */
+export function resolveSaleReturnFooterAmounts(
+  itemsSubtotal: number,
+  discountInput: number,
+  discountMode: SaleReturnMoneyMode,
+  taxInput: number,
+  taxMode: SaleReturnMoneyMode,
+): { discountAmount: number; taxAmount: number; gstPercent?: number } {
+  const subtotal = Math.max(0, roundMoney(itemsSubtotal))
+  let discountAmount = 0
+  if (Number.isFinite(discountInput) && discountInput > 0) {
+    if (discountMode === 'percent') {
+      const pct = Math.min(100, Math.max(0, discountInput))
+      discountAmount = roundMoney(subtotal * (pct / 100))
+    } else {
+      discountAmount = roundMoney(discountInput)
+    }
+    discountAmount = Math.max(0, Math.min(subtotal, discountAmount))
+  }
+
+  const taxable = roundMoney(Math.max(0, subtotal - discountAmount))
+  let taxAmount = 0
+  let gstPercent: number | undefined
+  if (Number.isFinite(taxInput) && taxInput > 0) {
+    if (taxMode === 'percent') {
+      gstPercent = Math.max(0, taxInput)
+      taxAmount = roundMoney(taxable * (gstPercent / 100))
+    } else {
+      taxAmount = Math.max(0, roundMoney(taxInput))
+    }
+  }
+
+  return { discountAmount, taxAmount, gstPercent }
+}
+
 /** Pull grid rows + footer discount/tax from saved return entries. */
 export function saleReturnGridFromEntries(entries: SaleReturnEntry[]): {
   rows: SaleReturnGridRow[]
   discountAmount: number
   taxAmount: number
+  gstPercent?: number
 } {
   let discountAmount = 0
   let taxAmount = 0
+  let gstPercent: number | undefined
   const rows: SaleReturnGridRow[] = []
   for (const entry of entries) {
     discountAmount = roundMoney(discountAmount + Math.max(0, entry.discountAmount ?? 0))
+    if ((entry.gstPercent ?? 0) > 0 && gstPercent == null) {
+      gstPercent = entry.gstPercent
+    }
     if ((entry.taxAmount ?? 0) > 0) {
       taxAmount = roundMoney(taxAmount + (entry.taxAmount ?? 0))
     } else if ((entry.gstPercent ?? 0) > 0) {
@@ -383,7 +425,7 @@ export function saleReturnGridFromEntries(entries: SaleReturnEntry[]): {
       createdAt: entry.createdAt,
     })
   }
-  return { rows, discountAmount, taxAmount }
+  return { rows, discountAmount, taxAmount, gstPercent }
 }
 
 /**
@@ -393,7 +435,7 @@ export function saleReturnGridFromEntries(entries: SaleReturnEntry[]): {
  */
 export function buildSaleReturnEntriesFromGrid(
   rows: SaleReturnGridRow[],
-  footer: { discountAmount: number; taxAmount: number },
+  footer: { discountAmount: number; taxAmount: number; gstPercent?: number },
 ): SaleReturnEntry[] {
   const valid = rows.filter(
     (row) => row.itemName.trim() && row.quantity > 0 && row.rate >= 0,
@@ -410,6 +452,8 @@ export function buildSaleReturnEntriesFromGrid(
   const discountAmount = Math.max(0, Math.min(itemsSubtotal, footer.discountAmount))
   const taxable = roundMoney(Math.max(0, itemsSubtotal - discountAmount))
   const taxAmount = Math.max(0, roundMoney(footer.taxAmount))
+  const gstPercent =
+    footer.gstPercent != null && footer.gstPercent > 0 ? footer.gstPercent : undefined
   const grandTotal = roundMoney(taxable + taxAmount)
   if (grandTotal <= 0) return []
 
@@ -429,6 +473,7 @@ export function buildSaleReturnEntriesFromGrid(
       rate: row.rate,
       subtotal,
       discountAmount: i === 0 && discountAmount > 0 ? discountAmount : undefined,
+      gstPercent: i === 0 ? gstPercent : undefined,
       taxAmount: i === 0 && taxAmount > 0 ? taxAmount : undefined,
       amount: share,
       createdAt: row.createdAt,
