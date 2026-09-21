@@ -146,13 +146,8 @@ export function isChequeOriginSale(sale: Sale): boolean {
   if (sale.payType === 'split' || sale.payType === 'cash') return false
   if (sale.payType === 'cheque') return true
   if (sale.chequeApproved === true) return true
-  // Started as cheque pending but collected as bank/cheque approve
-  if (
-    sale.pendingPayType === 'cheque' &&
-    (sale.chequeApproved === true || sale.payType === 'bank')
-  ) {
-    return true
-  }
+  // Started as cheque pending but collected as bank (chequeApproved already handled above).
+  if (sale.pendingPayType === 'cheque' && sale.payType === 'bank') return true
   return (sale.paymentEvents ?? []).some((event) => (event.cheque ?? 0) > 0.01)
 }
 
