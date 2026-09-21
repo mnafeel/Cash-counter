@@ -28,6 +28,7 @@ import {
   sanitizeSplitParentChildChequeOverlap,
   paymentEventBankInflow,
   paymentEventRealizedAmount,
+  isChequeOriginSale,
 } from './salePayment'
 
 export type HistoryItemType =
@@ -583,14 +584,11 @@ function appendChequeSaleStructuredEvents(
       if (bankPart <= 0) continue
 
       createReceiptDraft(drafts, RECEIPT_SEQ.CHEQUE_APPROVED, {
-        label:
-          chequeApprovalIndex === 0
-            ? '1st cheque approved'
-            : `${ordinalWord(chequeApprovalIndex)} cheque approved`,
+        label: chequeApprovedReceiptLabel(chequeApprovalIndex),
         date: event.at,
         amount: bankPart,
         type: 'collected',
-        detail: `To bank · ${formatDate(event.at)}`,
+        detail: `Cheque → Bank · ${formatDate(event.at)}`,
       })
       chequeApprovalIndex += 1
     }
@@ -720,14 +718,16 @@ function buildStructuredSaleReceipt(
   const primary = members[0]
   if (
     members.length > 1 &&
-    members.some((row) => isCreditBill(row) || isChequeBill(row))
+    members.some(
+      (row) => isCreditBill(row) || isChequeBill(row) || isChequeOriginSale(row),
+    )
   ) {
     return buildBalanceGroupStructuredReceipt(members, advances)
   }
   const drafts: ReceiptEventDraft[] = []
   if (isCreditBill(primary)) {
     appendCreditSaleStructuredEvents(primary, drafts, { groupSales: members, advances })
-  } else if (isChequeBill(primary)) {
+  } else if (isChequeBill(primary) || isChequeOriginSale(primary)) {
     appendChequeSaleStructuredEvents(primary, drafts, { groupSales: members, advances })
   } else {
     appendStandardSaleStructuredEvents(primary, drafts, members, advances)
@@ -739,8 +739,10 @@ function buildStructuredSaleReceipt(
 
 function isBalanceLinkedGroup(parent: Sale, children: Sale[]): boolean {
   if (parent.payType === 'split') return false
-  if (isCreditBill(parent) || isChequeBill(parent)) return true
-  return children.some((child) => isCreditBill(child) || isChequeBill(child))
+  if (isCreditBill(parent) || isChequeBill(parent) || isChequeOriginSale(parent)) return true
+  return children.some(
+    (child) => isCreditBill(child) || isChequeBill(child) || isChequeOriginSale(child),
+  )
 }
 
 function balanceGroupPrimary(members: Sale[]): Sale {
@@ -749,14 +751,16 @@ function balanceGroupPrimary(members: Sale[]): Sale {
   )
   return (
     sorted.find((row) => isCreditBill(row)) ??
-    sorted.find((row) => isChequeBill(row)) ??
+    sorted.find((row) => isChequeBill(row) || isChequeOriginSale(row)) ??
     sorted[0]
   )
 }
 
 function receiptPaymentLeg(sale: Sale): 'credit' | 'cheque' | 'standard' {
-  if (isChequeBill(sale)) return 'cheque'
-  if (isCreditBill(sale)) return 'credit'
+  if (isChequeOriginSale(sale)) return 'cheque'
+  if (isCreditBill(sale) || sale.payType === 'credit' || sale.pendingPayType === 'credit') {
+    return 'credit'
+  }
   return 'standard'
 }
 
@@ -799,14 +803,11 @@ function appendBalanceGroupPaymentEvents(
       const bankPart = Math.max(0, Math.round((realized - cash) * 100) / 100)
       if (bankPart > 0) {
         createReceiptDraft(drafts, RECEIPT_SEQ.CHEQUE_APPROVED, {
-          label:
-            chequeApprovalIndex === 0
-              ? '1st cheque approved'
-              : `${ordinalWord(chequeApprovalIndex)} cheque approved`,
+          label: chequeApprovedReceiptLabel(chequeApprovalIndex),
           date: event.at,
           amount: bankPart,
           type: 'collected',
-          detail: `To bank · ${formatDate(event.at)}`,
+          detail: `Cheque → Bank · ${formatDate(event.at)}`,
         })
         chequeApprovalIndex += 1
       }
@@ -1375,14 +1376,28 @@ export function historyItemChannelAmount(
     for (const line of item.receiptLines) {
       if (line.status === 'pending') continue
       if (isReceiptTotalCollectedLabel(line.label)) continue
-      if (channel === 'cash' && (line.label === 'Cash' || line.label === 'Cash received' || line.label.includes('cash received'))) sum += line.amount
+      const lower = line.label.toLowerCase()
+      if (
+        channel === 'cash' &&
+        (line.label === 'Cash' ||
+          line.label === 'Cash received' ||
+          lower.includes('cash received') ||
+          lower.includes('credit payment · cash') ||
+          lower.includes('split allocation · cash') ||
+          lower.includes('split payment · cash'))
+      ) {
+        sum += line.amount
+      }
       if (
         channel === 'bank' &&
         (line.label === 'Bank' ||
           line.label === 'Cheque' ||
           line.label === 'Bank received' ||
-          line.label.includes('bank received') ||
-          line.label.includes('cheque approved'))
+          lower.includes('bank received') ||
+          lower.includes('credit payment · bank') ||
+          lower.includes('split allocation · bank') ||
+          lower.includes('split payment · bank') ||
+          lower.includes('cheque approved'))
       ) {
         sum += line.amount
       }
@@ -1409,6 +1424,33 @@ export function historyItemChannelAmount(
   }
 
   return 0
+}
+
+/** Bank money that came from cheque approval (for 🧾→🏦 exterior icon). */
+export function historyItemChequeToBankAmount(
+  item: HistoryItem,
+  dateFilter: HistoryDateFilter = 'all',
+  selectedDate = '',
+): number {
+  let fromLines = 0
+  for (const line of item.receiptLines ?? []) {
+    if (line.status === 'pending') continue
+    if (!receiptLineMatchesDateFilter(line, dateFilter, selectedDate)) continue
+    if (line.label.toLowerCase().includes('cheque approved')) {
+      fromLines += line.amount
+    }
+  }
+  if (fromLines > 0.01) return Math.round(fromLines * 100) / 100
+
+  if (!item.paymentCollections?.length) return 0
+  let fromCollections = 0
+  for (const collection of item.paymentCollections) {
+    if (dateFilter !== 'all' && !isoMatchesHistoryDateFilter(collection.at, dateFilter, selectedDate)) {
+      continue
+    }
+    fromCollections += collection.cheque
+  }
+  return Math.round(fromCollections * 100) / 100
 }
 
 /**
@@ -1838,6 +1880,7 @@ function paymentModesFromReceiptLines(
       line.label === 'Bank' ||
       line.label === 'Bank received' ||
       lower.includes('bank received') ||
+      lower.includes('credit payment · bank') ||
       lower.includes('split allocation · bank') ||
       lower.includes('split payment · bank') ||
       lower.includes('cheque approved')
@@ -1868,6 +1911,10 @@ function isChequeBill(sale: Sale): boolean {
     sale.pendingPayType === 'cheque' ||
     (sale.status === 'pending' && sale.payType === 'cheque')
   )
+}
+
+function chequeApprovedReceiptLabel(index: number): string {
+  return index === 0 ? 'Cheque Approved' : `${ordinalWord(index)} Cheque Approved`
 }
 
 function earliestIso(dates: string[]): string {
@@ -2119,13 +2166,16 @@ function formatSplitPaymentBreakdown(lines: HistoryReceiptLine[]): string {
       line.label === 'Bank' ||
       line.label === 'Bank received' ||
       lower.includes('bank received') ||
+      lower.includes('credit payment · bank') ||
       lower.includes('split allocation · bank') ||
       lower.includes('split payment · bank')
     ) {
       parts.push(`🏦 ${formatMoney(line.amount)}`)
     } else if (line.label === 'Cheque' || lower.includes('cheque approved')) {
-      parts.push(`🏦 ${formatMoney(line.amount)}`)
-    } else if (line.label === 'Credit' || lower.includes('credit payment')) {
+      parts.push(`🧾→🏦 ${formatMoney(line.amount)}`)
+    } else if (line.label === 'Credit' || lower.includes('credit payment · cash')) {
+      parts.push(`💳 ${formatMoney(line.amount)}`)
+    } else if (lower.includes('credit payment')) {
       parts.push(`💳 ${formatMoney(line.amount)}`)
     }
   }
@@ -2340,6 +2390,7 @@ function buildMergedBalanceGroupHistoryItem(
 
   const collected = saleBillGroupRealizedCollected(primary, uniqueMembers)
   const paymentCollections = uniqueMembers.flatMap((row) => buildSalePaymentCollections(row) ?? [])
+  const groupBreakdown = groupMembersCollectionBreakdown(uniqueMembers)
   const receipt = buildBalanceGroupStructuredReceipt(uniqueMembers, advances)
   const fullBill =
     primary.originalBillAmount ??
@@ -2360,6 +2411,10 @@ function buildMergedBalanceGroupHistoryItem(
     originalBillAmount: fullBill,
     collectedAmount: collected > 0 ? collected : item.collectedAmount,
     amount: collected > 0 ? collected : fullBill,
+    collectionBreakdown:
+      groupBreakdown.cash > 0 || groupBreakdown.bank > 0
+        ? groupBreakdown
+        : item.collectionBreakdown,
     paymentCollections: paymentCollections.length > 0 ? paymentCollections : item.paymentCollections,
     receiptLines: receipt.lines,
     receiptTimeline: receipt.timeline,
@@ -2367,6 +2422,33 @@ function buildMergedBalanceGroupHistoryItem(
     paymentModes: paymentModesFromReceiptLines(receipt.lines),
     paySummary: buildBalanceGroupPaySummary(uniqueMembers, collected, receipt.lines, fullBill),
     completedAt: allPaid ? item.completedAt : undefined,
+  }
+}
+
+/** Sum cash/bank across every linked leg so History list shows the full bank total. */
+function groupMembersCollectionBreakdown(
+  members: Sale[],
+): { cash: number; bank: number; cheque: number } {
+  let cash = 0
+  let bank = 0
+  let cheque = 0
+  for (const row of members) {
+    const part = saleCollectedComponentBreakdown(row)
+    cash += part.cash
+    bank += part.bank
+    cheque += part.cheque
+  }
+  const normalized = normalizeCollectedBreakdown({
+    cash,
+    bank,
+    cheque,
+    total: cash + bank + cheque,
+  })
+  return {
+    cash: normalized.cash,
+    // Approved cheque is bank money on the exterior list.
+    bank: normalized.bank + normalized.cheque,
+    cheque: 0,
   }
 }
 
@@ -2969,16 +3051,24 @@ export function historyItemListPaymentTypeText(
 
   const cashAmount = historyItemChannelAmount(item, 'cash', dateFilter, selectedDate)
   const bankAmount = historyItemChannelAmount(item, 'bank', dateFilter, selectedDate)
+  const chequeToBankAmount = historyItemChequeToBankAmount(item, dateFilter, selectedDate)
 
-  // Cash / Bank / All: show channel amounts separately (never collapse a split into one Bank total).
+  // Cash / Bank / All: one combined bank total (initial bank + credit→bank + cheque→bank).
   if (paymentFilter === 'all' || paymentFilter === 'cash' || paymentFilter === 'bank') {
     const parts: string[] = []
+    const bankLabel = (amount: number) => {
+      // Cheque-only clearance: show cheque→bank transfer icon on the exterior.
+      if (chequeToBankAmount > 0.01 && Math.abs(chequeToBankAmount - amount) < 0.01) {
+        return `🧾→🏦 ${formatMoney(amount)}`
+      }
+      return `🏦 ${formatMoney(amount)}`
+    }
     if (paymentFilter === 'bank') {
-      if (bankAmount > 0) parts.push(`🏦 ${formatMoney(bankAmount)}`)
+      if (bankAmount > 0) parts.push(bankLabel(bankAmount))
       if (cashAmount > 0) parts.push(`💵 ${formatMoney(cashAmount)}`)
     } else {
       if (cashAmount > 0) parts.push(`💵 ${formatMoney(cashAmount)}`)
-      if (bankAmount > 0) parts.push(`🏦 ${formatMoney(bankAmount)}`)
+      if (bankAmount > 0) parts.push(bankLabel(bankAmount))
     }
 
     for (const part of getHistoryItemListPaymentParts(item, dateFilter, selectedDate)) {
@@ -3081,14 +3171,23 @@ export function historyItemListPaymentTypeText(
 
   const parts = getHistoryItemListPaymentParts(item, dateFilter, selectedDate)
   if (parts.length > 0) {
+    const chequeToBank = historyItemChequeToBankAmount(item, dateFilter, selectedDate)
     return parts
       .map((part) => {
-        const icon = getHistoryListPaymentPartIcon(part.mode)
         if (part.status === 'pending') {
+          const icon = getHistoryListPaymentPartIcon(part.mode)
           if (part.mode === 'cheque') return `${icon} ${formatMoney(part.amount)} · Cheque pending`
           if (part.mode === 'credit') return `${icon} ${formatMoney(part.amount)} · Credit pending`
           return `${icon} ${formatMoney(part.amount)} pending`
         }
+        if (
+          part.mode === 'bank' &&
+          chequeToBank > 0.01 &&
+          Math.abs(chequeToBank - part.amount) < 0.01
+        ) {
+          return `🧾→🏦 ${formatMoney(part.amount)}`
+        }
+        const icon = getHistoryListPaymentPartIcon(part.mode)
         return `${icon} ${formatMoney(part.amount)}`
       })
       .join(' · ')
@@ -3201,11 +3300,18 @@ export function historyItemActivityLabel(item: HistoryItem): string {
     if (collections.length === 1) {
       const only = collections[0]
       if (item.billCreatedAt && only.at !== item.billCreatedAt) {
-        return only.cash > 0 && only.bank <= 0
+        const chequeCleared =
+          only.cheque > 0.01 ||
+          (item.receiptLines ?? []).some((line) =>
+            line.label.toLowerCase().includes('cheque approved'),
+          )
+        return only.cash > 0 && only.bank <= 0 && only.cheque <= 0
           ? `Cash collected ${formatDate(only.at)}`
-          : only.bank > 0 && only.cash <= 0
-            ? `Bank collected ${formatDate(only.at)}`
-            : `Collected ${formatDate(only.at)}`
+          : chequeCleared && only.cash <= 0
+            ? `Cheque Approved ${formatDate(only.at)}`
+            : only.bank > 0 && only.cash <= 0
+              ? `Bank collected ${formatDate(only.at)}`
+              : `Collected ${formatDate(only.at)}`
       }
     } else if (collections.length > 1) {
       const last = collections[collections.length - 1]

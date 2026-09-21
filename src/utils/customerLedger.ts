@@ -150,8 +150,8 @@ function paymentEventScheduleLabel(
   }
 
   if (chequeOrigin && cash <= 0 && (bank > 0 || cheque > 0)) {
-    if (total <= 1) return 'Cheque approved'
-    return `${ordinal} cheque approved`
+    if (total <= 1) return 'Cheque Approved'
+    return `${ordinal} Cheque Approved`
   }
 
   if (total <= 1) return 'Payment'
