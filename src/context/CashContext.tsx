@@ -549,6 +549,7 @@ interface CashContextValue {
   takeLoan: (input: {
     personName: string
     amount: number
+    paySource: LoanPaySource
     note?: string
     reminderAt?: string
     reminderNote?: string
@@ -634,6 +635,12 @@ function withTodayDrawerOpenings(data: AppData): AppData {
 
 export function CashProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => loadData())
+  const dataRef = useRef(data)
+  const seenDataRef = useRef(data)
+  if (seenDataRef.current !== data) {
+    seenDataRef.current = data
+    dataRef.current = data
+  }
   const [dataBooting, setDataBooting] = useState(false)
   const [homeUnlocked, setHomeUnlocked] = useState(false)
   const [sensitiveUnlocked, setSensitiveUnlocked] = useState(false)
@@ -1559,6 +1566,13 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => setReminderAlertSettings(prev, settings))
   }, [])
 
+  const commitLoanData = useCallback((next: AppData): boolean => {
+    if (next === dataRef.current) return false
+    dataRef.current = next
+    setData(next)
+    return true
+  }, [])
+
   const giveLoanHandler = useCallback(
     (input: {
       personName: string
@@ -1568,34 +1582,23 @@ export function CashProvider({ children }: { children: ReactNode }) {
       reminderAt?: string
       reminderNote?: string
     }): boolean => {
-      let success = false
-      setData((prev) => {
-        const next = addLoan(prev, { ...input, kind: 'lend' })
-        success = next !== prev
-        return next
-      })
-      return success
+      return commitLoanData(addLoan(dataRef.current, { ...input, kind: 'lend' }))
     },
-    [],
+    [commitLoanData],
   )
 
   const takeLoanHandler = useCallback(
     (input: {
       personName: string
       amount: number
+      paySource: LoanPaySource
       note?: string
       reminderAt?: string
       reminderNote?: string
     }): boolean => {
-      let success = false
-      setData((prev) => {
-        const next = addLoan(prev, { ...input, kind: 'borrow' })
-        success = next !== prev
-        return next
-      })
-      return success
+      return commitLoanData(addLoan(dataRef.current, { ...input, kind: 'borrow' }))
     },
-    [],
+    [commitLoanData],
   )
 
   const settleLoanRecordHandler = useCallback(
@@ -1604,15 +1607,9 @@ export function CashProvider({ children }: { children: ReactNode }) {
       settlementPaySource: LoanPaySource,
       options?: { amount?: number; settledAt?: string },
     ): boolean => {
-      let success = false
-      setData((prev) => {
-        const next = settleLoan(prev, id, settlementPaySource, options)
-        success = next !== prev
-        return next
-      })
-      return success
+      return commitLoanData(settleLoan(dataRef.current, id, settlementPaySource, options))
     },
-    [],
+    [commitLoanData],
   )
 
   const setLoanReminderHandler = useCallback(

@@ -135,7 +135,7 @@ export default function Loan() {
         return
       }
     } else if (formMode === 'take') {
-      if (!takeLoan({ personName: name, amount, note: note.trim() || undefined })) {
+      if (!takeLoan({ personName: name, amount, paySource, note: note.trim() || undefined })) {
         setFormError('Could not save.')
         return
       }
@@ -214,14 +214,11 @@ export default function Loan() {
           <section className="loan-page-form">
             <div className="loan-page-form-head">
               <h2>{formMode === 'give' ? 'Give loan' : 'Take loan'}</h2>
-              {formMode === 'give' ? (
-                <p className="loan-page-form-hint">
-                  Available · {paySource === 'bank' ? '🏦 Bank' : '💵 Cash'}{' '}
-                  {formatMoney(paySource === 'bank' ? bankBalance : balance)}
-                </p>
-              ) : (
-                <p className="loan-page-form-hint">Adds to cash in drawer</p>
-              )}
+              <p className="loan-page-form-hint">
+                {formMode === 'give' ? 'Available' : 'Adds to'} ·{' '}
+                {paySource === 'bank' ? '🏦 Bank' : '💵 Cash'}{' '}
+                {formatMoney(paySource === 'bank' ? bankBalance : balance)}
+              </p>
             </div>
 
             <div className="loan-page-top">
@@ -254,24 +251,22 @@ export default function Loan() {
               />
             </div>
 
-            {formMode === 'give' ? (
-              <div className="loan-page-chips">
-                <button
-                  type="button"
-                  className={paySource === 'cash' ? 'active' : ''}
-                  onClick={() => setPaySource('cash')}
-                >
-                  💵 Cash
-                </button>
-                <button
-                  type="button"
-                  className={paySource === 'bank' ? 'active' : ''}
-                  onClick={() => setPaySource('bank')}
-                >
-                  🏦 Bank
-                </button>
-              </div>
-            ) : null}
+            <div className="loan-page-chips">
+              <button
+                type="button"
+                className={paySource === 'cash' ? 'active' : ''}
+                onClick={() => setPaySource('cash')}
+              >
+                💵 Cash
+              </button>
+              <button
+                type="button"
+                className={paySource === 'bank' ? 'active' : ''}
+                onClick={() => setPaySource('bank')}
+              >
+                🏦 Bank
+              </button>
+            </div>
 
             <label className="loan-page-note">
               <span className="loan-page-note-label">Note</span>

@@ -177,7 +177,7 @@ export function loanCashToDrawer(loan: Loan): number {
   let impact = 0
   if (loan.kind === 'lend') {
     if (loan.paySource === 'cash') impact -= loan.amount
-  } else {
+  } else if (loan.paySource !== 'bank') {
     impact += loan.amount
   }
   for (const event of loanSettlementEvents(loan)) {
@@ -190,6 +190,7 @@ export function loanCashToDrawer(loan: Loan): number {
 export function loanBankToBalance(loan: Loan): number {
   let impact = 0
   if (loan.kind === 'lend' && loan.paySource === 'bank') impact -= loan.amount
+  if (loan.kind === 'borrow' && loan.paySource === 'bank') impact += loan.amount
   for (const event of loanSettlementEvents(loan)) {
     if (loan.kind === 'lend' && event.paySource === 'bank') impact += event.amount
     if (loan.kind === 'borrow' && event.paySource === 'bank') impact -= event.amount

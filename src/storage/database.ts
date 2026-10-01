@@ -2088,8 +2088,7 @@ export function addLoan(
   if (!personName) return data
 
   const kind = loan.kind
-  const paySource: LoanPaySource =
-    kind === 'borrow' ? 'cash' : loan.paySource === 'bank' ? 'bank' : 'cash'
+  const paySource: LoanPaySource = loan.paySource === 'bank' ? 'bank' : 'cash'
 
   if (kind === 'lend') {
     if (paySource === 'cash' && getCurrentBalance(data) < amount) return data

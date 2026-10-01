@@ -179,6 +179,15 @@ function pushLoanItems(items: CashActivityItem[], loan: Loan) {
       date: loan.createdAt,
       name: loan.personName,
     })
+  } else if (loan.kind === 'borrow' && loan.paySource === 'bank') {
+    items.push({
+      id: `loan-${loan.id}-take-bank`,
+      label: 'Loan taken · bank',
+      amount: loan.amount,
+      direction: 'in',
+      date: loan.createdAt,
+      name: loan.personName,
+    })
   }
 
   for (const [index, event] of loanSettlementEvents(loan).entries()) {

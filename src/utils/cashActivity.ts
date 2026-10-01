@@ -336,7 +336,7 @@ function pushLoanItems(items: CashActivityItem[], loan: Loan) {
       date: loan.createdAt,
       name: loan.personName,
     })
-  } else if (loan.kind === 'borrow') {
+  } else if (loan.kind === 'borrow' && loan.paySource !== 'bank') {
     items.push({
       id: `loan-${loan.id}-take-cash`,
       label: 'Loan taken · cash',

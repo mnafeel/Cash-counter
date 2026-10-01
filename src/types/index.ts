@@ -243,7 +243,7 @@ export interface Loan {
   kind: LoanKind
   personName: string
   amount: number
-  /** Cash or bank used when giving a loan; borrow always adds to cash. */
+  /** Cash or bank used when giving or taking the loan. */
   paySource: LoanPaySource
   status: LoanStatus
   note?: string
