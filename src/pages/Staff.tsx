@@ -276,9 +276,9 @@ export default function Staff() {
     ]
     const order = { 'carry-in': 0, payment: 1, applied: 2 }
     rows.sort((a, b) => {
-      const diff = new Date(a.at).getTime() - new Date(b.at).getTime()
+      const diff = new Date(b.at).getTime() - new Date(a.at).getTime()
       if (diff !== 0 && Number.isFinite(diff)) return diff
-      return order[a.kind] - order[b.kind]
+      return order[b.kind] - order[a.kind]
     })
     return rows
   }, [selectedPayments, monthCarryIn, monthCarryOut])
