@@ -158,8 +158,7 @@ function staffTableRows(rows: ReportStaffRow[]): string {
         <td class="num">${escapeHtml(formatMoney(row.netSalary))}</td>
         <td class="num">${escapeHtml(formatMoney(row.paidTotal))}</td>
         <td class="num">${escapeHtml(formatMoney(row.remaining))}</td>
-        <td class="num">${escapeHtml(formatMoney(row.bonusEarned))}</td>
-        <td class="num">${escapeHtml(formatMoney(row.bonusRemaining))}</td>
+        <td class="num">${escapeHtml(formatMoney(row.remaining <= 0.01 ? row.bonusRemaining : row.bonusEarned))}</td>
         <td class="num">${escapeHtml(formatMoney(row.totalDue))}</td>
       </tr>`,
     )
@@ -208,11 +207,11 @@ function buildStaffSalaryReportHtml(
       <strong>${escapeHtml(formatMoney(bonusOverview.totalBonus))}</strong>
     </div>
     <div class="summary-card">
-      <span>Total Due</span>
+      <span>Balance total left</span>
       <strong>${escapeHtml(formatMoney(bonusOverview.totalDue))}</strong>
     </div>
   </div>
-  <p class="meta">Payments cover salary first, then incentive. Remaining = what is still left to pay.</p>
+  <p class="meta">Payments cover salary first. Once salary is paid, what is left is the incentive. Balance total left is what is still to pay.</p>
   <h2>Salaried Staff</h2>
   <table>
     <thead>
@@ -225,14 +224,13 @@ function buildStaffSalaryReportHtml(
         <th class="num">Paid</th>
         <th class="num">Salary Left</th>
         <th class="num">Incentive</th>
-        <th class="num">Incentive Left</th>
-        <th class="num">Total Left</th>
+        <th class="num">Balance total left</th>
       </tr>
     </thead>
     <tbody>
       ${
         staffTableRows(rows) ||
-        '<tr><td colspan="10">No staff on record for this month.</td></tr>'
+        '<tr><td colspan="9">No staff on record for this month.</td></tr>'
       }
     </tbody>
   </table>`

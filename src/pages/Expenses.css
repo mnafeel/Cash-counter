@@ -526,6 +526,19 @@
   font-weight: 600;
 }
 
+.expenses-staff-apply {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 6px 14px;
+  border: 1px solid rgba(212, 168, 75, 0.55);
+  border-radius: 8px;
+  background: rgba(212, 168, 75, 0.16);
+  color: var(--cream);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .expenses-staff-note {
   margin: 0;
   font-size: 0.58rem;

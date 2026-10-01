@@ -68,6 +68,7 @@ function Expenses({ active }: { active: boolean }) {
   const [staffSalaryMonth, setStaffSalaryMonth] = useState(currentSalaryMonth())
   const [monthCreditStr, setMonthCreditStr] = useState('')
   const [monthCreditTouched, setMonthCreditTouched] = useState(false)
+  const [monthCreditOpen, setMonthCreditOpen] = useState(false)
   const salaryMonthOptions = useMemo(() => listSalaryMonthPickerOptions(), [])
   const nameInputRef = useRef<HTMLInputElement>(null)
   const paySectionRef = useRef<HTMLDivElement>(null)
@@ -143,6 +144,7 @@ function Expenses({ active }: { active: boolean }) {
   useEffect(() => {
     setMonthCreditTouched(false)
     setMonthCreditStr('')
+    setMonthCreditOpen(false)
   }, [matchedStaff?.id, staffSalaryMonth])
 
   useEffect(() => {
@@ -298,6 +300,9 @@ function Expenses({ active }: { active: boolean }) {
       setPayType('cash')
       setActiveField('name')
       resetStaffFields()
+      setMonthCreditTouched(false)
+      setMonthCreditOpen(false)
+      setMonthCreditStr('')
       setSaved(false)
       setNameDropdownOpen(false)
       setHighlightedNameIndex(-1)
@@ -714,6 +719,7 @@ function Expenses({ active }: { active: boolean }) {
             </p>
           ) : null}
           {staffRemainingAmount != null && amount > staffRemainingAmount + 0.01 ? (
+            monthCreditOpen ? (
             <label className="expenses-staff-field">
               <span>Apply to this month</span>
               <input
@@ -725,6 +731,7 @@ function Expenses({ active }: { active: boolean }) {
                   setMonthCreditStr(e.target.value)
                 }}
                 aria-label="Amount to apply to this salary month"
+                autoFocus
               />
               <small>
                 Payment is {formatMoney(amount)}. The rest,{' '}
@@ -741,9 +748,24 @@ function Expenses({ active }: { active: boolean }) {
                       ),
                   ),
                 )}
-                , stays as a salary balance until you apply it to the next month.
+                , stays as an advance. This month&apos;s salary balance becomes zero when the salary
+                is covered.
               </small>
             </label>
+            ) : (
+              <button
+                type="button"
+                className="expenses-staff-apply"
+                onClick={() => {
+                  setMonthCreditOpen(true)
+                  if (!monthCreditStr.trim()) {
+                    setMonthCreditStr(String(staffRemainingAmount))
+                  }
+                }}
+              >
+                Apply
+              </button>
+            )
           ) : null}
           {salaryMonthHint ? <p className="expenses-staff-prompt">{salaryMonthHint}</p> : null}
 

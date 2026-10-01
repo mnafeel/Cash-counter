@@ -10,9 +10,10 @@ export function resolveStaffSalaryDays(days: number | undefined): number {
   return Math.min(31, Math.max(1, n))
 }
 
+/** Daily rate used for leave deductions. Any fraction rounds up to the next rupee. */
 export function staffDailyRate(monthlySalary: number, daysPerMonth = SALARY_DAYS_PER_MONTH): number {
   const days = resolveStaffSalaryDays(daysPerMonth)
-  return Math.max(0, monthlySalary) / days
+  return Math.ceil(Math.max(0, monthlySalary) / days)
 }
 
 function parseSalaryMonthKey(key: SalaryMonthKey): { year: number; month: number } {
@@ -90,10 +91,11 @@ export function attendanceDayWeight(status: StaffAttendanceStatus): number {
   return 0
 }
 
-/** Leave deduction for one explicitly marked day. */
+/** Leave deduction for one explicitly marked day. Fractions round up to the next rupee. */
 export function leaveDeductionForStatus(dailyRate: number, status: StaffAttendanceStatus): number {
-  if (status === 'half') return dailyRate / 2
-  if (status === 'not_paid' || status === 'leave') return dailyRate
+  const rate = Math.max(0, dailyRate)
+  if (status === 'half') return Math.ceil(rate / 2)
+  if (status === 'not_paid' || status === 'leave') return Math.ceil(rate)
   return 0
 }
 
