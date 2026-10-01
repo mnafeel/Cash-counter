@@ -38,6 +38,8 @@ import {
   setStaffAttendance,
   applyStaffSalaryAdvance,
   applyUnappliedSalaryBalance,
+  applyStaffExcessToNextMonth,
+  removeStaffSalaryAdvance,
   addTransfer,
   applyPartialBalanceSaleCollection,
   applyPurchaseCreditPayment,
@@ -371,6 +373,12 @@ interface CashContextValue {
     toMonth: string
     amount: number
   }) => string | null
+  applyStaffExcessToNextMonth: (input: {
+    staffId: string
+    fromMonth: string
+    amount: number
+  }) => string | null
+  removeStaffSalaryAdvance: (advanceId: string) => string | null
   updateExpenseStaffSalaryMonth: (expenseId: string, staffSalaryMonth: string) => void
   unlinkExpenseFromStaff: (expenseId: string) => void
   cancelApprovedCheque: (id: string, eventIndex?: number | null) => boolean
@@ -1370,6 +1378,41 @@ export function CashProvider({ children }: { children: ReactNode }) {
     [],
   )
 
+  const applyStaffExcessToNextMonthHandler = useCallback(
+    (input: { staffId: string; fromMonth: string; amount: number }): string | null => {
+      let error: string | null = 'Could not apply to next month.'
+      setData((prev) => {
+        const result = applyStaffExcessToNextMonth(prev, {
+          staffId: input.staffId,
+          fromMonth: input.fromMonth as SalaryMonthKey,
+          amount: input.amount,
+        })
+        if (result.ok) {
+          error = null
+          return result.data
+        }
+        error = result.error ?? error
+        return prev
+      })
+      return error
+    },
+    [],
+  )
+
+  const removeStaffSalaryAdvanceHandler = useCallback((advanceId: string): string | null => {
+    let error: string | null = 'Could not cancel the applied amount.'
+    setData((prev) => {
+      const result = removeStaffSalaryAdvance(prev, advanceId)
+      if (result.ok) {
+        error = null
+        return result.data
+      }
+      error = result.error ?? error
+      return prev
+    })
+    return error
+  }, [])
+
   const updateExpenseStaffSalaryMonthHandler = useCallback((expenseId: string, staffSalaryMonth: string) => {
     setData((prev) => updateExpenseStaffSalaryMonth(prev, expenseId, staffSalaryMonth))
   }, [])
@@ -2053,6 +2096,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeStaffLeave: removeStaffLeaveHandler,
       applyStaffSalaryAdvance: applyStaffSalaryAdvanceHandler,
       applyUnappliedSalaryBalance: applyUnappliedSalaryBalanceHandler,
+      applyStaffExcessToNextMonth: applyStaffExcessToNextMonthHandler,
+      removeStaffSalaryAdvance: removeStaffSalaryAdvanceHandler,
       updateExpenseStaffSalaryMonth: updateExpenseStaffSalaryMonthHandler,
       unlinkExpenseFromStaff: unlinkExpenseFromStaffHandler,
       addSupplier,
@@ -2143,6 +2188,8 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeStaffLeaveHandler,
       applyStaffSalaryAdvanceHandler,
       applyUnappliedSalaryBalanceHandler,
+      applyStaffExcessToNextMonthHandler,
+      removeStaffSalaryAdvanceHandler,
       updateExpenseStaffSalaryMonthHandler,
       unlinkExpenseFromStaffHandler,
       addSupplier,

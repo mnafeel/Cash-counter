@@ -254,7 +254,142 @@
 
 .staff-page-summary--bonus {
   margin-top: 6px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.staff-page-summary--bonus .staff-page-summary-card {
+  padding: 6px 5px;
+  min-width: 0;
+}
+
+.staff-page-summary--bonus .staff-page-summary-card span,
+.staff-page-summary--bonus .staff-page-summary-card small {
+  font-size: 0.46rem;
+  line-height: 1.2;
+}
+
+.staff-page-summary--bonus .staff-page-summary-card strong {
+  font-size: 0.68rem;
+}
+
+.staff-page-detail-grid {
+  overflow: visible;
+}
+
+.staff-page-paid-card {
+  position: relative;
+  overflow: visible;
+  padding-right: 52px;
+}
+
+.staff-page-paid-card:has(.staff-page-paid-editor) {
+  z-index: 4;
+}
+
+.staff-page-paid-card small {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: #f0d4a8;
+}
+
+.staff-page-paid-card .staff-page-paid-applied {
+  color: #a8d4b8;
+}
+
+.staff-page-paid-apply {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  margin: 0;
+  padding: 3px 8px;
+  border: 1px solid rgba(232, 184, 109, 0.55);
+  border-radius: 999px;
+  background: rgba(232, 184, 109, 0.16);
+  color: #f3d7a4;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.staff-page-paid-apply--inline {
+  position: static;
+  flex: 0 0 auto;
+}
+
+.staff-page-detail-grid .staff-page-paid-editor {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  box-sizing: border-box;
+  width: 132px;
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin: 0;
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(232, 184, 109, 0.55);
+  background: var(--surface-2);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.38);
+}
+
+.staff-page-detail-grid .staff-page-paid-editor span {
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--cream, #f5e6d3);
+}
+
+.staff-page-detail-grid .staff-page-paid-editor small {
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: #f0d4a8;
+}
+
+.staff-page-detail-grid .staff-page-paid-editor input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--cream, #f5e6d3);
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(220, 160, 80, 0.45);
+  border-radius: 8px;
+}
+
+.staff-page-detail-grid .staff-page-paid-editor-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0;
+  margin-top: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.staff-page-paid-close {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.28);
+  color: var(--cream, #f5e6d3);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
 }
 
 .staff-page-bonus-settings {
@@ -1874,6 +2009,10 @@
 
   .staff-page-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .staff-page-summary--bonus {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .staff-page-detail-grid,

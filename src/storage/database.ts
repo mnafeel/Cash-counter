@@ -48,7 +48,7 @@ import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
 import { loanBankToBalance, loanCashToDrawer, loanRemainingAmount } from '../utils/loanLedger'
-import { getStaffMonthSummary, getStaffUnappliedSalaryBalance, isStaffLinkableExpense, type SalaryMonthKey } from '../utils/staffLedger'
+import { getStaffMonthSummary, getStaffMonthExcessLeft, getStaffMonthUnappliedLeft, getStaffUnappliedSalaryBalance, isStaffLinkableExpense, type SalaryMonthKey } from '../utils/staffLedger'
 import { getStaffCommissionSummary, getStaffPayoutAllocation } from '../utils/staffCommission'
 import { validateStaffLeaveInput, resolveStaffSalaryDays, normalizeStaffLeaveTypeValue, isSundayDate, isRedundantStaffLeaveRecord } from '../utils/staffAttendance'
 import { isoToDateInputValue } from '../utils/format'
@@ -2907,6 +2907,75 @@ export function applyUnappliedSalaryBalance(
   const next = {
     ...data,
     staffSalaryAdvances: [advance, ...(data.staffSalaryAdvances ?? [])],
+  }
+  saveData(next, { cloudImmediate: true })
+  return { data: next, ok: true }
+}
+
+/** One amount from every excess on this month — installments share a single apply. */
+export function applyStaffExcessToNextMonth(
+  data: AppData,
+  input: { staffId: string; fromMonth: SalaryMonthKey; amount: number },
+): { data: AppData; ok: boolean; error?: string } {
+  const summary = getStaffMonthSummary(data, input.staffId, input.fromMonth)
+  if (!summary) return { data, ok: false, error: 'Staff not found.' }
+  const excessLeft = getStaffMonthExcessLeft(data, input.staffId, input.fromMonth)
+  if (!(excessLeft > 0.01)) {
+    return { data, ok: false, error: 'Nothing to apply to next month.' }
+  }
+  const requested = Number(input.amount)
+  if (!Number.isFinite(requested) || !(requested > 0)) {
+    return { data, ok: false, error: 'Enter an amount to apply.' }
+  }
+  const amount = Math.round(Math.min(excessLeft, requested) * 100) / 100
+  const monthUnapplied = getStaffMonthUnappliedLeft(data, input.staffId, input.fromMonth)
+  const fromUnapplied = Math.round(Math.min(monthUnapplied, amount) * 100) / 100
+  const fromOverpaid = Math.round((amount - fromUnapplied) * 100) / 100
+  const createdAt = new Date().toISOString()
+  const advances: StaffSalaryAdvance[] = []
+  if (fromUnapplied > 0) {
+    advances.push({
+      id: crypto.randomUUID(),
+      staffId: input.staffId,
+      fromMonth: input.fromMonth,
+      toMonth: summary.nextMonthKey,
+      amount: fromUnapplied,
+      createdAt,
+      kind: 'unapplied',
+    })
+  }
+  if (fromOverpaid > 0) {
+    advances.push({
+      id: crypto.randomUUID(),
+      staffId: input.staffId,
+      fromMonth: input.fromMonth,
+      toMonth: summary.nextMonthKey,
+      amount: fromOverpaid,
+      createdAt,
+      kind: 'overpaid',
+    })
+  }
+  if (advances.length === 0) {
+    return { data, ok: false, error: 'Enter an amount to apply.' }
+  }
+  const nextData = {
+    ...data,
+    staffSalaryAdvances: [...advances, ...(data.staffSalaryAdvances ?? [])],
+  }
+  saveData(nextData, { cloudImmediate: true })
+  return { data: nextData, ok: true }
+}
+
+/** Drop one carry-forward so that month's extra can be applied again. */
+export function removeStaffSalaryAdvance(
+  data: AppData,
+  advanceId: string,
+): { data: AppData; ok: boolean; error?: string } {
+  const existing = (data.staffSalaryAdvances ?? []).some((row) => row.id === advanceId)
+  if (!existing) return { data, ok: false, error: 'Applied amount not found.' }
+  const next = {
+    ...data,
+    staffSalaryAdvances: (data.staffSalaryAdvances ?? []).filter((row) => row.id !== advanceId),
   }
   saveData(next, { cloudImmediate: true })
   return { data: next, ok: true }

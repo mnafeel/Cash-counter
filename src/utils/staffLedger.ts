@@ -187,6 +187,8 @@ export interface StaffMonthSummary {
   unsetCount: number
   deductionTotal: number
   netSalary: number
+  /** Cash actually paid on linked salary expenses, before any month split. */
+  grossPaid: number
   expensePaid: number
   advanceIn: number
   advanceOut: number
@@ -220,6 +222,43 @@ export function staffSalaryCreditAmount(expense: Expense): number {
 
 function paidAmountForExpense(expense: Expense): number {
   return staffSalaryCreditAmount(expense)
+}
+
+/** Cash paid above this month's salary that has already been sent to a later month. */
+export function getStaffMonthAppliedToNext(
+  data: AppData,
+  staffId: string,
+  monthKey: SalaryMonthKey,
+): number {
+  return (data.staffSalaryAdvances ?? [])
+    .filter((row) => row.staffId === staffId && row.fromMonth === monthKey)
+    .reduce((sum, row) => sum + Math.max(0, row.amount), 0)
+}
+
+/** Extra still sitting on this month, above the salary, not yet applied forward. */
+export function getStaffMonthExcessLeft(data: AppData, staffId: string, monthKey: SalaryMonthKey): number {
+  const summary = getStaffMonthSummary(data, staffId, monthKey)
+  if (!summary) return 0
+  const applied = getStaffMonthAppliedToNext(data, staffId, monthKey)
+  return Math.max(0, Math.round((summary.grossPaid - summary.netSalary - applied) * 100) / 100)
+}
+
+/** Part of this month's payments that was never counted on the month and is still here. */
+export function getStaffMonthUnappliedLeft(
+  data: AppData,
+  staffId: string,
+  monthKey: SalaryMonthKey,
+): number {
+  const held = getStaffSalaryPayments(data, staffId, monthKey).reduce(
+    (sum, expense) => sum + Math.max(0, expense.amount - staffSalaryCreditAmount(expense)),
+    0,
+  )
+  const moved = (data.staffSalaryAdvances ?? [])
+    .filter(
+      (row) => row.staffId === staffId && row.fromMonth === monthKey && row.kind === 'unapplied',
+    )
+    .reduce((sum, row) => sum + Math.max(0, row.amount), 0)
+  return Math.max(0, Math.round((held - moved) * 100) / 100)
 }
 
 /** Payment leftover that is not yet assigned to any salary month. */
@@ -281,6 +320,7 @@ export function getStaffMonthSummary(
   const member = getStaffMember(data, staffId)
   if (!member) return null
   const payments = getStaffSalaryPayments(data, staffId, monthKey)
+  const grossPaid = payments.reduce((sum, expense) => sum + Math.max(0, expense.amount), 0)
   const expensePaid = payments.reduce((sum, expense) => sum + paidAmountForExpense(expense), 0)
   const advanceIn = getStaffSalaryAdvanceIn(data, staffId, monthKey)
   const advanceOut = getStaffSalaryAdvanceOut(data, staffId, monthKey)
@@ -322,6 +362,7 @@ export function getStaffMonthSummary(
     unsetCount: attendanceTotals.unsetCount,
     deductionTotal,
     netSalary,
+    grossPaid,
     expensePaid,
     advanceIn,
     advanceOut,

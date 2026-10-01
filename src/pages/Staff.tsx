@@ -27,8 +27,8 @@ import {
   currentSalaryMonth,
   formatSalaryMonthLabel,
   getStaffSalaryPayments,
-  getStaffUnappliedSalaryBalance,
-  staffSalaryCreditAmount,
+  getStaffMonthAppliedToNext,
+  getStaffMonthExcessLeft,
   listActiveStaffMembers,
   listInactiveStaffMembers,
   listMonthOptionsForYear,
@@ -57,6 +57,11 @@ import {
 import StaffSalaryUnlinkConfirm from '../components/StaffSalaryUnlinkConfirm'
 import './Staff.css'
 
+function shownSalaryPaid(grossPaid: number, appliedOut: number, appliedIn: number): number {
+  const remaining = Math.max(0, grossPaid) - Math.max(0, appliedOut)
+  return Math.max(0, Math.round((remaining + Math.max(0, appliedIn)) * 100) / 100)
+}
+
 export default function Staff() {
   useOpenTiming('Staff', true, false)
   const goBack = useAppPageBack('/', { route: '/staff' })
@@ -67,8 +72,8 @@ export default function Staff() {
     updateStaffBonusMonthSettings,
     setStaffAttendance,
     removeStaffLeave,
-    applyStaffSalaryAdvance,
-    applyUnappliedSalaryBalance,
+    applyStaffExcessToNextMonth,
+    removeStaffSalaryAdvance,
     updateExpenseStaffSalaryMonth,
     unlinkExpenseFromStaff,
   } = useCash()
@@ -82,6 +87,7 @@ export default function Staff() {
   const [newSalary, setNewSalary] = useState('')
   const [editSalary, setEditSalary] = useState('')
   const [formError, setFormError] = useState('')
+  const [actionNote, setActionNote] = useState('')
   const [showSalaryEdit, setShowSalaryEdit] = useState(false)
   const [showBonusPanel, setShowBonusPanel] = useState(false)
   const [pendingDeactivateStaffId, setPendingDeactivateStaffId] = useState<string | null>(null)
@@ -93,10 +99,8 @@ export default function Staff() {
   const [selectedStaffIds, setSelectedStaffIds] = useState<Set<string>>(() => new Set())
   const [editingPaymentMonth, setEditingPaymentMonth] = useState<SalaryMonthKey>(currentSalaryMonth())
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
-  const [overpaidApplyStr, setOverpaidApplyStr] = useState('')
-  const [unappliedApplyStr, setUnappliedApplyStr] = useState('')
-  const [overpaidApplyOpen, setOverpaidApplyOpen] = useState(false)
-  const [unappliedApplyOpen, setUnappliedApplyOpen] = useState(false)
+  const [excessApplyStr, setExcessApplyStr] = useState('')
+  const [excessApplyOpen, setExcessApplyOpen] = useState(false)
   const [attendanceMenuDate, setAttendanceMenuDate] = useState<string | null>(null)
   const [attendanceFocusedDate, setAttendanceFocusedDate] = useState<string | null>(null)
   const [attendanceMenuHighlight, setAttendanceMenuHighlight] = useState(0)
@@ -150,6 +154,24 @@ export default function Staff() {
     () => buildStaffCommissionSummaryMap(data, commissionMonth),
     [data, commissionMonth],
   )
+  const monthPayFigures = useMemo(() => {
+    let grossPaid = 0
+    let incentive = 0
+    let withIncentive = 0
+    let remaining = 0
+    for (const row of monthSummaries) {
+      const payout = getStaffPayoutAllocation(row, commissionByStaffId.get(row.staffId) ?? null)
+      grossPaid += shownSalaryPaid(
+        row.grossPaid,
+        getStaffMonthAppliedToNext(data, row.staffId, monthKey),
+        row.advanceIn,
+      )
+      incentive += payout.bonusEarned
+      withIncentive += payout.totalOwed
+      remaining += payout.totalRemaining
+    }
+    return { grossPaid, incentive, withIncentive, remaining }
+  }, [monthSummaries, commissionByStaffId, data, monthKey])
   const overview = useMemo(() => buildStaffOverview(data, monthKey), [data, monthKey])
   const commissionOverview = useMemo(
     () => buildStaffCommissionOverview(data, monthKey, commissionMonth),
@@ -196,51 +218,70 @@ export default function Staff() {
     if (!selectedSummary) return null
     return buildStaffPayoutBreakdown(selectedSummary, selectedCommission)
   }, [selectedSummary, selectedCommission])
-  const selectedPaymentParts = useMemo(() => {
-    const salaryBudget = selectedPayout?.netSalary ?? Number.POSITIVE_INFINITY
-    const oldestFirst = [...selectedPayments].reverse()
-    const parts = new Map<string, { salary: number; extra: number }>()
-    let budget = salaryBudget
-    for (const expense of oldestFirst) {
-      const counted = staffSalaryCreditAmount(expense)
-      const salary = Math.min(counted, Math.max(0, budget))
-      budget -= salary
-      parts.set(expense.id, {
-        salary,
-        extra: Math.max(0, expense.amount - salary),
-      })
-    }
-    return parts
-  }, [selectedPayments, selectedPayout?.netSalary])
-  const unappliedSalaryBalance = useMemo(
-    () => (selectedStaffId ? getStaffUnappliedSalaryBalance(data, selectedStaffId) : 0),
-    [data, selectedStaffId],
+
+  const excessToApply = selectedStaffId ? getStaffMonthExcessLeft(data, selectedStaffId, monthKey) : 0
+  const appliedToNext = selectedStaffId
+    ? getStaffMonthAppliedToNext(data, selectedStaffId, monthKey)
+    : 0
+
+  useEffect(() => {
+    setExcessApplyOpen(false)
+    setExcessApplyStr(excessToApply > 0.01 ? String(Math.round(excessToApply)) : '')
+  }, [selectedStaffId, monthKey, excessToApply])
+  useEffect(() => {
+    setActionNote('')
+  }, [selectedStaffId, monthKey])
+  const monthCarryOut = useMemo(
+    () =>
+      selectedStaffId
+        ? (data.staffSalaryAdvances ?? []).filter(
+            (advance) => advance.staffId === selectedStaffId && advance.fromMonth === monthKey,
+          )
+        : [],
+    [data.staffSalaryAdvances, selectedStaffId, monthKey],
   )
-
-  useEffect(() => {
-    setOverpaidApplyOpen(false)
-    if (selectedPayout && selectedPayout.overpaidAmount > 0.01) {
-      setOverpaidApplyStr(String(Math.round(selectedPayout.overpaidAmount)))
-      return
-    }
-    setOverpaidApplyStr('')
-  }, [selectedStaffId, monthKey, selectedPayout?.overpaidAmount])
-
-  useEffect(() => {
-    setUnappliedApplyOpen(false)
-    if (unappliedSalaryBalance > 0.01) {
-      setUnappliedApplyStr(String(Math.round(unappliedSalaryBalance)))
-      return
-    }
-    setUnappliedApplyStr('')
-  }, [selectedStaffId, unappliedSalaryBalance])
-  const selectedAdvanceFromMonth = useMemo(() => {
-    if (!selectedStaffId || !selectedSummary?.advanceIn) return null
-    const row = (data.staffSalaryAdvances ?? []).find(
-      (advance) => advance.staffId === selectedStaffId && advance.toMonth === monthKey,
-    )
-    return row ? formatSalaryMonthLabel(row.fromMonth as SalaryMonthKey) : null
-  }, [data.staffSalaryAdvances, selectedStaffId, monthKey, selectedSummary?.advanceIn])
+  const monthCarryIn = useMemo(
+    () =>
+      selectedStaffId
+        ? (data.staffSalaryAdvances ?? []).filter(
+            (advance) => advance.staffId === selectedStaffId && advance.toMonth === monthKey,
+          )
+        : [],
+    [data.staffSalaryAdvances, selectedStaffId, monthKey],
+  )
+  const monthHistory = useMemo(() => {
+    const rows: Array<
+      | { kind: 'payment'; at: string; id: string; expense: (typeof selectedPayments)[number] }
+      | { kind: 'carry-in'; at: string; id: string; advance: (typeof monthCarryIn)[number] }
+      | { kind: 'applied'; at: string; id: string; advance: (typeof monthCarryOut)[number] }
+    > = [
+      ...selectedPayments.map((expense) => ({
+        kind: 'payment' as const,
+        at: expense.createdAt,
+        id: expense.id,
+        expense,
+      })),
+      ...monthCarryIn.map((advance) => ({
+        kind: 'carry-in' as const,
+        at: advance.createdAt,
+        id: `in-${advance.id}`,
+        advance,
+      })),
+      ...monthCarryOut.map((advance) => ({
+        kind: 'applied' as const,
+        at: advance.createdAt,
+        id: `out-${advance.id}`,
+        advance,
+      })),
+    ]
+    const order = { 'carry-in': 0, payment: 1, applied: 2 }
+    rows.sort((a, b) => {
+      const diff = new Date(a.at).getTime() - new Date(b.at).getTime()
+      if (diff !== 0 && Number.isFinite(diff)) return diff
+      return order[a.kind] - order[b.kind]
+    })
+    return rows
+  }, [selectedPayments, monthCarryIn, monthCarryOut])
 
   const pendingUnlinkExpense = useMemo(
     () =>
@@ -353,32 +394,30 @@ export default function Staff() {
     setFormError('')
   }
 
-  function handleApplyToNextMonth() {
-    if (!selectedStaffId || !selectedPayout) return
-    const entered = overpaidApplyStr.trim()
-      ? parseAmount(overpaidApplyStr)
-      : selectedPayout.overpaidAmount
-    const error = applyStaffSalaryAdvance({
+  function handleApplyExcess() {
+    if (!selectedStaffId || !selectedSummary) return
+    const entered = excessApplyStr.trim() ? parseAmount(excessApplyStr) : excessToApply
+    const error = applyStaffExcessToNextMonth({
       staffId: selectedStaffId,
       fromMonth: monthKey,
       amount: entered,
     })
     setFormError(error ?? '')
-    if (!error) setOverpaidApplyOpen(false)
+    if (!error) {
+      setActionNote('')
+      setExcessApplyOpen(false)
+    }
   }
 
-  function handleApplyUnappliedBalance() {
-    if (!selectedStaffId || !selectedSummary) return
-    const available = getStaffUnappliedSalaryBalance(data, selectedStaffId)
-    const entered = unappliedApplyStr.trim() ? parseAmount(unappliedApplyStr) : available
-    const error = applyUnappliedSalaryBalance({
-      staffId: selectedStaffId,
-      fromMonth: monthKey,
-      toMonth: selectedSummary.nextMonthKey,
-      amount: entered,
-    })
-    setFormError(error ?? '')
-    if (!error) setUnappliedApplyOpen(false)
+  function handleRemoveApplied(advanceId: string) {
+    const error = removeStaffSalaryAdvance(advanceId)
+    if (error) {
+      setFormError(error)
+      setActionNote('')
+      return
+    }
+    setFormError('')
+    setActionNote('Applied amount cancelled.')
   }
 
   function handleCreateStaff() {
@@ -899,7 +938,7 @@ export default function Staff() {
             </div>
             <div className="staff-page-summary-card">
               <span>Paid</span>
-              <strong>{formatMoney(overview.totalPaid)}</strong>
+              <strong>{formatMoney(monthPayFigures.grossPaid)}</strong>
             </div>
             <div className="staff-page-summary-card staff-page-summary-card--due">
               <span>Remaining</span>
@@ -909,27 +948,19 @@ export default function Staff() {
 
           <div className="staff-page-summary staff-page-summary--bonus">
             <div className="staff-page-summary-card staff-page-summary-card--bonus">
-              <span>Incentive pool</span>
-              <strong>{formatMoney(commissionOverview.poolAmount)}</strong>
-              <small>
-                {commissionOverview.poolPercent}%
-                {commissionOverview.totalBonusRemaining > 0
-                  ? ` · ${formatMoney(commissionOverview.totalBonusRemaining)} remaining`
-                  : commissionOverview.totalCommission > 0
-                    ? ' · paid'
-                    : ''}
-              </small>
+              <span>Incentive</span>
+              <strong>{formatMoney(monthPayFigures.incentive)}</strong>
+              <small>Pool {formatMoney(commissionOverview.poolAmount)}</small>
             </div>
             <div className="staff-page-summary-card staff-page-summary-card--bonus">
-              <span>Staff incentive</span>
-              <strong>{formatMoney(commissionOverview.totalCommission)}</strong>
-              <small>
-                {commissionOverview.totalBonusRemaining > 0
-                  ? `${formatMoney(commissionOverview.totalBonusRemaining)} remaining`
-                  : commissionOverview.totalCommission > 0
-                    ? 'Paid'
-                    : 'Tap Incentive'}
-              </small>
+              <span>With incentive</span>
+              <strong>{formatMoney(monthPayFigures.withIncentive)}</strong>
+              <small>Salary + incentive</small>
+            </div>
+            <div className="staff-page-summary-card staff-page-summary-card--due">
+              <span>Remaining</span>
+              <strong>{formatMoney(monthPayFigures.remaining)}</strong>
+              <small>Left to pay, with incentive</small>
             </div>
           </div>
         </>
@@ -1099,7 +1130,6 @@ export default function Staff() {
                 const isSelected = selectedStaffIds.has(row.staffId)
                 const commission = commissionByStaffId.get(row.staffId)
                 const payout = getStaffPayoutAllocation(row, commission ?? null)
-                const unappliedAdvance = getStaffUnappliedSalaryBalance(data, row.staffId)
                 return (
                 <li key={row.staffId}>
                   <div className={`staff-page-row-wrap ${isSelected ? 'staff-page-row-wrap--selected' : ''}`}>
@@ -1131,29 +1161,23 @@ export default function Staff() {
                       <div className="staff-page-row-copy">
                         <strong>{row.name}</strong>
                         <small>
-                          Paid {formatMoney(Math.min(row.paidTotal, payout.netSalary))}
-                          {row.advanceIn > 0
-                            ? ` · Advance taken from previous month ${formatMoney(row.advanceIn)}`
+                          Paid {formatMoney(
+                            shownSalaryPaid(
+                              row.grossPaid,
+                              getStaffMonthAppliedToNext(data, row.staffId, monthKey),
+                              row.advanceIn,
+                            ),
+                          )}
+                          {getStaffMonthExcessLeft(data, row.staffId, monthKey) > 0.01
+                            ? ` · Extra ${formatMoney(getStaffMonthExcessLeft(data, row.staffId, monthKey))}`
                             : ''}
-                          {payout.overpaidAmount > 0.01
-                            ? ` · Advance ${formatMoney(payout.overpaidAmount)}`
-                            : ''}
-                          {unappliedAdvance > 0.01
-                            ? ` · Advance ${formatMoney(unappliedAdvance)}`
+                          {getStaffMonthAppliedToNext(data, row.staffId, monthKey) > 0.01
+                            ? ` · ${formatMoney(getStaffMonthAppliedToNext(data, row.staffId, monthKey))} applied to ${formatSalaryMonthLabel(row.nextMonthKey)}`
                             : ''}
                           {row.deductionTotal > 0
                             ? ` · Deduction −${formatMoney(row.deductionTotal)}`
                             : ' · Deduction ₹0'}
-                          {` · Net ${formatMoney(row.netSalary)}`} ·{' '}
-                          {payout.salaryRemaining <= 0.01
-                            ? `Incentive ${formatMoney(payout.bonusRemaining)} · Balance total left ${formatMoney(payout.totalRemaining)}`
-                            : payout.totalRemaining > 0
-                              ? `Remaining ${formatMoney(payout.totalRemaining)}`
-                              : 'Paid'}
-                          {row.advanceOut > 0
-                            ? ` · Applied ${formatMoney(row.advanceOut)} to ${formatSalaryMonthLabel(row.nextMonthKey)}`
-                            : ''}{' '}
-                          · {row.paymentCount} payment
+                          {` · Net ${formatMoney(row.netSalary)} · ${row.paymentCount} payment`}
                           {row.paymentCount === 1 ? '' : 's'}
                         </small>
                       </div>
@@ -1304,55 +1328,106 @@ export default function Staff() {
                     <strong>{formatMoney(selectedPayout.netSalary)}</strong>
                     <small>Without incentive</small>
                   </div>
-                  <div>
+                  <div className="staff-page-paid-card">
                     <span>Paid</span>
                     <strong>
-                      {formatMoney(Math.min(selectedPayout.paid, selectedPayout.netSalary))}
+                      {formatMoney(
+                        shownSalaryPaid(
+                          selectedSummary.grossPaid,
+                          appliedToNext,
+                          selectedSummary.advanceIn,
+                        ),
+                      )}
                     </strong>
-                    <small>Salary counted this month</small>
+                    {excessToApply > 0.01 && !excessApplyOpen ? (
+                      <button
+                        type="button"
+                        className="staff-page-paid-apply"
+                        onClick={() => {
+                          setExcessApplyStr(String(Math.round(excessToApply)))
+                          setExcessApplyOpen(true)
+                          setFormError('')
+                        }}
+                      >
+                        Apply
+                      </button>
+                    ) : null}
+                    {excessToApply > 0.01 && !excessApplyOpen ? (
+                      <small>Extra {formatMoney(excessToApply)}</small>
+                    ) : null}
+                    {appliedToNext > 0.01 ? (
+                      <small className="staff-page-paid-applied">
+                        {formatMoney(appliedToNext)} applied to{' '}
+                        {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}
+                      </small>
+                    ) : null}
+                    {excessToApply > 0.01 && excessApplyOpen ? (
+                      <div className="staff-page-paid-editor" role="dialog" aria-label="Apply extra to next month">
+                        <span>Apply to {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}</span>
+                        <small>Extra {formatMoney(excessToApply)}</small>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={excessApplyStr}
+                          onChange={(e) => setExcessApplyStr(e.target.value)}
+                          aria-label="Amount of the extra to apply to next month"
+                          autoFocus
+                        />
+                        <div className="staff-page-paid-editor-actions">
+                          <button type="button" className="staff-page-paid-apply staff-page-paid-apply--inline" onClick={handleApplyExcess}>
+                            Apply
+                          </button>
+                          <button
+                            type="button"
+                            className="staff-page-paid-close"
+                            aria-label="Cancel apply"
+                            onClick={() => {
+                              setExcessApplyOpen(false)
+                              setFormError('')
+                            }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                   <div>
                     <span>Salary remaining</span>
-                    <strong>{formatMoney(selectedPayout.salaryRemaining)}</strong>
-                    <small>Without incentive</small>
+                    <strong>
+                      {formatMoney(
+                        selectedSummary.grossPaid + 0.01 >= selectedPayout.netSalary
+                          ? 0
+                          : selectedPayout.salaryRemaining,
+                      )}
+                    </strong>
+                    <small>
+                      {selectedSummary.grossPaid + 0.01 >= selectedPayout.netSalary
+                        ? 'Salary covered'
+                        : 'Without incentive'}
+                    </small>
                   </div>
                 </div>
 
                 <h3 className="staff-page-section-title">Incentive</h3>
-                {selectedPayout.salaryRemaining <= 0.01 ? (
-                  <div className="staff-page-detail-grid staff-page-detail-grid--bonus">
-                    <div>
-                      <span>Incentive</span>
-                      <strong className="staff-page-bonus-amount">
-                        {formatMoney(selectedPayout.bonusRemaining)}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>Balance total left</span>
-                      <strong>{formatMoney(selectedPayout.totalRemaining)}</strong>
-                    </div>
-                  </div>
-                ) : (
                 <div className="staff-page-detail-grid staff-page-detail-grid--bonus">
                   <div>
                     <span>Incentive</span>
                     <strong className="staff-page-bonus-amount">
                       {formatMoney(selectedPayout.bonusEarned)}
                     </strong>
-                    <small>Earned this month</small>
                   </div>
                   <div>
-                    <span>Total with incentive</span>
+                    <span>With incentive</span>
                     <strong>{formatMoney(selectedPayout.totalWithBonus)}</strong>
-                    <small>Net salary + incentive</small>
+                    <small>Salary + incentive</small>
                   </div>
                   <div>
-                    <span>Balance total left</span>
+                    <span>Remaining</span>
                     <strong>{formatMoney(selectedPayout.totalRemaining)}</strong>
-                    <small>Salary + incentive still to pay</small>
+                    <small>Left to pay, with incentive</small>
                   </div>
                 </div>
-                )}
                 <button
                   type="button"
                   className="staff-page-btn staff-page-btn--ghost staff-page-bonus-open-btn"
@@ -1381,100 +1456,6 @@ export default function Staff() {
                 ) : null}
               </>
             ) : null}
-            {selectedPayout?.canApplyToNextMonth ? (
-              <div className="staff-page-overpaid">
-                <p>
-                  Advance {formatMoney(selectedPayout.overpaidAmount)}. This month&apos;s salary
-                  balance is zero. Press Apply, then enter how much goes to{' '}
-                  {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}. Anything you leave out
-                  stays as the advance.
-                </p>
-                {overpaidApplyOpen ? (
-                  <>
-                    <label className="staff-page-overpaid-field">
-                      <span>Amount for {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={overpaidApplyStr}
-                        onChange={(e) => setOverpaidApplyStr(e.target.value)}
-                        aria-label="Amount to apply to next month"
-                        autoFocus
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="staff-page-btn staff-page-btn--primary"
-                      onClick={handleApplyToNextMonth}
-                    >
-                      Apply to next month
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    className="staff-page-btn staff-page-btn--primary"
-                    onClick={() => {
-                      setOverpaidApplyStr(String(Math.round(selectedPayout.overpaidAmount)))
-                      setOverpaidApplyOpen(true)
-                      setFormError('')
-                    }}
-                  >
-                    Apply
-                  </button>
-                )}
-              </div>
-            ) : null}
-            {unappliedSalaryBalance > 0.01 && selectedSummary ? (
-              <div className="staff-page-overpaid">
-                <p>
-                  Advance {formatMoney(unappliedSalaryBalance)} is not on a month yet. This
-                  month&apos;s salary balance stays as paid. Press Apply, then enter how much goes
-                  to {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}. The rest stays as the
-                  advance.
-                </p>
-                {unappliedApplyOpen ? (
-                  <>
-                    <label className="staff-page-overpaid-field">
-                      <span>Amount for {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}</span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={unappliedApplyStr}
-                        onChange={(e) => setUnappliedApplyStr(e.target.value)}
-                        aria-label="Salary balance to apply to next month"
-                        autoFocus
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="staff-page-btn staff-page-btn--primary"
-                      onClick={handleApplyUnappliedBalance}
-                    >
-                      Apply to next month
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    className="staff-page-btn staff-page-btn--primary"
-                    onClick={() => {
-                      setUnappliedApplyStr(String(Math.round(unappliedSalaryBalance)))
-                      setUnappliedApplyOpen(true)
-                      setFormError('')
-                    }}
-                  >
-                    Apply
-                  </button>
-                )}
-              </div>
-            ) : null}
-            {selectedSummary.advanceOut > 0 ? (
-              <p className="staff-page-advance-note">
-                {formatMoney(selectedSummary.advanceOut)} applied to{' '}
-                {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}.
-              </p>
-            ) : null}
             {formError && !showSalaryEdit && !showAttendanceModal ? (
               <p className="staff-page-error">{formError}</p>
             ) : null}
@@ -1486,41 +1467,67 @@ export default function Staff() {
             </div>
 
             <h3 className="staff-page-payments-title">Salary payments · {formatSalaryMonthLabel(monthKey)}</h3>
-            {selectedPayments.length === 0 && selectedSummary.advanceIn <= 0 ? (
+            {actionNote ? <p className="staff-page-advance-note">{actionNote}</p> : null}
+            {monthHistory.length === 0 ? (
               <p className="staff-page-empty staff-page-empty--inline">No linked salary payments for this month.</p>
             ) : (
               <ul className="staff-page-payments">
-                {selectedSummary.advanceIn > 0 ? (
-                  <li className="staff-page-payment staff-page-payment--advance">
-                    <div className="staff-page-payment-main">
-                      <strong>Advance taken from the previous month</strong>
-                      <span>{formatMoney(selectedSummary.advanceIn)}</span>
-                    </div>
-                    <div className="staff-page-payment-meta">
-                      <small>
-                        From {selectedAdvanceFromMonth ?? 'previous month'}
-                      </small>
-                    </div>
-                  </li>
-                ) : null}
-                {selectedPayments.map((expense) => {
+                {monthHistory.map((entry) => {
+                  if (entry.kind === 'carry-in') {
+                    const fromLabel = formatSalaryMonthLabel(entry.advance.fromMonth as SalaryMonthKey)
+                    return (
+                      <li key={entry.id} className="staff-page-payment staff-page-payment--advance">
+                        <div className="staff-page-payment-main">
+                          <strong>Cash in · carried from {fromLabel}</strong>
+                          <span>{formatMoney(entry.advance.amount)}</span>
+                        </div>
+                        <div className="staff-page-payment-meta">
+                          <small>Taken from {fromLabel} · {formatDate(entry.at)}</small>
+                        </div>
+                      </li>
+                    )
+                  }
+                  if (entry.kind === 'applied') {
+                    const toLabel = formatSalaryMonthLabel(entry.advance.toMonth as SalaryMonthKey)
+                    return (
+                      <li key={entry.id} className="staff-page-payment staff-page-payment--advance">
+                        <div className="staff-page-payment-main">
+                          <strong>Applied to {toLabel}</strong>
+                          <span>{formatMoney(entry.advance.amount)}</span>
+                        </div>
+                        <div className="staff-page-payment-meta">
+                          <small>Applied · {formatDate(entry.at)}</small>
+                          <div className="staff-page-payment-actions">
+                            <button
+                              type="button"
+                              className="staff-page-payment-unlink"
+                              onClick={() => handleRemoveApplied(entry.advance.id)}
+                            >
+                              × Remove
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                    )
+                  }
+                  const expense = entry.expense
                   const countedMonth =
                     expense.staffSalaryMonth ?? salaryMonthFromDate(expense.createdAt)
-                  const parts = selectedPaymentParts.get(expense.id)
-                  const salaryShown = parts?.salary ?? staffSalaryCreditAmount(expense)
-                  const extraShown = parts?.extra ?? 0
+                  const cashLabel =
+                    expense.payType === 'cash'
+                      ? 'Cash out'
+                      : expense.payType === 'bank'
+                        ? 'Bank out'
+                        : expense.payType
                   return (
-                  <li key={expense.id} className="staff-page-payment">
+                  <li key={entry.id} className="staff-page-payment">
                     <div className="staff-page-payment-main">
                       <strong>{expense.name}</strong>
-                      <span>{formatMoney(salaryShown)}</span>
+                      <span>{formatMoney(expense.amount)}</span>
                     </div>
                     <div className="staff-page-payment-meta">
                       <small>
-                        Paid {formatDate(expense.createdAt)} · {expense.payType}
-                        {extraShown > 0.01
-                          ? ` · Advance ${formatMoney(extraShown)}`
-                          : ''}
+                        {cashLabel} · {formatDate(expense.createdAt)}
                       </small>
                       {editingPaymentId === expense.id ? (
                         <label className="staff-page-payment-month-edit">
