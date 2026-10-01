@@ -1128,8 +1128,6 @@ export default function Staff() {
             <ul className="staff-page-list">
               {summaries.map((row) => {
                 const isSelected = selectedStaffIds.has(row.staffId)
-                const commission = commissionByStaffId.get(row.staffId)
-                const payout = getStaffPayoutAllocation(row, commission ?? null)
                 return (
                 <li key={row.staffId}>
                   <div className={`staff-page-row-wrap ${isSelected ? 'staff-page-row-wrap--selected' : ''}`}>
