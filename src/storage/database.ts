@@ -48,7 +48,7 @@ import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
 import { loanBankToBalance, loanCashToDrawer, loanRemainingAmount } from '../utils/loanLedger'
-import { getStaffMonthSummary, isStaffLinkableExpense, type SalaryMonthKey } from '../utils/staffLedger'
+import { getStaffMonthSummary, getStaffUnappliedSalaryBalance, isStaffLinkableExpense, type SalaryMonthKey } from '../utils/staffLedger'
 import { getStaffCommissionSummary, getStaffPayoutAllocation } from '../utils/staffCommission'
 import { validateStaffLeaveInput, resolveStaffSalaryDays, normalizeStaffLeaveTypeValue, isSundayDate, isRedundantStaffLeaveRecord } from '../utils/staffAttendance'
 import { isoToDateInputValue } from '../utils/format'
@@ -777,6 +777,7 @@ function pushTrash(data: AppData, entry: TrashedRecord): AppData {
 }
 
 function normalizeStaffSalaryAdvance(raw: Partial<StaffSalaryAdvance>): StaffSalaryAdvance {
+  const kind = raw.kind === 'unapplied' || raw.kind === 'overpaid' ? raw.kind : undefined
   return {
     id: raw.id ?? crypto.randomUUID(),
     staffId: raw.staffId ?? '',
@@ -784,6 +785,7 @@ function normalizeStaffSalaryAdvance(raw: Partial<StaffSalaryAdvance>): StaffSal
     toMonth: typeof raw.toMonth === 'string' ? raw.toMonth.trim().slice(0, 7) : '',
     amount: Math.max(0, Number(raw.amount) || 0),
     createdAt: raw.createdAt ?? new Date().toISOString(),
+    kind,
   }
 }
 
@@ -2530,6 +2532,8 @@ export function addExpenseWithOptionalStaff(
     staffId?: string
     staffSalaryMonth?: string
     staffSalaryLink?: boolean
+    /** Portion counted on the salary month. Omit to count the full payment. */
+    staffSalaryCredit?: number
     createStaffIfMissing?: boolean
   },
 ): { data: AppData; ok: boolean } {
@@ -2552,11 +2556,17 @@ export function addExpenseWithOptionalStaff(
       }
     }
     if (!staffId) return { data, ok: false }
+    const credit =
+      options?.staffSalaryCredit != null && Number.isFinite(options.staffSalaryCredit)
+        ? Math.min(Math.max(0, expense.amount), Math.max(0, options.staffSalaryCredit))
+        : undefined
     const newExpense: Expense = {
       ...expense,
       staffId,
       staffSalaryMonth: options?.staffSalaryMonth,
       staffSalaryLink: true,
+      staffSalaryCredit:
+        credit != null && credit + 0.01 < expense.amount ? Math.round(credit * 100) / 100 : undefined,
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
     }
@@ -2829,7 +2839,7 @@ export function deleteStaffMember(data: AppData, id: string): AppData {
 
 export function applyStaffSalaryAdvance(
   data: AppData,
-  input: { staffId: string; fromMonth: SalaryMonthKey },
+  input: { staffId: string; fromMonth: SalaryMonthKey; amount?: number },
 ): { data: AppData; ok: boolean; error?: string } {
   const summary = getStaffMonthSummary(data, input.staffId, input.fromMonth)
   if (!summary) return { data, ok: false, error: 'Staff not found.' }
@@ -2838,11 +2848,13 @@ export function applyStaffSalaryAdvance(
   if (!allocation.canApplyToNextMonth || allocation.overpaidAmount <= 0) {
     return { data, ok: false, error: 'Nothing to apply to next month.' }
   }
-  const alreadyApplied = (data.staffSalaryAdvances ?? []).some(
-    (row) => row.staffId === input.staffId && row.fromMonth === input.fromMonth,
-  )
-  if (alreadyApplied) {
-    return { data, ok: false, error: 'Already applied to next month.' }
+  const requested =
+    input.amount != null && Number.isFinite(input.amount) && input.amount > 0
+      ? input.amount
+      : allocation.overpaidAmount
+  const amount = Math.round(Math.min(allocation.overpaidAmount, requested) * 100) / 100
+  if (!(amount > 0)) {
+    return { data, ok: false, error: 'Enter an amount to apply.' }
   }
 
   const advance: StaffSalaryAdvance = {
@@ -2850,8 +2862,47 @@ export function applyStaffSalaryAdvance(
     staffId: input.staffId,
     fromMonth: input.fromMonth,
     toMonth: summary.nextMonthKey,
-    amount: allocation.overpaidAmount,
+    amount,
     createdAt: new Date().toISOString(),
+    kind: 'overpaid',
+  }
+  const next = {
+    ...data,
+    staffSalaryAdvances: [advance, ...(data.staffSalaryAdvances ?? [])],
+  }
+  saveData(next, { cloudImmediate: true })
+  return { data: next, ok: true }
+}
+
+/** Move part of an unapplied salary balance onto a later month. The rest stays unapplied. */
+export function applyUnappliedSalaryBalance(
+  data: AppData,
+  input: { staffId: string; fromMonth: SalaryMonthKey; toMonth: SalaryMonthKey; amount: number },
+): { data: AppData; ok: boolean; error?: string } {
+  if (!(data.staff ?? []).some((member) => member.id === input.staffId)) {
+    return { data, ok: false, error: 'Staff not found.' }
+  }
+  const available = getStaffUnappliedSalaryBalance(data, input.staffId)
+  if (!(available > 0.01)) {
+    return { data, ok: false, error: 'No salary balance left to apply.' }
+  }
+  const amount = Math.round(Math.min(available, Math.max(0, input.amount)) * 100) / 100
+  if (!(amount > 0)) {
+    return { data, ok: false, error: 'Enter an amount to apply.' }
+  }
+  const toMonth = input.toMonth.trim().slice(0, 7)
+  const fromMonth = input.fromMonth.trim().slice(0, 7)
+  if (!/^\d{4}-\d{2}$/.test(toMonth) || !/^\d{4}-\d{2}$/.test(fromMonth)) {
+    return { data, ok: false, error: 'Pick a valid month.' }
+  }
+  const advance: StaffSalaryAdvance = {
+    id: crypto.randomUUID(),
+    staffId: input.staffId,
+    fromMonth,
+    toMonth,
+    amount,
+    createdAt: new Date().toISOString(),
+    kind: 'unapplied',
   }
   const next = {
     ...data,

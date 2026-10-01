@@ -66,6 +66,8 @@ function Expenses({ active }: { active: boolean }) {
   const [linkToSalary, setLinkToSalary] = useState(true)
   const [unlinkConfirmOpen, setUnlinkConfirmOpen] = useState(false)
   const [staffSalaryMonth, setStaffSalaryMonth] = useState(currentSalaryMonth())
+  const [monthCreditStr, setMonthCreditStr] = useState('')
+  const [monthCreditTouched, setMonthCreditTouched] = useState(false)
   const salaryMonthOptions = useMemo(() => listSalaryMonthPickerOptions(), [])
   const nameInputRef = useRef<HTMLInputElement>(null)
   const paySectionRef = useRef<HTMLDivElement>(null)
@@ -137,6 +139,24 @@ function Expenses({ active }: { active: boolean }) {
   }, [matchedStaff?.id, linkToSalary])
 
   const amount = parseAmount(amountStr)
+
+  useEffect(() => {
+    setMonthCreditTouched(false)
+    setMonthCreditStr('')
+  }, [matchedStaff?.id, staffSalaryMonth])
+
+  useEffect(() => {
+    if (monthCreditTouched) return
+    if (
+      staffRemainingAmount != null &&
+      amount > 0 &&
+      amount > staffRemainingAmount + 0.01
+    ) {
+      setMonthCreditStr(String(staffRemainingAmount))
+      return
+    }
+    setMonthCreditStr('')
+  }, [amount, staffRemainingAmount, monthCreditTouched])
   const cashSplitAmount = parseAmount(cashSplitStr)
   const bankSplitAmount = parseAmount(bankSplitStr)
   const splitPaidTotal = cashSplitAmount + bankSplitAmount
@@ -238,6 +258,13 @@ function Expenses({ active }: { active: boolean }) {
     if (!isValid || saved) return
 
     if (matchedStaff && linkToSalary) {
+      const monthCredit =
+        staffRemainingAmount != null && amount > staffRemainingAmount + 0.01
+          ? Math.min(
+              amount,
+              Math.max(0, monthCreditStr.trim() ? parseAmount(monthCreditStr) : staffRemainingAmount),
+            )
+          : undefined
       recordExpense({
         amount,
         name: name.trim(),
@@ -248,6 +275,8 @@ function Expenses({ active }: { active: boolean }) {
         staffId: matchedStaff.id,
         staffSalaryMonth,
         staffSalaryLink: true,
+        staffSalaryCredit:
+          monthCredit != null && monthCredit + 0.01 < amount ? monthCredit : undefined,
       })
     } else {
       recordExpense({
@@ -683,6 +712,38 @@ function Expenses({ active }: { active: boolean }) {
               Remaining <strong>{formatMoney(staffRemainingAmount)}</strong> for{' '}
               {formatSalaryMonthLabel(staffSalaryMonth)}
             </p>
+          ) : null}
+          {staffRemainingAmount != null && amount > staffRemainingAmount + 0.01 ? (
+            <label className="expenses-staff-field">
+              <span>Apply to this month</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={monthCreditStr}
+                onChange={(e) => {
+                  setMonthCreditTouched(true)
+                  setMonthCreditStr(e.target.value)
+                }}
+                aria-label="Amount to apply to this salary month"
+              />
+              <small>
+                Payment is {formatMoney(amount)}. The rest,{' '}
+                {formatMoney(
+                  Math.max(
+                    0,
+                    amount -
+                      Math.min(
+                        amount,
+                        Math.max(
+                          0,
+                          monthCreditStr.trim() ? parseAmount(monthCreditStr) : staffRemainingAmount,
+                        ),
+                      ),
+                  ),
+                )}
+                , stays as a salary balance until you apply it to the next month.
+              </small>
+            </label>
           ) : null}
           {salaryMonthHint ? <p className="expenses-staff-prompt">{salaryMonthHint}</p> : null}
 

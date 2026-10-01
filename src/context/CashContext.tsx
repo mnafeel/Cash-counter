@@ -37,6 +37,7 @@ import {
   addStaffLeave,
   setStaffAttendance,
   applyStaffSalaryAdvance,
+  applyUnappliedSalaryBalance,
   addTransfer,
   applyPartialBalanceSaleCollection,
   applyPurchaseCreditPayment,
@@ -272,6 +273,7 @@ interface CashContextValue {
     staffId?: string
     staffSalaryMonth?: string
     staffSalaryLink?: boolean
+    staffSalaryCredit?: number
     createStaffIfMissing?: boolean
   }) => boolean
   recordExpenses: (
@@ -358,7 +360,17 @@ interface CashContextValue {
     type: StaffLeaveType | 'unset'
   }) => string | null
   removeStaffLeave: (leaveId: string) => void
-  applyStaffSalaryAdvance: (input: { staffId: string; fromMonth: string }) => string | null
+  applyStaffSalaryAdvance: (input: {
+    staffId: string
+    fromMonth: string
+    amount?: number
+  }) => string | null
+  applyUnappliedSalaryBalance: (input: {
+    staffId: string
+    fromMonth: string
+    toMonth: string
+    amount: number
+  }) => string | null
   updateExpenseStaffSalaryMonth: (expenseId: string, staffSalaryMonth: string) => void
   unlinkExpenseFromStaff: (expenseId: string) => void
   cancelApprovedCheque: (id: string, eventIndex?: number | null) => boolean
@@ -993,6 +1005,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       staffId?: string
       staffSalaryMonth?: string
       staffSalaryLink?: boolean
+      staffSalaryCredit?: number
       createStaffIfMissing?: boolean
     }) => {
       let ok = false
@@ -1021,6 +1034,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
             staffId: expense.staffId,
             staffSalaryMonth: expense.staffSalaryMonth,
             staffSalaryLink: expense.staffSalaryLink,
+            staffSalaryCredit: expense.staffSalaryCredit,
             createStaffIfMissing: expense.createStaffIfMissing,
           },
         )
@@ -1309,12 +1323,40 @@ export function CashProvider({ children }: { children: ReactNode }) {
   )
 
   const applyStaffSalaryAdvanceHandler = useCallback(
-    (input: { staffId: string; fromMonth: string }): string | null => {
+    (input: { staffId: string; fromMonth: string; amount?: number }): string | null => {
       let error: string | null = 'Could not apply to next month.'
       setData((prev) => {
         const result = applyStaffSalaryAdvance(prev, {
           staffId: input.staffId,
           fromMonth: input.fromMonth as SalaryMonthKey,
+          amount: input.amount,
+        })
+        if (result.ok) {
+          error = null
+          return result.data
+        }
+        error = result.error ?? error
+        return prev
+      })
+      return error
+    },
+    [],
+  )
+
+  const applyUnappliedSalaryBalanceHandler = useCallback(
+    (input: {
+      staffId: string
+      fromMonth: string
+      toMonth: string
+      amount: number
+    }): string | null => {
+      let error: string | null = 'Could not apply salary balance.'
+      setData((prev) => {
+        const result = applyUnappliedSalaryBalance(prev, {
+          staffId: input.staffId,
+          fromMonth: input.fromMonth as SalaryMonthKey,
+          toMonth: input.toMonth as SalaryMonthKey,
+          amount: input.amount,
         })
         if (result.ok) {
           error = null
@@ -2010,6 +2052,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       setStaffAttendance: setStaffAttendanceHandler,
       removeStaffLeave: removeStaffLeaveHandler,
       applyStaffSalaryAdvance: applyStaffSalaryAdvanceHandler,
+      applyUnappliedSalaryBalance: applyUnappliedSalaryBalanceHandler,
       updateExpenseStaffSalaryMonth: updateExpenseStaffSalaryMonthHandler,
       unlinkExpenseFromStaff: unlinkExpenseFromStaffHandler,
       addSupplier,
@@ -2099,6 +2142,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       setStaffAttendanceHandler,
       removeStaffLeaveHandler,
       applyStaffSalaryAdvanceHandler,
+      applyUnappliedSalaryBalanceHandler,
       updateExpenseStaffSalaryMonthHandler,
       unlinkExpenseFromStaffHandler,
       addSupplier,

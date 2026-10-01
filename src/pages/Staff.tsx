@@ -27,6 +27,7 @@ import {
   currentSalaryMonth,
   formatSalaryMonthLabel,
   getStaffSalaryPayments,
+  getStaffUnappliedSalaryBalance,
   listActiveStaffMembers,
   listInactiveStaffMembers,
   listMonthOptionsForYear,
@@ -66,6 +67,7 @@ export default function Staff() {
     setStaffAttendance,
     removeStaffLeave,
     applyStaffSalaryAdvance,
+    applyUnappliedSalaryBalance,
     updateExpenseStaffSalaryMonth,
     unlinkExpenseFromStaff,
   } = useCash()
@@ -90,6 +92,8 @@ export default function Staff() {
   const [selectedStaffIds, setSelectedStaffIds] = useState<Set<string>>(() => new Set())
   const [editingPaymentMonth, setEditingPaymentMonth] = useState<SalaryMonthKey>(currentSalaryMonth())
   const [showAttendanceModal, setShowAttendanceModal] = useState(false)
+  const [overpaidApplyStr, setOverpaidApplyStr] = useState('')
+  const [unappliedApplyStr, setUnappliedApplyStr] = useState('')
   const [attendanceMenuDate, setAttendanceMenuDate] = useState<string | null>(null)
   const [attendanceFocusedDate, setAttendanceFocusedDate] = useState<string | null>(null)
   const [attendanceMenuHighlight, setAttendanceMenuHighlight] = useState(0)
@@ -189,6 +193,26 @@ export default function Staff() {
     if (!selectedSummary) return null
     return buildStaffPayoutBreakdown(selectedSummary, selectedCommission)
   }, [selectedSummary, selectedCommission])
+  const unappliedSalaryBalance = useMemo(
+    () => (selectedStaffId ? getStaffUnappliedSalaryBalance(data, selectedStaffId) : 0),
+    [data, selectedStaffId],
+  )
+
+  useEffect(() => {
+    if (selectedPayout && selectedPayout.overpaidAmount > 0.01) {
+      setOverpaidApplyStr(String(Math.round(selectedPayout.overpaidAmount)))
+      return
+    }
+    setOverpaidApplyStr('')
+  }, [selectedStaffId, monthKey, selectedPayout?.overpaidAmount])
+
+  useEffect(() => {
+    if (unappliedSalaryBalance > 0.01) {
+      setUnappliedApplyStr(String(Math.round(unappliedSalaryBalance)))
+      return
+    }
+    setUnappliedApplyStr('')
+  }, [selectedStaffId, unappliedSalaryBalance])
   const selectedAdvanceFromMonth = useMemo(() => {
     if (!selectedStaffId || !selectedSummary?.advanceIn) return null
     const row = (data.staffSalaryAdvances ?? []).find(
@@ -309,8 +333,28 @@ export default function Staff() {
   }
 
   function handleApplyToNextMonth() {
-    if (!selectedStaffId) return
-    const error = applyStaffSalaryAdvance({ staffId: selectedStaffId, fromMonth: monthKey })
+    if (!selectedStaffId || !selectedPayout) return
+    const entered = overpaidApplyStr.trim()
+      ? parseAmount(overpaidApplyStr)
+      : selectedPayout.overpaidAmount
+    const error = applyStaffSalaryAdvance({
+      staffId: selectedStaffId,
+      fromMonth: monthKey,
+      amount: entered,
+    })
+    setFormError(error ?? '')
+  }
+
+  function handleApplyUnappliedBalance() {
+    if (!selectedStaffId || !selectedSummary) return
+    const available = getStaffUnappliedSalaryBalance(data, selectedStaffId)
+    const entered = unappliedApplyStr.trim() ? parseAmount(unappliedApplyStr) : available
+    const error = applyUnappliedSalaryBalance({
+      staffId: selectedStaffId,
+      fromMonth: monthKey,
+      toMonth: selectedSummary.nextMonthKey,
+      amount: entered,
+    })
     setFormError(error ?? '')
   }
 
@@ -1316,15 +1360,52 @@ export default function Staff() {
             {selectedPayout?.canApplyToNextMonth ? (
               <div className="staff-page-overpaid">
                 <p>
-                  Overpaid by {formatMoney(selectedPayout.overpaidAmount)}. Apply to{' '}
-                  {formatSalaryMonthLabel(selectedSummary.nextMonthKey)} so it counts as paid there.
+                  Overpaid by {formatMoney(selectedPayout.overpaidAmount)}. Enter how much to apply
+                  to {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}. Anything you leave out
+                  stays as the balance.
                 </p>
+                <label className="staff-page-overpaid-field">
+                  <span>Amount for {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={overpaidApplyStr}
+                    onChange={(e) => setOverpaidApplyStr(e.target.value)}
+                    aria-label="Amount to apply to next month"
+                  />
+                </label>
                 <button
                   type="button"
                   className="staff-page-btn staff-page-btn--primary"
                   onClick={handleApplyToNextMonth}
                 >
-                  Apply {formatMoney(selectedPayout.overpaidAmount)} to next month
+                  Apply to next month
+                </button>
+              </div>
+            ) : null}
+            {unappliedSalaryBalance > 0.01 && selectedSummary ? (
+              <div className="staff-page-overpaid">
+                <p>
+                  Salary balance {formatMoney(unappliedSalaryBalance)} is not on a month yet. Enter
+                  how much to apply to {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}. The
+                  rest stays as the balance.
+                </p>
+                <label className="staff-page-overpaid-field">
+                  <span>Amount for {formatSalaryMonthLabel(selectedSummary.nextMonthKey)}</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={unappliedApplyStr}
+                    onChange={(e) => setUnappliedApplyStr(e.target.value)}
+                    aria-label="Salary balance to apply to next month"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="staff-page-btn staff-page-btn--primary"
+                  onClick={handleApplyUnappliedBalance}
+                >
+                  Apply balance to next month
                 </button>
               </div>
             ) : null}

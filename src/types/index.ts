@@ -164,6 +164,11 @@ export interface Expense {
   staffSalaryMonth?: string
   /** When false, expense is recorded but does not reduce salary balance. */
   staffSalaryLink?: boolean
+  /**
+   * Portion of `amount` that counts toward `staffSalaryMonth`.
+   * When omitted, the full payment counts. The rest stays as an unapplied salary balance.
+   */
+  staffSalaryCredit?: number
 }
 
 export interface SupplierEntry {
@@ -385,6 +390,11 @@ export interface StaffSalaryAdvance {
   toMonth: string
   amount: number
   createdAt: string
+  /**
+   * `overpaid` — moved from a month that was paid above salary.
+   * `unapplied` — moved from a payment balance that was never counted on a month.
+   */
+  kind?: 'overpaid' | 'unapplied'
 }
 
 export const STORAGE_KEY = 'cash-counter-data'

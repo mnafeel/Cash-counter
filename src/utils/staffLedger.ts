@@ -209,8 +209,28 @@ export interface StaffOverview {
   totalRemaining: number
 }
 
+/** Amount of a linked payment that counts toward its salary month. */
+export function staffSalaryCreditAmount(expense: Expense): number {
+  const full = Math.max(0, expense.amount)
+  if (expense.staffSalaryCredit == null || !Number.isFinite(Number(expense.staffSalaryCredit))) {
+    return full
+  }
+  return Math.min(full, Math.max(0, Number(expense.staffSalaryCredit)))
+}
+
 function paidAmountForExpense(expense: Expense): number {
-  return Math.max(0, expense.amount)
+  return staffSalaryCreditAmount(expense)
+}
+
+/** Payment leftover that is not yet assigned to any salary month. */
+export function getStaffUnappliedSalaryBalance(data: AppData, staffId: string): number {
+  const held = data.expenses
+    .filter((expense) => expenseCountsTowardStaffSalary(expense) && expense.staffId === staffId)
+    .reduce((sum, expense) => sum + Math.max(0, expense.amount - staffSalaryCreditAmount(expense)), 0)
+  const moved = (data.staffSalaryAdvances ?? [])
+    .filter((row) => row.staffId === staffId && row.kind === 'unapplied')
+    .reduce((sum, row) => sum + Math.max(0, row.amount), 0)
+  return Math.max(0, Math.round((held - moved) * 100) / 100)
 }
 
 export function getStaffSalaryAdvanceIn(
@@ -229,7 +249,12 @@ export function getStaffSalaryAdvanceOut(
   monthKey: SalaryMonthKey,
 ): number {
   return (data.staffSalaryAdvances ?? [])
-    .filter((row) => row.staffId === staffId && row.fromMonth === monthKey)
+    .filter(
+      (row) =>
+        row.staffId === staffId &&
+        row.fromMonth === monthKey &&
+        row.kind !== 'unapplied',
+    )
     .reduce((sum, row) => sum + Math.max(0, row.amount), 0)
 }
 

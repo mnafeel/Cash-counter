@@ -508,7 +508,8 @@
 }
 
 .expenses-staff-field select,
-.expenses-staff-field input[type='month'] {
+.expenses-staff-field input[type='month'],
+.expenses-staff-field input[type='text'] {
   width: 100%;
   padding: 6px 8px;
   font-size: 0.72rem;

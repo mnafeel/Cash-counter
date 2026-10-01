@@ -1905,6 +1905,33 @@
   color: #f0d4a8;
 }
 
+.staff-page-overpaid-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.staff-page-overpaid-field span {
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #f0d4a8;
+}
+
+.staff-page-overpaid-field input {
+  width: 100%;
+  max-width: 180px;
+  padding: 6px 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--cream, #f5e6d3);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(220, 160, 80, 0.45);
+  border-radius: 8px;
+}
+
 .staff-page-advance-note {
   margin: 10px 0 0;
   font-size: 0.58rem;
