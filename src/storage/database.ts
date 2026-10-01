@@ -2919,7 +2919,8 @@ export function applyStaffExcessToNextMonth(
 ): { data: AppData; ok: boolean; error?: string } {
   const summary = getStaffMonthSummary(data, input.staffId, input.fromMonth)
   if (!summary) return { data, ok: false, error: 'Staff not found.' }
-  const excessLeft = getStaffMonthExcessLeft(data, input.staffId, input.fromMonth)
+  const incentive = getStaffCommissionSummary(data, input.staffId, input.fromMonth)?.commissionEarned ?? 0
+  const excessLeft = getStaffMonthExcessLeft(data, input.staffId, input.fromMonth, incentive)
   if (!(excessLeft > 0.01)) {
     return { data, ok: false, error: 'Nothing to apply to next month.' }
   }

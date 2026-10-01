@@ -235,12 +235,21 @@ export function getStaffMonthAppliedToNext(
     .reduce((sum, row) => sum + Math.max(0, row.amount), 0)
 }
 
-/** Extra still sitting on this month, above the salary, not yet applied forward. */
-export function getStaffMonthExcessLeft(data: AppData, staffId: string, monthKey: SalaryMonthKey): number {
+/** Cash left above salary after the incentive is kept, and not yet applied forward. */
+export function getStaffMonthExcessLeft(
+  data: AppData,
+  staffId: string,
+  monthKey: SalaryMonthKey,
+  incentive = 0,
+): number {
   const summary = getStaffMonthSummary(data, staffId, monthKey)
   if (!summary) return 0
   const applied = getStaffMonthAppliedToNext(data, staffId, monthKey)
-  return Math.max(0, Math.round((summary.grossPaid - summary.netSalary - applied) * 100) / 100)
+  const incentiveKept = Math.max(0, incentive)
+  return Math.max(
+    0,
+    Math.round((summary.grossPaid - summary.netSalary - incentiveKept - applied) * 100) / 100,
+  )
 }
 
 /** Part of this month's payments that was never counted on the month and is still here. */

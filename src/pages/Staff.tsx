@@ -219,7 +219,14 @@ export default function Staff() {
     return buildStaffPayoutBreakdown(selectedSummary, selectedCommission)
   }, [selectedSummary, selectedCommission])
 
-  const excessToApply = selectedStaffId ? getStaffMonthExcessLeft(data, selectedStaffId, monthKey) : 0
+  const excessToApply = selectedStaffId
+    ? getStaffMonthExcessLeft(
+        data,
+        selectedStaffId,
+        monthKey,
+        commissionByStaffId.get(selectedStaffId)?.commissionEarned ?? 0,
+      )
+    : 0
   const appliedToNext = selectedStaffId
     ? getStaffMonthAppliedToNext(data, selectedStaffId, monthKey)
     : 0
@@ -1128,6 +1135,12 @@ export default function Staff() {
             <ul className="staff-page-list">
               {summaries.map((row) => {
                 const isSelected = selectedStaffIds.has(row.staffId)
+                const extraLeft = getStaffMonthExcessLeft(
+                  data,
+                  row.staffId,
+                  monthKey,
+                  commissionByStaffId.get(row.staffId)?.commissionEarned ?? 0,
+                )
                 return (
                 <li key={row.staffId}>
                   <div className={`staff-page-row-wrap ${isSelected ? 'staff-page-row-wrap--selected' : ''}`}>
@@ -1166,9 +1179,7 @@ export default function Staff() {
                               row.advanceIn,
                             ),
                           )}
-                          {getStaffMonthExcessLeft(data, row.staffId, monthKey) > 0.01
-                            ? ` · Extra ${formatMoney(getStaffMonthExcessLeft(data, row.staffId, monthKey))}`
-                            : ''}
+                          {extraLeft > 0.01 ? ` · Extra ${formatMoney(extraLeft)}` : ''}
                           {getStaffMonthAppliedToNext(data, row.staffId, monthKey) > 0.01
                             ? ` · ${formatMoney(getStaffMonthAppliedToNext(data, row.staffId, monthKey))} applied to ${formatSalaryMonthLabel(row.nextMonthKey)}`
                             : ''}
