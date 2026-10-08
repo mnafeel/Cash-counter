@@ -1,5 +1,5 @@
 import type { AppData } from '../types'
-import { normalizeData } from './database'
+import { getLocalUserUid, normalizeData } from './database'
 
 const DB_NAME = 'cash-counter-local-backups'
 const DB_VERSION = 1
@@ -13,6 +13,9 @@ export interface LocalBackupSnapshotMeta {
   expensesCount: number
   pendingCount: number
   loansCount: number
+  protected?: boolean
+  reason?: string
+  ownerUid?: string | null
 }
 
 interface LocalBackupRecord extends LocalBackupSnapshotMeta {
@@ -59,6 +62,7 @@ async function persistSnapshot(data: AppData): Promise<void> {
   const record: LocalBackupRecord = {
     ...snapshotMeta(normalized, savedAt),
     data: normalized,
+    ownerUid: getLocalUserUid(),
   }
 
   const db = await openDb()
@@ -68,6 +72,7 @@ async function persistSnapshot(data: AppData): Promise<void> {
     store.put(record)
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error ?? new Error('IndexedDB write failed'))
+    tx.onabort = () => reject(tx.error ?? new Error('IndexedDB write aborted'))
   })
 
   await pruneOldSnapshots()
@@ -78,7 +83,7 @@ async function pruneOldSnapshots(): Promise<void> {
   if (items.length <= MAX_SNAPSHOTS) return
 
   const db = await openDb()
-  const toDelete = items.slice(MAX_SNAPSHOTS)
+  const toDelete = items.filter((item) => !item.protected).slice(MAX_SNAPSHOTS)
   await new Promise<void>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)
@@ -131,7 +136,9 @@ export async function listLocalBackupSnapshots(): Promise<LocalBackupSnapshotMet
     const store = tx.objectStore(STORE_NAME)
     const request = store.getAll()
     request.onsuccess = () => {
-      const rows = (request.result as LocalBackupRecord[]).map(({ data: _data, ...meta }) => meta)
+      const rows = (request.result as LocalBackupRecord[])
+        .filter((record) => record.ownerUid === undefined || record.ownerUid === getLocalUserUid())
+        .map(({ data: _data, ...meta }) => meta)
       rows.sort((a, b) => new Date(b.savedAt).getTime() - new Date(a.savedAt).getTime())
       resolve(rows)
     }
@@ -148,8 +155,28 @@ export async function loadLocalBackupSnapshot(id: string): Promise<AppData | nul
     const request = tx.objectStore(STORE_NAME).get(id)
     request.onsuccess = () => {
       const record = request.result as LocalBackupRecord | undefined
-      resolve(record ? normalizeData(record.data) : null)
+      resolve(record && (record.ownerUid === undefined || record.ownerUid === getLocalUserUid()) ? normalizeData(record.data) : null)
     }
     request.onerror = () => reject(request.error ?? new Error('IndexedDB read failed'))
   })
+}
+
+/** Required recovery point: failures stop replacement; these are never auto-pruned. */
+export async function persistRecoverySnapshot(data: AppData, ownerUid: string | null, reason: string, protectedCopy = true): Promise<void> {
+  if (typeof indexedDB === 'undefined') throw new Error('Recovery storage unavailable. Data replacement cancelled.')
+  const savedAt = new Date().toISOString()
+  const record: LocalBackupRecord = {
+    ...snapshotMeta(data, savedAt),
+    id: `recovery-${crypto.randomUUID()}`,
+    protected: protectedCopy, ownerUid, reason, data,
+  }
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readwrite')
+    tx.objectStore(STORE_NAME).add(record)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error ?? new Error('Recovery backup failed; replacement cancelled.'))
+    tx.onabort = () => reject(tx.error ?? new Error('Recovery backup aborted; replacement cancelled.'))
+  })
+  if (!protectedCopy) await pruneOldSnapshots()
 }

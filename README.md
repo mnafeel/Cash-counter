@@ -39,3 +39,31 @@ npm run preview
 ```
 
 Data is stored in your browser (`localStorage`) — no server required.
+
+## Cloud backup format
+
+Cloud backups use a small manifest at `users/{uid}/data/latest`. The complete JSON
+is split into UTF-8-safe parts (at most 600 KB each) stored under
+`users/{uid}/snapshots/{backupId}/chunks/{index}`. After every part is uploaded,
+the history manifest and latest pointer are published in one atomic batch. A
+failed upload therefore leaves the previous published backup available. Existing
+single-document backups remain readable; the next successful save uses parts.
+The owner-only recursive Firestore rules already cover these paths.
+
+Deploy the updated app and reload **every device** before saving in the new
+format; older app builds cannot read the manifest. Keep a downloaded local JSON
+backup from the main billing device before rollout. On that device, use Settings
+→ Cloud → Save to cloud after updating. Do not load an older cloud backup to
+resolve a failed upload: it could replace newer local records.
+
+Each backup uses multiple document reads/writes. History parts are retained with
+their snapshot; deleting a snapshot manifest alone does not delete its parts.
+Interrupted uploads can leave unpublished parts that require later cleanup.
+
+Run the chunk regression checks with Node 22.6+:
+
+```bash
+node --experimental-strip-types --test tests/backupChunks.test.mjs
+```
+
+For rollout, recovery, and Firebase billing steps, see [OPERATIONS.md](OPERATIONS.md).

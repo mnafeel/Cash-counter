@@ -22,8 +22,9 @@ import {
   type CreditPaymentInput,
 } from '../utils/purchaseHistory'
 import { notifyDataChanged, notifyDataChangedImmediate } from '../firebase/sync'
-import { markLocalBackupTime } from '../firebase/backup'
-import { queueLocalBackupSnapshot } from './localBackup'
+import { getCloudUser, markLocalBackupTime } from '../firebase/backup'
+import { assertBackupData } from '../firebase/backupChunks'
+import { persistRecoverySnapshot, queueLocalBackupSnapshot } from './localBackup'
 import { applyStoredCustomerReminderToSale, listOpenBillIdsForCustomer } from '../utils/customerReminders'
 import type { BillReminderKind } from '../utils/billReminders'
 import {
@@ -963,6 +964,7 @@ export function isLocalDataOwnedByUser(uid: string): boolean {
 }
 
 export function loadData(): AppData {
+  if (pendingSaveData) return pendingSaveData
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
@@ -970,9 +972,10 @@ export function loadData(): AppData {
       return sealAndPersistDayOpenings(empty)
     }
     const parsed = JSON.parse(raw) as AppData
+    assertBackupData(parsed)
     return sealAndPersistDayOpenings(normalizeData(parsed))
   } catch {
-    return sealAndPersistDayOpenings({ ...defaultData })
+    throw new Error('Local data could not be read. It has been preserved. Do not clear browser storage; recover from a verified backup.')
   }
 }
 
@@ -988,6 +991,11 @@ function sealAndPersistDayOpenings(data: AppData): AppData {
 let pendingSaveData: AppData | null = null
 let saveDataTimer: ReturnType<typeof setTimeout> | null = null
 const SAVE_DEBOUNCE_MS = 100
+const LOCAL_DIRTY_KEY = 'cash-counter-local-unsynced'
+
+export function hasUnsyncedLocalData(): boolean {
+  return pendingSaveData !== null || localStorage.getItem(LOCAL_DIRTY_KEY) === 'true'
+}
 
 /** Force pending localStorage write — call on page hide / before cloud push. */
 export function flushSaveData(options?: { cloudImmediate?: boolean }): void {
@@ -997,11 +1005,12 @@ export function flushSaveData(options?: { cloudImmediate?: boolean }): void {
   }
   if (!pendingSaveData) return
   const data = pendingSaveData
-  pendingSaveData = null
   clearSalePaymentCaches()
   const serialized = JSON.stringify(data)
+  localStorage.setItem(LOCAL_DIRTY_KEY, 'true')
   localStorage.setItem(STORAGE_KEY, serialized)
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, new Date().toISOString())
+  pendingSaveData = null
   queueLocalBackupSnapshot(data)
   if (options?.cloudImmediate) notifyDataChangedImmediate(data)
   else notifyDataChanged(data)
@@ -1033,6 +1042,7 @@ export function getLocalDataUpdatedAt(): string | null {
 }
 
 export function markLocalDataSynced(at: string): void {
+  localStorage.removeItem(LOCAL_DIRTY_KEY)
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, at)
   markLocalBackupTime(at)
 }
@@ -1151,11 +1161,25 @@ export function scheduleSalePaymentEventsMigration(data: AppData): void {
 }
 
 /** Login restore — replace local with full cloud copy (no merge). */
-export function applyFullRemoteCloudData(data: AppData, backupAt: string, uid?: string): AppData {
+export async function applyFullRemoteCloudData(data: AppData, backupAt: string, uid?: string, options?: { automatic?: boolean }): Promise<AppData> {
+  assertBackupData(data)
+  flushSaveData()
+  const before = localStorage.getItem(STORAGE_KEY)
+  const owner = getLocalUserUid()
+  if (before) {
+    const protect = !options?.automatic || hasUnsyncedLocalData() || owner !== uid
+    await persistRecoverySnapshot(JSON.parse(before) as AppData, owner ?? uid ?? null, 'Before cloud restore', protect)
+  }
+  // A bill saved while IndexedDB was committing must not be overwritten.
+  if (pendingSaveData || before !== localStorage.getItem(STORAGE_KEY) || owner !== getLocalUserUid()) {
+    throw new Error('Local data changed during restore. Restore cancelled; retry when billing is idle.')
+  }
+  if (uid && getCloudUser()?.uid !== uid) throw new Error('Account changed during restore. Local data has not been replaced.')
   const next = normalizeData(data)
   clearSalePaymentCaches()
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   localStorage.setItem(LOCAL_UPDATED_AT_KEY, backupAt)
+  localStorage.removeItem(LOCAL_DIRTY_KEY)
   markLocalBackupTime(backupAt)
   if (uid) setLocalUserUid(uid)
   scheduleSalePaymentEventsMigration(next)

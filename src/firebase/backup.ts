@@ -5,7 +5,8 @@ import {
   signOut,
   type User,
 } from 'firebase/auth'
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocFromServer, onSnapshot, serverTimestamp, writeBatch, runTransaction } from 'firebase/firestore'
+import { assertBackupData, backupChecksum, decodeBackup, encodeBackup, parseBackupStorage, verifyBackupChecksum } from './backupChunks'
 import type { AppData } from '../types'
 import {
   getBankBalance,
@@ -247,41 +248,83 @@ export function remoteIsAheadOfLocal(local: AppData, remote: AppData): boolean {
   )
 }
 
-export async function backupAppData(source?: AppData): Promise<string> {
+export async function backupAppData(source?: AppData, options?: { allowOverwrite?: boolean }): Promise<string> {
   const user = requireCloudUser()
 
+  const baseline = await getDocFromServer(latestDocRef(user.uid))
+  const baselineVersion = JSON.stringify(baseline.data() ?? null)
+  if (baseline.exists() && !options?.allowOverwrite && baseline.data()._backupAt !== getLocalLastBackupTime()) {
+    throw new Error('Cloud has a backup this device has not loaded. Automatic overwrite stopped; review and load the cloud backup first.')
+  }
   const backedUpAt = new Date().toISOString()
   const cleanData = stripUndefined(normalizeData(source ?? loadData()))
 
+  // Immutable parts are uploaded first. Readers only see a new backup after all
+  // parts exist and the latest pointer + history manifest are committed together.
+  const backupId = doc(collection(getFirebaseDb(), 'users', user.uid, 'snapshots')).id
+  const { storage, chunks } = encodeBackup(cleanData, backupId)
+  storage.sha256 = await backupChecksum(chunks)
   const payload = {
-    ...cleanData,
+    _storage: storage,
+    _schemaVersion: 1,
     _backupAt: backedUpAt,
     _updatedAt: serverTimestamp(),
     _totals: cloudBackupTotals(cleanData),
   }
 
+  let legacyManifest: Record<string, unknown> | null = null
+  const versions = [{ id: backupId, chunks }]
+  if (baseline.exists() && !baseline.data()._storage) {
+    const { _backupAt, _updatedAt: _ignored, _totals, ...legacyData } = baseline.data()
+    void _ignored
+    assertBackupData(legacyData)
+    const legacy = encodeBackup(legacyData, `${backupId}-legacy`)
+    legacy.storage.sha256 = await backupChecksum(legacy.chunks)
+    versions.push({ id: legacy.storage.backupId, chunks: legacy.chunks })
+    legacyManifest = { _storage: legacy.storage, _backupAt, _updatedAt: serverTimestamp(),
+      ...(_totals !== undefined ? { _totals } : {}) }
+  }
+
   try {
-    await setDoc(latestDocRef(user.uid), payload)
-    await setDoc(snapshotDocRef(user.uid, backedUpAt.replace(/[:.]/g, '-')), {
-      ...cleanData,
-      _backupAt: backedUpAt,
-      _updatedAt: backedUpAt,
-      _totals: cloudBackupTotals(cleanData),
+    // Keep each request well below Firestore's 10 MiB request limit.
+    for (const version of versions) {
+      for (let offset = 0; offset < version.chunks.length; offset += 8) {
+        const batch = writeBatch(getFirebaseDb())
+        version.chunks.slice(offset, offset + 8).forEach((body, index) => {
+          batch.set(doc(snapshotDocRef(user.uid, version.id), 'chunks', String(offset + index)), { body })
+        })
+        await batch.commit()
+      }
+    }
+    await runTransaction(getFirebaseDb(), async (publish) => {
+      const current = await publish.get(latestDocRef(user.uid))
+      if (JSON.stringify(current.data() ?? null) !== baselineVersion) {
+        throw new Error('Cloud changed during this backup. Local data is safe; reload cloud status before retrying.')
+      }
+      // Preserve the previous single-document backup on its first migration.
+      if (legacyManifest) {
+        publish.set(snapshotDocRef(user.uid, `${backupId}-legacy`), legacyManifest)
+      }
+      publish.set(snapshotDocRef(user.uid, backupId), payload)
+      publish.set(latestDocRef(user.uid), payload)
     })
   } catch (err) {
     throw new Error(formatFirebaseError(err))
   }
 
-  const verified = await fetchRemoteAppData()
+  // Verify this immutable version from the server, never an optimistic local write.
+  const verifiedSnap = await getDocFromServer(snapshotDocRef(user.uid, backupId))
+  const verified = verifiedSnap.exists()
+    ? await parseCloudPayload(user.uid, verifiedSnap.data(), true)
+    : null
   const uploadedTotals = cloudBackupTotals(cleanData)
-  const remoteTotals = verified?.totals ?? (verified ? cloudBackupTotals(normalizeData(verified.data)) : null)
+  const remoteTotals = verified ? cloudBackupTotals(normalizeData(verified.data)) : null
   if (!verified || !remoteTotals || !cloudTotalsMatch(uploadedTotals, remoteTotals)) {
     throw new Error(
       'Cloud verify failed — uploaded cash/bills did not match. Check internet and tap Save to cloud again.',
     )
   }
 
-  setLocalLastBackupTime(backedUpAt)
   return backedUpAt
 }
 
@@ -292,13 +335,10 @@ export async function restoreAppData(): Promise<AppData | null> {
     const snap = await getDoc(latestDocRef(user.uid))
     if (!snap.exists()) return null
 
-    const raw = snap.data() as AppData & { _backupAt?: string; _updatedAt?: unknown }
-    const { _backupAt: _ignoredAt, _updatedAt: _ignoredUpdated, ...rest } = raw
-    void _ignoredAt
-    void _ignoredUpdated
-
-    if (raw._backupAt) setLocalLastBackupTime(raw._backupAt)
-    return rest as AppData
+    const payload = await parseCloudPayload(user.uid, snap.data())
+    if (!payload) return null
+    setLocalLastBackupTime(payload.backupAt)
+    return payload.data
   } catch (err) {
     throw new Error(formatFirebaseError(err))
   }
@@ -337,13 +377,40 @@ function parseCloudTotals(raw: unknown): CloudBackupTotals | undefined {
 }
 
 /** Parse cloud doc without normalizing — normalize only when applying to local storage. */
-function parseCloudPayload(
-  raw: AppData & { _backupAt?: string; _updatedAt?: unknown; _totals?: unknown },
-): CloudRemotePayload | null {
-  if (!raw._backupAt) return null
-  const { _backupAt: backupAt, _updatedAt: _ignoredUpdated, _totals, ...rest } = raw
+async function parseCloudPayload(
+  uid: string,
+  raw: Record<string, unknown>,
+  fromServer = false,
+): Promise<CloudRemotePayload | null> {
+  if (typeof raw._backupAt !== 'string' || !Number.isFinite(Date.parse(raw._backupAt))) {
+    throw new Error('Invalid cloud backup timestamp. Local data has not been replaced.')
+  }
+  if (raw._schemaVersion !== undefined && raw._schemaVersion !== 1) {
+    throw new Error('This backup requires a newer app version. Update the app before restoring.')
+  }
+  const { _backupAt: backupAt, _updatedAt: _ignoredUpdated, _schemaVersion: _ignoredSchema, _totals, _storage, ...rest } = raw
+  void _ignoredSchema
   void _ignoredUpdated
-  return { data: rest as AppData, backupAt, totals: parseCloudTotals(_totals) }
+  let data = rest
+  if (_storage !== undefined) {
+    const storage = parseBackupStorage(_storage)
+    const chunks: unknown[] = []
+    // Bound concurrent reads for large backups and retain manifest order.
+    for (let offset = 0; offset < storage.chunkCount; offset += 8) {
+      const parts = await Promise.all(
+        Array.from({ length: Math.min(8, storage.chunkCount - offset) }, async (_, index) => {
+          const ref = doc(snapshotDocRef(uid, storage.backupId), 'chunks', String(offset + index))
+          const snap = await (fromServer ? getDocFromServer(ref) : getDoc(ref))
+          return snap.exists() ? snap.data().body : undefined
+        }),
+      )
+      chunks.push(...parts)
+    }
+    await verifyBackupChecksum(storage, chunks)
+    data = decodeBackup(storage, chunks)
+  }
+  assertBackupData(data)
+  return { data: data as unknown as AppData, backupAt, totals: parseCloudTotals(_totals) }
 }
 
 /** Live listener — fires when another device backs up to cloud. */
@@ -354,33 +421,37 @@ export function subscribeToCloudData(
   const user = getCloudUser()
   if (!user || !isFirebaseConfigured()) return () => {}
 
-  return onSnapshot(
+  let generation = 0
+  let active = true
+  const unsubscribe = onSnapshot(
     latestDocRef(user.uid),
+    { includeMetadataChanges: true },
     (snap) => {
-      if (!snap.exists()) return
-      const parsed = parseCloudPayload(
-        snap.data() as AppData & { _backupAt?: string; _updatedAt?: unknown; _totals?: unknown },
-      )
-      if (!parsed) return
-      onUpdate(parsed)
+      const current = ++generation
+      if (!snap.exists() || snap.metadata.hasPendingWrites) return
+      void parseCloudPayload(user.uid, snap.data()).then((parsed) => {
+        if (active && current === generation && parsed) onUpdate(parsed)
+      }).catch((error: unknown) => {
+        if (active && current === generation) onError?.(formatFirebaseError(error))
+      })
     },
     (error) => {
       onError?.(formatFirebaseError(error))
     },
   )
+  return () => {
+    active = false
+    generation++
+    unsubscribe()
+  }
 }
 
 export async function fetchRemoteAppData(): Promise<CloudRemotePayload | null> {
   const user = getCloudUser()
   if (!user) return null
 
-  try {
-    const snap = await getDoc(latestDocRef(user.uid))
-    if (!snap.exists()) return null
-    return parseCloudPayload(
-      snap.data() as AppData & { _backupAt?: string; _updatedAt?: unknown; _totals?: unknown },
-    )
-  } catch {
-    return null
-  }
+  // A read failure must not be mistaken for an empty cloud account.
+  const snap = await getDocFromServer(latestDocRef(user.uid))
+  if (!snap.exists()) return null
+  return parseCloudPayload(user.uid, snap.data())
 }
