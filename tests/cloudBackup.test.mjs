@@ -72,8 +72,8 @@ test('large backup publishes small documents, restores completely, and archives 
   await api.backupAppData(data)
   assert.ok(state.docs.get(latest)._storage.sha256)
   assert.deepEqual((await api.fetchRemoteAppData()).data, data)
-  const legacy = [...state.docs.entries()].find(([path]) => /snapshots\/version1-legacy$/.test(path))[1]
-  const stored = [...Array(legacy._storage.chunkCount)].map((_, i) => state.docs.get(`users/owner/snapshots/version1-legacy/chunks/${i}`).body)
+  const legacy = [...state.docs.entries()].find(([path]) => /snapshots\/version1-previous$/.test(path))[1]
+  const stored = [...Array(legacy._storage.chunkCount)].map((_, i) => state.docs.get(`users/owner/snapshots/version1-previous/chunks/${i}`).body)
   assert.deepEqual(chunks.decodeBackup(legacy._storage, stored), { sales: old.sales, expenses: [] })
   for (const value of state.docs.values()) assert.ok(Buffer.byteLength(JSON.stringify(value)) < 1048576)
 })
@@ -85,16 +85,30 @@ test('failed chunk upload leaves the prior latest backup unchanged', async () =>
   assert.deepEqual(state.docs.get(latest), old)
 })
 
-test('concurrent cloud write cancels publication', async () => {
+test('concurrent cloud write is archived and main-device backup completes', async () => {
   const { state, api, latest } = await harness()
   state.conflict = true
-  await assert.rejects(api.backupAppData({ sales: [], expenses: [] }), /changed during/)
-  assert.equal(state.docs.get(latest)._backupAt, '2026-10-02T00:00:00Z')
+  await api.backupAppData({ sales: [], expenses: [] })
+  assert.ok(state.docs.get(latest)._storage.sha256)
+  assert.equal(state.docs.get('users/owner/snapshots/version1-previous')._backupAt, '2026-10-02T00:00:00Z')
 })
 
-test('a stale device cannot automatically overwrite the cloud', async () => {
+test('main-device backup works when its local backup timestamp is missing', async () => {
   const { state, api, local } = await harness()
   local.clear()
-  await assert.rejects(api.backupAppData({ sales: [], expenses: [] }), /Automatic overwrite stopped/)
-  assert.equal(state.writes, 0)
+  await api.backupAppData({ sales: [], expenses: [] })
+  assert.ok(state.writes > 0)
+  assert.ok(state.docs.has('users/owner/snapshots/version1-previous'))
+})
+
+test('replacing a chunked backup retains its original chunks and recoverable manifest', async () => {
+  const { state, api, latest } = await harness()
+  const first = { sales: [{ id: 'first' }], expenses: [] }
+  await api.backupAppData(first)
+  const manifest = structuredClone(state.docs.get(latest))
+  const oldChunks = [...Array(manifest._storage.chunkCount)].map((_, i) => state.docs.get(`users/owner/snapshots/${manifest._storage.backupId}/chunks/${i}`).body)
+  await api.backupAppData({ sales: [{ id: 'second' }], expenses: [] })
+  assert.deepEqual(state.docs.get('users/owner/snapshots/version2-previous'), manifest)
+  assert.deepEqual(chunks.decodeBackup(manifest._storage, oldChunks), first)
+  assert.deepEqual(state.docs.get(`users/owner/snapshots/${manifest._storage.backupId}/chunks/0`).body, oldChunks[0])
 })

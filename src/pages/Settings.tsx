@@ -108,6 +108,7 @@ import BillReminderControl from '../components/BillReminderControl'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import CloudAccountSettings from '../components/CloudAccountSettings'
+import CloudUsageSettings from '../components/CloudUsageSettings'
 import CloudLoginForm from '../components/CloudLoginForm'
 import CloudPinSettings from '../components/CloudPinSettings'
 import './Settings.css'
@@ -2843,10 +2844,13 @@ export default function Settings({
             ) : null}
 
             {cloudUser ? (
-              <CloudAccountSettings
-                cloudUser={cloudUser}
-                historyRefreshKey={accountHistoryRefreshKey}
-              />
+              <>
+                <CloudUsageSettings uid={cloudUser.uid} />
+                <CloudAccountSettings
+                  cloudUser={cloudUser}
+                  historyRefreshKey={accountHistoryRefreshKey}
+                />
+              </>
             ) : null}
 
             <CloudPinSettings

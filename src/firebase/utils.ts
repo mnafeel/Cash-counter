@@ -53,6 +53,16 @@ export function formatFirebaseError(
         if (message && message !== code) return message
       }
     }
+    if (code === 'storage/quota-exceeded' ||
+      (code.endsWith('resource-exhausted') && /(?:storage|disk).*(?:full|capacity|quota)|(?:storage|disk) quota/i.test(message))) {
+      return 'Cloud storage is full'
+    }
+    if (code.endsWith('resource-exhausted')) {
+      return 'Cloud usage limit reached. Check Firebase quotas and billing; your local data is unchanged.'
+    }
+    if (/billing.*(?:disabled|suspended|inactive)|payment.*(?:failed|overdue|declined)/i.test(message)) {
+      return 'Firebase billing needs attention. Open Settings → Cloud → Cloud Billing to review payment and account status.'
+    }
     if (code === 'permission-denied') {
       return 'Firestore permission denied — publish rules from firebase/firestore.rules.'
     }

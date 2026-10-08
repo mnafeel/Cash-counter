@@ -11,6 +11,10 @@ export default function CloudStatusNotifier() {
   useEffect(() => {
     return subscribeBackupStatus((message, isError) => {
       if (!message.trim()) return
+      if (!isError && message.startsWith('Backed up')) {
+        setAlert(null)
+        return
+      }
 
       const error = Boolean(isError)
       const important =
@@ -40,8 +44,8 @@ export default function CloudStatusNotifier() {
   return (
     <div
       className={`cloud-status-notifier ${alert.isError ? 'cloud-status-notifier--error' : 'cloud-status-notifier--info'}`}
-      role="status"
-      aria-live="polite"
+      role={alert.isError ? 'alert' : 'status'}
+      aria-live={alert.isError ? 'assertive' : 'polite'}
     >
       <span className="cloud-status-notifier-icon">{alert.isError ? '⚠️' : '☁️'}</span>
       <span className="cloud-status-notifier-text">{alert.message}</span>

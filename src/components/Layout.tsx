@@ -18,6 +18,7 @@ import {
 } from '../utils/pinProtectedRoutes'
 import NotificationsBell from './NotificationsBell'
 import CloudStatusNotifier from './CloudStatusNotifier'
+import CloudBillingBanner from './CloudBillingBanner'
 import OpenTimingNotifier from './OpenTimingNotifier'
 import PinLockCountdown from './PinLockCountdown'
 import SidebarCloudLogout from './SidebarCloudLogout'
@@ -301,6 +302,7 @@ export default function Layout() {
       </aside>
 
       <div className={`layout-shell${navTransition ? ' layout-shell--switching' : ''}`}>
+        <CloudBillingBanner />
         <header className="app-topbar">
           <button
             type="button"

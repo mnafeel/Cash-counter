@@ -248,14 +248,9 @@ export function remoteIsAheadOfLocal(local: AppData, remote: AppData): boolean {
   )
 }
 
-export async function backupAppData(source?: AppData, options?: { allowOverwrite?: boolean }): Promise<string> {
+export async function backupAppData(source?: AppData): Promise<string> {
   const user = requireCloudUser()
 
-  const baseline = await getDocFromServer(latestDocRef(user.uid))
-  const baselineVersion = JSON.stringify(baseline.data() ?? null)
-  if (baseline.exists() && !options?.allowOverwrite && baseline.data()._backupAt !== getLocalLastBackupTime()) {
-    throw new Error('Cloud has a backup this device has not loaded. Automatic overwrite stopped; review and load the cloud backup first.')
-  }
   const backedUpAt = new Date().toISOString()
   const cleanData = stripUndefined(normalizeData(source ?? loadData()))
 
@@ -272,38 +267,44 @@ export async function backupAppData(source?: AppData, options?: { allowOverwrite
     _totals: cloudBackupTotals(cleanData),
   }
 
-  let legacyManifest: Record<string, unknown> | null = null
-  const versions = [{ id: backupId, chunks }]
-  if (baseline.exists() && !baseline.data()._storage) {
-    const { _backupAt, _updatedAt: _ignored, _totals, ...legacyData } = baseline.data()
-    void _ignored
-    assertBackupData(legacyData)
-    const legacy = encodeBackup(legacyData, `${backupId}-legacy`)
-    legacy.storage.sha256 = await backupChecksum(legacy.chunks)
-    versions.push({ id: legacy.storage.backupId, chunks: legacy.chunks })
-    legacyManifest = { _storage: legacy.storage, _backupAt, _updatedAt: serverTimestamp(),
-      ...(_totals !== undefined ? { _totals } : {}) }
-  }
-
   try {
     // Keep each request well below Firestore's 10 MiB request limit.
-    for (const version of versions) {
-      for (let offset = 0; offset < version.chunks.length; offset += 8) {
-        const batch = writeBatch(getFirebaseDb())
-        version.chunks.slice(offset, offset + 8).forEach((body, index) => {
-          batch.set(doc(snapshotDocRef(user.uid, version.id), 'chunks', String(offset + index)), { body })
-        })
-        await batch.commit()
-      }
+    for (let offset = 0; offset < chunks.length; offset += 8) {
+      const batch = writeBatch(getFirebaseDb())
+      chunks.slice(offset, offset + 8).forEach((body, index) => {
+        batch.set(doc(snapshotDocRef(user.uid, backupId), 'chunks', String(offset + index)), { body })
+      })
+      await batch.commit()
     }
     await runTransaction(getFirebaseDb(), async (publish) => {
       const current = await publish.get(latestDocRef(user.uid))
-      if (JSON.stringify(current.data() ?? null) !== baselineVersion) {
-        throw new Error('Cloud changed during this backup. Local data is safe; reload cloud status before retrying.')
-      }
-      // Preserve the previous single-document backup on its first migration.
-      if (legacyManifest) {
-        publish.set(snapshotDocRef(user.uid, `${backupId}-legacy`), legacyManifest)
+      // The main billing device remains the source of truth. A concurrent save
+      // retries this transaction automatically; archive what it actually replaces.
+      if (current.exists()) {
+        const previous = current.data()
+        if (previous._schemaVersion !== undefined && previous._schemaVersion !== 1) {
+          throw new Error('Update this app before saving to a newer cloud backup format.')
+        }
+        const previousId = `${backupId}-previous`
+        if (previous._storage) {
+          parseBackupStorage(previous._storage)
+          publish.set(snapshotDocRef(user.uid, previousId), previous)
+        } else {
+          const { _backupAt, _updatedAt: _ignored, _totals, ...legacyData } = previous
+          void _ignored
+          assertBackupData(legacyData)
+          const legacy = encodeBackup(legacyData, previousId)
+          legacy.storage.sha256 = await backupChecksum(legacy.chunks)
+          legacy.chunks.forEach((body, index) => {
+            publish.set(doc(snapshotDocRef(user.uid, previousId), 'chunks', String(index)), { body })
+          })
+          publish.set(snapshotDocRef(user.uid, previousId), {
+            _storage: legacy.storage,
+            _backupAt: typeof _backupAt === 'string' ? _backupAt : backedUpAt,
+            _updatedAt: serverTimestamp(),
+            ...(_totals !== undefined ? { _totals } : {}),
+          })
+        }
       }
       publish.set(snapshotDocRef(user.uid, backupId), payload)
       publish.set(latestDocRef(user.uid), payload)

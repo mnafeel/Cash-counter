@@ -1,0 +1,17 @@
+.cloud-usage-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.cloud-usage-heading h3, .cloud-usage h4 { margin: 0 0 6px; }
+.cloud-usage-plan { display: flex; flex-direction: column; gap: 5px; margin: 12px 0 20px; }
+.cloud-usage-plan span, .cloud-usage small, .cloud-usage-note { font-size: .8rem; opacity: .75; line-height: 1.5; }
+.cloud-usage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 24px; margin: 20px 0; }
+.cloud-usage-grid dt { font-size: .85rem; opacity: .8; }
+.cloud-usage-grid dd { margin: 4px 0; font-size: 1.2rem; font-weight: 650; }
+.cloud-usage-cost, .cloud-usage-payment { border-top: 1px solid rgba(128,128,128,.25); padding-top: 18px; margin-top: 18px; }
+.cloud-usage-cost > strong { font-size: 1.5rem; }
+.cloud-usage-cost p, .cloud-usage-payment p { font-size: .88rem; line-height: 1.5; }
+.cloud-usage-cost ul { list-style: none; padding: 0; }
+.cloud-usage-cost li { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; }
+.cloud-usage .cloud-card-actions { flex-wrap: wrap; margin-top: 20px; }
+.cloud-billing-banner { flex-shrink: 0; position: sticky; top: 0; z-index: 1190; padding: 10px 16px; background: #512216; color: #fff2de; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; font-size: .88rem; }
+.cloud-billing-banner p { margin: 0; flex: 1 1 240px; }
+.cloud-billing-banner a { color: inherit; text-decoration: underline; }
+@media(max-width: 420px) { .cloud-usage-grid { grid-template-columns: 1fr; } }

@@ -652,7 +652,7 @@ export async function backupNow(options?: { force?: boolean }): Promise<string> 
       }
     }
     pendingData = null
-    const at = await backupAppData(data, { allowOverwrite: options?.force })
+    const at = await backupAppData(data)
     flushSaveData()
     if (getCloudUser()?.uid !== user.uid) throw new Error('Account changed during backup. Local data was not marked as synced.')
     markLocalBackupTime(at)

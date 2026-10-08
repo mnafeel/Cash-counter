@@ -29,10 +29,12 @@ No live deployment or database migration was performed while adding these guards
 - Backups use immutable chunks with byte-length and SHA-256 verification. Old
   backups without a checksum remain readable; only newer backups have checksum
   protection. A first migration also archives the previous legacy document.
-- Publication checks that the cloud version has not changed during upload.
-  Automatic uploads stop when the device has not loaded the current cloud
-  version. Explicit manual overwrite still exists and should be used only after
-  reviewing the cloud/local difference and exporting a recovery copy.
+- The main device publishes its backup in a Firestore transaction. Each
+  publication archives the exact cloud version it replaces, including a save
+  that arrived during chunk upload. Firestore retries concurrent transactions;
+  metadata changes do not block normal backups. This is whole-device backup,
+  not record-level merging: use one main writing device. Earlier versions remain
+  under `users/{uid}/snapshots`; do not delete their referenced chunks.
 - Backup completion does not mark edits made during that upload as synchronized.
   A persistent dirty marker survives page reloads. Manual and automatic uploads
   cannot overlap within one running app instance.
@@ -117,3 +119,60 @@ npm run build
 The unit/regression tests use simulated cloud and local storage failures. They do
 not replace Firebase Emulator tests or a real restore drill. The full TypeScript
 and production build must complete successfully before deployment.
+
+## Settings → Cloud usage and billing service
+
+The new panel calls `getCloudUsage` in `us-central1`. GitHub Pages publishing
+only deploys the browser application: deploy this callable separately after
+`cd functions && npm ci && npm run build`, using
+`firebase deploy --only functions:getCloudUsage --project cash-counter-84178`.
+It does not change customer records or database rules. The service caches
+project reports in the private `cloudAdmin/usageCache` document for 15 minutes;
+existing Firestore rules deny browser access to all `cloudAdmin` documents.
+
+Configure server parameters in the ignored `functions/.env.cash-counter-84178`:
+
+```
+CLOUD_BILLING_VIEWER_UIDS=your-authorized-owner-firebase-auth-uid
+CLOUD_BILLING_EXPORT_TABLE=billing-project.dataset.gcp_billing_export_v1_ACCOUNT
+```
+
+Only listed Firebase Auth UIDs or a trusted `cloudBillingAdmin` custom claim
+may read financial details. Never grant this claim from a browser. Use a
+runtime service account with Monitoring Viewer, project billing-info read
+permission (`resourcemanager.projects.get`), BigQuery Job User on the query
+project, BigQuery Data Viewer on the billing export dataset, and Firestore
+access for the private cache. Enable the Cloud Monitoring, Cloud Billing and
+BigQuery APIs. Keep billing export access restricted to this service; do not
+put credentials or billing account data into Vite environment variables.
+
+Enable the standard Cloud Billing export to BigQuery and supply its exact table
+name. Costs are scoped to this project and include exported credits, grouped
+by service/currency. They are month-to-date usage costs, not invoices or amounts
+due. Queries have a 100 MB maximum billed scan; a larger export may require a
+partitioned/filtered reporting table. The function shows unavailable instead of
+zero if permissions, exports, metrics, or queries are missing. Reporting is
+delayed, and this panel/its backend have their own Firebase usage costs.
+
+Top-of-app alerts show a confirmed disabled billing state or a trusted payment
+notice. Google's project Billing API does not supply the current invoice balance
+or card/UPI payment failures. To show these inside the app, an administrator or
+trusted accounting integration must write `cloudAdmin/paymentNotice` with:
+
+```
+{ "checkedAt": "current ISO timestamp", "status": "past_due",
+  "outstandingAmount": 250, "currency": "INR",
+  "message": "Optional important billing notification" }
+```
+
+Allowed payment statuses are `paid`, `past_due`, and `payment_failed`. Notices
+expire after 72 hours; refresh them from a verified source and update after
+payment. Unknown status always directs the owner to Cloud Billing. A missing
+alert does not confirm that payment is settled. Budget alerts also do not mean
+that an invoice is overdue. Configure Google Cloud's own billing email/budget
+notifications independently.
+
+Blaze retains Firestore's 1 MiB per-document limit; chunked backups must stay
+in place. Confirmed storage-capacity errors say “Cloud storage is full”. Other
+quota errors remain distinct because reads/writes can be limited even when
+storage has space. No retention cleanup is introduced by this change.

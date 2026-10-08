@@ -8,6 +8,7 @@ import { updateCloudAccount } from './cloudAccount'
 initializeApp()
 
 export { updateCloudAccount }
+export { getCloudUsage } from './cloudUsage'
 
 function hashApiKey(apiKey: string): string {
   return createHash('sha256').update(apiKey.trim()).digest('hex')
