@@ -6,7 +6,7 @@ import type {
   SaleReturnEntry,
 } from '../types'
 import { formatMoney } from './format'
-import { formatSaleReturnLine, formatReturnPiecesSummary } from './saleReturns'
+import { formatSaleReturnLine } from './saleReturns'
 import { memoByDataRef } from './memoByDataRef'
 
 export function getAdvanceSalesCountMode(data: AppData): 'on_bill' | 'on_receive' {
@@ -1026,6 +1026,24 @@ export interface CustomerReturnHistoryRow {
   returnEntries?: SaleReturnEntry[]
 }
 
+function formatReturnPiecesSummary(
+  entries: Array<Pick<SaleReturnEntry, 'itemName' | 'quantity'>>,
+): string {
+  return entries
+    .filter((row) => row.itemName.trim() && row.quantity > 0)
+    .map((row) => {
+      const qty = Number.isInteger(row.quantity) ? String(row.quantity) : String(row.quantity)
+      const pieces = row.quantity === 1 ? 'piece' : 'pieces'
+      return `${row.itemName.trim()} · ${qty} ${pieces}`
+    })
+    .join(', ')
+}
+
+function advanceReturnEntries(row: CustomerAdvanceLedgerEntry): SaleReturnEntry[] {
+  const extra = row as CustomerAdvanceLedgerEntry & { returnEntries?: SaleReturnEntry[] }
+  return extra.returnEntries ?? []
+}
+
 function buildCustomerReturnHistoryUncached(data: AppData): CustomerReturnHistoryRow[] {
   const rows: CustomerReturnHistoryRow[] = []
   for (const sale of data.sales) {
@@ -1050,7 +1068,7 @@ function buildCustomerReturnHistoryUncached(data: AppData): CustomerReturnHistor
   }
   for (const row of data.customerAdvances ?? []) {
     if (row.kind !== 'from_return') continue
-    const entries = row.returnEntries ?? []
+    const entries = advanceReturnEntries(row)
     rows.push({
       id: row.returnEntryId ?? row.id,
       advanceId: row.id,

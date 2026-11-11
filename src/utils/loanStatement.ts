@@ -65,11 +65,6 @@ function samePerson(name: string, query: string): boolean {
   return name.trim().toLowerCase() === query.trim().toLowerCase()
 }
 
-function fileSafeName(name: string): string {
-  const cleaned = name.trim().replace(/[^\w]+/g, '-').replace(/^-|-$/g, '')
-  return cleaned || 'loan-statement'
-}
-
 export function listLoanPeople(data: AppData): LoanPersonOption[] {
   const byPerson = new Map<string, LoanPersonOption>()
   for (const loan of data.loans ?? []) {
@@ -374,7 +369,5 @@ export function buildLoanStatementHtml(statement: LoanStatement): string {
 }
 
 export function printLoanStatement(statement: LoanStatement): void {
-  printHtmlReport(buildLoanStatementHtml(statement), {
-    pdfFileName: `loan-statement-${fileSafeName(statement.personName)}-${statement.fromDate}.pdf`,
-  })
+  printHtmlReport(buildLoanStatementHtml(statement))
 }
