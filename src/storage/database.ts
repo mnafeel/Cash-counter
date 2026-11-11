@@ -48,7 +48,12 @@ import {
 import type { SalePaymentEvent } from '../types'
 import { normalizePin } from '../utils/numpad'
 import { normalizeTheme } from '../utils/theme'
-import { loanBankToBalance, loanCashToDrawer, loanRemainingAmount } from '../utils/loanLedger'
+import {
+  loanBankToBalance,
+  loanCashToDrawer,
+  loanRemainingAmount,
+  loanSettlementEvents,
+} from '../utils/loanLedger'
 import { getStaffMonthSummary, getStaffMonthExcessLeft, getStaffMonthUnappliedLeft, getStaffUnappliedSalaryBalance, isStaffLinkableExpense, type SalaryMonthKey } from '../utils/staffLedger'
 import { getStaffCommissionSummary, getStaffPayoutAllocation } from '../utils/staffCommission'
 import { validateStaffLeaveInput, resolveStaffSalaryDays, normalizeStaffLeaveTypeValue, isSundayDate, isRedundantStaffLeaveRecord } from '../utils/staffAttendance'
@@ -2181,6 +2186,35 @@ export function settleLoan(
   )
   const next = { ...data, loans: nextLoans }
   saveData(next)
+  return next
+}
+
+export function deleteLoanSettlement(data: AppData, loanId: string, eventId: string): AppData {
+  const loan = (data.loans ?? []).find((entry) => entry.id === loanId)
+  if (!loan) return data
+
+  const events = loanSettlementEvents(loan)
+  const nextEvents = events.filter((event) => event.id !== eventId)
+  if (nextEvents.length === events.length) return data
+
+  const paidAmount = Math.round(nextEvents.reduce((sum, event) => sum + event.amount, 0) * 100) / 100
+  const fullySettled = paidAmount >= loan.amount - 0.01
+  const lastEvent = nextEvents[nextEvents.length - 1]
+
+  const nextLoans = (data.loans ?? []).map((entry) =>
+    entry.id === loanId
+      ? {
+          ...entry,
+          paidAmount,
+          settlementEvents: nextEvents,
+          status: fullySettled ? ('settled' as const) : ('pending' as const),
+          settledAt: fullySettled ? lastEvent?.at : undefined,
+          settlementPaySource: lastEvent?.paySource,
+        }
+      : entry,
+  )
+  const next = { ...data, loans: nextLoans }
+  saveData(next, { cloudImmediate: true })
   return next
 }
 

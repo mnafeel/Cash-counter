@@ -1549,6 +1549,9 @@ export default function ReportsPanel({
                             {row.advanceApplied != null && row.advanceApplied > 0.01
                               ? ` · Advance in sale ${formatMoney(row.advanceApplied)}`
                               : ''}
+                            {row.advanceAppliedOnly != null && row.advanceAppliedOnly > 0.01
+                              ? ` · Advance is applied ${formatMoney(row.advanceAppliedOnly)}`
+                              : ''}
                           </>
                         ) : (
                           <>
@@ -1557,6 +1560,9 @@ export default function ReportsPanel({
                             {formatCollectedSalesBreakdown(row.cashTotal, row.bankTotal)}
                             {row.advanceApplied != null && row.advanceApplied > 0.01
                               ? ` · Advance in sale ${formatMoney(row.advanceApplied)}`
+                              : ''}
+                            {row.advanceAppliedOnly != null && row.advanceAppliedOnly > 0.01
+                              ? ` · Advance is applied ${formatMoney(row.advanceAppliedOnly)}`
                               : ''}
                           </>
                         )}

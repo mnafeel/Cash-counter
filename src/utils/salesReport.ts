@@ -19,7 +19,11 @@ import {
   saleCreditBalanceDue,
   salePendingLegAmount,
 } from './saleReturns'
-import { listAdvanceSalesForReport, saleAdvanceSalesCountAmount } from './customerAdvance'
+import {
+  listAdvanceSalesForReport,
+  saleAdvanceAppliedFromReturnAmount,
+  saleAdvanceSalesCountAmount,
+} from './customerAdvance'
 
 export type ReportPeriod = 'day' | 'week' | 'month'
 export type ReportSort = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc'
@@ -85,6 +89,8 @@ export type SalesBillRow = {
   advanceRemaining?: number
   /** Portion of this advance already applied to bills. */
   advanceApplied?: number
+  /** Return-credit applied to this bill — shown, not added to Sales. */
+  advanceAppliedOnly?: number
 }
 
 export interface SalesBillSummary {
@@ -224,6 +230,41 @@ function saleAdvanceAppliedForSalesTotal(
   }
 
   return 0
+}
+
+function saleAdvanceFromReturnForFilter(
+  sale: Sale,
+  filter?: SalesReportFilter,
+  data?: AppData,
+): number {
+  if (!data) return 0
+  const fromReturn = saleAdvanceAppliedFromReturnAmount(data, sale)
+  if (fromReturn <= 0.01) return 0
+  if (!filter?.fromDate && !filter?.toDate) return fromReturn
+  if (filter.sameDayCreatedAndPaid) {
+    return isInDateRange(sale.createdAt, filter) ? fromReturn : 0
+  }
+  const mode = filter.dateMode ?? 'collected'
+  if (mode === 'created' || mode === 'collected') {
+    return isInDateRange(sale.createdAt, filter) ? fromReturn : 0
+  }
+  return 0
+}
+
+function salesAdvanceBillNote(
+  sale: Sale,
+  countInSales: number,
+  fromReturn: number,
+): string {
+  const parts: string[] = []
+  if (countInSales > 0.01) parts.push(`Advance in sale ${formatMoney(countInSales)}`)
+  if (fromReturn > 0.01) parts.push(`Advance is applied ${formatMoney(fromReturn)}`)
+  else if ((sale.customerAdvanceApplied ?? 0) > 0.01 && countInSales <= 0.01) {
+    parts.push(
+      `Advance applied ${formatMoney(sale.customerAdvanceApplied ?? 0)} (already in Sales when received)`,
+    )
+  }
+  return parts.length > 0 ? ` · ${parts.join(' · ')}` : ''
 }
 
 export function toInputDate(d: Date = new Date()): string {
@@ -763,6 +804,7 @@ function buildSingleSalesBillRow(
     events.length > 0 ? events[events.length - 1].at : saleReportDate(sale, mode)
   const collected = collectedForSalesDisplay(saleCollectedForFilter(sale, filter))
   const advanceApplied = saleAdvanceAppliedForSalesTotal(sale, filter, data)
+  const advanceAppliedOnly = saleAdvanceFromReturnForFilter(sale, filter, data)
   const collectedTotal = Math.round((collected.total + advanceApplied) * 100) / 100
   const billAmount = saleOriginalBillAmount(sale)
   const creditPendingAll = saleCreditPendingAmount(sale)
@@ -777,12 +819,7 @@ function buildSingleSalesBillRow(
   const hasCheque = saleIsChequeRelated(sale)
   const hasCreditOrCheque = hasCredit || hasCheque || saleWasOpenedAsCreditOrCheque(sale)
   const updatedAt = saleSalesRowUpdatedAt(sale)
-  const advanceOnBillNote =
-    advanceApplied > 0.01
-      ? ` · Advance in sale ${formatMoney(advanceApplied)}`
-      : (sale.customerAdvanceApplied ?? 0) > 0.01
-        ? ` · Advance applied ${formatMoney(sale.customerAdvanceApplied ?? 0)} (already in Sales when received)`
-        : ''
+  const advanceOnBillNote = salesAdvanceBillNote(sale, advanceApplied, advanceAppliedOnly)
   const baseDetail =
     hasDateFilter && mode === 'collected'
       ? buildGroupedSalesBillDetailLabel(
@@ -820,6 +857,7 @@ function buildSingleSalesBillRow(
     updatedDateLabel: hasCredit || hasCheque ? formatDate(updatedAt) : undefined,
     detailLabel: `${baseDetail}${advanceOnBillNote}`,
     advanceApplied: advanceApplied > 0.01 ? advanceApplied : undefined,
+    advanceAppliedOnly: advanceAppliedOnly > 0.01 ? advanceAppliedOnly : undefined,
   }
 }
 
@@ -849,6 +887,10 @@ function buildGroupedSalesBillRow(
   })
   const advanceApplied = inRange.reduce(
     (sum, member) => sum + saleAdvanceAppliedForSalesTotal(member, filter, data),
+    0,
+  )
+  const advanceAppliedOnly = inRange.reduce(
+    (sum, member) => sum + saleAdvanceFromReturnForFilter(member, filter, data),
     0,
   )
   const collectedTotal = Math.round((collected.total + advanceApplied) * 100) / 100
@@ -903,13 +945,15 @@ function buildGroupedSalesBillRow(
       creditPendingAll,
       chequePendingAll,
     ),
-    detailLabel: buildGroupedSalesBillDetailLabel(
+    detailLabel: `${buildGroupedSalesBillDetailLabel(
       parent,
       billAmount,
       collectedTotal,
       creditPendingAll,
       chequePendingAll,
-    ),
+    )}${salesAdvanceBillNote(parent, advanceApplied, advanceAppliedOnly)}`,
+    advanceApplied: advanceApplied > 0.01 ? advanceApplied : undefined,
+    advanceAppliedOnly: advanceAppliedOnly > 0.01 ? advanceAppliedOnly : undefined,
   }
 }
 

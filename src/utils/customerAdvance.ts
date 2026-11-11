@@ -1,6 +1,12 @@
-import type { AppData, CustomerAdvanceLedgerEntry, CustomerAdvanceKind, Sale } from '../types'
+import type {
+  AppData,
+  CustomerAdvanceLedgerEntry,
+  CustomerAdvanceKind,
+  Sale,
+  SaleReturnEntry,
+} from '../types'
 import { formatMoney } from './format'
-import { formatSaleReturnLine } from './saleReturns'
+import { formatSaleReturnLine, formatReturnPiecesSummary } from './saleReturns'
 import { memoByDataRef } from './memoByDataRef'
 
 export function getAdvanceSalesCountMode(data: AppData): 'on_bill' | 'on_receive' {
@@ -41,112 +47,143 @@ export function sumCustomerAdvancesReceivedInRange(
   return roundMoney(total)
 }
 
+type AdvanceLot = {
+  remaining: number
+  alreadyInSales: boolean
+  fromReturn: boolean
+}
+
+function consumeAdvanceLots(
+  lots: AdvanceLot[],
+  amount: number,
+): { countInSales: number; fromReturn: number } {
+  let need = roundMoney(Math.max(0, amount))
+  let countInSales = 0
+  let fromReturn = 0
+  for (const lot of lots) {
+    if (need <= 0.01) break
+    if (lot.remaining <= 0.01) continue
+    const take = Math.min(lot.remaining, need)
+    if (lot.fromReturn) fromReturn = roundMoney(fromReturn + take)
+    else if (!lot.alreadyInSales) countInSales = roundMoney(countInSales + take)
+    lot.remaining = roundMoney(lot.remaining - take)
+    need = roundMoney(need - take)
+  }
+  return { countInSales, fromReturn }
+}
+
+function advanceLotsForCustomer(data: AppData, customerName: string): AdvanceLot[] {
+  const rows = [...customerAdvanceEntriesForName(data, customerName)].sort(
+    (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
+  )
+  const lots: AdvanceLot[] = []
+  for (const row of rows) {
+    if (row.kind === 'received') {
+      lots.push({
+        remaining: row.amount,
+        alreadyInSales: receivedAdvanceCountsInSales(data, row),
+        fromReturn: false,
+      })
+    } else if (row.kind === 'from_return') {
+      // Return credit is not cash — never count in Sales, even when applied to a bill.
+      lots.push({ remaining: row.amount, alreadyInSales: true, fromReturn: true })
+    } else if (row.kind === 'applied' || row.kind === 'refunded') {
+      consumeAdvanceLots(lots, row.amount)
+    }
+  }
+  return lots
+}
+
+export interface AppliedAdvanceBreakdown {
+  countInSales: number
+  fromReturn: number
+}
+
 /**
  * Of `applyAmount` drawn from open advance balance, how much should still count toward Sales
- * when applied on the bill (FIFO over open lots).
+ * when applied on the bill (FIFO over open lots). Return credit is never counted.
  */
+export function applyAdvanceBreakdown(
+  data: AppData,
+  customerName: string,
+  applyAmount: number,
+): AppliedAdvanceBreakdown {
+  const want = roundMoney(Math.max(0, applyAmount))
+  if (want <= 0) return { countInSales: 0, fromReturn: 0 }
+  return consumeAdvanceLots(advanceLotsForCustomer(data, customerName), want)
+}
+
 export function advanceSalesCountOnApplyAmount(
   data: AppData,
   customerName: string,
   applyAmount: number,
 ): number {
-  const want = roundMoney(Math.max(0, applyAmount))
-  if (want <= 0) return 0
+  return applyAdvanceBreakdown(data, customerName, applyAmount).countInSales
+}
 
-  const rows = [...customerAdvanceEntriesForName(data, customerName)].sort(
-    (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
-  )
-
-  type Lot = { remaining: number; alreadyInSales: boolean }
-  const lots: Lot[] = []
-
-  for (const row of rows) {
-    if (row.kind === 'received') {
-      lots.push({
-        remaining: row.amount,
-        alreadyInSales: receivedAdvanceCountsInSales(data, row),
-      })
-    } else if (row.kind === 'from_return') {
-      // Return credit was never counted as Sales cash — count when applied on a bill.
-      lots.push({ remaining: row.amount, alreadyInSales: false })
-    } else if (row.kind === 'applied' || row.kind === 'refunded') {
-      let need = row.amount
-      for (const lot of lots) {
-        if (need <= 0.01) break
-        if (lot.remaining <= 0.01) continue
-        const take = Math.min(lot.remaining, need)
-        lot.remaining = roundMoney(lot.remaining - take)
-        need = roundMoney(need - take)
-      }
-    }
-  }
-
-  let remaining = want
-  let countOnApply = 0
-  for (const lot of lots) {
-    if (remaining <= 0.01) break
-    if (lot.remaining <= 0.01) continue
-    const take = Math.min(lot.remaining, remaining)
-    if (!lot.alreadyInSales) countOnApply = roundMoney(countOnApply + take)
-    remaining = roundMoney(remaining - take)
-  }
-  return countOnApply
+export function advanceApplyFromReturnAmount(
+  data: AppData,
+  customerName: string,
+  applyAmount: number,
+): number {
+  return applyAdvanceBreakdown(data, customerName, applyAmount).fromReturn
 }
 
 /**
- * How much of a sale's applied advance should count in Sales on the bill.
+ * How a sale's applied advance splits between Sales cash and return credit.
  * Replays the ledger so toggling Add-to-sales on a receive updates bill figures.
- * — Add to sales ON  → already counted when received → 0 on the bill
- * — Add to sales OFF → not counted yet → full applied amount on the bill
+ * — Cash, Add to sales ON  → already counted when received → 0 on the bill
+ * — Cash, Add to sales OFF → not counted yet → counts on the bill
+ * — Return → advance      → never cash, never counts in Sales
  */
-export function saleAdvanceSalesCountAmount(data: AppData, sale: Sale): number {
+export function saleAppliedAdvanceBreakdown(data: AppData, sale: Sale): AppliedAdvanceBreakdown {
   const appliedTarget = sale.customerAdvanceApplied ?? 0
-  if (appliedTarget <= 0.01 || !sale.customerName?.trim()) return 0
+  if (appliedTarget <= 0.01 || !sale.customerName?.trim()) {
+    return { countInSales: 0, fromReturn: 0 }
+  }
 
   const rows = [...customerAdvanceEntriesForName(data, sale.customerName)].sort(
     (a, b) => new Date(a.at).getTime() - new Date(b.at).getTime(),
   )
-
-  type Lot = { remaining: number; alreadyInSales: boolean }
-  const lots: Lot[] = []
+  const lots: AdvanceLot[] = []
   let countedOnBill = 0
+  let fromReturnOnBill = 0
 
   for (const row of rows) {
     if (row.kind === 'received') {
       lots.push({
         remaining: row.amount,
         alreadyInSales: receivedAdvanceCountsInSales(data, row),
+        fromReturn: false,
       })
     } else if (row.kind === 'from_return') {
-      lots.push({ remaining: row.amount, alreadyInSales: false })
+      lots.push({ remaining: row.amount, alreadyInSales: true, fromReturn: true })
     } else if (row.kind === 'applied' || row.kind === 'refunded') {
-      let need = row.amount
-      let fromNotYetInSales = 0
-      for (const lot of lots) {
-        if (need <= 0.01) break
-        if (lot.remaining <= 0.01) continue
-        const take = Math.min(lot.remaining, need)
-        if (!lot.alreadyInSales) fromNotYetInSales = roundMoney(fromNotYetInSales + take)
-        lot.remaining = roundMoney(lot.remaining - take)
-        need = roundMoney(need - take)
-      }
+      const taken = consumeAdvanceLots(lots, row.amount)
       if (row.kind === 'applied' && row.saleId === sale.id) {
-        countedOnBill = roundMoney(countedOnBill + fromNotYetInSales)
+        countedOnBill = roundMoney(countedOnBill + taken.countInSales)
+        fromReturnOnBill = roundMoney(fromReturnOnBill + taken.fromReturn)
       }
     }
   }
 
   // Sale has advance applied but ledger row not written yet (in-flight save).
-  if (countedOnBill <= 0.01) {
-    const ledgerApplied = rows
-      .filter((row) => row.kind === 'applied' && row.saleId === sale.id)
-      .reduce((sum, row) => sum + row.amount, 0)
-    if (ledgerApplied <= 0.01 && appliedTarget > 0.01) {
-      return advanceSalesCountOnApplyAmount(data, sale.customerName, appliedTarget)
-    }
+  const ledgerApplied = rows
+    .filter((row) => row.kind === 'applied' && row.saleId === sale.id)
+    .reduce((sum, row) => sum + row.amount, 0)
+  if (ledgerApplied <= 0.01 && appliedTarget > 0.01) {
+    return applyAdvanceBreakdown(data, sale.customerName, appliedTarget)
   }
 
-  return countedOnBill
+  return { countInSales: countedOnBill, fromReturn: fromReturnOnBill }
+}
+
+export function saleAdvanceSalesCountAmount(data: AppData, sale: Sale): number {
+  return saleAppliedAdvanceBreakdown(data, sale).countInSales
+}
+
+export function saleAdvanceAppliedFromReturnAmount(data: AppData, sale: Sale): number {
+  return saleAppliedAdvanceBreakdown(data, sale).fromReturn
 }
 
 export function normalizeCustomerAdvanceKey(name: string): string {
@@ -985,33 +1022,47 @@ export interface CustomerReturnHistoryRow {
   itemLabel: string
   source: 'bill' | 'advance'
   saleId?: string
+  advanceId?: string
+  returnEntries?: SaleReturnEntry[]
 }
 
 function buildCustomerReturnHistoryUncached(data: AppData): CustomerReturnHistoryRow[] {
   const rows: CustomerReturnHistoryRow[] = []
   for (const sale of data.sales) {
     const name = sale.customerName?.trim() || '—'
-    for (const row of sale.returns ?? []) {
-      rows.push({
-        id: row.id,
-        customerName: name,
-        at: row.createdAt,
-        amount: row.amount,
-        itemLabel: formatSaleReturnLine(row),
-        source: 'bill',
-        saleId: sale.id,
-      })
-    }
+    const entries = sale.returns ?? []
+    if (entries.length === 0) continue
+    // One history row per bill return set (not per line) so view/print stay itemized.
+    const amount = Math.round(entries.reduce((sum, row) => sum + Math.max(0, row.amount), 0) * 100) / 100
+    const at = [...entries].sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    )[0]?.createdAt ?? sale.updatedAt
+    rows.push({
+      id: sale.id,
+      customerName: name,
+      at,
+      amount,
+      itemLabel: formatReturnPiecesSummary(entries) || formatSaleReturnLine(entries[0]),
+      source: 'bill',
+      saleId: sale.id,
+      returnEntries: entries,
+    })
   }
   for (const row of data.customerAdvances ?? []) {
     if (row.kind !== 'from_return') continue
+    const entries = row.returnEntries ?? []
     rows.push({
       id: row.returnEntryId ?? row.id,
+      advanceId: row.id,
       customerName: row.customerName,
       at: row.at,
       amount: row.amount,
-      itemLabel: row.note?.trim() || 'Return credited to advance',
+      itemLabel:
+        formatReturnPiecesSummary(entries) ||
+        row.note?.trim() ||
+        'Return credited to advance',
       source: 'advance',
+      returnEntries: entries.length > 0 ? entries : undefined,
     })
   }
   return rows.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())

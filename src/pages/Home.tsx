@@ -16,13 +16,14 @@ import {
   type ReminderOverlayKind,
 } from '../utils/reminderNavigation'
 import { useOpenTiming } from '../hooks/useOpenTiming'
+import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
 import type { ExpensePayType, TransferDirection } from '../types'
 import {
   getHistoryTypeLabel,
   matchesHistorySearch,
-  resolveLoanIdFromHistoryItemId,
+  resolveLoanHistoryDeleteTarget,
   type HistoryFilter,
   type HistoryItemType,
 } from '../utils/historyItems'
@@ -122,6 +123,7 @@ function Home({ active }: { active: boolean }) {
     removeSale,
     removeExpense,
     removeLoan,
+    removeLoanSettlement,
     deleteCustomerAdvanceEntry,
     setCustomerReminder,
     setBillReminder,
@@ -613,9 +615,13 @@ function Home({ active }: { active: boolean }) {
       deleteCustomerAdvanceEntry(entryId)
       return
     }
-    const loanId = resolveLoanIdFromHistoryItemId(id, data.loans ?? [])
-    if (type === 'loan' || loanId) {
-      removeLoan(loanId ?? id)
+    const loanTarget = resolveLoanHistoryDeleteTarget(id, data.loans ?? [])
+    if (type === 'loan' || loanTarget) {
+      if (loanTarget?.settlementEventId) {
+        removeLoanSettlement(loanTarget.loanId, loanTarget.settlementEventId)
+        return
+      }
+      removeLoan(loanTarget?.loanId ?? id)
       return
     }
     removeExpense(id)
@@ -701,6 +707,21 @@ function Home({ active }: { active: boolean }) {
     },
     panelOpen && !panelSaved,
   )
+
+  const homeActive = useIsActiveRoute('/')
+  const panelSaveRef = useRef(handlePanelSave)
+  panelSaveRef.current = handlePanelSave
+  useEffect(() => {
+    if (!homeActive || !panelOpen || panelSaved) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
+      if (e.code !== 'KeyS') return
+      e.preventDefault()
+      panelSaveRef.current()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [homeActive, panelOpen, panelSaved])
 
   const panelTitle = transferDirection
     ? transferDirection === 'cash-to-bank'
@@ -1441,7 +1462,14 @@ function Home({ active }: { active: boolean }) {
                   {pendingDeleteRecord.name ? `${pendingDeleteRecord.name} · ` : ''}
                   {pendingDeleteRecord.sub} · {formatDate(pendingDeleteRecord.date)}
                 </p>
-                <p className="home-delete-confirm-note">Balances will be updated after delete.</p>
+                <p className="home-delete-confirm-note">
+                  {pendingDeleteRecord.type === 'loan' &&
+                  pendingDeleteRecord.id.includes('-settle-')
+                    ? 'Only this settlement will be removed. The loan stays open for the remaining amount.'
+                    : pendingDeleteRecord.type === 'loan'
+                      ? 'This loan and all of its settlements will be removed. Balances will be updated.'
+                      : 'Balances will be updated after delete.'}
+                </p>
                 <div className="home-delete-confirm-actions">
                   <button type="button" className="btn btn-secondary" onClick={cancelDeleteRecord}>
                     Cancel
@@ -1559,11 +1587,12 @@ function Home({ active }: { active: boolean }) {
               </button>
               <button
                 type="button"
-                className={`btn ${transferDirection ? 'btn-primary' : 'btn-success'} ${panelSaved ? 'btn-saved' : ''}`}
+                className={`btn btn-with-shortcut ${transferDirection ? 'btn-primary' : 'btn-success'} ${panelSaved ? 'btn-saved' : ''}`}
                 onClick={handlePanelSave}
                 disabled={!panelValid || panelSaved}
               >
-                {panelSaveLabel}
+                <span className="btn-text">{panelSaveLabel}</span>
+                {!panelSaved ? <span className="btn-shortcut">Alt+S</span> : null}
               </button>
             </div>
           </div>

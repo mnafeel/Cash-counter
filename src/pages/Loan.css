@@ -95,7 +95,7 @@
 .loan-page-actions {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 6px;
 }
 
@@ -119,6 +119,147 @@
 .loan-page-btn--take {
   border-color: rgba(126, 200, 227, 0.35);
   background: rgba(126, 200, 227, 0.08);
+}
+
+.loan-page-btn--statement {
+  border-color: rgba(196, 181, 253, 0.4);
+  background: rgba(196, 181, 253, 0.1);
+}
+
+.loan-page-statement {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.loan-page-statement-selected {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--cream-dim);
+}
+
+.loan-page-statement-selected strong {
+  color: var(--cream);
+}
+
+.loan-page-statement-people {
+  flex-shrink: 0;
+  max-height: 140px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.loan-page-statement-people button {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--cream);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.loan-page-statement-people small {
+  color: var(--cream-dim);
+  font-size: 0.58rem;
+}
+
+.loan-page-statement-totals {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.loan-page-statement-totals div {
+  min-height: 48px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.loan-page-statement-totals span {
+  font-size: 0.48rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--cream-dim);
+}
+
+.loan-page-statement-totals strong {
+  font-size: 0.82rem;
+  font-weight: 800;
+  color: var(--cream);
+}
+
+.loan-page-statement-totals small {
+  font-size: 0.52rem;
+  color: var(--cream-dim);
+}
+
+.loan-page-statement-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.loan-page-statement-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.62rem;
+}
+
+.loan-page-statement-table th,
+.loan-page-statement-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.loan-page-statement-table th:nth-child(n + 3),
+.loan-page-statement-table td:nth-child(n + 3) {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.loan-page-statement-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  color: var(--cream-dim);
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.loan-page-statement-opening td {
+  font-weight: 700;
+  color: var(--cream);
 }
 
 .loan-page-form {
@@ -297,6 +438,19 @@
   flex: 1;
   min-height: clamp(40px, calc(var(--counter-height, 560px) * 0.085), 52px);
   font-size: clamp(0.72rem, calc(var(--counter-height, 560px) * 0.017), 0.88rem);
+}
+
+.loan-page-form-actions .btn-with-shortcut {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.loan-page-form-actions .btn-shortcut {
+  font-size: clamp(0.5rem, calc(var(--counter-height, 560px) * 0.014), 0.72rem);
+  font-weight: 700;
+  opacity: 0.75;
+  line-height: 1;
+  letter-spacing: 0.03em;
 }
 
 .loan-page-toolbar {
@@ -630,6 +784,10 @@
 }
 
 @media (max-width: 520px) {
+  .loan-page-actions {
+    grid-template-columns: 1fr;
+  }
+
   .loan-page-top {
     grid-template-columns: 1fr;
   }

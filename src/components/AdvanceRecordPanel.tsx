@@ -95,6 +95,20 @@ export default function AdvanceRecordPanel({
     Boolean(numpadRoutePrefix) && routeActive && amountFocused && !compact,
   )
 
+  const saveRef = useRef(handleSave)
+  saveRef.current = handleSave
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
+      if (e.code !== 'KeyS') return
+      if (!canSave) return
+      e.preventDefault()
+      saveRef.current()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [canSave])
+
   function handleSave() {
     if (!canSave) return
     const ok = recordCustomerAdvance({
@@ -209,7 +223,8 @@ export default function AdvanceRecordPanel({
           />
         </div>
         <button type="button" className="advance-record-save" disabled={!canSave} onClick={handleSave}>
-          {saved ? 'Saved ✓' : 'Save advance'}
+          <span>{saved ? 'Saved ✓' : 'Save advance'}</span>
+          {!saved ? <span className="advance-record-save-shortcut">Alt+S</span> : null}
         </button>
       </div>
     </div>

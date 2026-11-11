@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useCallback } from 'react'
+import { useMemo, useRef, useState, useCallback, useEffect } from 'react'
 import { useCash } from '../context/CashContext'
 import { useOpenTiming } from '../hooks/useOpenTiming'
 import { useDeferredSearch } from '../hooks/useDeferredSearch'
@@ -16,7 +16,15 @@ import {
 } from '../utils/loanLedger'
 import { applyNumpadAction, type NumpadAction } from '../utils/numpad'
 import { useRouteNumpadKeyboard } from '../hooks/useNumpadKeyboard'
-import { formatDate, formatMoney, parseAmount } from '../utils/format'
+import { formatDate, formatMoney, isoToDateInputValue, parseAmount } from '../utils/format'
+import {
+  buildLoanStatement,
+  defaultLoanStatementFromDate,
+  listLoanPeople,
+  loanStatementOutstandingLabel,
+  printLoanStatement,
+  searchLoanPeople,
+} from '../utils/loanStatement'
 import { useAppPageBack } from '../hooks/useAppPageBack'
 import { usePageEscape } from '../hooks/usePageEscape'
 import { useIsActiveRoute } from '../hooks/useIsActiveRoute'
@@ -55,6 +63,12 @@ export default function Loan() {
   const [reminderLoanId, setReminderLoanId] = useState<string | null>(null)
   const [expandedLoanId, setExpandedLoanId] = useState<string | null>(null)
   const [formField, setFormField] = useState<FormField>('amount')
+  const [statementOpen, setStatementOpen] = useState(false)
+  const [statementQuery, setStatementQuery] = useState('')
+  const [statementPerson, setStatementPerson] = useState('')
+  const [statementFromDate, setStatementFromDate] = useState(() =>
+    isoToDateInputValue(new Date().toISOString()),
+  )
   const nameInputRef = useRef<HTMLInputElement>(null)
 
   const overview = useMemo(() => buildLoanOverview(data), [data])
@@ -66,6 +80,18 @@ export default function Loan() {
   )
   const amount = parseAmount(amountStr)
   const formOpen = formMode !== null
+  const loanPeople = useMemo(() => listLoanPeople(data), [data])
+  const statementPeople = useMemo(
+    () => searchLoanPeople(loanPeople, statementQuery),
+    [loanPeople, statementQuery],
+  )
+  const statement = useMemo(
+    () =>
+      statementPerson
+        ? buildLoanStatement(data, statementPerson, statementFromDate)
+        : null,
+    [data, statementPerson, statementFromDate],
+  )
   const reminderLoan = useMemo(
     () => (data.loans ?? []).find((loan) => loan.id === reminderLoanId),
     [data.loans, reminderLoanId],
@@ -84,7 +110,26 @@ export default function Loan() {
     resetForm()
     setFormMode(mode)
     setSettlingId(null)
+    setStatementOpen(false)
     setFormField('amount')
+  }
+
+  function openStatement() {
+    resetForm()
+    setFormMode(null)
+    setSettlingId(null)
+    setStatementOpen(true)
+    setStatementQuery('')
+    setStatementPerson('')
+    setStatementFromDate(isoToDateInputValue(new Date().toISOString()))
+    setFormError('')
+  }
+
+  function selectStatementPerson(name: string) {
+    setStatementPerson(name)
+    setStatementQuery(name)
+    setStatementFromDate(defaultLoanStatementFromDate(data, name))
+    setFormError('')
   }
 
   function handleFormNumpad(action: NumpadAction) {
@@ -108,6 +153,32 @@ export default function Loan() {
   const numpadHandlerRef = useRef(handleFormNumpad)
   numpadHandlerRef.current = handleFormNumpad
   useRouteNumpadKeyboard('/loan', (action) => numpadHandlerRef.current(action), formOpen)
+
+  const submitFormRef = useRef(handleSubmitForm)
+  const settleLoanRef = useRef(handleSettle)
+  submitFormRef.current = handleSubmitForm
+  settleLoanRef.current = handleSettle
+
+  useEffect(() => {
+    if (!routeActive) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
+      if (e.code !== 'KeyS') return
+      if (formMode) {
+        e.preventDefault()
+        submitFormRef.current()
+        return
+      }
+      if (settlingId) {
+        const loan = list.find((entry) => entry.id === settlingId)
+        if (!loan) return
+        e.preventDefault()
+        settleLoanRef.current(loan)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [routeActive, formMode, settlingId, list])
 
   function handleSubmitForm() {
     const amount = parseAmount(amountStr)
@@ -187,8 +258,15 @@ export default function Loan() {
       setFormError('')
       return
     }
+    if (statementOpen) {
+      setStatementOpen(false)
+      setStatementQuery('')
+      setStatementPerson('')
+      setFormError('')
+      return
+    }
     goBack()
-  }, [formMode, settlingId, goBack])
+  }, [formMode, settlingId, statementOpen, goBack])
 
   usePageEscape(handleClose, routeActive)
 
@@ -291,11 +369,12 @@ export default function Loan() {
               </button>
               <button
                 type="button"
-                className="btn btn-danger"
+                className="btn btn-danger btn-with-shortcut"
                 onClick={handleSubmitForm}
                 disabled={!(amount > 0) || !personName.trim()}
               >
-                Save {amount > 0 ? formatMoney(amount) : ''}
+                <span className="btn-text">Save {amount > 0 ? formatMoney(amount) : ''}</span>
+                <span className="btn-shortcut">Alt+S</span>
               </button>
             </div>
           </section>
@@ -346,13 +425,143 @@ export default function Loan() {
               </button>
               <button
                 type="button"
-                className="btn btn-danger"
+                className="btn btn-danger btn-with-shortcut"
                 onClick={() => {
                   const loan = list.find((entry) => entry.id === settlingId)
                   if (loan) handleSettle(loan)
                 }}
               >
-                Confirm
+                <span className="btn-text">Confirm</span>
+                <span className="btn-shortcut">Alt+S</span>
+              </button>
+            </div>
+          </section>
+        ) : statementOpen ? (
+          <section className="loan-page-statement">
+            <div className="loan-page-form-head">
+              <h2>Loan statement</h2>
+              <p className="loan-page-form-hint">Search a person, pick a start date, then print or save PDF.</p>
+            </div>
+
+            <label className="loan-page-name">
+              <span className="loan-page-name-label">Person name</span>
+              <input
+                type="search"
+                className="loan-page-name-input"
+                value={statementQuery}
+                onChange={(e) => {
+                  setStatementQuery(e.target.value)
+                  if (statementPerson && e.target.value.trim().toLowerCase() !== statementPerson.toLowerCase()) {
+                    setStatementPerson('')
+                  }
+                }}
+                placeholder="Search by name"
+                autoComplete="off"
+                aria-label="Search loan person"
+              />
+            </label>
+
+            {statementPerson ? (
+              <p className="loan-page-statement-selected">
+                Selected · <strong>{statementPerson}</strong>
+              </p>
+            ) : statementPeople.length > 0 ? (
+              <ul className="loan-page-statement-people">
+                {statementPeople.slice(0, 12).map((person) => (
+                  <li key={person.personName}>
+                    <button type="button" onClick={() => selectStatementPerson(person.personName)}>
+                      <strong>{person.personName}</strong>
+                      <small>
+                        {person.loanCount} loan{person.loanCount === 1 ? '' : 's'}
+                      </small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="loan-page-empty">
+                {statementQuery.trim() ? 'No matching person.' : 'No loan names yet.'}
+              </p>
+            )}
+
+            <label className="loan-page-field">
+              <span>From date</span>
+              <input
+                type="date"
+                value={statementFromDate}
+                onChange={(e) => setStatementFromDate(e.target.value)}
+              />
+            </label>
+
+            {statement ? (
+              <>
+                <div className="loan-page-statement-totals">
+                  <div>
+                    <span>Total given</span>
+                    <strong>{formatMoney(statement.totalGiven)}</strong>
+                  </div>
+                  <div>
+                    <span>Total received</span>
+                    <strong>{formatMoney(statement.totalReceived)}</strong>
+                  </div>
+                  <div>
+                    <span>Outstanding</span>
+                    <strong>{formatMoney(statement.closingBalance)}</strong>
+                    <small>{loanStatementOutstandingLabel(statement.closingBalance)}</small>
+                  </div>
+                </div>
+                <div className="loan-page-statement-table-wrap">
+                  <table className="loan-page-statement-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Details</th>
+                        <th>Given</th>
+                        <th>Received</th>
+                        <th>Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="loan-page-statement-opening">
+                        <td colSpan={4}>Opening · {statement.fromDateLabel}</td>
+                        <td>{formatMoney(statement.openingBalance)}</td>
+                      </tr>
+                      {statement.lines.length === 0 ? (
+                        <tr>
+                          <td colSpan={5}>No transactions from this date.</td>
+                        </tr>
+                      ) : (
+                        statement.lines.map((line) => (
+                          <tr key={line.id}>
+                            <td>{line.dateLabel}</td>
+                            <td>{line.details}</td>
+                            <td>{line.given > 0 ? formatMoney(line.given) : '—'}</td>
+                            <td>{line.received > 0 ? formatMoney(line.received) : '—'}</td>
+                            <td>{formatMoney(line.balanceAfter)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : statementPerson ? (
+              <p className="loan-page-empty">No loans found for this person.</p>
+            ) : null}
+
+            <div className="loan-page-form-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setStatementOpen(false)}>
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                disabled={!statement}
+                onClick={() => {
+                  if (statement) printLoanStatement(statement)
+                }}
+              >
+                PDF / Print
               </button>
             </div>
           </section>
@@ -364,6 +573,9 @@ export default function Loan() {
               </button>
               <button type="button" className="loan-page-btn loan-page-btn--take" onClick={() => openForm('take')}>
                 Take loan
+              </button>
+              <button type="button" className="loan-page-btn loan-page-btn--statement" onClick={openStatement}>
+                Statement
               </button>
             </div>
 
@@ -576,7 +788,7 @@ function LoanRow({
           ) : null}
         </div>
       ) : null}
-      {loan.status === 'pending' ? (
+      {loan.remainingAmount > 0 ? (
         <div className="loan-page-row-actions">
           <button type="button" onClick={onSetReminder}>
             Reminder

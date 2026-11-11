@@ -3729,10 +3729,11 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
       const settlePayMode: HistoryPaymentMode = event.paySource === 'bank' ? 'bank' : 'cash'
       const settleLabel = event.paySource === 'bank' ? 'Bank' : 'Cash'
       const settledOn = formatDate(event.at)
+      const settleId = `${loan.id}-settle-${event.id || index}`
       if (loan.kind === 'lend') {
         loanItems.push({
           type: 'loan',
-          id: `${loan.id}-settle-${index}`,
+          id: settleId,
           amount: event.amount,
           name: loan.personName,
           sub: `🤝 Loan collected · ${settleLabel} · Settled ${settledOn}`,
@@ -3755,7 +3756,7 @@ function buildHistoryItemsUncached(data: AppData): HistoryItem[] {
       } else {
         loanItems.push({
           type: 'loan',
-          id: `${loan.id}-settle-${index}`,
+          id: settleId,
           amount: event.amount,
           name: loan.personName,
           sub: `🤝 Loan returned · ${settleLabel} · Settled ${settledOn}`,
@@ -3974,12 +3975,29 @@ export function matchesHistoryPaymentFilter(
   return modes.includes(paymentFilter)
 }
 
+export function resolveLoanHistoryDeleteTarget(
+  id: string,
+  loans: Loan[] = [],
+): { loanId: string; settlementEventId?: string } | null {
+  for (const loan of loans) {
+    if (id === loan.id || id === `${loan.id}-give` || id === `${loan.id}-take`) {
+      return { loanId: loan.id }
+    }
+    const prefix = `${loan.id}-settle-`
+    if (!id.startsWith(prefix)) continue
+    const key = id.slice(prefix.length)
+    const events = loanSettlementEvents(loan)
+    const byId = events.find((event) => event.id === key)
+    if (byId) return { loanId: loan.id, settlementEventId: byId.id }
+    if (/^\d+$/.test(key)) {
+      const event = events[Number(key)]
+      if (event) return { loanId: loan.id, settlementEventId: event.id }
+    }
+  }
+  return null
+}
+
 /** Map a loan history row id (`loanId-give`, `loanId-settle-0`, …) to the underlying loan id. */
 export function resolveLoanIdFromHistoryItemId(id: string, loans: Loan[] = []): string | null {
-  if (loans.some((loan) => loan.id === id)) return id
-  const giveTake = id.match(/^(.+)-(give|take)$/)
-  if (giveTake && loans.some((loan) => loan.id === giveTake[1])) return giveTake[1]
-  const settle = id.match(/^(.+)-settle-\d+$/)
-  if (settle && loans.some((loan) => loan.id === settle[1])) return settle[1]
-  return null
+  return resolveLoanHistoryDeleteTarget(id, loans)?.loanId ?? null
 }

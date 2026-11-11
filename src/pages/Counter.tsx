@@ -25,6 +25,7 @@ import { buildCustomerSummaries } from '../utils/customerLedger'
 import {
   buildCustomerAdvanceGroups,
   customerAdvanceBalance,
+  advanceApplyFromReturnAmount,
   advanceSalesCountOnApplyAmount,
   normalizeCustomerAdvanceKey,
 } from '../utils/customerAdvance'
@@ -835,6 +836,12 @@ function Counter({ active }: { active: boolean }) {
       return 0
     }
     return advanceSalesCountOnApplyAmount(data, customerNameLedgerKey, advanceApplyAmount)
+  }, [useCustomerAdvance, advanceApplyAmount, customerNameLedgerKey, data])
+  const advanceReturnOnThisBill = useMemo(() => {
+    if (!useCustomerAdvance || advanceApplyAmount <= 0.01 || !customerNameLedgerKey.trim()) {
+      return 0
+    }
+    return advanceApplyFromReturnAmount(data, customerNameLedgerKey, advanceApplyAmount)
   }, [useCustomerAdvance, advanceApplyAmount, customerNameLedgerKey, data])
   /** Payable after advance, before round-down. */
   const payableBeforeRound = Math.max(
@@ -5090,7 +5097,7 @@ function Counter({ active }: { active: boolean }) {
       if (e.repeat || !e.altKey || e.ctrlKey || e.metaKey) return
 
       if (e.code === 'KeyS') {
-        if (showReturnModal) return
+        if (showReturnModal || showAdvanceCreateModal) return
         if (!isValid) return
         e.preventDefault()
         saveHandlerRef.current()
@@ -5143,7 +5150,7 @@ function Counter({ active }: { active: boolean }) {
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isSaving, isValid, canSavePending, routeActive, showReturnModal])
+  }, [isSaving, isValid, canSavePending, routeActive, showReturnModal, showAdvanceCreateModal])
 
   const payTypeChipValue: PayType = payType
 
@@ -5687,7 +5694,9 @@ function Counter({ active }: { active: boolean }) {
                 {useCustomerAdvance && advanceApplyAmount > 0.01
                   ? advanceSalesOnThisBill > 0.01
                     ? ` · in bill sale ${formatMoney(advanceSalesOnThisBill)}`
-                    : ' · balance only (already in Sales)'
+                    : advanceReturnOnThisBill > 0.01
+                      ? ` · Advance is applied (return · not in Sales)`
+                      : ' · balance only (already in Sales)'
                   : ''}
               </span>
               <button

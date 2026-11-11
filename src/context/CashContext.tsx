@@ -60,6 +60,7 @@ import {
   clearAllLocalData,
   deleteExpense,
   deleteLoan,
+  deleteLoanSettlement,
   deleteStaffMember,
   deleteStaffLeave,
   deleteSale,
@@ -330,6 +331,7 @@ interface CashContextValue {
   removeSale: (id: string, relatedSaleIds?: string[]) => void
   removeExpense: (id: string) => void
   removeLoan: (id: string) => void
+  removeLoanSettlement: (loanId: string, eventId: string) => void
   addStaff: (input: {
     name: string
     monthlySalary: number
@@ -1242,6 +1244,10 @@ export function CashProvider({ children }: { children: ReactNode }) {
     setData((prev) => deleteLoan(prev, id))
   }, [])
 
+  const removeLoanSettlement = useCallback((loanId: string, eventId: string) => {
+    setData((prev) => deleteLoanSettlement(prev, loanId, eventId))
+  }, [])
+
   const addStaff = useCallback(
     (input: { name: string; monthlySalary: number; linkExisting?: boolean; commissionPercent?: number }): boolean => {
       let success = false
@@ -2083,6 +2089,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeSale,
       removeExpense,
       removeLoan,
+      removeLoanSettlement,
       addStaff,
       updateStaff,
       updateStaffCommissionDefault,
@@ -2175,6 +2182,7 @@ export function CashProvider({ children }: { children: ReactNode }) {
       removeSale,
       removeExpense,
       removeLoan,
+      removeLoanSettlement,
       addStaff,
       updateStaff,
       updateStaffCommissionDefault,

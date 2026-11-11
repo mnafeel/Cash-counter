@@ -211,6 +211,10 @@
 }
 
 .advance-record-save {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   padding: 0.7rem 1rem;
   border-radius: 12px;
   border: none;
@@ -218,6 +222,14 @@
   color: #111;
   font-weight: 800;
   cursor: pointer;
+}
+
+.advance-record-save-shortcut {
+  font-size: 0.58rem;
+  font-weight: 700;
+  opacity: 0.75;
+  line-height: 1;
+  letter-spacing: 0.03em;
 }
 
 .advance-record-save:disabled {

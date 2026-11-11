@@ -1564,6 +1564,19 @@ html[data-screen='desktop'] .home-pin-digit {
   font-weight: 700;
 }
 
+.home-add-actions .btn-with-shortcut {
+  flex-direction: column;
+  gap: 2px;
+}
+
+.home-add-actions .btn-shortcut {
+  font-size: 0.58rem;
+  font-weight: 700;
+  opacity: 0.75;
+  line-height: 1;
+  letter-spacing: 0.03em;
+}
+
 .home-hero {
   background: linear-gradient(135deg, var(--surface) 0%, var(--surface-2) 100%);
   border: 1px solid var(--border);
